@@ -12,8 +12,7 @@ environment:
 
 dependencies:
   collection: ^1.19.1
-  dartvex:
-    path: ../dartvex
+  dartvex: ^0.1.0
   flutter:
     sdk: flutter
   flutter_cache_manager: ^3.4.1
