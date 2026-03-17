@@ -1,0 +1,552 @@
+{
+  "url": "https://quaint-grasshopper-209.eu-west-1.convex.cloud",
+  "functions": [
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Query",
+      "identifier": "demo.js:whoAmI",
+      "returns": {
+        "type": "union",
+        "value": [
+          {
+            "type": "object",
+            "value": {
+              "email": {
+                "fieldType": {
+                  "type": "union",
+                  "value": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "optional": false
+              },
+              "issuer": {
+                "fieldType": {
+                  "type": "string"
+                },
+                "optional": false
+              },
+              "name": {
+                "fieldType": {
+                  "type": "union",
+                  "value": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "optional": false
+              },
+              "subject": {
+                "fieldType": {
+                  "type": "string"
+                },
+                "optional": false
+              },
+              "tokenIdentifier": {
+                "fieldType": {
+                  "type": "string"
+                },
+                "optional": false
+              }
+            }
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "message": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Query",
+      "identifier": "demo.js:requireAuthEcho",
+      "returns": {
+        "type": "object",
+        "value": {
+          "message": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "tokenIdentifier": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "message": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Action",
+      "identifier": "demo.js:pingAction",
+      "returns": {
+        "type": "object",
+        "value": {
+          "echoedText": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "isAuthenticated": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": false
+          },
+          "receivedAt": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "viewerName": {
+            "fieldType": {
+              "type": "union",
+              "value": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "optional": false
+          }
+        }
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Query",
+      "identifier": "messages.js:listPublic",
+      "returns": {
+        "type": "array",
+        "value": {
+          "type": "object",
+          "value": {
+            "_creationTime": {
+              "fieldType": {
+                "type": "number"
+              },
+              "optional": false
+            },
+            "_id": {
+              "fieldType": {
+                "tableName": "public_messages",
+                "type": "id"
+              },
+              "optional": false
+            },
+            "author": {
+              "fieldType": {
+                "type": "string"
+              },
+              "optional": false
+            },
+            "text": {
+              "fieldType": {
+                "type": "string"
+              },
+              "optional": false
+            }
+          }
+        }
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "author": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "text": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "messages.js:sendPublic",
+      "returns": {
+        "tableName": "public_messages",
+        "type": "id"
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Query",
+      "identifier": "messages.js:listPrivate",
+      "returns": {
+        "type": "array",
+        "value": {
+          "type": "object",
+          "value": {
+            "_creationTime": {
+              "fieldType": {
+                "type": "number"
+              },
+              "optional": false
+            },
+            "_id": {
+              "fieldType": {
+                "tableName": "private_messages",
+                "type": "id"
+              },
+              "optional": false
+            },
+            "author": {
+              "fieldType": {
+                "type": "string"
+              },
+              "optional": false
+            },
+            "text": {
+              "fieldType": {
+                "type": "string"
+              },
+              "optional": false
+            },
+            "tokenIdentifier": {
+              "fieldType": {
+                "type": "string"
+              },
+              "optional": false
+            }
+          }
+        }
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "text": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "messages.js:sendPrivate",
+      "returns": {
+        "tableName": "private_messages",
+        "type": "id"
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Query",
+      "identifier": "tasks.js:listBoard",
+      "returns": {
+        "type": "array",
+        "value": {
+          "type": "object",
+          "value": {
+            "_creationTime": {
+              "fieldType": {
+                "type": "number"
+              },
+              "optional": false
+            },
+            "_id": {
+              "fieldType": {
+                "tableName": "tasks",
+                "type": "id"
+              },
+              "optional": false
+            },
+            "assignee": {
+              "fieldType": {
+                "type": "union",
+                "value": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "optional": false
+            },
+            "dueAt": {
+              "fieldType": {
+                "type": "union",
+                "value": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "optional": false
+            },
+            "estimatePoints": {
+              "fieldType": {
+                "type": "number"
+              },
+              "optional": false
+            },
+            "labels": {
+              "fieldType": {
+                "type": "array",
+                "value": {
+                  "type": "string"
+                }
+              },
+              "optional": false
+            },
+            "priority": {
+              "fieldType": {
+                "type": "string"
+              },
+              "optional": false
+            },
+            "status": {
+              "fieldType": {
+                "type": "string"
+              },
+              "optional": false
+            },
+            "summary": {
+              "fieldType": {
+                "type": "union",
+                "value": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "optional": false
+            },
+            "title": {
+              "fieldType": {
+                "type": "string"
+              },
+              "optional": false
+            }
+          }
+        }
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "assignee": {
+            "fieldType": {
+              "type": "union",
+              "value": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "optional": false
+          },
+          "dueAt": {
+            "fieldType": {
+              "type": "union",
+              "value": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "optional": false
+          },
+          "estimatePoints": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "labels": {
+            "fieldType": {
+              "type": "array",
+              "value": {
+                "type": "string"
+              }
+            },
+            "optional": false
+          },
+          "priority": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "summary": {
+            "fieldType": {
+              "type": "union",
+              "value": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "optional": false
+          },
+          "title": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "tasks.js:createTask",
+      "returns": {
+        "tableName": "tasks",
+        "type": "id"
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "taskId": {
+            "fieldType": {
+              "tableName": "tasks",
+              "type": "id"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "tasks.js:advanceTask",
+      "returns": {
+        "type": "object",
+        "value": {
+          "status": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "taskId": {
+            "fieldType": {
+              "tableName": "tasks",
+              "type": "id"
+            },
+            "optional": false
+          }
+        }
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Mutation",
+      "identifier": "tasks.js:seedBoard",
+      "returns": {
+        "type": "number"
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    }
+  ]
+}

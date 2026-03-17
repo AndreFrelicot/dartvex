@@ -1,0 +1,183 @@
+{
+  "url": "https://sample.convex.cloud",
+  "functions": [
+    {
+      "functionType": "Query",
+      "args": {
+        "type": "object",
+        "value": {
+          "limit": {
+            "fieldType": { "type": "number" },
+            "optional": true
+          },
+          "author": {
+            "fieldType": {
+              "type": "union",
+              "value": [
+                { "type": "string" },
+                { "type": "null" }
+              ]
+            },
+            "optional": true
+          },
+          "filters": {
+            "fieldType": {
+              "type": "object",
+              "value": {
+                "tag": {
+                  "fieldType": { "type": "string" },
+                  "optional": true
+                }
+              }
+            },
+            "optional": true
+          }
+        }
+      },
+      "returns": {
+        "type": "array",
+        "value": {
+          "type": "object",
+          "value": {
+            "_id": {
+              "fieldType": {
+                "type": "id",
+                "tableName": "messages"
+              },
+              "optional": false
+            },
+            "author": {
+              "fieldType": { "type": "string" },
+              "optional": false
+            },
+            "text": {
+              "fieldType": { "type": "string" },
+              "optional": false
+            },
+            "status": {
+              "fieldType": {
+                "type": "union",
+                "value": [
+                  { "type": "literal", "value": "draft" },
+                  { "type": "literal", "value": "sent" }
+                ]
+              },
+              "optional": false
+            }
+          }
+        }
+      },
+      "identifier": "messages.ts:list",
+      "visibility": { "kind": "public" }
+    },
+    {
+      "functionType": "Mutation",
+      "args": {
+        "type": "object",
+        "value": {
+          "author": {
+            "fieldType": { "type": "string" },
+            "optional": false
+          },
+          "text": {
+            "fieldType": { "type": "string" },
+            "optional": false
+          },
+          "attachment": {
+            "fieldType": { "type": "bytes" },
+            "optional": true
+          }
+        }
+      },
+      "returns": {
+        "type": "id",
+        "tableName": "messages"
+      },
+      "identifier": "messages.ts:send",
+      "visibility": { "kind": "public" }
+    },
+    {
+      "functionType": "Action",
+      "args": {
+        "type": "object",
+        "value": {
+          "payload": {
+            "fieldType": {
+              "type": "record",
+              "keys": { "type": "string" },
+              "values": {
+                "fieldType": {
+                  "type": "union",
+                  "value": [
+                    { "type": "number" },
+                    { "type": "string" }
+                  ]
+                },
+                "optional": false
+              }
+            },
+            "optional": false
+          },
+          "mode": {
+            "fieldType": {
+              "type": "union",
+              "value": [
+                { "type": "literal", "value": "full" },
+                { "type": "literal", "value": "delta" }
+              ]
+            },
+            "optional": false
+          }
+        }
+      },
+      "returns": {
+        "type": "object",
+        "value": {
+          "success": {
+            "fieldType": { "type": "boolean" },
+            "optional": false
+          },
+          "count": {
+            "fieldType": { "type": "bigint" },
+            "optional": false
+          }
+        }
+      },
+      "identifier": "admin/users.ts:sync",
+      "visibility": { "kind": "public" }
+    },
+    {
+      "functionType": "Query",
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "returns": {
+        "type": "object",
+        "value": {
+          "ok": {
+            "fieldType": { "type": "boolean" },
+            "optional": false
+          }
+        }
+      },
+      "identifier": "index.ts:health",
+      "visibility": { "kind": "public" }
+    },
+    {
+      "functionType": "Query",
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "returns": { "type": "string" },
+      "identifier": "internal.ts:secret",
+      "visibility": { "kind": "internal" }
+    },
+    {
+      "functionType": "HttpAction",
+      "method": "GET",
+      "path": "/healthz"
+    }
+  ]
+}

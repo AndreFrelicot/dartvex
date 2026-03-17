@@ -1,0 +1,93 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  format:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with: { sdk: stable }
+      - uses: subosito/flutter-action@v2
+        with: { flutter-version: '3.x', channel: stable }
+      - name: Resolve packages
+        run: |
+          for dir in packages/*/; do
+            (cd "$dir" && dart pub get 2>/dev/null || flutter pub get 2>/dev/null) || true
+          done
+      - name: Format check (excluding generated goldens)
+        run: find packages -name '*.dart' -not -path '*/test/goldens/*' -print0 | xargs -0 dart format --set-exit-if-changed
+
+  analyze:
+    name: Analyze
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        package: [dartvex, dartvex_codegen, dartvex_local, dartvex_auth_better]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with: { sdk: stable }
+      - run: cd packages/${{ matrix.package }} && dart pub get && dart analyze --fatal-infos
+
+  analyze-flutter:
+    name: Analyze (Flutter)
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        package: [dartvex_flutter]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with: { flutter-version: '3.x', channel: stable }
+      - run: cd packages/${{ matrix.package }} && flutter pub get && flutter analyze --fatal-infos
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        package: [dartvex, dartvex_codegen, dartvex_local, dartvex_auth_better]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with: { sdk: stable }
+      - name: Install dependencies
+        run: cd packages/${{ matrix.package }} && dart pub get
+      - name: Regenerate golden files
+        if: matrix.package == 'dartvex_codegen'
+        run: cd packages/dartvex_codegen && dart run tool/update_goldens.dart
+      - run: cd packages/${{ matrix.package }} && dart test
+
+  test-flutter:
+    name: Test (Flutter)
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        package: [dartvex_flutter]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with: { flutter-version: '3.x', channel: stable }
+      - run: cd packages/${{ matrix.package }} && flutter pub get && flutter test
+
+  publish-dry-run:
+    name: Publish Dry Run
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    strategy:
+      matrix:
+        package: [dartvex, dartvex_codegen, dartvex_local, dartvex_flutter, dartvex_auth_better]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with: { sdk: stable }
+      - run: cd packages/${{ matrix.package }} && dart pub get && dart pub publish --dry-run

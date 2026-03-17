@@ -1,0 +1,24 @@
+name: dartvex_flutter
+description: >-
+  Flutter widgets for Convex — ConvexProvider, QueryBuilder, MutationBuilder,
+  and more. Reactive UI powered by Dartvex.
+version: 0.1.0
+publish_to: none # Remove before publishing to pub.dev
+homepage: https://github.com/AndreFrelicot/dartvex
+repository: https://github.com/AndreFrelicot/dartvex/tree/main/packages/dartvex_flutter
+
+environment:
+  sdk: ^3.6.0
+
+dependencies:
+  collection: ^1.19.1
+  dartvex:
+    path: ../dartvex
+  flutter:
+    sdk: flutter
+  flutter_cache_manager: ^3.4.1
+
+dev_dependencies:
+  flutter_lints: ^5.0.0
+  flutter_test:
+    sdk: flutter

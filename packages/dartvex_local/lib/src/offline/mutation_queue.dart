@@ -1,0 +1,78 @@
+import '../client.dart';
+import '../value_codec.dart';
+import 'queue_storage.dart';
+
+class MutationQueue {
+  const MutationQueue({
+    required QueueStorage storage,
+    required ValueCodec codec,
+  })  : _storage = storage,
+        _codec = codec;
+
+  final QueueStorage _storage;
+  final ValueCodec _codec;
+
+  Future<PendingMutation> enqueue({
+    required String mutationName,
+    required Map<String, dynamic> args,
+    required Map<String, dynamic>? optimisticData,
+    required DateTime createdAt,
+  }) async {
+    final stored = await _storage.enqueue(
+      mutationName: mutationName,
+      argsJson: _codec.encode(args),
+      optimisticJson:
+          optimisticData == null ? null : _codec.encode(optimisticData),
+      createdAtMillis: createdAt.millisecondsSinceEpoch,
+    );
+    return _toPendingMutation(stored);
+  }
+
+  Future<List<PendingMutation>> loadAll() async {
+    final stored = await _storage.loadAll();
+    return stored.map(_toPendingMutation).toList(growable: false);
+  }
+
+  Future<void> markStatus(
+    int id,
+    PendingMutationStatus status, {
+    String? errorMessage,
+  }) {
+    return _storage.markStatus(
+      id,
+      status.wireName,
+      errorMessage: errorMessage,
+    );
+  }
+
+  Future<void> remove(int id) => _storage.remove(id);
+
+  Future<void> clear() => _storage.clearQueue();
+
+  Future<void> updateArgs(int id, Map<String, dynamic> args) =>
+      _storage.updateArgs(id, _codec.encode(args));
+
+  Future<void> saveIdRemap(String localId, String serverId) =>
+      _storage.saveIdRemap(localId, serverId);
+
+  Future<Map<String, String>> loadIdRemaps() => _storage.loadIdRemaps();
+
+  Future<void> clearIdRemaps() => _storage.clearIdRemaps();
+
+  PendingMutation _toPendingMutation(StoredPendingMutation stored) {
+    return PendingMutation(
+      id: stored.id,
+      mutationName: stored.mutationName,
+      args: _codec.decodeMap(stored.argsJson),
+      optimisticData: stored.optimisticJson == null
+          ? null
+          : _codec.decodeMap(stored.optimisticJson!),
+      createdAt: DateTime.fromMillisecondsSinceEpoch(
+        stored.createdAtMillis,
+        isUtc: true,
+      ),
+      status: PendingMutationStatusName.fromWireName(stored.status),
+      errorMessage: stored.errorMessage,
+    );
+  }
+}

@@ -1,0 +1,26 @@
+# Dart/Flutter
+.dart_tool/
+.packages
+build/
+pubspec.lock
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# macOS
+.DS_Store
+
+# Generated
+*.g.dart
+
+# Protocol cache
+.protocol-cache/
+
+# Coverage
+coverage/
+
+# Environment files
+.env*
+!.env.example

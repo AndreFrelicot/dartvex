@@ -1,0 +1,28 @@
+name: dartvex_demo
+description: Demo app wiring dartvex, dartvex_codegen, and dartvex_flutter.
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  dartvex:
+    path: ../../packages/dartvex
+  dartvex_flutter:
+    path: ../../packages/dartvex_flutter
+  dartvex_local:
+    path: ../../packages/dartvex_local
+  dartvex_auth_better:
+    path: ../../packages/dartvex_auth_better
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

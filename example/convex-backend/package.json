@@ -1,0 +1,21 @@
+{
+  "name": "dartvex_demo_backend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "convex:codegen": "npx convex codegen",
+    "convex:dev": "npx convex dev",
+    "convex:function-spec": "npx convex function-spec",
+    "token": "node ./scripts/generate-demo-jwt.mjs"
+  },
+  "dependencies": {
+    "@convex-dev/better-auth": "^0.11.1",
+    "better-auth": "1.5.3",
+    "convex": "^1.32.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "typescript": "^5.9.0"
+  },
+  "packageManager": "pnpm@10.32.1+sha512.a706938f0e89ac1456b6563eab4edf1d1faf3368d1191fc5c59790e96dc918e4456ab2e67d613de1043d2e8c81f87303e6b40d4ffeca9df15ef1ad567348f2be"
+}
