@@ -3,7 +3,6 @@ description: >-
   Flutter widgets for Convex — ConvexProvider, QueryBuilder, MutationBuilder,
   and more. Reactive UI powered by Dartvex.
 version: 0.1.0
-publish_to: none # Remove before publishing to pub.dev
 homepage: https://github.com/AndreFrelicot/dartvex
 repository: https://github.com/AndreFrelicot/dartvex/tree/main/packages/dartvex_flutter
 
