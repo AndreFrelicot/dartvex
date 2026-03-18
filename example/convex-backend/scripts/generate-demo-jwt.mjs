@@ -1,10 +1,38 @@
 import { createSign } from "node:crypto";
+import { readFileSync, existsSync } from "node:fs";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const privateKeyPem = `-----BEGIN PRIVATE KEY-----
-MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgcZP2wl/IC4t64+w3
-k0nz6ay9akZDTWBv9Kg/W+KjGuahRANCAATbaZgxkWkLi2xvBV+7GIlpswKdR5fd
-iAI4pwmFNv8mIul0MxNM5iR9DsF31Cp4kaOHDOFDES3JG0wtJO96Rhr0
------END PRIVATE KEY-----`;
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+let privateKeyPem = process.env.DEMO_PRIVATE_KEY;
+
+if (!privateKeyPem) {
+  try {
+    const envPath = resolve(__dirname, "../.env");
+    if (existsSync(envPath)) {
+      const envContent = readFileSync(envPath, "utf-8");
+      for (const line of envContent.split("\n")) {
+        if (line.startsWith("DEMO_PRIVATE_KEY=")) {
+          let val = line.substring("DEMO_PRIVATE_KEY=".length).trim();
+          if (val.startsWith('"') && val.endsWith('"')) {
+            val = val.substring(1, val.length - 1);
+          }
+          privateKeyPem = val.replace(/\\n/g, "\n");
+          break;
+        }
+      }
+    }
+  } catch (e) {
+    // Ignore read errors
+  }
+}
+
+if (!privateKeyPem) {
+  console.error("Error: DEMO_PRIVATE_KEY is not set.");
+  console.error("Please copy .env.example to .env in example/convex-backend and try again.");
+  process.exit(1);
+}
 
 const base64UrlEncode = (value) =>
   Buffer.from(
