@@ -59,22 +59,22 @@ void main() async {
 
 ## Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────┐
-│                  Your App                        │
-├─────────────┬──────────────┬────────────────────┤
-│  dartvex_   │  dartvex_    │  dartvex_auth_*    │
-│  flutter    │  local       │  (better)          │
-│  (widgets)  │  (offline)   │  (auth adapters)   │
-├─────────────┴──────────────┴────────────────────┤
-│                  dartvex                         │
-│         (core client + WebSocket sync)           │
+│                    Your App                     │
+├───────────────┬──────────────┬──────────────────┤
+│ dartvex_      │ dartvex_     │ dartvex_auth_*   │
+│ flutter       │ local        │ (better)         │
+│ (widgets)     │ (offline)    │ (auth adapters)  │
+├───────────────┴──────────────┴──────────────────┤
+│                    dartvex                      │
+│         (core client + WebSocket sync)          │
 ├─────────────────────────────────────────────────┤
-│              Convex Backend                      │
+│                Convex Backend                   │
 └─────────────────────────────────────────────────┘
 
-         dartvex_codegen
-         (generates typed bindings from schema)
+                dartvex_codegen
+     (generates typed bindings from schema)
 ```
 
 ## Installation
