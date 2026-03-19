@@ -69,6 +69,88 @@ class BetterAuthClient {
         fallbackEmail: email);
   }
 
+  /// Sends a password reset email.
+  Future<void> forgotPassword({
+    required String email,
+    String? redirectTo,
+  }) async {
+    await _post('/api/auth/forget-password', {
+      'email': email,
+      if (redirectTo != null) 'redirectTo': redirectTo,
+    });
+  }
+
+  /// Resets the password using a token from the reset email.
+  Future<void> resetPassword({
+    required String token,
+    required String newPassword,
+  }) async {
+    await _post('/api/auth/reset-password', {
+      'token': token,
+      'newPassword': newPassword,
+    });
+  }
+
+  /// Sends a magic link email.
+  Future<void> sendMagicLink({
+    required String email,
+    String? callbackURL,
+  }) async {
+    await _post('/api/auth/magic-link/send-magic-link', {
+      'email': email,
+      if (callbackURL != null) 'callbackURL': callbackURL,
+    });
+  }
+
+  /// Verifies a magic link token and returns a session.
+  Future<BetterAuthSession> verifyMagicLink({
+    required String token,
+  }) async {
+    final uri = Uri.parse('$_siteUrl/api/auth/magic-link/verify').replace(
+      queryParameters: {'token': token},
+    );
+    final response = await _http.get(uri);
+
+    if (response.statusCode != 200) {
+      String detail = '';
+      try {
+        final body = jsonDecode(response.body) as Map<String, dynamic>;
+        final message = body['message'] as String?;
+        if (message != null && message.isNotEmpty) {
+          detail = ': $message';
+        }
+      } catch (_) {}
+      throw StateError(
+        'Magic link verification failed '
+        '(status ${response.statusCode})$detail',
+      );
+    }
+
+    final sessionToken = _extractSessionToken(response);
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    final user = body['user'] as Map<String, dynamic>?;
+
+    final cookieJwt = _extractCookieValue(response, 'better-auth.convex_jwt');
+    if (cookieJwt != null) {
+      return BetterAuthSession(
+        token: cookieJwt,
+        sessionToken: sessionToken,
+        userId: (user?['id'] as String?) ?? '',
+        email: (user?['email'] as String?) ?? '',
+        name: user?['name'] as String?,
+      );
+    }
+
+    final convexJwt = await _fetchConvexToken(sessionToken);
+    return BetterAuthSession(
+      token: convexJwt,
+      sessionToken: sessionToken,
+      userId: (user?['id'] as String?) ?? '',
+      email: (user?['email'] as String?) ?? '',
+      name: user?['name'] as String?,
+    );
+  }
+
   /// Signs out the current session.
   Future<void> signOut({required String sessionToken}) async {
     await _post(
