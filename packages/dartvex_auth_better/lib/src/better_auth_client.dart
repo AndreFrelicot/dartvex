@@ -96,7 +96,7 @@ class BetterAuthClient {
     required String email,
     String? callbackURL,
   }) async {
-    await _post('/api/auth/magic-link/send-magic-link', {
+    await _post('/api/auth/sign-in/magic-link', {
       'email': email,
       if (callbackURL != null) 'callbackURL': callbackURL,
     });
@@ -309,6 +309,7 @@ class BetterAuthClient {
     String? bearerToken,
   }) async {
     final uri = Uri.parse('$_siteUrl$path');
+    print('[Dartvex] POST $uri');
     final headers = <String, String>{
       'Content-Type': 'application/json',
       if (bearerToken != null) 'Authorization': 'Bearer $bearerToken',
@@ -318,6 +319,7 @@ class BetterAuthClient {
       headers: headers,
       body: jsonEncode(body),
     );
+    print('[Dartvex] POST $path → ${response.statusCode} body=${response.body.length > 300 ? '${response.body.substring(0, 300)}...' : response.body}');
 
     if (response.statusCode != 200) {
       String detail = '';
