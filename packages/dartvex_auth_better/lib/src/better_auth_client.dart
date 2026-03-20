@@ -319,7 +319,8 @@ class BetterAuthClient {
       headers: headers,
       body: jsonEncode(body),
     );
-    print('[Dartvex] POST $path → ${response.statusCode} body=${response.body.length > 300 ? '${response.body.substring(0, 300)}...' : response.body}');
+    print(
+        '[Dartvex] POST $path → ${response.statusCode} body=${response.body.length > 300 ? '${response.body.substring(0, 300)}...' : response.body}');
 
     if (response.statusCode != 200) {
       String detail = '';

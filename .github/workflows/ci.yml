@@ -24,7 +24,23 @@ jobs:
             (cd "$dir" && dart pub get 2>/dev/null || flutter pub get 2>/dev/null) || true
           done
       - name: Format check (excluding generated goldens)
-        run: find packages -name '*.dart' -not -path '*/test/goldens/*' -print0 | xargs -0 dart format --set-exit-if-changed
+        run: |
+          for dir in packages/*/; do
+            (
+              cd "$dir"
+              paths=()
+              for candidate in lib test tool bin; do
+                if [ -d "$candidate" ]; then
+                  paths+=("$candidate")
+                fi
+              done
+
+              if [ "${#paths[@]}" -gt 0 ]; then
+                find "${paths[@]}" -path '*/goldens/*' -prune -o -name '*.dart' -print0 \
+                  | xargs -0r dart format --set-exit-if-changed
+              fi
+            )
+          done
 
   analyze:
     name: Analyze
