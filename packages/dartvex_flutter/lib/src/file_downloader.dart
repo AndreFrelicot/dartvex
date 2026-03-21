@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 /// Snapshot of an in-progress file download.
 class ConvexDownloadProgress {
+  /// Creates a download progress snapshot.
   const ConvexDownloadProgress({
     required this.received,
     required this.total,
@@ -42,6 +43,7 @@ typedef ConvexDownloadProgressCallback = void Function(
 /// );
 /// ```
 class ConvexFileDownloader {
+  /// Utility class; use static methods only.
   ConvexFileDownloader._();
 
   /// Downloads the file at [url] and returns its bytes.

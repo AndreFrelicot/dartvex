@@ -9,22 +9,28 @@ void main() async {
     'https://your-app.convex.cloud',
   );
 
-  // 2. Wrap it with the local cache
-  final localClient = ConvexLocalClient(
+  // 2. Create a shared SQLite store for cache + mutation queue.
+  final store = await SqliteLocalStore.open('convex_cache.db');
+
+  // 3. Wrap the remote client with offline storage.
+  final localClient = await ConvexLocalClient.open(
     client: convex,
-    databasePath: 'convex_cache.db', // SQLite file path
+    config: LocalClientConfig(
+      cacheStorage: store,
+      queueStorage: store,
+      disposeRemoteClient: true,
+    ),
   );
 
-  // 3. Query — returns cached data instantly, syncs in background
+  // 4. Query — returns cached data instantly, syncs in background
   final messages = await localClient.query('messages:list');
 
-  // 4. Mutation — applied optimistically, synced when online
-  await localClient.mutation('messages:send', {
+  // 5. Mutation — applied optimistically, synced when online
+  await localClient.mutate('messages:send', {
     'body': 'Hello from offline!',
     'author': 'Alice',
   });
 
-  // 5. Clean up
-  await localClient.close();
-  convex.close();
+  // 6. Clean up
+  await localClient.dispose();
 }

@@ -1,3 +1,6 @@
+/// Pure Dart client APIs for communicating with a Convex deployment.
+library;
+
 export 'src/auth/auth_client.dart' show ConvexAuthClient;
 export 'src/auth/auth_manager.dart' show AuthHandle;
 export 'src/auth/auth_provider.dart' show AuthProvider;

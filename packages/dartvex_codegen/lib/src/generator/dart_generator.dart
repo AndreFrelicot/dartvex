@@ -5,27 +5,38 @@ import '../types/type_mapper.dart';
 import 'imports.dart';
 import 'naming.dart';
 
+/// File header added to every generated Dart binding.
 const generatedFileHeader = '// GENERATED CODE - DO NOT MODIFY BY HAND.';
 
+/// Result of a single code generation pass.
 class GeneratedOutput {
+  /// Creates generated output metadata.
   const GeneratedOutput({
     required this.files,
     required this.warnings,
   });
 
+  /// Generated file contents keyed by relative output path.
   final Map<String, String> files;
+
+  /// Non-fatal warnings emitted while generating types or modules.
   final List<String> warnings;
 }
 
+/// Generates typed Dart API bindings from a Convex function spec.
 class DartGenerator {
+  /// Creates a generator with optional naming overrides and client import path.
   DartGenerator({
     Naming? naming,
     this.clientImport = 'package:dartvex/dartvex.dart',
   }) : _naming = naming ?? const Naming();
 
   final Naming _naming;
+
+  /// The import used for the generated runtime client dependency in modules.
   final String clientImport;
 
+  /// Generates the runtime, API modules, and schema types for [spec].
   GeneratedOutput generate(FunctionsSpec spec) {
     final warnings = <String>[];
     final root = _buildTree(spec);

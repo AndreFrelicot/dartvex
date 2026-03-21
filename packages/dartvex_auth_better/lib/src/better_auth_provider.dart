@@ -20,12 +20,18 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
 
   /// Set credentials before calling [login].
   String? email;
+
+  /// Password paired with [email] for future [login] calls.
   String? password;
 
   @override
+
+  /// Extracts the Convex JWT from a Better Auth session.
   String extractIdToken(BetterAuthSession authResult) => authResult.token;
 
   @override
+
+  /// Signs in with the configured [email] and [password].
   Future<BetterAuthSession> login({
     required void Function(String? token) onIdToken,
   }) async {
@@ -44,6 +50,8 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
   }
 
   @override
+
+  /// Restores a Better Auth session from the cached session token.
   Future<BetterAuthSession> loginFromCache({
     required void Function(String? token) onIdToken,
   }) async {
@@ -62,6 +70,8 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
   }
 
   @override
+
+  /// Signs out the current Better Auth session and clears cached state.
   Future<void> logout() async {
     final sessionToken = _sessionToken;
     if (sessionToken != null) {

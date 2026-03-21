@@ -1,7 +1,9 @@
 import 'package:dartvex/dartvex.dart';
 import 'package:flutter/widgets.dart';
 
+/// Inherited widget that provides a [ConvexAuthClient] to auth widgets.
 class ConvexAuthProvider<TUser> extends StatefulWidget {
+  /// Creates a [ConvexAuthProvider].
   const ConvexAuthProvider({
     super.key,
     required this.client,
@@ -9,10 +11,16 @@ class ConvexAuthProvider<TUser> extends StatefulWidget {
     this.disposeClient = false,
   });
 
+  /// Auth client exposed to the widget subtree.
   final ConvexAuthClient<TUser> client;
+
+  /// Child widget subtree.
   final Widget child;
+
+  /// Whether the provider should dispose [client] automatically.
   final bool disposeClient;
 
+  /// Returns the nearest matching [ConvexAuthClient] from the widget tree.
   static ConvexAuthClient<TUser> of<TUser>(BuildContext context) {
     final scope = context
         .dependOnInheritedWidgetOfExactType<_ConvexAuthProviderScope<TUser>>();
@@ -26,6 +34,7 @@ class ConvexAuthProvider<TUser> extends StatefulWidget {
     return scope.client;
   }
 
+  /// Returns the nearest matching [ConvexAuthClient], or `null` if absent.
   static ConvexAuthClient<TUser>? maybeOf<TUser>(BuildContext context) {
     final scope = context
         .dependOnInheritedWidgetOfExactType<_ConvexAuthProviderScope<TUser>>();

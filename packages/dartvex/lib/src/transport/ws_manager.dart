@@ -6,16 +6,26 @@ import '../protocol/messages.dart';
 import 'package:uuid/uuid.dart';
 import 'ws_interface.dart';
 
+/// Builds the initial messages to send once the socket connects.
 typedef ConnectedMessageBuilder = FutureOr<List<ClientMessage>> Function();
+
+/// Handles a decoded server message and returns any outgoing responses.
 typedef ServerMessageHandler = FutureOr<List<ClientMessage>> Function(
     ServerMessage message);
+
+/// Called when the socket disconnects.
 typedef DisconnectHandler = FutureOr<void> Function(String reason);
+
+/// Reports low-level socket connection state.
 typedef ConnectionStateHandler = void Function(
     bool connected, bool reconnecting);
+
+/// Returns the maximum timestamp observed by the client.
 typedef TimestampGetter = String? Function();
 
 /// Performance metrics for a received Transition message.
 class TransitionMetrics {
+  /// Creates transition performance metrics.
   const TransitionMetrics({
     required this.transitTimeMs,
     required this.messageSizeBytes,
@@ -40,7 +50,9 @@ class TransitionMetrics {
 /// Callback type for transition performance monitoring.
 typedef TransitionMetricsCallback = void Function(TransitionMetrics metrics);
 
+/// Manages the WebSocket lifecycle, reconnects, and message dispatch.
 class WebSocketManager {
+  /// Creates a WebSocket manager.
   WebSocketManager({
     required this.adapter,
     required this.deploymentUrl,
@@ -57,18 +69,43 @@ class WebSocketManager {
     this.logger,
   });
 
+  /// WebSocket adapter used for network I/O.
   final WebSocketAdapter adapter;
+
+  /// Base Convex deployment URL.
   final String deploymentUrl;
+
+  /// Sync API version path segment.
   final String apiVersion;
+
+  /// Callback invoked after a successful connection.
   final ConnectedMessageBuilder onConnected;
+
+  /// Callback invoked for each decoded server message.
   final ServerMessageHandler onMessage;
+
+  /// Callback invoked when the socket disconnects.
   final DisconnectHandler onDisconnected;
+
+  /// Callback used to publish connection state changes.
   final ConnectionStateHandler onConnectionStateChanged;
+
+  /// Getter for the highest timestamp observed so far.
   final TimestampGetter maxObservedTimestamp;
+
+  /// Backoff schedule used for reconnects.
   final List<Duration> reconnectBackoff;
+
+  /// Maximum idle duration before forcing a reconnect.
   final Duration inactivityTimeout;
+
+  /// Optional callback that receives transition performance metrics.
   final TransitionMetricsCallback? onTransitionMetrics;
+
+  /// Minimum log level emitted by the manager.
   final DartvexLogLevel logLevel;
+
+  /// Structured log sink.
   final DartvexLogger? logger;
 
   final Map<String, _TransitionChunkBuffer> _chunkBuffers =
@@ -86,14 +123,17 @@ class WebSocketManager {
   int _reconnectIndex = 0;
   String _lastCloseReason = 'InitialConnect';
 
+  /// Whether the socket adapter is currently connected.
   bool get isConnected => adapter.isConnected;
 
+  /// Starts the WebSocket lifecycle.
   Future<void> start() async {
     _attachListeners();
     _log(DartvexLogLevel.debug, 'Starting WebSocket manager');
     await _connect();
   }
 
+  /// Sends a batch of client protocol [messages] if connected.
   Future<void> sendMessages(List<ClientMessage> messages) async {
     if (!adapter.isConnected) {
       return;
@@ -103,6 +143,7 @@ class WebSocketManager {
     }
   }
 
+  /// Forces a reconnect using [reason] as the last close reason.
   Future<void> reconnectNow(String reason) async {
     _lastCloseReason = reason;
     _log(
@@ -117,6 +158,7 @@ class WebSocketManager {
     _scheduleReconnect(immediate: true);
   }
 
+  /// Disposes timers, subscriptions, and the underlying socket.
   Future<void> dispose() async {
     _disposed = true;
     _log(DartvexLogLevel.debug, 'Disposing WebSocket manager');

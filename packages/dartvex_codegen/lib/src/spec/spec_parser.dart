@@ -2,25 +2,36 @@ import 'dart:convert';
 
 import 'function_spec.dart';
 
+/// Raised when a Convex function spec cannot be parsed or validated.
 class SpecParserException implements FormatException {
+  /// Creates a parser exception with optional source metadata.
   SpecParserException(this.message, {this.source, this.offset});
 
   @override
+
+  /// A human-readable parse failure message.
   final String message;
 
   @override
+
+  /// The original source object associated with the parse failure, if any.
   final Object? source;
 
   @override
+
+  /// The character offset of the failure, if known.
   final int? offset;
 
   @override
   String toString() => message;
 }
 
+/// Parses the JSON emitted by `convex function-spec`.
 class SpecParser {
+  /// Creates a spec parser.
   const SpecParser();
 
+  /// Parses a JSON string into a [FunctionsSpec].
   FunctionsSpec parseString(String jsonSource) {
     final decoded = jsonDecode(jsonSource);
     if (decoded is! Map<String, dynamic>) {
@@ -29,6 +40,7 @@ class SpecParser {
     return parseMap(decoded);
   }
 
+  /// Parses a decoded JSON object into a [FunctionsSpec].
   FunctionsSpec parseMap(Map<String, dynamic> map) {
     final url = _readString(map, 'url');
     final rawFunctions = _readList(map, 'functions');

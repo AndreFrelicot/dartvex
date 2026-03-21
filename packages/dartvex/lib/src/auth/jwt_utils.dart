@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+/// Decodes the payload section of a JWT into a JSON object.
 Map<String, dynamic> decodeJwtPayload(String token) {
   final parts = token.split('.');
   if (parts.length < 2) {
@@ -14,10 +15,12 @@ Map<String, dynamic> decodeJwtPayload(String token) {
   return json;
 }
 
+/// Returns the JWT expiration (`exp`) claim, if present.
 int? jwtExp(String token) {
   return decodeJwtPayload(token)['exp'] as int?;
 }
 
+/// Returns the JWT issued-at (`iat`) claim, if present.
 int? jwtIat(String token) {
   return decodeJwtPayload(token)['iat'] as int?;
 }

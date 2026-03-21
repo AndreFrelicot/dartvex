@@ -7,10 +7,13 @@ import 'provider.dart';
 import 'runtime_client.dart';
 import 'snapshot.dart';
 
+/// Builder callback for [ConvexQuery].
 typedef ConvexQueryWidgetBuilder<T> = Widget Function(
     BuildContext context, ConvexQuerySnapshot<T> snapshot);
 
+/// Widget that subscribes to a Convex query and rebuilds from its snapshot.
 class ConvexQuery<T> extends StatefulWidget {
+  /// Creates a [ConvexQuery].
   const ConvexQuery({
     super.key,
     required this.query,
@@ -20,10 +23,19 @@ class ConvexQuery<T> extends StatefulWidget {
     this.client,
   });
 
+  /// Convex query name to subscribe to.
   final String query;
+
+  /// Query arguments passed to the runtime client.
   final Map<String, dynamic> args;
+
+  /// Optional decoder for the raw query result.
   final ConvexDecoder<T>? decode;
+
+  /// Optional runtime client override.
   final ConvexRuntimeClient? client;
+
+  /// Builder that receives the latest query snapshot.
   final ConvexQueryWidgetBuilder<T> builder;
 
   @override

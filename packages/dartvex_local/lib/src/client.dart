@@ -9,20 +9,57 @@ import 'query_key.dart';
 import 'runtime/convex_remote_client.dart';
 import 'value_codec.dart';
 
-enum LocalNetworkMode { auto, offline }
+/// Controls whether the local client may reach the remote backend.
+enum LocalNetworkMode {
+  /// Use the remote backend when available and replay queued mutations.
+  auto,
 
-enum LocalConnectionState { online, offline, syncing }
+  /// Force the client to use only local cache and queue state.
+  offline,
+}
 
-enum LocalQuerySource { remote, cache, unknown }
+/// High-level connectivity state exposed by [ConvexLocalClient].
+enum LocalConnectionState {
+  /// The client is online and serving remote traffic normally.
+  online,
 
-enum PendingMutationStatus { pending, replaying }
+  /// The client is fully offline.
+  offline,
 
+  /// The client is replaying queued mutations to catch up with the backend.
+  syncing,
+}
+
+/// Indicates where a query result originated.
+enum LocalQuerySource {
+  /// The value came from the remote backend.
+  remote,
+
+  /// The value came from the local cache.
+  cache,
+
+  /// The source could not be determined.
+  unknown,
+}
+
+/// Status of a mutation stored in the offline replay queue.
+enum PendingMutationStatus {
+  /// The mutation is waiting to be replayed.
+  pending,
+
+  /// The mutation is currently being replayed.
+  replaying,
+}
+
+/// Converts [PendingMutationStatus] values to and from their wire names.
 extension PendingMutationStatusName on PendingMutationStatus {
+  /// The persisted wire representation for this status.
   String get wireName => switch (this) {
         PendingMutationStatus.pending => 'pending',
         PendingMutationStatus.replaying => 'replaying',
       };
 
+  /// Parses a persisted wire [value] into a status.
   static PendingMutationStatus fromWireName(String value) {
     return switch (value) {
       'pending' => PendingMutationStatus.pending,
@@ -32,80 +69,128 @@ extension PendingMutationStatusName on PendingMutationStatus {
   }
 }
 
-enum LocalRemoteConnectionState { connected, connecting, disconnected }
+/// Connection state exposed by a [LocalRemoteClient].
+enum LocalRemoteConnectionState {
+  /// The remote connection is established.
+  connected,
 
+  /// The remote client is connecting or reconnecting.
+  connecting,
+
+  /// The remote client is disconnected.
+  disconnected,
+}
+
+/// Base class for events emitted by a [LocalRemoteSubscription].
 sealed class LocalRemoteQueryEvent {
+  /// Creates a remote query event.
   const LocalRemoteQueryEvent();
 }
 
+/// Remote query event containing a successful result value.
 class LocalRemoteQuerySuccess extends LocalRemoteQueryEvent {
+  /// Creates a successful remote query event.
   const LocalRemoteQuerySuccess(this.value);
 
+  /// The returned query value.
   final dynamic value;
 }
 
+/// Remote query event containing a query error.
 class LocalRemoteQueryError extends LocalRemoteQueryEvent {
+  /// Creates a failed remote query event.
   const LocalRemoteQueryError(this.error);
 
+  /// The reported error.
   final Object error;
 }
 
+/// Handle for a subscription maintained by a [LocalRemoteClient].
 abstract class LocalRemoteSubscription {
+  /// Creates a remote subscription handle.
+  LocalRemoteSubscription();
+
+  /// Stream of remote query events.
   Stream<LocalRemoteQueryEvent> get stream;
 
+  /// Cancels the remote subscription.
   void cancel();
 }
 
+/// Remote client abstraction used by [ConvexLocalClient].
 abstract class LocalRemoteClient {
+  /// Creates a remote client abstraction.
+  LocalRemoteClient();
+
+  /// Executes a query against the remote backend.
   Future<dynamic> query(String name, [Map<String, dynamic> args = const {}]);
 
+  /// Subscribes to a remote query.
   LocalRemoteSubscription subscribe(
     String name, [
     Map<String, dynamic> args = const {},
   ]);
 
+  /// Executes a mutation against the remote backend.
   Future<dynamic> mutate(String name, [Map<String, dynamic> args = const {}]);
 
+  /// Executes an action against the remote backend.
   Future<dynamic> action(String name, [Map<String, dynamic> args = const {}]);
 
+  /// Broadcasts remote connection state changes.
   Stream<LocalRemoteConnectionState> get connectionState;
 
+  /// The current connection state of the remote client.
   LocalRemoteConnectionState get currentConnectionState;
 
+  /// Releases resources held by the remote client.
   void dispose();
 }
 
+/// Base class for events emitted by a [LocalSubscription].
 sealed class LocalQueryEvent {
+  /// Creates a local query event.
   const LocalQueryEvent({
     required this.source,
     required this.hasPendingWrites,
   });
 
+  /// Where the value or error originated.
   final LocalQuerySource source;
+
+  /// Whether optimistic writes are currently pending for the query.
   final bool hasPendingWrites;
 }
 
+/// Local query event containing a successful result value.
 class LocalQuerySuccess extends LocalQueryEvent {
+  /// Creates a successful query event.
   const LocalQuerySuccess(
     this.value, {
     required super.source,
     required super.hasPendingWrites,
   });
 
+  /// The returned query value.
   final dynamic value;
 }
 
+/// Local query event containing an error.
 class LocalQueryError extends LocalQueryEvent {
+  /// Creates a failed query event.
   const LocalQueryError(
     this.error, {
     required super.source,
     required super.hasPendingWrites,
   });
 
+  /// The reported error.
   final Object error;
 }
 
+/// Handle for a subscription created by [ConvexLocalClient.subscribe].
 class LocalSubscription {
+  /// Creates a local subscription wrapper.
   LocalSubscription({
     required Stream<LocalQueryEvent> stream,
     required Future<void> Function() onCancel,
@@ -115,40 +200,57 @@ class LocalSubscription {
   final Stream<LocalQueryEvent> _stream;
   final Future<void> Function() _onCancel;
 
+  /// The stream of local query events.
   Stream<LocalQueryEvent> get stream => _stream;
 
+  /// Cancels the subscription asynchronously.
   void cancel() {
     unawaited(_onCancel());
   }
 }
 
+/// Base class for mutation results returned by [ConvexLocalClient.mutate].
 sealed class LocalMutationResult {
+  /// Creates a mutation result.
   const LocalMutationResult();
 }
 
+/// Mutation result produced when the mutation succeeds immediately.
 class LocalMutationSuccess extends LocalMutationResult {
+  /// Creates an immediate mutation success result.
   const LocalMutationSuccess(this.value);
 
+  /// The returned mutation value.
   final dynamic value;
 }
 
+/// Mutation result produced when the mutation is queued offline.
 class LocalMutationQueued extends LocalMutationResult {
+  /// Creates a queued mutation result.
   const LocalMutationQueued({
     required this.queuePosition,
     required this.pendingMutation,
   });
 
+  /// The 1-based position of the queued mutation.
   final int queuePosition;
+
+  /// The queued mutation metadata.
   final PendingMutation pendingMutation;
 }
 
+/// Mutation result produced when the mutation fails and cannot be queued.
 class LocalMutationFailed extends LocalMutationResult {
+  /// Creates a failed mutation result.
   const LocalMutationFailed(this.error);
 
+  /// The reported error.
   final Object error;
 }
 
+/// Metadata for a mutation currently stored in the replay queue.
 class PendingMutation {
+  /// Creates a pending mutation entry.
   const PendingMutation({
     required this.id,
     required this.mutationName,
@@ -159,14 +261,28 @@ class PendingMutation {
     this.errorMessage,
   });
 
+  /// Storage-assigned identifier for the mutation.
   final int id;
+
+  /// Canonical mutation name to replay remotely.
   final String mutationName;
+
+  /// Decoded mutation arguments.
   final Map<String, dynamic> args;
+
+  /// Optional optimistic metadata used to refresh affected queries.
   final Map<String, dynamic>? optimisticData;
+
+  /// UTC time when the mutation was originally queued.
   final DateTime createdAt;
+
+  /// Current replay status for the mutation.
   final PendingMutationStatus status;
+
+  /// Optional replay failure message.
   final String? errorMessage;
 
+  /// Returns a copy with selected queue fields replaced.
   PendingMutation copyWith({
     PendingMutationStatus? status,
     String? errorMessage,
@@ -183,7 +299,9 @@ class PendingMutation {
   }
 }
 
+/// Conflict reported when a queued mutation fails permanently during replay.
 class LocalMutationConflict {
+  /// Creates a mutation conflict payload.
   const LocalMutationConflict({
     required this.mutationName,
     required this.args,
@@ -191,21 +309,35 @@ class LocalMutationConflict {
     required this.queuedAt,
   });
 
+  /// Canonical mutation name that failed.
   final String mutationName;
+
+  /// Decoded mutation arguments.
   final Map<String, dynamic> args;
+
+  /// The replay failure that caused the conflict.
   final Object error;
+
+  /// UTC time when the mutation was originally queued.
   final DateTime queuedAt;
 }
 
+/// Canonical identifier for a query plus its arguments.
 class LocalQueryDescriptor {
+  /// Creates a local query descriptor.
   const LocalQueryDescriptor(this.name,
       [this.args = const <String, dynamic>{}]);
 
+  /// Canonical query name.
   final String name;
+
+  /// Query arguments used for caching and subscriptions.
   final Map<String, dynamic> args;
 
+  /// Deterministic key used to index cache and subscription state.
   String get key => serializeQueryKey(name, args);
 
+  /// Serializes this descriptor into JSON.
   Map<String, dynamic> toJson() {
     return <String, dynamic>{
       'name': name,
@@ -213,6 +345,7 @@ class LocalQueryDescriptor {
     };
   }
 
+  /// Reconstructs a descriptor from serialized JSON.
   static LocalQueryDescriptor fromJson(Map<String, dynamic> json) {
     final rawArgs = json['args'];
     return LocalQueryDescriptor(
@@ -224,38 +357,54 @@ class LocalQueryDescriptor {
   }
 }
 
+/// Metadata describing a queued optimistic mutation operation.
 class LocalMutationContext {
+  /// Creates a mutation context.
   const LocalMutationContext({
     required this.operationId,
     required this.queuedAt,
   });
 
+  /// Unique local operation identifier.
   final String operationId;
+
+  /// UTC time when the mutation was queued.
   final DateTime queuedAt;
 }
 
+/// Optimistic patch to apply to a cached query result.
 class LocalMutationPatch {
+  /// Creates an optimistic cache patch.
   const LocalMutationPatch({
     required this.target,
     required this.apply,
   });
 
+  /// The query targeted by the patch.
   final LocalQueryDescriptor target;
+
+  /// Function that produces the patched value from the current cached value.
   final dynamic Function(dynamic currentValue) apply;
 }
 
+/// Strategy for generating optimistic patches for a mutation.
 abstract class LocalMutationHandler {
+  /// Creates a mutation handler.
   const LocalMutationHandler();
 
+  /// Name of the mutation handled by this strategy.
   String get mutationName;
 
+  /// Builds optimistic patches for [args] and the current [context].
   List<LocalMutationPatch> buildPatches(
     Map<String, dynamic> args,
     LocalMutationContext context,
   );
 }
 
+/// Configuration for constructing a [ConvexLocalClient].
 class LocalClientConfig {
+  /// Creates a local client configuration.
   const LocalClientConfig({
     required this.cacheStorage,
     required this.queueStorage,
@@ -265,14 +414,26 @@ class LocalClientConfig {
     this.disposeRemoteClient = false,
   });
 
+  /// Storage used for cached query results.
   final CacheStorage cacheStorage;
+
+  /// Storage used for queued offline mutations.
   final QueueStorage queueStorage;
+
+  /// Codec used for cache and queue persistence.
   final ValueCodec valueCodec;
+
+  /// Mutation handlers that generate optimistic patches.
   final List<LocalMutationHandler> mutationHandlers;
+
+  /// Initial network mode applied when the client opens.
   final LocalNetworkMode initialNetworkMode;
+
+  /// Whether a wrapped remote client should be disposed automatically.
   final bool disposeRemoteClient;
 }
 
+/// Offline-first client that layers cache and mutation replay onto Dartvex.
 class ConvexLocalClient {
   ConvexLocalClient._(
     this._remoteClient,
@@ -283,6 +444,7 @@ class ConvexLocalClient {
         _currentConnectionState = LocalConnectionState.online,
         _lastRemoteConnectionState = _remoteClient.currentConnectionState;
 
+  /// Opens a local client backed by a [ConvexClient].
   static Future<ConvexLocalClient> open({
     required ConvexClient client,
     required LocalClientConfig config,
@@ -296,6 +458,7 @@ class ConvexLocalClient {
     );
   }
 
+  /// Opens a local client with a custom [LocalRemoteClient] implementation.
   static Future<ConvexLocalClient> openWithRemote({
     required LocalRemoteClient remoteClient,
     required LocalClientConfig config,
@@ -352,21 +515,28 @@ class ConvexLocalClient {
   int _nextSubscriptionId = 0;
   int _operationCounter = 0;
 
+  /// Callback invoked when replay drops a permanently failed queued mutation.
   void Function(LocalMutationConflict conflict)? onConflict;
 
+  /// Broadcasts high-level connectivity state changes.
   Stream<LocalConnectionState> get connectionState =>
       _connectionStateController.stream;
 
+  /// Broadcasts [LocalNetworkMode] changes.
   Stream<LocalNetworkMode> get networkModeStream =>
       _networkModeController.stream;
 
+  /// Broadcasts the current ordered list of queued mutations.
   Stream<List<PendingMutation>> get pendingMutations =>
       _pendingMutationsController.stream;
 
+  /// The current high-level connectivity state.
   LocalConnectionState get currentConnectionState => _currentConnectionState;
 
+  /// The current network mode.
   LocalNetworkMode get currentNetworkMode => _networkMode;
 
+  /// Snapshot of the currently queued mutations.
   List<PendingMutation> get currentPendingMutations =>
       List<PendingMutation>.unmodifiable(_pendingMutations);
 
@@ -387,6 +557,7 @@ class ConvexLocalClient {
     unawaited(_startReplayIfPossible());
   }
 
+  /// Executes a query, falling back to cache when possible.
   Future<dynamic> query(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
@@ -416,6 +587,7 @@ class ConvexLocalClient {
     }
   }
 
+  /// Subscribes to a query with cache seeding and optional remote updates.
   LocalSubscription subscribe(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
@@ -449,6 +621,7 @@ class ConvexLocalClient {
     );
   }
 
+  /// Executes a mutation immediately or queues it for offline replay.
   Future<LocalMutationResult> mutate(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
@@ -507,6 +680,7 @@ class ConvexLocalClient {
     );
   }
 
+  /// Executes an action against the remote backend.
   Future<dynamic> action(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
@@ -520,6 +694,7 @@ class ConvexLocalClient {
     return _remoteClient.action(name, args);
   }
 
+  /// Updates the active network mode.
   Future<void> setNetworkMode(LocalNetworkMode mode) async {
     _assertNotDisposed();
     if (_networkMode == mode) {
@@ -545,11 +720,13 @@ class ConvexLocalClient {
     _updateConnectionState();
   }
 
+  /// Clears all locally cached query results.
   Future<void> clearCache() async {
     _assertNotDisposed();
     await _queryCache.clear();
   }
 
+  /// Clears the offline mutation queue and resets pending write state.
   Future<void> clearQueue() async {
     _assertNotDisposed();
     await _mutationQueue.clear();
@@ -1077,6 +1254,7 @@ class ConvexLocalClient {
     }
   }
 
+  /// Disposes subscriptions, storage, and the remote client.
   Future<void> dispose() async {
     if (_disposed) {
       return;

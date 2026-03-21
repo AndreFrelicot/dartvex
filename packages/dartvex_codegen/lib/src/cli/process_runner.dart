@@ -1,27 +1,42 @@
 import 'dart:convert';
 import 'dart:io';
 
+/// Thrown when the external Convex CLI cannot be executed successfully.
 class ProcessRunnerException implements Exception {
+  /// Creates a process runner failure with optional captured output.
   ProcessRunnerException(this.message, {this.stdout, this.stderr});
 
+  /// Human-readable failure details.
   final String message;
+
+  /// Captured standard output, when available.
   final String? stdout;
+
+  /// Captured standard error, when available.
   final String? stderr;
 
   @override
   String toString() => message;
 }
 
+/// Abstraction for obtaining a Convex function spec from an external process.
 abstract class ProcessRunner {
+  /// Creates a process runner.
+  ProcessRunner();
+
+  /// Runs the function-spec command in [projectDirectory].
   Future<String> runFunctionSpec({
     required String projectDirectory,
     required bool verbose,
   });
 }
 
+/// Default [ProcessRunner] that shells out to the Convex CLI.
 class SystemProcessRunner implements ProcessRunner {
+  /// Creates a system-backed process runner.
   const SystemProcessRunner();
 
+  /// Candidate commands tried when invoking `convex function-spec`.
   static const List<List<String>> _candidates = <List<String>>[
     <String>['convex', 'function-spec'],
     <String>['npx', 'convex', 'function-spec'],
@@ -31,6 +46,8 @@ class SystemProcessRunner implements ProcessRunner {
   ];
 
   @override
+
+  /// Executes `convex function-spec` using the first available CLI candidate.
   Future<String> runFunctionSpec({
     required String projectDirectory,
     required bool verbose,

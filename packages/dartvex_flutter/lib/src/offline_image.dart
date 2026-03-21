@@ -27,6 +27,7 @@ import 'asset_cache.dart';
 /// )
 /// ```
 class ConvexOfflineImage extends StatefulWidget {
+  /// Creates a [ConvexOfflineImage].
   const ConvexOfflineImage({
     super.key,
     required this.cacheKey,
@@ -139,6 +140,7 @@ class _ConvexOfflineImageState extends State<ConvexOfflineImage> {
 
 /// Snapshot of an asset loading operation.
 class ConvexAssetSnapshot {
+  /// Creates an asset snapshot.
   const ConvexAssetSnapshot({
     this.file,
     this.error,
@@ -147,6 +149,7 @@ class ConvexAssetSnapshot {
     this.isCached = false,
   });
 
+  /// Creates a loading snapshot with no file or error.
   const ConvexAssetSnapshot.loading()
       : file = null,
         error = null,

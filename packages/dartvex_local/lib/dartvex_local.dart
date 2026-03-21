@@ -1,3 +1,6 @@
+/// Offline-first extensions for Dartvex with local caching and mutation replay.
+library;
+
 export 'src/cache/cache_storage.dart'
     show CacheStorage, StoredCacheEntry, CachedQueryEntry;
 export 'src/cache/query_cache.dart' show QueryCache;

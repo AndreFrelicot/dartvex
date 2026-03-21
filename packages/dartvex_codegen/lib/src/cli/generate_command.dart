@@ -10,6 +10,7 @@ import '../spec/spec_parser.dart';
 import 'config.dart';
 import 'process_runner.dart';
 
+/// Runs the Dartvex code generator command-line entrypoint.
 Future<int> runConvexCodegen(
   List<String> args, {
   ProcessRunner? processRunner,
@@ -23,7 +24,9 @@ Future<int> runConvexCodegen(
   ).run(args);
 }
 
+/// Coordinates argument parsing, spec loading, and file generation.
 class GenerateCommand {
+  /// Creates a [GenerateCommand] with injectable process, file, and log handlers.
   GenerateCommand({
     required ProcessRunner processRunner,
     required FileEmitter fileEmitter,
@@ -36,6 +39,7 @@ class GenerateCommand {
   final FileEmitter _fileEmitter;
   final void Function(String message) _log;
 
+  /// Builds the CLI parser for the `generate` subcommand.
   static ArgParser buildParser() {
     return ArgParser()
       ..addFlag('help', abbr: 'h', negatable: false)
@@ -51,6 +55,7 @@ class GenerateCommand {
       ..addFlag('verbose', negatable: false);
   }
 
+  /// Executes the generator command for the provided CLI [args].
   Future<int> run(List<String> args) async {
     if (args.isEmpty) {
       _printUsage();

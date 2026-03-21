@@ -2,7 +2,9 @@ import 'package:flutter/widgets.dart';
 
 import 'runtime_client.dart';
 
+/// Inherited widget that provides a [ConvexRuntimeClient] to descendant widgets.
 class ConvexProvider extends StatefulWidget {
+  /// Creates a [ConvexProvider].
   const ConvexProvider({
     super.key,
     required this.client,
@@ -10,10 +12,16 @@ class ConvexProvider extends StatefulWidget {
     this.disposeClient = false,
   });
 
+  /// Runtime client exposed to the widget subtree.
   final ConvexRuntimeClient client;
+
+  /// Child widget subtree.
   final Widget child;
+
+  /// Whether the provider should dispose [client] automatically.
   final bool disposeClient;
 
+  /// Returns the nearest [ConvexRuntimeClient] from the widget tree.
   static ConvexRuntimeClient of(BuildContext context) {
     final scope =
         context.dependOnInheritedWidgetOfExactType<_ConvexProviderScope>();
@@ -26,6 +34,7 @@ class ConvexProvider extends StatefulWidget {
     return scope.client;
   }
 
+  /// Returns the nearest [ConvexRuntimeClient], or `null` if absent.
   static ConvexRuntimeClient? maybeOf(BuildContext context) {
     final scope =
         context.dependOnInheritedWidgetOfExactType<_ConvexProviderScope>();

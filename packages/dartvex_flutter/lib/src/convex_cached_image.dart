@@ -11,6 +11,7 @@ import 'runtime_client.dart';
 /// Unlike [ConvexImage], this widget persists assets to disk via
 /// [ConvexAssetCache] using the stable [storageId] as cache key.
 class ConvexCachedImage extends StatefulWidget {
+  /// Creates a [ConvexCachedImage].
   const ConvexCachedImage({
     super.key,
     required this.storageId,
@@ -25,15 +26,34 @@ class ConvexCachedImage extends StatefulWidget {
     this.height,
   });
 
+  /// Stable cache key and storage identifier for the asset.
   final String storageId;
+
+  /// Convex query or action that resolves the signed download URL.
   final String getUrlAction;
+
+  /// Optional cache override. Defaults to [ConvexAssetCache.shared].
   final ConvexAssetCache? cache;
+
+  /// Optional runtime client override.
   final ConvexRuntimeClient? client;
+
+  /// Widget shown while the image is loading.
   final Widget? placeholder;
+
+  /// Widget shown when the image fails to load.
   final Widget? errorWidget;
+
+  /// Optional custom builder for the resolved [ImageProvider].
   final Widget Function(BuildContext context, ImageProvider image)? builder;
+
+  /// How the image should be inscribed into the space.
   final BoxFit? fit;
+
+  /// Width constraint for the image.
   final double? width;
+
+  /// Height constraint for the image.
   final double? height;
 
   @override

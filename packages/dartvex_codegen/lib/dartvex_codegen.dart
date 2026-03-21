@@ -1,3 +1,6 @@
+/// Code generation APIs for producing typed Dart bindings from Convex specs.
+library;
+
 export 'src/cli/config.dart';
 export 'src/cli/generate_command.dart' show GenerateCommand, runConvexCodegen;
 export 'src/cli/process_runner.dart';

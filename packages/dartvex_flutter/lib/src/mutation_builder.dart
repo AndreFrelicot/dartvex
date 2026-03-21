@@ -6,13 +6,16 @@ import 'provider.dart';
 import 'runtime_client.dart';
 import 'snapshot.dart';
 
+/// Builder callback for [ConvexMutation].
 typedef ConvexMutationBuilder<T> = Widget Function(
   BuildContext context,
   ConvexRequestExecutor<T> mutate,
   ConvexRequestSnapshot<T> snapshot,
 );
 
+/// Widget that exposes an imperative Convex mutation and request snapshot.
 class ConvexMutation<T> extends StatefulWidget {
+  /// Creates a [ConvexMutation].
   const ConvexMutation({
     super.key,
     required this.mutation,
@@ -21,9 +24,16 @@ class ConvexMutation<T> extends StatefulWidget {
     this.client,
   });
 
+  /// Convex mutation name to invoke.
   final String mutation;
+
+  /// Optional decoder for the raw mutation result.
   final ConvexDecoder<T>? decode;
+
+  /// Optional runtime client override.
   final ConvexRuntimeClient? client;
+
+  /// Builder that receives the mutate callback and current request snapshot.
   final ConvexMutationBuilder<T> builder;
 
   @override

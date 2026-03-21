@@ -2,7 +2,9 @@ import '../query_key.dart';
 import '../value_codec.dart';
 import 'cache_storage.dart';
 
+/// High-level helper for reading and writing cached query results.
 class QueryCache {
+  /// Creates a query cache backed by [storage] and [codec].
   const QueryCache({
     required CacheStorage storage,
     required ValueCodec codec,
@@ -12,6 +14,7 @@ class QueryCache {
   final CacheStorage _storage;
   final ValueCodec _codec;
 
+  /// Reads and decodes a cached entry for [queryName] and [args].
   Future<CachedQueryEntry?> read(
     String queryName,
     Map<String, dynamic> args,
@@ -33,6 +36,7 @@ class QueryCache {
     );
   }
 
+  /// Writes [value] into the cache for the query identified by [name] and [args].
   Future<void> write({
     required String name,
     required Map<String, dynamic> args,
@@ -50,5 +54,6 @@ class QueryCache {
     );
   }
 
+  /// Clears all cached query results.
   Future<void> clear() => _storage.clearCache();
 }

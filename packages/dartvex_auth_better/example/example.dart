@@ -48,5 +48,5 @@ void main() async {
   // 7. Clean up
   await authProvider.logout();
   authClient.close();
-  convex.close();
+  convex.dispose();
 }

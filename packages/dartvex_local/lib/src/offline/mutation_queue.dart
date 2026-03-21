@@ -2,7 +2,9 @@ import '../client.dart';
 import '../value_codec.dart';
 import 'queue_storage.dart';
 
+/// High-level wrapper around [QueueStorage] that encodes and decodes mutations.
 class MutationQueue {
+  /// Creates a mutation queue backed by [storage] and [codec].
   const MutationQueue({
     required QueueStorage storage,
     required ValueCodec codec,
@@ -12,6 +14,7 @@ class MutationQueue {
   final QueueStorage _storage;
   final ValueCodec _codec;
 
+  /// Enqueues a pending mutation and returns its decoded representation.
   Future<PendingMutation> enqueue({
     required String mutationName,
     required Map<String, dynamic> args,
@@ -28,11 +31,13 @@ class MutationQueue {
     return _toPendingMutation(stored);
   }
 
+  /// Loads all pending mutations from storage.
   Future<List<PendingMutation>> loadAll() async {
     final stored = await _storage.loadAll();
     return stored.map(_toPendingMutation).toList(growable: false);
   }
 
+  /// Updates the replay [status] of the mutation identified by [id].
   Future<void> markStatus(
     int id,
     PendingMutationStatus status, {
@@ -45,18 +50,24 @@ class MutationQueue {
     );
   }
 
+  /// Removes the pending mutation with [id].
   Future<void> remove(int id) => _storage.remove(id);
 
+  /// Clears all queued mutations.
   Future<void> clear() => _storage.clearQueue();
 
+  /// Replaces the queued mutation arguments for [id].
   Future<void> updateArgs(int id, Map<String, dynamic> args) =>
       _storage.updateArgs(id, _codec.encode(args));
 
+  /// Persists a local-to-server document ID mapping.
   Future<void> saveIdRemap(String localId, String serverId) =>
       _storage.saveIdRemap(localId, serverId);
 
+  /// Loads all persisted local-to-server document ID mappings.
   Future<Map<String, String>> loadIdRemaps() => _storage.loadIdRemaps();
 
+  /// Clears all persisted ID mappings.
   Future<void> clearIdRemaps() => _storage.clearIdRemaps();
 
   PendingMutation _toPendingMutation(StoredPendingMutation stored) {

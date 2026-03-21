@@ -2,29 +2,43 @@ import '../generator/naming.dart';
 import '../spec/function_spec.dart';
 import 'dart_type.dart';
 
+/// Renders encode and decode expressions for a generated value.
 typedef ExpressionRenderer = String Function(String expression);
 
+/// Thrown when Convex types cannot be mapped to valid Dart representations.
 class TypeMapperException implements Exception {
+  /// Creates a type-mapping failure.
   TypeMapperException(this.message);
 
+  /// Human-readable failure details.
   final String message;
 
   @override
   String toString() => message;
 }
 
+/// Mutable context shared while rendering generated Dart types.
 class TypeRenderContext {
+  /// Creates a render context with optional naming overrides.
   TypeRenderContext({Naming? naming}) : naming = naming ?? const Naming();
 
+  /// Naming helper used while reserving generated symbols.
   final Naming naming;
+
+  /// Table names referenced by generated ID wrappers.
   final Set<String> tableNames = <String>{};
+
+  /// Non-fatal warnings accumulated during mapping.
   final List<String> warnings = <String>[];
   final Map<String, String> _definitions = <String, String>{};
   final List<String> _definitionOrder = <String>[];
   final Set<String> _reservedTypeNames = <String>{};
   final Map<String, String> _suggestedToReserved = <String, String>{};
+
+  /// Whether the generated file needs `dart:typed_data`.
   bool usesTypedData = false;
 
+  /// Reserves and returns a unique generated type name for [suggestedName].
   String reserveTypeName(String suggestedName) {
     final normalized = naming.typeName(suggestedName);
     final existing = _suggestedToReserved[normalized];
@@ -42,6 +56,7 @@ class TypeRenderContext {
     return candidate;
   }
 
+  /// Registers a generated type/helper definition if it has not been added yet.
   void addDefinition(String name, String code) {
     final existing = _definitions[name];
     if (existing != null) {
@@ -54,30 +69,42 @@ class TypeRenderContext {
     _definitionOrder.add(name);
   }
 
+  /// Renders all accumulated type definitions in insertion order.
   String renderDefinitions() {
     return _definitionOrder.map((name) => _definitions[name]!).join('\n\n');
   }
 }
 
+/// A mapped Dart type plus encode/decode logic for generated bindings.
 class MappedType {
+  /// Creates a mapped type.
   const MappedType({
     required this.dartType,
     required this.encode,
     required this.decode,
   });
 
+  /// The generated Dart type.
   final DartType dartType;
+
+  /// Renderer that converts a Dart expression into a wire expression.
   final ExpressionRenderer encode;
+
+  /// Renderer that converts a wire expression into a Dart expression.
   final ExpressionRenderer decode;
 
+  /// Convenience accessor for the wrapped type annotation string.
   String get annotation => dartType.annotation;
 }
 
+/// Converts Convex schema types into generated Dart types and codecs.
 class TypeMapper {
+  /// Creates a type mapper with optional naming overrides.
   TypeMapper({Naming? naming}) : _naming = naming ?? const Naming();
 
   final Naming _naming;
 
+  /// Maps a Convex [type] into Dart using [suggestedName] within [context].
   MappedType mapType(
     ConvexType type, {
     required String suggestedName,

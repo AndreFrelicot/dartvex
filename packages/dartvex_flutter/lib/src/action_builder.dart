@@ -6,13 +6,16 @@ import 'provider.dart';
 import 'runtime_client.dart';
 import 'snapshot.dart';
 
+/// Builder callback for [ConvexAction].
 typedef ConvexActionBuilder<T> = Widget Function(
   BuildContext context,
   ConvexRequestExecutor<T> action,
   ConvexRequestSnapshot<T> snapshot,
 );
 
+/// Widget that exposes an imperative Convex action and request snapshot to its child.
 class ConvexAction<T> extends StatefulWidget {
+  /// Creates a [ConvexAction].
   const ConvexAction({
     super.key,
     required this.action,
@@ -21,9 +24,16 @@ class ConvexAction<T> extends StatefulWidget {
     this.client,
   });
 
+  /// Convex action name to invoke.
   final String action;
+
+  /// Optional decoder for the raw action result.
   final ConvexDecoder<T>? decode;
+
+  /// Optional runtime client override.
   final ConvexRuntimeClient? client;
+
+  /// Builder that receives the action callback and current request snapshot.
   final ConvexActionBuilder<T> builder;
 
   @override

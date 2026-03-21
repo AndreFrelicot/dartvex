@@ -5,6 +5,7 @@ import 'package:sqlite3/sqlite3.dart';
 import '../cache/cache_storage.dart';
 import '../offline/queue_storage.dart';
 
+/// SQLite-backed implementation of the local cache and mutation queue stores.
 class SqliteLocalStore implements CacheStorage, QueueStorage {
   SqliteLocalStore._(
     this._database, {
@@ -20,6 +21,7 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
   final String? _databasePath;
   bool _closed = false;
 
+  /// Opens a SQLite database at [path], creating parent directories as needed.
   static Future<SqliteLocalStore> open(String path) async {
     final databaseFile = File(path);
     await databaseFile.parent.create(recursive: true);
@@ -30,17 +32,22 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
     );
   }
 
+  /// Opens an in-memory SQLite database.
   static Future<SqliteLocalStore> openInMemory() async {
     return SqliteLocalStore._(sqlite3.openInMemory(), deleteOnClose: false);
   }
 
   @override
+
+  /// Removes all cached query entries.
   Future<void> clearCache() async {
     final database = _assertOpen();
     database.execute('DELETE FROM query_cache;');
   }
 
   @override
+
+  /// Removes all queued mutations and ID remappings.
   Future<void> clearQueue() async {
     final database = _assertOpen();
     database.execute('DELETE FROM mutation_queue;');
@@ -48,6 +55,8 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
   }
 
   @override
+
+  /// Closes the database handle.
   Future<void> close() async {
     if (_closed) {
       return;
@@ -72,6 +81,8 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
   }
 
   @override
+
+  /// Enqueues a mutation in the persistent replay queue.
   Future<StoredPendingMutation> enqueue({
     required String mutationName,
     required String argsJson,
@@ -103,6 +114,8 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
   }
 
   @override
+
+  /// Loads all queued mutations in insertion order.
   Future<List<StoredPendingMutation>> loadAll() async {
     final database = _assertOpen();
     final rows = database.select(
@@ -117,6 +130,8 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
   }
 
   @override
+
+  /// Updates the queue status for the mutation with [id].
   Future<void> markStatus(
     int id,
     String status, {
@@ -135,6 +150,8 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
   }
 
   @override
+
+  /// Reads a cached query entry by [key].
   Future<StoredCacheEntry?> read(String key) async {
     final database = _assertOpen();
     final rows = database.select(
@@ -159,12 +176,16 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
   }
 
   @override
+
+  /// Removes the queued mutation with [id].
   Future<void> remove(int id) async {
     final database = _assertOpen();
     database.execute('DELETE FROM mutation_queue WHERE id = ?;', <Object?>[id]);
   }
 
   @override
+
+  /// Replaces the encoded arguments for the mutation with [id].
   Future<void> updateArgs(int id, String argsJson) async {
     final database = _assertOpen();
     database.execute(
@@ -174,6 +195,8 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
   }
 
   @override
+
+  /// Persists a local document ID remap.
   Future<void> saveIdRemap(String localId, String serverId) async {
     final database = _assertOpen();
     database.execute(
@@ -187,6 +210,8 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
   }
 
   @override
+
+  /// Loads all persisted local-to-server ID remappings.
   Future<Map<String, String>> loadIdRemaps() async {
     final database = _assertOpen();
     final rows = database.select('SELECT local_id, server_id FROM id_remap;');
@@ -197,12 +222,16 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
   }
 
   @override
+
+  /// Clears all stored ID remappings.
   Future<void> clearIdRemaps() async {
     final database = _assertOpen();
     database.execute('DELETE FROM id_remap;');
   }
 
   @override
+
+  /// Inserts or updates a cached query [entry].
   Future<void> upsert(StoredCacheEntry entry) async {
     final database = _assertOpen();
     database.execute(

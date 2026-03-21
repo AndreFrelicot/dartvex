@@ -12,25 +12,48 @@ import 'sync/remote_query_set.dart';
 import 'transport/ws_factory.dart';
 import 'transport/ws_manager.dart';
 
-enum ConnectionState { connecting, connected, reconnecting, disconnected }
+/// High-level connection state exposed by [ConvexClient].
+enum ConnectionState {
+  /// The initial connection attempt is in progress.
+  connecting,
 
+  /// The WebSocket connection is established.
+  connected,
+
+  /// The client is reconnecting after a disconnect.
+  reconnecting,
+
+  /// The client is disconnected.
+  disconnected,
+}
+
+/// Base class for query subscription results.
 sealed class QueryResult {
+  /// Creates a query result.
   const QueryResult();
 }
 
+/// Query result representing a successful value.
 class QuerySuccess extends QueryResult {
+  /// Creates a successful query result.
   const QuerySuccess(this.value);
 
+  /// Returned query value.
   final dynamic value;
 }
 
+/// Query result representing an error.
 class QueryError extends QueryResult {
+  /// Creates a failed query result.
   const QueryError(this.message);
 
+  /// Human-readable error message.
   final String message;
 }
 
+/// Handle for a live Convex query subscription.
 class ConvexSubscription {
+  /// Creates a query subscription wrapper.
   ConvexSubscription({
     required Stream<QueryResult> stream,
     required Future<void> Function() onCancel,
@@ -40,14 +63,18 @@ class ConvexSubscription {
   final Stream<QueryResult> _stream;
   final Future<void> Function() _onCancel;
 
+  /// Stream of live query results.
   Stream<QueryResult> get stream => _stream;
 
+  /// Cancels the subscription asynchronously.
   void cancel() {
     unawaited(_onCancel());
   }
 }
 
+/// Interface for calling Convex queries, mutations, and actions.
 abstract interface class ConvexFunctionCaller {
+  /// Executes a query and resolves with its first successful value.
   Future<dynamic> query(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
@@ -62,23 +89,28 @@ abstract interface class ConvexFunctionCaller {
     Map<String, dynamic> args = const <String, dynamic>{},
   ]);
 
+  /// Subscribes to a reactive query.
   ConvexSubscription subscribe(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
   ]);
 
+  /// Executes a mutation.
   Future<dynamic> mutate(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
   ]);
 
+  /// Executes an action.
   Future<dynamic> action(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
   ]);
 }
 
+/// Main Dartvex client for communicating with a Convex deployment.
 class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
+  /// Creates a [ConvexClient] for [deploymentUrl].
   ConvexClient(
     String deploymentUrl, {
     ConvexClientConfig? config,
@@ -137,20 +169,29 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   bool _refreshAuthOnNextConnect = false;
   bool _disposed = false;
 
+  /// Broadcasts connection state changes.
   Stream<ConnectionState> get connectionState =>
       _connectionStateController.stream;
 
+  /// Current connection state.
   ConnectionState get currentConnectionState => _currentConnectionState;
 
+  /// Broadcasts whether the backend currently considers the client authenticated.
   Stream<bool> get authState => _authStateController.stream;
 
   @override
+
+  /// Minimum log level configured for this client.
   DartvexLogLevel get logLevel => _config.logLevel;
 
   @override
+
+  /// Structured log sink configured for this client.
   DartvexLogger? get logger => _config.logger;
 
   @override
+
+  /// Executes a one-shot query by subscribing until the first result arrives.
   Future<dynamic> query(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
@@ -196,6 +237,8 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   }
 
   @override
+
+  /// Executes a typed one-shot query.
   Future<T> queryOnce<T>(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
@@ -205,6 +248,8 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   }
 
   @override
+
+  /// Subscribes to a live query.
   ConvexSubscription subscribe(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
@@ -250,6 +295,8 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   }
 
   @override
+
+  /// Executes a mutation.
   Future<dynamic> mutate(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
@@ -285,6 +332,8 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   }
 
   @override
+
+  /// Executes an action.
   Future<dynamic> action(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
@@ -319,6 +368,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     }
   }
 
+  /// Applies a fixed auth token to the client.
   Future<void> setAuth(String? token) {
     _assertNotDisposed();
     _log(
@@ -328,6 +378,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     return _authManager.setAuth(token);
   }
 
+  /// Configures automatic auth refresh driven by [fetchToken].
   Future<AuthHandle> setAuthWithRefresh({
     required AuthTokenFetcher fetchToken,
     void Function(bool)? onAuthChange,
@@ -339,18 +390,21 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     );
   }
 
+  /// Clears auth state and token refresh handling.
   Future<void> clearAuth() {
     _assertNotDisposed();
     _log(DartvexLogLevel.info, 'Clearing auth state');
     return _authManager.clearAuth();
   }
 
+  /// Updates the current auth token without recreating the refresh flow.
   Future<void> updateAuthToken(String token) {
     _assertNotDisposed();
     _log(DartvexLogLevel.info, 'Updating auth token');
     return _authManager.updateToken(token);
   }
 
+  /// Returns an auth-aware wrapper around this client.
   ConvexClientWithAuth<TUser> withAuth<TUser>(
       AuthProvider<TUser> authProvider) {
     _assertNotDisposed();
@@ -360,6 +414,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     );
   }
 
+  /// Disposes subscriptions, auth management, and transport resources.
   void dispose() {
     if (_disposed) {
       return;

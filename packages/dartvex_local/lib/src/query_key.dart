@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+/// Normalizes a Convex query [name] into a stable `module:function` form.
 String canonicalizeQueryName(String name) {
   final parts = name.split(':');
   late final String moduleName;
@@ -17,6 +18,7 @@ String canonicalizeQueryName(String name) {
   return '$normalizedModule:$functionName';
 }
 
+/// Serializes a cache key for a query using its canonicalized name and [args].
 String serializeQueryKey(String queryName, Map<String, dynamic> args) {
   final normalized = <String, dynamic>{
     'udfPath': canonicalizeQueryName(queryName),
@@ -25,6 +27,7 @@ String serializeQueryKey(String queryName, Map<String, dynamic> args) {
   return jsonEncode(normalized);
 }
 
+/// Recursively canonicalizes JSON-like data for deterministic encoding.
 Object? canonicalizeJsonValue(Object? value) {
   if (value is Map) {
     final entries = value.entries.toList()

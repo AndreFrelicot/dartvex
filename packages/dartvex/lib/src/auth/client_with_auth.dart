@@ -9,8 +9,10 @@ import 'auth_provider.dart';
 import 'auth_state.dart';
 import 'auth_token_bridge.dart';
 
+/// Wraps a [ConvexClient] with auth-provider-driven login and token refresh.
 class ConvexClientWithAuth<TUser>
     implements ConvexAuthClient<TUser>, ConvexFunctionCaller, DartvexLogSource {
+  /// Creates an authenticated client wrapper.
   ConvexClientWithAuth({
     required ConvexClient client,
     required AuthProvider<TUser> authProvider,
@@ -28,24 +30,38 @@ class ConvexClientWithAuth<TUser>
   bool _disposed = false;
 
   @override
+
+  /// Stream of authentication state changes.
   Stream<AuthState<TUser>> get authState => _authStateController.stream;
 
   @override
+
+  /// Latest authentication state.
   AuthState<TUser> get currentAuthState => _currentAuthState;
 
   @override
+
+  /// Stream of connection state changes from the wrapped client.
   Stream<ConnectionState> get connectionState => _client.connectionState;
 
   @override
+
+  /// Current connection state of the wrapped client.
   ConnectionState get currentConnectionState => _client.currentConnectionState;
 
   @override
+
+  /// Minimum log level inherited from the wrapped client.
   DartvexLogLevel get logLevel => _client.logLevel;
 
   @override
+
+  /// Structured log sink inherited from the wrapped client.
   DartvexLogger? get logger => _client.logger;
 
   @override
+
+  /// Executes an action through the wrapped client.
   Future<dynamic> action(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
@@ -54,6 +70,8 @@ class ConvexClientWithAuth<TUser>
   }
 
   @override
+
+  /// Disposes auth state, refresh handling, and the wrapped client.
   void dispose() {
     if (_disposed) {
       return;
@@ -70,6 +88,8 @@ class ConvexClientWithAuth<TUser>
   }
 
   @override
+
+  /// Starts an interactive login flow with the configured auth provider.
   Future<TUser> login() {
     return _loginWithStrategy(
       (onIdToken) => _authProvider.login(onIdToken: onIdToken),
@@ -77,6 +97,8 @@ class ConvexClientWithAuth<TUser>
   }
 
   @override
+
+  /// Restores authentication from cached provider state.
   Future<TUser> loginFromCache() {
     return _loginWithStrategy(
       (onIdToken) => _authProvider.loginFromCache(onIdToken: onIdToken),
@@ -84,6 +106,8 @@ class ConvexClientWithAuth<TUser>
   }
 
   @override
+
+  /// Logs out and clears auth state.
   Future<void> logout() async {
     _assertNotDisposed();
     await _authProvider.logout();
@@ -92,6 +116,8 @@ class ConvexClientWithAuth<TUser>
   }
 
   @override
+
+  /// Executes a mutation through the wrapped client.
   Future<dynamic> mutate(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
@@ -100,6 +126,8 @@ class ConvexClientWithAuth<TUser>
   }
 
   @override
+
+  /// Executes a query through the wrapped client.
   Future<dynamic> query(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
@@ -108,6 +136,8 @@ class ConvexClientWithAuth<TUser>
   }
 
   @override
+
+  /// Executes a typed one-shot query through the wrapped client.
   Future<T> queryOnce<T>(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
@@ -116,6 +146,8 @@ class ConvexClientWithAuth<TUser>
   }
 
   @override
+
+  /// Subscribes to a query through the wrapped client.
   ConvexSubscription subscribe(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},

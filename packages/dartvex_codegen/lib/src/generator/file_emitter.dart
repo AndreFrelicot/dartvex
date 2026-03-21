@@ -3,20 +3,29 @@ import 'dart:io';
 
 import 'dart_generator.dart';
 
+/// Thrown when generated files cannot be written safely.
 class FileEmitterException implements Exception {
+  /// Creates a file emission error.
   FileEmitterException(this.message);
 
+  /// Human-readable failure details.
   final String message;
 
   @override
   String toString() => message;
 }
 
+/// Writes generated bindings to disk and cleans up stale generated files.
 class FileEmitter {
+  /// The manifest file used to track previously generated outputs.
   static const String manifestName = '.dartvex_codegen_manifest.json';
 
+  /// Creates a file emitter.
   const FileEmitter();
 
+  /// Writes [files] into [outputDirectory].
+  ///
+  /// When [dryRun] is true, this method returns without touching the filesystem.
   Future<void> emit({
     required String outputDirectory,
     required Map<String, String> files,
