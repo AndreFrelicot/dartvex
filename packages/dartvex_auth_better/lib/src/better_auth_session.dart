@@ -1,5 +1,9 @@
 /// Session information returned by Better Auth.
+///
+/// Contains the Convex JWT for WebSocket authentication, the Better Auth
+/// session token for refresh/validation, and basic user information.
 class BetterAuthSession {
+  /// Creates a [BetterAuthSession] with the given credentials and user info.
   const BetterAuthSession({
     required this.token,
     required this.sessionToken,

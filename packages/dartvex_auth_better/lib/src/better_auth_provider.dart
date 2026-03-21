@@ -9,8 +9,10 @@ import 'better_auth_session.dart';
 /// Implements [AuthProvider] so it can be used with
 /// `ConvexClient.withAuth<BetterAuthSession>()`.
 class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
+  /// Creates a [ConvexBetterAuthProvider] using the given [client].
   ConvexBetterAuthProvider({required this.client});
 
+  /// The [BetterAuthClient] used for HTTP communication with Better Auth.
   final BetterAuthClient client;
 
   BetterAuthSession? _cachedSession;

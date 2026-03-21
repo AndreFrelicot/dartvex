@@ -10,6 +10,9 @@ import 'better_auth_session.dart';
 /// under `/api/auth/`. This client communicates with those endpoints
 /// directly — no third-party Flutter SDK needed.
 class BetterAuthClient {
+  /// Creates a [BetterAuthClient] for the given Convex [baseUrl].
+  ///
+  /// Optionally provide a custom [httpClient] for testing or proxy use.
   BetterAuthClient({
     required this.baseUrl,
     http.Client? httpClient,
