@@ -82,7 +82,8 @@ void main() {
       expect(fakeCacheManager.emptyCacheCalled, isTrue);
     });
 
-    test('getSizeBytes returns cache size from metrics-aware managers', () async {
+    test('getSizeBytes returns cache size from metrics-aware managers',
+        () async {
       fakeCacheManager.putInCache('cache-size', byteCount: 42);
 
       final size = await cache.getSizeBytes();
