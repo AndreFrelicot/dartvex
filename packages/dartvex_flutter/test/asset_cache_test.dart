@@ -81,6 +81,14 @@ void main() {
 
       expect(fakeCacheManager.emptyCacheCalled, isTrue);
     });
+
+    test('getSizeBytes returns cache size from metrics-aware managers', () async {
+      fakeCacheManager.putInCache('cache-size', byteCount: 42);
+
+      final size = await cache.getSizeBytes();
+
+      expect(size, 42);
+    });
   });
 
   group('ConvexOfflineImage', () {
@@ -218,7 +226,7 @@ class GetSingleFileCall {
   final String key;
 }
 
-class FakeCacheManager implements BaseCacheManager {
+class FakeCacheManager implements BaseCacheManager, ConvexAssetCacheMetrics {
   final MemoryFileSystem _fs = MemoryFileSystem();
   final Map<String, FileInfo> _cache = {};
   final List<GetSingleFileCall> getSingleFileCalls = [];
@@ -232,9 +240,9 @@ class FakeCacheManager implements BaseCacheManager {
     return file;
   }
 
-  void putInCache(String key) {
+  void putInCache(String key, {int byteCount = 1}) {
     _cache[key] = FileInfo(
-      _createFile(key),
+      _createFile(key)..writeAsBytesSync(List<int>.filled(byteCount, 0)),
       FileSource.Cache,
       DateTime.now().add(const Duration(days: 30)),
       'https://example.com/$key',
@@ -280,6 +288,15 @@ class FakeCacheManager implements BaseCacheManager {
 
   @override
   Future<void> dispose() async {}
+
+  @override
+  Future<int> getSizeBytes() async {
+    var total = 0;
+    for (final info in _cache.values) {
+      total += info.file.lengthSync();
+    }
+    return total;
+  }
 
   // Unused methods — delegate to noSuchMethod.
 

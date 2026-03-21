@@ -5,6 +5,8 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 /// Caches binary assets (images, files) from Convex storage to disk,
 /// keyed by stable storage ID rather than expiring signed URLs.
 class ConvexAssetCache {
+  static final ConvexAssetCache shared = ConvexAssetCache();
+
   ConvexAssetCache({
     String cacheKey = 'convexAssetCache',
     Duration stalePeriod = const Duration(days: 30),
@@ -60,8 +62,31 @@ class ConvexAssetCache {
     return _cacheManager.emptyCache();
   }
 
+  /// Returns the total size, in bytes, of the cached assets.
+  ///
+  /// Size introspection is only guaranteed for the default [CacheManager]
+  /// implementation or custom managers that implement
+  /// [ConvexAssetCacheMetrics].
+  Future<int> getSizeBytes() async {
+    final cacheManager = _cacheManager;
+    if (cacheManager is ConvexAssetCacheMetrics) {
+      return (cacheManager as ConvexAssetCacheMetrics).getSizeBytes();
+    }
+    if (cacheManager is CacheManager) {
+      return cacheManager.store.getCacheSize();
+    }
+    throw UnsupportedError(
+      'Cache size is unavailable for this custom cache manager.',
+    );
+  }
+
   /// Disposes the underlying cache manager.
   Future<void> dispose() async {
     await _cacheManager.dispose();
   }
+}
+
+/// Optional interface custom cache managers can implement to expose metrics.
+abstract interface class ConvexAssetCacheMetrics {
+  Future<int> getSizeBytes();
 }
