@@ -78,6 +78,7 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
     });
 
     try {
+      final client = widget.client ?? ConvexProvider.of(context);
       final cached = await _cache.get(widget.storageId);
       if (cached != null) {
         if (!mounted) return;
@@ -88,7 +89,6 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
         return;
       }
 
-      final client = widget.client ?? ConvexProvider.of(context);
       final url = await client.query(
         widget.getUrlAction,
         <String, dynamic>{'storageId': widget.storageId},
