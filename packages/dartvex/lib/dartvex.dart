@@ -15,6 +15,7 @@ export 'src/client.dart'
         QuerySuccess;
 export 'src/config.dart' show ConvexClientConfig;
 export 'src/exceptions.dart' show ConvexException, ConvexFileUploadException;
+export 'src/logging.dart' show DartvexLogEvent, DartvexLogger, DartvexLogLevel;
 export 'src/storage.dart' show ConvexStorage;
 export 'src/transport/ws_manager.dart'
     show TransitionMetrics, TransitionMetricsCallback;

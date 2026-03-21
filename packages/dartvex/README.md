@@ -123,6 +123,33 @@ final url = await storage.getFileUrl(
 );
 ```
 
+## Logging
+
+`dartvex` is silent by default.
+
+To enable structured diagnostic logs, configure `ConvexClientConfig`:
+
+```dart
+final client = ConvexClient(
+  'https://your-deployment.convex.cloud',
+  config: ConvexClientConfig(
+    logLevel: DartvexLogLevel.info,
+    logger: (event) {
+      print('[${event.level.name}] ${event.tag}: ${event.message}');
+    },
+  ),
+);
+```
+
+Recommended usage:
+
+- `error`: request or transport failures
+- `warn`: degraded behavior, retries, large or slow transitions
+- `info`: lifecycle events
+- `debug`: integration diagnostics
+
+Sensitive values such as auth tokens should not be logged.
+
 ## API Overview
 
 ### Core

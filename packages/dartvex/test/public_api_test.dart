@@ -34,4 +34,20 @@ void main() {
     expect(metrics.toString(), contains('150ms'));
     expect(metrics.toString(), contains('5.0MB'));
   });
+
+  test('exports logging types from the public barrel', () {
+    void loggerImpl(DartvexLogEvent _) {}
+
+    const event = DartvexLogEvent(
+      level: DartvexLogLevel.info,
+      message: 'hello',
+      tag: 'test',
+    );
+    final DartvexLogger logger = loggerImpl;
+
+    logger(event);
+
+    expect(event.level, DartvexLogLevel.info);
+    expect(event.tag, 'test');
+  });
 }

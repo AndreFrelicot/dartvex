@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:developer' as developer;
 
+import '../logging.dart';
 import '../protocol/messages.dart';
 import 'package:uuid/uuid.dart';
 import 'ws_interface.dart';
@@ -53,6 +53,8 @@ class WebSocketManager {
     required this.reconnectBackoff,
     required this.inactivityTimeout,
     this.onTransitionMetrics,
+    this.logLevel = DartvexLogLevel.off,
+    this.logger,
   });
 
   final WebSocketAdapter adapter;
@@ -66,6 +68,8 @@ class WebSocketManager {
   final List<Duration> reconnectBackoff;
   final Duration inactivityTimeout;
   final TransitionMetricsCallback? onTransitionMetrics;
+  final DartvexLogLevel logLevel;
+  final DartvexLogger? logger;
 
   final Map<String, _TransitionChunkBuffer> _chunkBuffers =
       <String, _TransitionChunkBuffer>{};
@@ -86,6 +90,7 @@ class WebSocketManager {
 
   Future<void> start() async {
     _attachListeners();
+    _log(DartvexLogLevel.debug, 'Starting WebSocket manager');
     await _connect();
   }
 
@@ -100,6 +105,11 @@ class WebSocketManager {
 
   Future<void> reconnectNow(String reason) async {
     _lastCloseReason = reason;
+    _log(
+      DartvexLogLevel.info,
+      'Reconnect requested',
+      data: <String, Object?>{'reason': reason},
+    );
     if (adapter.isConnected) {
       await adapter.close();
       return;
@@ -109,6 +119,7 @@ class WebSocketManager {
 
   Future<void> dispose() async {
     _disposed = true;
+    _log(DartvexLogLevel.debug, 'Disposing WebSocket manager');
     _reconnectTimer?.cancel();
     _inactivityTimer?.cancel();
     await _messageSubscription?.cancel();
@@ -128,6 +139,11 @@ class WebSocketManager {
       return;
     }
     _connecting = true;
+    _log(
+      DartvexLogLevel.info,
+      'Connecting WebSocket',
+      data: <String, Object?>{'deploymentUrl': deploymentUrl},
+    );
     onConnectionStateChanged(false, true);
     try {
       await adapter.connect(_buildWebSocketUrl());
@@ -138,6 +154,7 @@ class WebSocketManager {
       _connecting = false;
       _reconnectTimer?.cancel();
       _resetInactivityTimer();
+      _log(DartvexLogLevel.info, 'WebSocket connected');
       onConnectionStateChanged(true, false);
       adapter.send(
         jsonEncode(
@@ -155,6 +172,11 @@ class WebSocketManager {
       _reconnectIndex = 0;
     } catch (error) {
       _connecting = false;
+      _log(
+        DartvexLogLevel.error,
+        'WebSocket connection failed',
+        error: error,
+      );
       await _handleClosed(error.toString());
     }
   }
@@ -236,18 +258,24 @@ class WebSocketManager {
     onTransitionMetrics?.call(metrics);
 
     if (messageLengthBytes > 20000000) {
-      developer.log(
-        'Warning: received ${(messageLengthBytes / 1e6).toStringAsFixed(1)}MB transition - '
-        'consider reducing query result sizes for mobile connections',
-        name: 'dartvex.transition',
-        level: 900,
+      _log(
+        DartvexLogLevel.warn,
+        'Received oversized transition',
+        data: <String, Object?>{
+          'messageSizeBytes': messageLengthBytes,
+          'messageSizeMb': double.parse(
+            (messageLengthBytes / 1e6).toStringAsFixed(1),
+          ),
+        },
       );
     } else if (transitTimeMs > 20000) {
-      developer.log(
-        'Warning: transition took ${transitTimeMs.round()}ms to arrive - '
-        'check network conditions or query result sizes',
-        name: 'dartvex.transition',
-        level: 900,
+      _log(
+        DartvexLogLevel.warn,
+        'Transition arrived slowly',
+        data: <String, Object?>{
+          'transitTimeMs': transitTimeMs.round(),
+          'messageSizeBytes': messageLengthBytes,
+        },
       );
     }
   }
@@ -256,6 +284,11 @@ class WebSocketManager {
     if (_disposed) {
       return;
     }
+    _log(
+      DartvexLogLevel.info,
+      'WebSocket closed',
+      data: <String, Object?>{'reason': reason},
+    );
     _inactivityTimer?.cancel();
     _connecting = false;
     onConnectionStateChanged(false, false);
@@ -278,6 +311,15 @@ class WebSocketManager {
     if (_reconnectIndex < reconnectBackoff.length - 1) {
       _reconnectIndex += 1;
     }
+    _log(
+      DartvexLogLevel.info,
+      'Reconnect scheduled',
+      data: <String, Object?>{
+        'delayMs': delay.inMilliseconds,
+        'connectionCount': _connectionCount,
+        'reason': _lastCloseReason,
+      },
+    );
     _reconnectTimer = Timer(delay, () {
       unawaited(_connect());
     });
@@ -287,8 +329,28 @@ class WebSocketManager {
     _inactivityTimer?.cancel();
     _inactivityTimer = Timer(inactivityTimeout, () async {
       _lastCloseReason = 'ServerInactivity';
+      _log(DartvexLogLevel.warn, 'Closing WebSocket after inactivity timeout');
       await adapter.close();
     });
+  }
+
+  void _log(
+    DartvexLogLevel level,
+    String message, {
+    Object? error,
+    StackTrace? stackTrace,
+    Map<String, Object?>? data,
+  }) {
+    emitDartvexLog(
+      configuredLevel: logLevel,
+      logger: logger,
+      eventLevel: level,
+      message: message,
+      tag: 'transport.ws',
+      error: error,
+      stackTrace: stackTrace,
+      data: data,
+    );
   }
 }
 

@@ -1,3 +1,4 @@
+import 'logging.dart';
 import 'transport/ws_interface.dart';
 
 typedef WebSocketAdapterFactory = WebSocketAdapter Function(String clientId);
@@ -17,6 +18,8 @@ class ConvexClientConfig {
       Duration(seconds: 32),
     ],
     this.adapterFactory,
+    this.logLevel = DartvexLogLevel.off,
+    this.logger,
   });
 
   final String clientId;
@@ -25,4 +28,6 @@ class ConvexClientConfig {
   final Duration inactivityTimeout;
   final List<Duration> reconnectBackoff;
   final WebSocketAdapterFactory? adapterFactory;
+  final DartvexLogLevel logLevel;
+  final DartvexLogger? logger;
 }

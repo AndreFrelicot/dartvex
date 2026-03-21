@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../config.dart';
+import '../logging.dart';
 import '../protocol/messages.dart';
 import 'jwt_utils.dart';
 
@@ -30,6 +31,10 @@ class AuthManager {
   String? _currentToken;
 
   Future<void> setAuth(String? token) async {
+    _log(
+      DartvexLogLevel.info,
+      token == null ? 'Auth cleared via setAuth' : 'Auth token set',
+    );
     _cancelRefreshTimer();
     _fetchToken = null;
     _onAuthChange = null;
@@ -44,6 +49,7 @@ class AuthManager {
     required AuthTokenFetcher fetchToken,
     void Function(bool)? onAuthChange,
   }) async {
+    _log(DartvexLogLevel.debug, 'Configuring auth refresh flow');
     _cancelRefreshTimer();
     _fetchToken = fetchToken;
     _onAuthChange = onAuthChange;
@@ -57,6 +63,7 @@ class AuthManager {
   }
 
   Future<void> clearAuth() async {
+    _log(DartvexLogLevel.info, 'Auth cleared');
     _cancelRefreshTimer();
     _fetchToken = null;
     _onAuthChange = null;
@@ -70,9 +77,11 @@ class AuthManager {
     if (fetchToken == null) {
       return;
     }
+    _log(DartvexLogLevel.debug, 'Refreshing auth token for reconnect');
     final freshToken = await fetchToken(forceRefresh: true);
     _currentToken = freshToken;
     if (freshToken == null) {
+      _log(DartvexLogLevel.warn, 'Reconnect auth refresh returned no token');
       _emit(false);
       return;
     }
@@ -82,6 +91,7 @@ class AuthManager {
   String? get currentToken => _currentToken;
 
   Future<void> updateToken(String token) async {
+    _log(DartvexLogLevel.info, 'Auth token updated');
     _currentToken = token;
     await sendAuth(token);
     if (_fetchToken != null) {
@@ -91,6 +101,10 @@ class AuthManager {
 
   void handleAuthConfirmed() {
     final isAuthenticated = _currentToken != null;
+    _log(
+      DartvexLogLevel.debug,
+      isAuthenticated ? 'Auth confirmed' : 'Auth confirmed without token',
+    );
     _emit(isAuthenticated);
     if (isAuthenticated && _fetchToken != null) {
       _scheduleRefresh(_currentToken!);
@@ -98,6 +112,13 @@ class AuthManager {
   }
 
   Future<void> handleAuthError(AuthError error) async {
+    _log(
+      DartvexLogLevel.warn,
+      'Auth error received from backend',
+      data: <String, Object?>{
+        'authUpdateAttempted': error.authUpdateAttempted,
+      },
+    );
     final fetchToken = _fetchToken;
     if (fetchToken == null) {
       _currentToken = null;
@@ -110,6 +131,7 @@ class AuthManager {
     _currentToken = freshToken;
     await sendAuth(freshToken);
     if (freshToken == null) {
+      _log(DartvexLogLevel.warn, 'Forced auth refresh returned no token');
       _emit(false);
       return;
     }
@@ -120,6 +142,7 @@ class AuthManager {
   }
 
   Future<void> stopRefreshing() async {
+    _log(DartvexLogLevel.debug, 'Stopping auth refresh flow');
     _fetchToken = null;
     _onAuthChange = null;
     _cancelRefreshTimer();
@@ -133,14 +156,27 @@ class AuthManager {
       exp = jwtExp(token);
       iat = jwtIat(token);
     } on FormatException {
+      _log(
+        DartvexLogLevel.warn,
+        'Skipping auth refresh scheduling because token timestamps are invalid',
+      );
       return;
     }
     if (exp == null || iat == null) {
+      _log(
+        DartvexLogLevel.warn,
+        'Skipping auth refresh scheduling because token timestamps are missing',
+      );
       return;
     }
     final lifetimeSeconds = exp - iat;
     final refreshDelay = Duration(
       seconds: lifetimeSeconds > 60 ? lifetimeSeconds - 60 : 0,
+    );
+    _log(
+      DartvexLogLevel.debug,
+      'Auth refresh scheduled',
+      data: <String, Object?>{'delayMs': refreshDelay.inMilliseconds},
     );
     _refreshTimer = Timer(refreshDelay, () async {
       final fetchToken = _fetchToken;
@@ -151,7 +187,13 @@ class AuthManager {
       _currentToken = freshToken;
       await sendAuth(freshToken);
       if (freshToken == null) {
+        _log(
+          DartvexLogLevel.warn,
+          'Scheduled auth refresh returned no token',
+        );
         _emit(false);
+      } else {
+        _log(DartvexLogLevel.debug, 'Scheduled auth refresh succeeded');
       }
     });
   }
@@ -164,6 +206,21 @@ class AuthManager {
   void _cancelRefreshTimer() {
     _refreshTimer?.cancel();
     _refreshTimer = null;
+  }
+
+  void _log(
+    DartvexLogLevel level,
+    String message, {
+    Map<String, Object?>? data,
+  }) {
+    emitDartvexLog(
+      configuredLevel: config.logLevel,
+      logger: config.logger,
+      eventLevel: level,
+      message: message,
+      tag: 'auth',
+      data: data,
+    );
   }
 }
 

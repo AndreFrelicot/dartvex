@@ -2,6 +2,7 @@ import 'dart:async';
 
 import '../client.dart';
 import '../exceptions.dart';
+import '../logging.dart';
 import 'auth_client.dart';
 import 'auth_manager.dart';
 import 'auth_provider.dart';
@@ -9,7 +10,7 @@ import 'auth_state.dart';
 import 'auth_token_bridge.dart';
 
 class ConvexClientWithAuth<TUser>
-    implements ConvexAuthClient<TUser>, ConvexFunctionCaller {
+    implements ConvexAuthClient<TUser>, ConvexFunctionCaller, DartvexLogSource {
   ConvexClientWithAuth({
     required ConvexClient client,
     required AuthProvider<TUser> authProvider,
@@ -37,6 +38,12 @@ class ConvexClientWithAuth<TUser>
 
   @override
   ConnectionState get currentConnectionState => _client.currentConnectionState;
+
+  @override
+  DartvexLogLevel get logLevel => _client.logLevel;
+
+  @override
+  DartvexLogger? get logger => _client.logger;
 
   @override
   Future<dynamic> action(

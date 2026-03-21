@@ -5,6 +5,7 @@ import 'auth/auth_provider.dart';
 import 'auth/client_with_auth.dart';
 import 'config.dart';
 import 'exceptions.dart';
+import 'logging.dart';
 import 'protocol/messages.dart';
 import 'sync/base_client.dart';
 import 'sync/remote_query_set.dart';
@@ -77,7 +78,7 @@ abstract interface class ConvexFunctionCaller {
   ]);
 }
 
-class ConvexClient implements ConvexFunctionCaller {
+class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   ConvexClient(
     String deploymentUrl, {
     ConvexClientConfig? config,
@@ -107,6 +108,8 @@ class ConvexClient implements ConvexFunctionCaller {
       reconnectBackoff: _config.reconnectBackoff,
       inactivityTimeout: _config.inactivityTimeout,
       onTransitionMetrics: onTransitionMetrics,
+      logLevel: _config.logLevel,
+      logger: _config.logger,
     );
     _authManager = AuthManager(
       config: _config,
@@ -142,10 +145,21 @@ class ConvexClient implements ConvexFunctionCaller {
   Stream<bool> get authState => _authStateController.stream;
 
   @override
+  DartvexLogLevel get logLevel => _config.logLevel;
+
+  @override
+  DartvexLogger? get logger => _config.logger;
+
+  @override
   Future<dynamic> query(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) async {
+    _log(
+      DartvexLogLevel.debug,
+      'Starting query',
+      data: _requestData(name, args),
+    );
     final subscription = subscribe(name, args);
     final completer = Completer<dynamic>();
     late final StreamSubscription<QueryResult> streamSubscription;
@@ -155,8 +169,24 @@ class ConvexClient implements ConvexFunctionCaller {
       }
       switch (event) {
         case QuerySuccess(:final value):
+          _log(
+            DartvexLogLevel.debug,
+            'Query succeeded',
+            data: <String, Object?>{
+              ..._requestData(name, args),
+              'resultType': value.runtimeType.toString(),
+            },
+          );
           completer.complete(value);
         case QueryError(:final message):
+          _log(
+            DartvexLogLevel.error,
+            'Query failed',
+            data: <String, Object?>{
+              ..._requestData(name, args),
+              'errorMessage': message,
+            },
+          );
           completer.completeError(ConvexException(message));
       }
       unawaited(streamSubscription.cancel());
@@ -180,6 +210,11 @@ class ConvexClient implements ConvexFunctionCaller {
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) {
     _assertNotDisposed();
+    _log(
+      DartvexLogLevel.debug,
+      'Subscribing query',
+      data: _requestData(name, args),
+    );
     final registration = _baseClient.subscribe(name, args);
     final controller = StreamController<QueryResult>.broadcast(sync: true);
     _subscriptionControllers[registration.subscriberId] = controller;
@@ -199,6 +234,11 @@ class ConvexClient implements ConvexFunctionCaller {
     return ConvexSubscription(
       stream: controller.stream,
       onCancel: () async {
+        _log(
+          DartvexLogLevel.debug,
+          'Unsubscribing query',
+          data: _requestData(name, args),
+        );
         final removed = _subscriptionControllers.remove(
           registration.subscriberId,
         );
@@ -215,9 +255,33 @@ class ConvexClient implements ConvexFunctionCaller {
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) async {
     _assertConnectedForRequest('mutation');
-    final result = _baseClient.mutate(name, args);
-    await _flushOutgoing();
-    return result;
+    _log(
+      DartvexLogLevel.debug,
+      'Starting mutation',
+      data: _requestData(name, args),
+    );
+    try {
+      final result = _baseClient.mutate(name, args);
+      await _flushOutgoing();
+      _log(
+        DartvexLogLevel.debug,
+        'Mutation succeeded',
+        data: <String, Object?>{
+          ..._requestData(name, args),
+          'resultType': result.runtimeType.toString(),
+        },
+      );
+      return result;
+    } catch (error, stackTrace) {
+      _log(
+        DartvexLogLevel.error,
+        'Mutation failed',
+        error: error,
+        stackTrace: stackTrace,
+        data: _requestData(name, args),
+      );
+      rethrow;
+    }
   }
 
   @override
@@ -226,13 +290,41 @@ class ConvexClient implements ConvexFunctionCaller {
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) async {
     _assertConnectedForRequest('action');
-    final result = _baseClient.action(name, args);
-    await _flushOutgoing();
-    return result;
+    _log(
+      DartvexLogLevel.debug,
+      'Starting action',
+      data: _requestData(name, args),
+    );
+    try {
+      final result = _baseClient.action(name, args);
+      await _flushOutgoing();
+      _log(
+        DartvexLogLevel.debug,
+        'Action succeeded',
+        data: <String, Object?>{
+          ..._requestData(name, args),
+          'resultType': result.runtimeType.toString(),
+        },
+      );
+      return result;
+    } catch (error, stackTrace) {
+      _log(
+        DartvexLogLevel.error,
+        'Action failed',
+        error: error,
+        stackTrace: stackTrace,
+        data: _requestData(name, args),
+      );
+      rethrow;
+    }
   }
 
   Future<void> setAuth(String? token) {
     _assertNotDisposed();
+    _log(
+      DartvexLogLevel.info,
+      token == null ? 'Clearing auth token' : 'Setting auth token',
+    );
     return _authManager.setAuth(token);
   }
 
@@ -249,11 +341,13 @@ class ConvexClient implements ConvexFunctionCaller {
 
   Future<void> clearAuth() {
     _assertNotDisposed();
+    _log(DartvexLogLevel.info, 'Clearing auth state');
     return _authManager.clearAuth();
   }
 
   Future<void> updateAuthToken(String token) {
     _assertNotDisposed();
+    _log(DartvexLogLevel.info, 'Updating auth token');
     return _authManager.updateToken(token);
   }
 
@@ -271,6 +365,7 @@ class ConvexClient implements ConvexFunctionCaller {
       return;
     }
     _disposed = true;
+    _log(DartvexLogLevel.debug, 'Disposing client');
     final subscriptionControllers = _subscriptionControllers.values.toList();
     _subscriptionControllers.clear();
     scheduleMicrotask(() async {
@@ -372,6 +467,11 @@ class ConvexClient implements ConvexFunctionCaller {
 
   void _emitConnectionState(ConnectionState state) {
     _currentConnectionState = state;
+    _log(
+      DartvexLogLevel.info,
+      'Connection state changed',
+      data: <String, Object?>{'state': state.name},
+    );
     _connectionStateController.add(state);
   }
 
@@ -393,5 +493,35 @@ class ConvexClient implements ConvexFunctionCaller {
     if (_disposed) {
       throw const ConvexException('ConvexClient has been disposed');
     }
+  }
+
+  Map<String, Object?> _requestData(
+    String name,
+    Map<String, dynamic> args,
+  ) {
+    return <String, Object?>{
+      'name': name,
+      'argCount': args.length,
+      if (args.isNotEmpty) 'argKeys': args.keys.toList(growable: false),
+    };
+  }
+
+  void _log(
+    DartvexLogLevel level,
+    String message, {
+    Object? error,
+    StackTrace? stackTrace,
+    Map<String, Object?>? data,
+  }) {
+    emitDartvexLog(
+      configuredLevel: _config.logLevel,
+      logger: _config.logger,
+      eventLevel: level,
+      message: message,
+      tag: 'client',
+      error: error,
+      stackTrace: stackTrace,
+      data: data,
+    );
   }
 }
