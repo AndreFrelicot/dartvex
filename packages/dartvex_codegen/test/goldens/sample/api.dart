@@ -30,8 +30,8 @@ class ConvexApi {
     final typedStream = subscription.stream.map(
       (event) => switch (event) {
         QuerySuccess(:final value) => TypedQuerySuccess<HealthResult>(
-            _decodeHealthResult(value),
-          ),
+          _decodeHealthResult(value),
+        ),
         QueryError(:final message) => TypedQueryError<HealthResult>(message),
       },
     );

@@ -37,14 +37,14 @@ class MessagesApi {
     final typedStream = subscription.stream.map(
       (event) => switch (event) {
         QuerySuccess(:final value) => TypedQuerySuccess<List<ListResultItem>>(
-            expectList(
-              value,
-              label: 'ListResult',
-            ).map((item) => _decodeListResultItem(item)).toList(),
-          ),
+          expectList(
+            value,
+            label: 'ListResult',
+          ).map((item) => _decodeListResultItem(item)).toList(),
+        ),
         QueryError(:final message) => TypedQueryError<List<ListResultItem>>(
-            message,
-          ),
+          message,
+        ),
       },
     );
     return TypedConvexSubscription<List<ListResultItem>>(
