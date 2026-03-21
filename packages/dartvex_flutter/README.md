@@ -12,6 +12,7 @@ plug into the same widgets without breaking the public API.
 - `ConvexQuery` — reactive query widget with automatic subscription management
 - `ConvexMutation` / `ConvexAction` — request builder widgets
 - `ConvexImage` — display images from Convex file storage
+- `ConvexCachedImage` — display Convex storage images with persistent disk caching
 - `PaginatedQueryBuilder` — cursor-based pagination with load-more
 - `ConvexAuthProvider` / `ConvexAuthBuilder` — auth state widgets
 - `ConvexConnectionBuilder` / `ConvexConnectionIndicator` — connection status
@@ -23,8 +24,8 @@ plug into the same widgets without breaking the public API.
 
 ```yaml
 dependencies:
-  dartvex: ^0.1.0
-  dartvex_flutter: ^0.1.0
+  dartvex: ^0.1.1
+  dartvex_flutter: ^0.1.1
 ```
 
 ## Provider Setup
@@ -102,6 +103,18 @@ ConvexMutation<String>(
 )
 ```
 
+## Cached Images
+
+```dart
+ConvexCachedImage(
+  storageId: message.imageStorageId,
+  getUrlAction: 'files:getUrl',
+  width: 160,
+  height: 160,
+  fit: BoxFit.cover,
+)
+```
+
 ## Pagination
 
 ```dart
@@ -145,6 +158,7 @@ await tester.pumpWidget(
 | `ConvexAuthBuilder` | Renders based on auth state |
 | `ConvexConnectionBuilder` | Renders based on connection state |
 | `ConvexImage` | Image from Convex storage |
+| `ConvexCachedImage` | Disk-cached image from Convex storage |
 | `ConvexOfflineImage` | Offline-capable image with caching |
 | `FakeConvexClient` | Test double for widget tests |
 

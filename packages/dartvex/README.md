@@ -14,6 +14,7 @@ Pure Dart client for [Convex](https://convex.dev) with WebSocket sync, type-safe
 - File storage helpers via `ConvexStorage` (upload/download)
 - Reconnection with exponential backoff and full query set rebuild
 - Native and browser WebSocket adapters (conditional import)
+- Structured opt-in logging for transport, auth, and storage diagnostics
 
 ## Platform Support
 
@@ -29,7 +30,7 @@ The web adapter is selected automatically via conditional import.
 
 ```yaml
 dependencies:
-  dartvex: ^0.1.0
+  dartvex: ^0.1.1
 ```
 
 ## Usage

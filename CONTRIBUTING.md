@@ -36,6 +36,14 @@ This is a monorepo with multiple packages:
 - Ensure CI passes (format, analyze, test)
 - Write a clear description of what changed and why
 
+## Releases
+
+Use the monorepo release helper in [`scripts/release_packages.dart`](scripts/release_packages.dart)
+to detect changed packages, surface impacted internal dependents, and run
+pub.dev dry-runs in publish order.
+
+See [`RELEASING.md`](RELEASING.md) for the full workflow.
+
 ## Reporting Issues
 
 Open an issue with:

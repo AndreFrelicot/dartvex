@@ -2,7 +2,7 @@ name: dartvex_auth_better
 description: >-
   Better Auth adapter for Dartvex. Self-hosted authentication for Convex
   with Better Auth.
-version: 0.1.0
+version: 0.1.1
 homepage: https://github.com/AndreFrelicot/dartvex
 repository: https://github.com/AndreFrelicot/dartvex/tree/main/packages/dartvex_auth_better
 

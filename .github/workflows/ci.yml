@@ -101,9 +101,28 @@ jobs:
     if: github.event_name == 'pull_request'
     strategy:
       matrix:
-        package: [dartvex, dartvex_codegen, dartvex_local, dartvex_flutter, dartvex_auth_better]
+        include:
+          - package: dartvex
+            tool: dart
+          - package: dartvex_codegen
+            tool: dart
+          - package: dartvex_local
+            tool: dart
+          - package: dartvex_flutter
+            tool: flutter
+          - package: dartvex_auth_better
+            tool: dart
     steps:
       - uses: actions/checkout@v4
       - uses: dart-lang/setup-dart@v1
+        if: matrix.tool == 'dart'
         with: { sdk: stable }
-      - run: cd packages/${{ matrix.package }} && dart pub get && dart pub publish --dry-run
+      - uses: subosito/flutter-action@v2
+        if: matrix.tool == 'flutter'
+        with: { flutter-version: '3.x', channel: stable }
+      - name: Publish dry-run (Dart)
+        if: matrix.tool == 'dart'
+        run: cd packages/${{ matrix.package }} && dart pub get && dart pub publish --dry-run
+      - name: Publish dry-run (Flutter)
+        if: matrix.tool == 'flutter'
+        run: cd packages/${{ matrix.package }} && flutter pub get && flutter pub publish --dry-run

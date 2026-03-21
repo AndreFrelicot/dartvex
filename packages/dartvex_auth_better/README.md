@@ -12,8 +12,8 @@ This keeps Better Auth isolated from the core SDK packages:
 
 ```yaml
 dependencies:
-  dartvex: ^0.1.0
-  dartvex_auth_better: ^0.1.0
+  dartvex: ^0.1.1
+  dartvex_auth_better: ^0.1.1
 ```
 
 ## Server-Side Setup
@@ -102,12 +102,37 @@ await authClient.signOut(sessionToken: session.sessionToken);
 await secureStorage.delete(key: 'session_token');
 ```
 
+### 6. Password recovery and magic links
+
+```dart
+await authClient.forgotPassword(
+  email: 'user@example.com',
+  redirectTo: 'myapp://reset-password',
+);
+
+await authClient.resetPassword(
+  token: resetToken,
+  newPassword: 'newSecurePassword',
+);
+
+await authClient.sendMagicLink(
+  email: 'user@example.com',
+  callbackURL: 'myapp://auth-callback',
+);
+
+final session = await authClient.verifyMagicLink(token: magicLinkToken);
+```
+
 ## API Overview
 
 ### BetterAuthClient
 
 - `signUp({email, password, name?})` — create account, returns `BetterAuthSession`
 - `signIn({email, password})` — authenticate, returns `BetterAuthSession`
+- `forgotPassword({email, redirectTo?})` — send password reset email
+- `resetPassword({token, newPassword})` — confirm password reset
+- `sendMagicLink({email, callbackURL?})` — send passwordless sign-in link
+- `verifyMagicLink({token})` — exchange magic link token for a session
 - `signOut({sessionToken})` — end session
 - `getSession({sessionToken})` — validate existing session and get fresh Convex JWT
 - `close()` — dispose HTTP client
