@@ -24,8 +24,8 @@ Offline-capable extension for [dartvex](../dartvex/). SQLite query cache and mut
 
 ```yaml
 dependencies:
-  dartvex: ^0.1.0
-  dartvex_local: ^0.1.0
+  dartvex: ^0.1.3
+  dartvex_local: ^0.1.1
 ```
 
 ## Quick Start

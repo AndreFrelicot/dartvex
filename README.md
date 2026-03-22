@@ -52,8 +52,8 @@ void main() async {
 
 | Package | Description | Version |
 |---------|-------------|---------|
-| [`dartvex`](packages/dartvex/) | Core client — WebSocket sync, subscriptions, auth | 0.1.2 |
-| [`dartvex_flutter`](packages/dartvex_flutter/) | Flutter widgets — Provider, QueryBuilder, MutationBuilder | 0.1.2 |
+| [`dartvex`](packages/dartvex/) | Core client — WebSocket sync, subscriptions, auth | 0.1.3 |
+| [`dartvex_flutter`](packages/dartvex_flutter/) | Flutter widgets — Provider, QueryBuilder, MutationBuilder | 0.1.3 |
 | [`dartvex_codegen`](packages/dartvex_codegen/) | CLI code generator — type-safe Dart bindings from schema | 0.1.2 |
 | [`dartvex_local`](packages/dartvex_local/) | Offline support — SQLite cache, mutation queue | 0.1.1 |
 | [`dartvex_auth_better`](packages/dartvex_auth_better/) | Better Auth adapter | 0.1.2 |
@@ -85,8 +85,8 @@ void main() async {
 ```yaml
 # pubspec.yaml
 dependencies:
-  dartvex: ^0.1.2
-  dartvex_flutter: ^0.1.2  # If using Flutter
+  dartvex: ^0.1.3
+  dartvex_flutter: ^0.1.3  # If using Flutter
 
 dev_dependencies:
   dartvex_codegen: ^0.1.2  # For code generation

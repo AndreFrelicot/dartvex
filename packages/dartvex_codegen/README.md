@@ -6,7 +6,7 @@ CLI code generator for [Convex](https://convex.dev) backends. Generates type-saf
 
 ```yaml
 dev_dependencies:
-  dartvex_codegen: ^0.1.1
+  dartvex_codegen: ^0.1.2
 ```
 
 ## Usage

@@ -24,8 +24,8 @@ plug into the same widgets without breaking the public API.
 
 ```yaml
 dependencies:
-  dartvex: ^0.1.1
-  dartvex_flutter: ^0.1.1
+  dartvex: ^0.1.3
+  dartvex_flutter: ^0.1.3
 ```
 
 ## Provider Setup

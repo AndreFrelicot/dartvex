@@ -12,8 +12,8 @@ This keeps Better Auth isolated from the core SDK packages:
 
 ```yaml
 dependencies:
-  dartvex: ^0.1.1
-  dartvex_auth_better: ^0.1.1
+  dartvex: ^0.1.3
+  dartvex_auth_better: ^0.1.2
 ```
 
 ## Server-Side Setup
