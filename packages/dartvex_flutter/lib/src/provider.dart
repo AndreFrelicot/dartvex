@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 
 import 'runtime_client.dart';
@@ -58,7 +60,7 @@ class _ConvexProviderState extends State<ConvexProvider>
     if (state == AppLifecycleState.resumed) {
       final client = widget.client;
       if (client.currentConnectionState != ConvexConnectionState.connected) {
-        client.reconnectNow('AppResumed');
+        unawaited(client.reconnectNow('AppResumed'));
       }
     }
   }

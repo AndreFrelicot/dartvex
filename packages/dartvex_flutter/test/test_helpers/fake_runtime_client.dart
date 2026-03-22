@@ -43,8 +43,12 @@ class FakeRuntimeClient implements ConvexRuntimeClient {
     return handler(name, args);
   }
 
+  final List<String> reconnectNowCalls = <String>[];
+
   @override
-  Future<void> reconnectNow(String reason) async {}
+  Future<void> reconnectNow(String reason) async {
+    reconnectNowCalls.add(reason);
+  }
 
   @override
   void dispose() {

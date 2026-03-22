@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'test_helpers/fake_runtime_client.dart';
+import 'test_helpers/lifecycle_test_helpers.dart';
 
 void main() {
   testWidgets('ConvexProvider resolves runtime client from context', (
@@ -49,6 +50,58 @@ void main() {
       contains('ConvexProvider.of() called with no ConvexProvider'),
     );
   });
+
+  testWidgets(
+    'ConvexProvider calls reconnectNow on app resume when disconnected',
+    (tester) async {
+      final client = FakeRuntimeClient(
+        initialConnectionState: ConvexConnectionState.disconnected,
+      );
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: ConvexProvider(
+            client: client,
+            child: const SizedBox(),
+          ),
+        ),
+      );
+
+      simulateAppLifecycleState(tester, AppLifecycleState.paused);
+      await tester.pump();
+      simulateAppLifecycleState(tester, AppLifecycleState.resumed);
+      await tester.pump();
+
+      expect(client.reconnectNowCalls, contains('AppResumed'));
+    },
+  );
+
+  testWidgets(
+    'ConvexProvider does not call reconnectNow on resume when connected',
+    (tester) async {
+      final client = FakeRuntimeClient(
+        initialConnectionState: ConvexConnectionState.connected,
+      );
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: ConvexProvider(
+            client: client,
+            child: const SizedBox(),
+          ),
+        ),
+      );
+
+      simulateAppLifecycleState(tester, AppLifecycleState.paused);
+      await tester.pump();
+      simulateAppLifecycleState(tester, AppLifecycleState.resumed);
+      await tester.pump();
+
+      expect(client.reconnectNowCalls, isEmpty);
+    },
+  );
 
   testWidgets('ConvexProvider disposes owned clients', (tester) async {
     final client = FakeRuntimeClient();
