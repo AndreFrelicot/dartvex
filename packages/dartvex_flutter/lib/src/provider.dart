@@ -45,7 +45,24 @@ class ConvexProvider extends StatefulWidget {
   State<ConvexProvider> createState() => _ConvexProviderState();
 }
 
-class _ConvexProviderState extends State<ConvexProvider> {
+class _ConvexProviderState extends State<ConvexProvider>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      final client = widget.client;
+      if (client.currentConnectionState != ConvexConnectionState.connected) {
+        client.reconnectNow('AppResumed');
+      }
+    }
+  }
+
   @override
   void didUpdateWidget(covariant ConvexProvider oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -56,6 +73,7 @@ class _ConvexProviderState extends State<ConvexProvider> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     if (widget.disposeClient) {
       widget.client.dispose();
     }

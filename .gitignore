@@ -14,6 +14,10 @@ pubspec.lock
 
 # Generated
 *.g.dart
+.flutter-plugins-dependencies
+
+# Local dependency overrides
+pubspec_overrides.yaml
 
 # Protocol cache
 .protocol-cache/

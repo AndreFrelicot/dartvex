@@ -44,6 +44,9 @@ class FakeRuntimeClient implements ConvexRuntimeClient {
   }
 
   @override
+  Future<void> reconnectNow(String reason) async {}
+
+  @override
   void dispose() {
     if (disposed) {
       return;

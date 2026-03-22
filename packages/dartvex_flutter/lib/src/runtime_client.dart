@@ -36,6 +36,9 @@ abstract class ConvexRuntimeClient {
   /// The current connection state.
   ConvexConnectionState get currentConnectionState;
 
+  /// Forces an immediate reconnect of the underlying connection.
+  Future<void> reconnectNow(String reason);
+
   /// Releases any resources held by the runtime client.
   void dispose();
 }
@@ -138,6 +141,11 @@ class ConvexClientRuntime implements ConvexRuntimeClient {
   ]) {
     return _client.action(name, args);
   }
+
+  @override
+
+  /// Forces an immediate reconnect through the wrapped client.
+  Future<void> reconnectNow(String reason) => _client.reconnectNow(reason);
 
   @override
 
