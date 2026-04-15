@@ -20,7 +20,6 @@ This is a monorepo with multiple packages:
 | `dartvex_flutter` | Flutter | `flutter test` |
 | `dartvex_codegen` | Dart | `dart test` |
 | `dartvex_local` | Dart | `dart test` |
-| `dartvex_auth_clerk` | Flutter | `flutter test` |
 | `dartvex_auth_better` | Dart | `dart test` |
 
 ## Code Style
