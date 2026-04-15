@@ -1,6 +1,18 @@
 # dartvex_local
 
-Offline-capable extension for [dartvex](../dartvex/). SQLite query cache and mutation queue with optimistic updates.
+Offline-capable extension for [dartvex](https://pub.dev/packages/dartvex) — the pure Dart client for [Convex](https://convex.dev). SQLite query cache and mutation queue with optimistic updates.
+
+## The Dartvex ecosystem
+
+| Package | Description |
+|---------|-------------|
+| [`dartvex`](https://pub.dev/packages/dartvex) | Core client — WebSocket sync, subscriptions, auth |
+| [`dartvex_flutter`](https://pub.dev/packages/dartvex_flutter) | Flutter widgets — Provider, QueryBuilder, MutationBuilder |
+| [`dartvex_codegen`](https://pub.dev/packages/dartvex_codegen) | CLI code generator — type-safe Dart bindings from schema |
+| **[`dartvex_local`](https://pub.dev/packages/dartvex_local)** | Offline support — SQLite cache, mutation queue |
+| [`dartvex_auth_better`](https://pub.dev/packages/dartvex_auth_better) | Better Auth adapter |
+
+Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/AndreFrelicot/dartvex)
 
 ## What it does
 

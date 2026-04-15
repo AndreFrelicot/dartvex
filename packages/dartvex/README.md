@@ -2,6 +2,20 @@
 
 Pure Dart client for [Convex](https://convex.dev) with WebSocket sync, type-safe values, and reactive subscriptions. Works on iOS, Android, web, and desktop.
 
+## The Dartvex ecosystem
+
+| Package | Description |
+|---------|-------------|
+| **[`dartvex`](https://pub.dev/packages/dartvex)** | Core client — WebSocket sync, subscriptions, auth |
+| [`dartvex_flutter`](https://pub.dev/packages/dartvex_flutter) | Flutter widgets — Provider, QueryBuilder, MutationBuilder |
+| [`dartvex_codegen`](https://pub.dev/packages/dartvex_codegen) | CLI code generator — type-safe Dart bindings from schema |
+| [`dartvex_local`](https://pub.dev/packages/dartvex_local) | Offline support — SQLite cache, mutation queue |
+| [`dartvex_auth_better`](https://pub.dev/packages/dartvex_auth_better) | Better Auth adapter |
+
+> **Building a Flutter app?** Start with [`dartvex_flutter`](https://pub.dev/packages/dartvex_flutter) — it pulls in `dartvex` automatically.
+
+Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/AndreFrelicot/dartvex)
+
 ## Features
 
 - Pure Dart — no Rust FFI, no Flutter dependency, works in CLI/server apps

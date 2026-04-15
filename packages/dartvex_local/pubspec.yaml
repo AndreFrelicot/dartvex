@@ -5,6 +5,13 @@ description: >-
 version: 0.1.1
 homepage: https://github.com/AndreFrelicot/dartvex
 repository: https://github.com/AndreFrelicot/dartvex/tree/main/packages/dartvex_local
+issue_tracker: https://github.com/AndreFrelicot/dartvex/issues
+topics:
+  - convex
+  - offline
+  - sqlite
+  - sync
+  - cache
 
 environment:
   sdk: ^3.6.0

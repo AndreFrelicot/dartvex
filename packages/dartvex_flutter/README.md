@@ -1,11 +1,23 @@
 # dartvex_flutter
 
-Flutter widgets and builders for [dartvex](../dartvex/).
+Flutter widgets and builders for [dartvex](https://pub.dev/packages/dartvex) — the pure Dart client for [Convex](https://convex.dev).
 
 `dartvex_flutter` removes the repetitive widget lifecycle code around realtime
 Convex subscriptions, mutations, actions, and connection state. The package is
 designed around a small runtime interface so a future local-first adapter can
 plug into the same widgets without breaking the public API.
+
+## The Dartvex ecosystem
+
+| Package | Description |
+|---------|-------------|
+| [`dartvex`](https://pub.dev/packages/dartvex) | Core client — WebSocket sync, subscriptions, auth |
+| **[`dartvex_flutter`](https://pub.dev/packages/dartvex_flutter)** | Flutter widgets — Provider, QueryBuilder, MutationBuilder |
+| [`dartvex_codegen`](https://pub.dev/packages/dartvex_codegen) | CLI code generator — type-safe Dart bindings from schema |
+| [`dartvex_local`](https://pub.dev/packages/dartvex_local) | Offline support — SQLite cache, mutation queue |
+| [`dartvex_auth_better`](https://pub.dev/packages/dartvex_auth_better) | Better Auth adapter |
+
+Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/AndreFrelicot/dartvex)
 
 ## Features
 

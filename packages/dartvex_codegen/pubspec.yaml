@@ -5,6 +5,13 @@ description: >-
 version: 0.1.2
 homepage: https://github.com/AndreFrelicot/dartvex
 repository: https://github.com/AndreFrelicot/dartvex/tree/main/packages/dartvex_codegen
+issue_tracker: https://github.com/AndreFrelicot/dartvex/issues
+topics:
+  - convex
+  - codegen
+  - cli
+  - schema
+  - dart
 
 environment:
   sdk: ^3.6.0
