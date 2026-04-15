@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/AndreFrelicot/dartvex/main/assets/dartvex-logo-128.png" width="128" alt="Dartvex" />
+</p>
+
 # dartvex_auth_better
 
 Better Auth adapter for [dartvex](https://pub.dev/packages/dartvex) — the pure Dart client for [Convex](https://convex.dev). Self-hosted authentication powered by [Better Auth](https://www.better-auth.com/).
