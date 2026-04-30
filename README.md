@@ -21,7 +21,7 @@
 
 - **Pure Dart** — No Rust FFI, no native bridges. Works everywhere Dart runs.
 - **Type-safe codegen** — Generate Dart bindings from your Convex schema. Catch errors at compile time.
-- **Flutter widgets** — `ConvexProvider`, `ConvexQueryBuilder`, `ConvexMutationBuilder` and more for reactive UI.
+- **Flutter widgets** — `ConvexProvider`, `ConvexQuery`, `ConvexMutation` and more for reactive UI.
 - **Offline capable** — SQLite query cache and mutation queue with optimistic updates.
 - **Multi-platform** — iOS, Android, web, macOS, Linux, Windows.
 
@@ -31,9 +31,7 @@
 import 'package:dartvex/dartvex.dart';
 
 void main() async {
-  final client = ConvexClient(
-    deploymentUrl: 'https://your-deployment.convex.cloud',
-  );
+  final client = ConvexClient('https://your-deployment.convex.cloud');
 
   // Subscribe to a query
   final sub = client.subscribe('messages:list', {});
@@ -44,7 +42,7 @@ void main() async {
   });
 
   // Run a mutation
-  await client.mutation('messages:send', {'body': 'Hello from Dart!'});
+  await client.mutate('messages:send', {'body': 'Hello from Dart!'});
 }
 ```
 
@@ -52,11 +50,11 @@ void main() async {
 
 | Package | Description | Version |
 |---------|-------------|---------|
-| [`dartvex`](packages/dartvex/) | Core client — WebSocket sync, subscriptions, auth | 0.1.3 |
-| [`dartvex_flutter`](packages/dartvex_flutter/) | Flutter widgets — Provider, QueryBuilder, MutationBuilder | 0.1.3 |
-| [`dartvex_codegen`](packages/dartvex_codegen/) | CLI code generator — type-safe Dart bindings from schema | 0.1.2 |
-| [`dartvex_local`](packages/dartvex_local/) | Offline support — SQLite cache, mutation queue | 0.1.1 |
-| [`dartvex_auth_better`](packages/dartvex_auth_better/) | Better Auth adapter | 0.1.2 |
+| [`dartvex`](packages/dartvex/) | Core client — WebSocket sync, subscriptions, auth | 0.1.4 |
+| [`dartvex_flutter`](packages/dartvex_flutter/) | Flutter widgets — Provider, Query, Mutation | 0.1.4 |
+| [`dartvex_codegen`](packages/dartvex_codegen/) | CLI code generator — type-safe Dart bindings from schema | 0.1.3 |
+| [`dartvex_local`](packages/dartvex_local/) | Offline support — SQLite cache, mutation queue | 0.1.2 |
+| [`dartvex_auth_better`](packages/dartvex_auth_better/) | Better Auth adapter | 0.1.3 |
 
 ## Architecture
 
@@ -85,23 +83,27 @@ void main() async {
 ```yaml
 # pubspec.yaml
 dependencies:
-  dartvex: ^0.1.3
-  dartvex_flutter: ^0.1.3  # If using Flutter
+  dartvex: ^0.1.4
+  dartvex_flutter: ^0.1.4  # If using Flutter
 
 dev_dependencies:
-  dartvex_codegen: ^0.1.2  # For code generation
+  dartvex_codegen: ^0.1.3  # For code generation
 ```
 
 ### 2. Configure your client
 
 ```dart
+import 'package:dartvex/dartvex.dart';
 import 'package:dartvex_flutter/dartvex_flutter.dart';
+
+final client = ConvexClient('https://your-deployment.convex.cloud');
+final runtime = ConvexClientRuntime(client);
 
 class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ConvexProvider(
-      deploymentUrl: 'https://your-deployment.convex.cloud',
+      client: runtime,
       child: MaterialApp(home: HomePage()),
     );
   }
@@ -112,23 +114,22 @@ class MyApp extends StatelessWidget {
 
 ```bash
 dart run dartvex_codegen generate \
-  --spec path/to/function_spec.json \
+  --spec-file path/to/function_spec.json \
   --output lib/convex_api/
 ```
 
 ### 4. Use in your widgets
 
 ```dart
-ConvexQueryBuilder<List<Message>>(
-  query: ConvexQuery('messages:list', {}),
-  decoder: (v) => (v as List).map(Message.fromJson).toList(),
+ConvexQuery<List<Message>>(
+  query: 'messages:list',
+  args: const {},
+  decode: (v) => (v as List).map(Message.fromJson).toList(),
   builder: (context, snapshot) {
-    return switch (snapshot) {
-      ConvexQuerySnapshot(data: final messages?) =>
-        ListView(children: messages.map(MessageTile.new).toList()),
-      ConvexQuerySnapshot(error: final e?) => Text('Error: $e'),
-      _ => CircularProgressIndicator(),
-    };
+    if (snapshot.isLoading) return const CircularProgressIndicator();
+    if (snapshot.hasError) return Text('Error: ${snapshot.error}');
+    final messages = snapshot.data ?? const <Message>[];
+    return ListView(children: messages.map(MessageTile.new).toList());
   },
 )
 ```
@@ -149,7 +150,7 @@ sub.stream.listen((result) {
 ### Mutations
 
 ```dart
-await client.mutation('tasks:create', {
+await client.mutate('tasks:create', {
   'title': 'Ship dartvex',
   'projectId': 'abc123',
 });
@@ -166,15 +167,16 @@ final result = await client.action('ai:summarize', {
 ### Authentication
 
 ```dart
-// With Better Auth
-ConvexProvider(
-  deploymentUrl: '...',
-  authProvider: ConvexBetterAuthProvider(
-    betterAuthUrl: 'https://your-auth-server.com',
-    convexSiteUrl: 'https://your-deployment.convex.cloud',
-  ),
-  child: MyApp(),
-)
+final authClient = BetterAuthClient(
+  baseUrl: 'https://your-deployment.convex.cloud',
+);
+final provider = ConvexBetterAuthProvider(client: authClient)
+  ..email = 'user@example.com'
+  ..password = 'securePassword';
+
+final client = ConvexClient('https://your-deployment.convex.cloud');
+final authedClient = client.withAuth(provider);
+await authedClient.login();
 ```
 
 ### Offline Support
@@ -182,10 +184,15 @@ ConvexProvider(
 ```dart
 import 'package:dartvex_local/dartvex_local.dart';
 
+final remoteClient = ConvexClient('https://your-deployment.convex.cloud');
 final store = await SqliteLocalStore.open('my_app.sqlite');
-final localClient = ConvexLocalClient(
-  remoteClient: remoteClient,
-  store: store,
+final localClient = await ConvexLocalClient.open(
+  client: remoteClient,
+  config: LocalClientConfig(
+    cacheStorage: store,
+    queueStorage: store,
+    disposeRemoteClient: true,
+  ),
 );
 
 // Queries served from cache when offline

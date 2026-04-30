@@ -13,7 +13,7 @@ Pure Dart client for [Convex](https://convex.dev) with WebSocket sync, type-safe
 | Package | Description |
 |---------|-------------|
 | **[`dartvex`](https://pub.dev/packages/dartvex)** | Core client — WebSocket sync, subscriptions, auth |
-| [`dartvex_flutter`](https://pub.dev/packages/dartvex_flutter) | Flutter widgets — Provider, QueryBuilder, MutationBuilder |
+| [`dartvex_flutter`](https://pub.dev/packages/dartvex_flutter) | Flutter widgets — Provider, Query, Mutation |
 | [`dartvex_codegen`](https://pub.dev/packages/dartvex_codegen) | CLI code generator — type-safe Dart bindings from schema |
 | [`dartvex_local`](https://pub.dev/packages/dartvex_local) | Offline support — SQLite cache, mutation queue |
 | [`dartvex_auth_better`](https://pub.dev/packages/dartvex_auth_better) | Better Auth adapter |
@@ -29,10 +29,12 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 - Read-your-writes mutation semantics
 - Transition chunk reassembly
 - Special value encoding (`$integer`, `$bytes`, `$float`)
+- Structured query errors with Convex error data and server log lines
 - Auth framework with pluggable `AuthProvider<T>` abstraction
 - One-shot query via `queryOnce<T>()` for non-reactive reads
 - File storage helpers via `ConvexStorage` (upload/download)
-- Reconnection with exponential backoff and full query set rebuild
+- Reconnection with exponential backoff, full query set rebuild, and safe
+  replay of queued mutations
 - Native and browser WebSocket adapters (conditional import)
 - Structured opt-in logging for transport, auth, and storage diagnostics
 
@@ -50,7 +52,7 @@ The web adapter is selected automatically via conditional import.
 
 ```yaml
 dependencies:
-  dartvex: ^0.1.3
+  dartvex: ^0.1.4
 ```
 
 ## Usage
@@ -211,6 +213,21 @@ Recommended usage:
 - `debug`: integration diagnostics
 
 Sensitive values such as auth tokens should not be logged.
+
+## Connection Control
+
+By default, `ConvexClient` opens its WebSocket when constructed. Set
+`connectImmediately: false` to defer the connection until the first backend
+operation, auth update, or explicit reconnect:
+
+```dart
+final client = ConvexClient(
+  'https://your-deployment.convex.cloud',
+  config: const ConvexClientConfig(connectImmediately: false),
+);
+
+await client.reconnectNow('manual-refresh');
+```
 
 ## API Overview
 

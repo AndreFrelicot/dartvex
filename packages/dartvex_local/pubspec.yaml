@@ -2,7 +2,7 @@ name: dartvex_local
 description: >-
   Offline-capable extension for Dartvex. SQLite query cache and mutation queue
   with optimistic updates.
-version: 0.1.1
+version: 0.1.2
 homepage: https://github.com/AndreFrelicot/dartvex
 repository: https://github.com/AndreFrelicot/dartvex/tree/main/packages/dartvex_local
 issue_tracker: https://github.com/AndreFrelicot/dartvex/issues
@@ -12,6 +12,13 @@ topics:
   - sqlite
   - sync
   - cache
+
+platforms:
+  android:
+  ios:
+  linux:
+  macos:
+  windows:
 
 environment:
   sdk: ^3.6.0

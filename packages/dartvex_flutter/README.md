@@ -18,7 +18,7 @@ plug into the same widgets without breaking the public API.
 | Package | Description |
 |---------|-------------|
 | [`dartvex`](https://pub.dev/packages/dartvex) | Core client — WebSocket sync, subscriptions, auth |
-| **[`dartvex_flutter`](https://pub.dev/packages/dartvex_flutter)** | Flutter widgets — Provider, QueryBuilder, MutationBuilder |
+| **[`dartvex_flutter`](https://pub.dev/packages/dartvex_flutter)** | Flutter widgets — Provider, Query, Mutation |
 | [`dartvex_codegen`](https://pub.dev/packages/dartvex_codegen) | CLI code generator — type-safe Dart bindings from schema |
 | [`dartvex_local`](https://pub.dev/packages/dartvex_local) | Offline support — SQLite cache, mutation queue |
 | [`dartvex_auth_better`](https://pub.dev/packages/dartvex_auth_better) | Better Auth adapter |
@@ -36,14 +36,15 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 - `ConvexConnectionBuilder` / `ConvexConnectionIndicator` — connection status
 - `ConvexOfflineImage` / `ConvexAssetCache` — offline binary asset caching
 - `FakeConvexClient` — test helper for unit and widget tests
+- App lifecycle reconnect when a Flutter app resumes while disconnected
 - Runtime-interface based — works with `ConvexClientRuntime` and local-first adapters
 
 ## Installation
 
 ```yaml
 dependencies:
-  dartvex: ^0.1.3
-  dartvex_flutter: ^0.1.3
+  dartvex: ^0.1.4
+  dartvex_flutter: ^0.1.4
 ```
 
 ## Provider Setup
@@ -169,9 +170,9 @@ await tester.pumpWidget(
 | Widget | Description |
 |--------|-------------|
 | `ConvexProvider` | Provides client to widget tree via InheritedWidget |
-| `ConvexQueryBuilder` | Reactive query with automatic re-rendering |
-| `ConvexMutationBuilder` | Mutation trigger with loading/error state |
-| `ConvexActionBuilder` | Action trigger with loading/error state |
+| `ConvexQuery` | Reactive query with automatic re-rendering |
+| `ConvexMutation` | Mutation trigger with loading/error state |
+| `ConvexAction` | Action trigger with loading/error state |
 | `PaginatedQueryBuilder` | Cursor-based paginated query |
 | `ConvexAuthBuilder` | Renders based on auth state |
 | `ConvexConnectionBuilder` | Renders based on connection state |

@@ -3,14 +3,24 @@
 ///
 /// Run from your project root:
 /// ```bash
-/// dart run dartvex_codegen --url https://your-app.convex.cloud
+/// dart run dartvex_codegen generate \
+///   --project ./convex \
+///   --output ./lib/convex_api
 /// ```
 ///
-/// This generates a `convex_api.dart` file with typed query/mutation helpers.
+/// This runs `convex function-spec` and generates typed query, mutation, and
+/// action helpers.
 ///
-/// For more options:
+/// You can also generate from an exported spec:
 /// ```bash
-/// dart run dartvex_codegen --help
+/// dart run dartvex_codegen generate \
+///   --spec-file ./function_spec.json \
+///   --output ./lib/convex_api
+/// ```
+///
+/// For all options:
+/// ```bash
+/// dart run dartvex_codegen generate --help
 /// ```
 void main() {
   // dartvex_codegen is a CLI tool — run it via `dart run dartvex_codegen`.
@@ -25,8 +35,8 @@ void main() {
   //       client.query('messages:list', {'limit': limit});
   //
   //     Future<void> send({required String body, required String author}) =>
-  //       client.mutation('messages:send', {'body': body, 'author': author});
+  //       client.mutate('messages:send', {'body': body, 'author': author});
   //   }
   //
-  print('Run: dart run dartvex_codegen --url https://your-app.convex.cloud');
+  print('Run: dart run dartvex_codegen generate --help');
 }

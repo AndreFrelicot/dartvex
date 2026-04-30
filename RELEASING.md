@@ -8,6 +8,11 @@ That means:
 - only republish dependent packages when their own code changed or their internal version constraints must move
 - publish internal dependencies first, then dependents
 
+Prepare release bumps in git before moving to the publishing machine. The
+machine that runs `dart pub publish` or `flutter pub publish` should publish
+from an already committed release-prep commit, not from local-only version
+edits. Create package tags only after each package is successfully published.
+
 ## Release Tags
 
 The release helper uses one git tag per package:
@@ -34,6 +39,11 @@ Once package tags exist:
 ```sh
 dart scripts/release_packages.dart plan
 ```
+
+To include packages with README/pubspec metadata changes after their package
+tags, use the default tag-based plan. Do not rely only on calendar windows such
+as "changes since April"; each package's latest `package-vX.Y.Z` tag is the
+publish baseline.
 
 What the plan shows:
 
@@ -68,6 +78,15 @@ Typical order:
 
 The helper will compute the exact order for the selected release set.
 
+Before committing, verify package docs:
+
+- each package README starts with the Dartvex logo from
+  `https://raw.githubusercontent.com/AndreFrelicot/dartvex/main/assets/dartvex-logo-512.png`
+- each package README includes the "The Dartvex ecosystem" table linking the
+  five public packages
+- examples use current public APIs (`mutate`, `ConvexQuery`,
+  `ConvexLocalClient.open`, and `dartvex_codegen generate --spec-file`)
+
 ## Run pub.dev Dry-Runs
 
 Dry-run only the directly changed packages:
@@ -91,6 +110,14 @@ dart scripts/release_packages.dart dry-run --all
 The helper automatically uses `dart` or `flutter` based on the package type.
 It also expects a clean git state for the selected packages, because pub.dev
 warns on modified tracked files.
+
+When you are preparing on one machine and publishing on another:
+
+1. commit the version, changelog, README, and example updates
+2. push the release-prep commit
+3. pull that exact commit on the publishing machine
+4. verify no package directory contains a local `pubspec_overrides.yaml`
+5. run the dry-runs there before publishing
 
 ## Publish
 
@@ -118,6 +145,18 @@ Then push commits and tags:
 ```sh
 git push origin main --tags
 ```
+
+Recommended cross-machine flow:
+
+1. On the prep machine, commit release-prep changes and push the branch.
+2. On the publishing machine, pull the release-prep commit and run
+   `dart scripts/release_packages.dart dry-run --include-dependents`.
+3. Publish in the computed order.
+4. Create one tag per successfully published package on the published commit.
+5. Push the tags.
+
+If a publish fails midway, tag only the packages that were actually published,
+fix the issue, then repeat planning from the remaining package tags.
 
 ## Practical Rule of Thumb
 

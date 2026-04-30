@@ -13,7 +13,7 @@ Offline-capable extension for [dartvex](https://pub.dev/packages/dartvex) — th
 | Package | Description |
 |---------|-------------|
 | [`dartvex`](https://pub.dev/packages/dartvex) | Core client — WebSocket sync, subscriptions, auth |
-| [`dartvex_flutter`](https://pub.dev/packages/dartvex_flutter) | Flutter widgets — Provider, QueryBuilder, MutationBuilder |
+| [`dartvex_flutter`](https://pub.dev/packages/dartvex_flutter) | Flutter widgets — Provider, Query, Mutation |
 | [`dartvex_codegen`](https://pub.dev/packages/dartvex_codegen) | CLI code generator — type-safe Dart bindings from schema |
 | **[`dartvex_local`](https://pub.dev/packages/dartvex_local)** | Offline support — SQLite cache, mutation queue |
 | [`dartvex_auth_better`](https://pub.dev/packages/dartvex_auth_better) | Better Auth adapter |
@@ -38,12 +38,20 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 - No automatic cache eviction. Once cached, results stay until `clearCache()`.
 - No web support. SQLite requires native `dart:io` targets.
 
+## Platform Support
+
+| Platform | Status |
+|----------|--------|
+| iOS / Android | Supported with native SQLite |
+| macOS / Linux / Windows | Supported with native SQLite |
+| Web | Not supported |
+
 ## Installation
 
 ```yaml
 dependencies:
-  dartvex: ^0.1.3
-  dartvex_local: ^0.1.1
+  dartvex: ^0.1.4
+  dartvex_local: ^0.1.2
 ```
 
 ## Quick Start
