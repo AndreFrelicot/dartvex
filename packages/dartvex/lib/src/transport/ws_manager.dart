@@ -16,6 +16,9 @@ typedef ServerMessageHandler = FutureOr<List<ClientMessage>> Function(
 /// Called when the socket disconnects.
 typedef DisconnectHandler = FutureOr<void> Function(String reason);
 
+/// Called with client messages that were handed to the socket adapter.
+typedef SentMessagesHandler = void Function(List<ClientMessage> messages);
+
 /// Reports low-level socket connection state.
 typedef ConnectionStateHandler = void Function(
     bool connected, bool reconnecting);
@@ -64,6 +67,7 @@ class WebSocketManager {
     required this.maxObservedTimestamp,
     required this.reconnectBackoff,
     required this.inactivityTimeout,
+    this.onMessagesSent,
     this.onTransitionMetrics,
     this.logLevel = DartvexLogLevel.off,
     this.logger,
@@ -86,6 +90,9 @@ class WebSocketManager {
 
   /// Callback invoked when the socket disconnects.
   final DisconnectHandler onDisconnected;
+
+  /// Callback invoked after messages are handed to the socket adapter.
+  final SentMessagesHandler? onMessagesSent;
 
   /// Callback used to publish connection state changes.
   final ConnectionStateHandler onConnectionStateChanged;
@@ -134,13 +141,46 @@ class WebSocketManager {
   }
 
   /// Sends a batch of client protocol [messages] if connected.
-  Future<void> sendMessages(List<ClientMessage> messages) async {
+  ///
+  /// Returns the prefix of [messages] that was handed to the adapter.
+  Future<List<ClientMessage>> sendMessages(List<ClientMessage> messages) async {
     if (!adapter.isConnected) {
+      return const <ClientMessage>[];
+    }
+    final sentMessages = <ClientMessage>[];
+    try {
+      for (final message in messages) {
+        if (!adapter.isConnected) {
+          break;
+        }
+        adapter.send(jsonEncode(message.toJson()));
+        sentMessages.add(message);
+      }
+    } catch (error, stackTrace) {
+      _notifyMessagesSent(sentMessages);
+      _lastCloseReason = 'FailedToSendMessage';
+      _log(
+        DartvexLogLevel.error,
+        'Failed to send WebSocket message',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (adapter.isConnected) {
+        await adapter.close();
+      } else {
+        _scheduleReconnect(immediate: true);
+      }
+      return sentMessages;
+    }
+    _notifyMessagesSent(sentMessages);
+    return sentMessages;
+  }
+
+  void _notifyMessagesSent(List<ClientMessage> messages) {
+    if (messages.isEmpty) {
       return;
     }
-    for (final message in messages) {
-      adapter.send(jsonEncode(message.toJson()));
-    }
+    onMessagesSent?.call(List<ClientMessage>.unmodifiable(messages));
   }
 
   /// Forces a reconnect using [reason] as the last close reason.
@@ -197,7 +237,6 @@ class WebSocketManager {
       _reconnectTimer?.cancel();
       _resetInactivityTimer();
       _log(DartvexLogLevel.info, 'WebSocket connected');
-      onConnectionStateChanged(true, false);
       adapter.send(
         jsonEncode(
           Connect(
@@ -211,6 +250,10 @@ class WebSocketManager {
       );
       final reconnectMessages = await onConnected();
       await sendMessages(reconnectMessages);
+      if (!adapter.isConnected) {
+        return;
+      }
+      onConnectionStateChanged(true, false);
       _reconnectIndex = 0;
     } catch (error) {
       _connecting = false;

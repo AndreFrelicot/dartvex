@@ -101,6 +101,114 @@ void main() {
       client.dispose();
     });
 
+    test('mutation queued while disconnected sends after reconnect', () async {
+      final adapter = MockWebSocketAdapter();
+      final client = ConvexClient(
+        'https://demo.convex.cloud',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+      await settle();
+
+      adapter.disconnect();
+      final future = client.mutate(
+        'messages:send',
+        const <String, dynamic>{'body': 'hello'},
+      );
+      var completed = false;
+      future.then((_) {
+        completed = true;
+      });
+      await settle();
+
+      final mutation = adapter.decodedSentMessages
+          .where((message) => message['type'] == 'Mutation')
+          .single;
+      final requestId = mutation['requestId'] as int;
+      adapter.pushServerMessage(
+        MutationResponse(
+          requestId: requestId,
+          success: true,
+          result: const <String, dynamic>{'ok': true},
+          ts: encodeTs(4),
+        ).toJson(),
+      );
+      await settle();
+      expect(completed, isFalse);
+
+      adapter.pushServerMessage(
+        Transition(
+          startVersion: const StateVersion.initial(),
+          endVersion: StateVersion(querySet: 0, identity: 0, ts: encodeTs(4)),
+          modifications: const <StateModification>[],
+        ).toJson(),
+      );
+
+      expect(await future, <String, dynamic>{'ok': true});
+      client.dispose();
+    });
+
+    test('connected listeners do not send requests before reconnect replay',
+        () async {
+      final adapter = MockWebSocketAdapter();
+      final client = ConvexClient(
+        'https://demo.convex.cloud',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+      await settle();
+
+      final futures = <Future<dynamic>>[];
+      var listenerSent = false;
+      final stateSubscription = client.connectionState.listen((state) {
+        if (state == ConnectionState.connected && !listenerSent) {
+          listenerSent = true;
+          futures.add(
+            client.mutate(
+              'messages:fromListener',
+              const <String, dynamic>{'body': 'after-replay'},
+            ).catchError((_) {}),
+          );
+        }
+      });
+
+      adapter.disconnect();
+      futures.add(
+        client.mutate(
+          'messages:queued',
+          const <String, dynamic>{'body': 'before-replay'},
+        ).catchError((_) {}),
+      );
+      await settle();
+
+      final messages = adapter.decodedSentMessages;
+      final reconnectIndex = messages.lastIndexWhere(
+        (message) => message['type'] == 'Connect',
+      );
+      final reconnectMutations = messages
+          .asMap()
+          .entries
+          .where(
+            (entry) =>
+                entry.key > reconnectIndex && entry.value['type'] == 'Mutation',
+          )
+          .map((entry) => entry.value['udfPath'])
+          .toList(growable: false);
+
+      expect(reconnectMutations, <String>[
+        'messages:queued',
+        'messages:fromListener',
+      ]);
+
+      await stateSubscription.cancel();
+      client.dispose();
+      await Future.wait(futures);
+    });
+
     test('action resolves immediately on action response', () async {
       final adapter = MockWebSocketAdapter();
       final client = ConvexClient(
@@ -131,6 +239,73 @@ void main() {
 
       expect(await future, 'ok');
       client.dispose();
+    });
+
+    test('in-flight action fails on disconnect', () async {
+      final adapter = MockWebSocketAdapter();
+      final client = ConvexClient(
+        'https://demo.convex.cloud',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+      await settle();
+
+      final future = client.action(
+        'messages:notify',
+        const <String, dynamic>{'body': 'hello'},
+      );
+      await settle();
+
+      final expectation = expectLater(
+        future,
+        throwsA(
+          isA<ConvexException>()
+              .having((error) => error.retryable, 'retryable', isTrue)
+              .having(
+                (error) => error.message,
+                'message',
+                contains('Connection lost while action was in flight'),
+              ),
+        ),
+      );
+      adapter.disconnect();
+
+      await expectation;
+      client.dispose();
+    });
+
+    test('dispose fails a mutation queued while disconnected', () async {
+      final adapter = MockWebSocketAdapter();
+      final client = ConvexClient(
+        'https://demo.convex.cloud',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          reconnectBackoff: const <Duration>[Duration(seconds: 1)],
+        ),
+      );
+      await settle();
+
+      adapter.disconnect();
+      final future = client.mutate(
+        'messages:send',
+        const <String, dynamic>{'body': 'hello'},
+      );
+      final expectation = expectLater(
+        future,
+        throwsA(
+          isA<ConvexException>().having(
+            (error) => error.message,
+            'message',
+            'ConvexClient has been disposed',
+          ),
+        ),
+      );
+
+      client.dispose();
+
+      await expectation;
     });
 
     test('ping triggers pong event', () async {

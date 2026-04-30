@@ -34,6 +34,84 @@ void main() {
       await manager.dispose();
     });
 
+    test('sendMessages reports no sent messages while disconnected', () async {
+      final adapter = MockWebSocketAdapter();
+      final manager = WebSocketManager(
+        adapter: adapter,
+        deploymentUrl: 'https://demo.convex.cloud',
+        apiVersion: '0.1.0',
+        onConnected: () => const <ClientMessage>[],
+        onMessage: (_) => const <ClientMessage>[],
+        onDisconnected: (_) async {},
+        onConnectionStateChanged: (_, __) {},
+        maxObservedTimestamp: () => null,
+        reconnectBackoff: const <Duration>[Duration.zero],
+        inactivityTimeout: const Duration(seconds: 30),
+      );
+
+      final sentMessages = await manager.sendMessages(
+        const <ClientMessage>[
+          Mutation(
+            requestId: 1,
+            udfPath: 'messages:send',
+            args: <dynamic>[
+              <String, dynamic>{'body': 'hello'}
+            ],
+          ),
+        ],
+      );
+
+      expect(sentMessages, isEmpty);
+      expect(adapter.sentMessages, isEmpty);
+
+      await manager.dispose();
+    });
+
+    test('sendMessages reports sent prefix when adapter send throws', () async {
+      final adapter = _ThrowingSendAdapter(failAtSentCount: 1);
+      final sentCallbacks = <List<ClientMessage>>[];
+      final manager = WebSocketManager(
+        adapter: adapter,
+        deploymentUrl: 'https://demo.convex.cloud',
+        apiVersion: '0.1.0',
+        onConnected: () => const <ClientMessage>[],
+        onMessage: (_) => const <ClientMessage>[],
+        onDisconnected: (_) async {},
+        onMessagesSent: sentCallbacks.add,
+        onConnectionStateChanged: (_, __) {},
+        maxObservedTimestamp: () => null,
+        reconnectBackoff: const <Duration>[Duration.zero],
+        inactivityTimeout: const Duration(seconds: 30),
+      );
+      await adapter.connect('wss://demo.convex.cloud/api/0.1.0/sync');
+
+      final first = const Mutation(
+        requestId: 1,
+        udfPath: 'messages:send',
+        args: <dynamic>[
+          <String, dynamic>{'body': 'first'}
+        ],
+      );
+      final second = const Mutation(
+        requestId: 2,
+        udfPath: 'messages:send',
+        args: <dynamic>[
+          <String, dynamic>{'body': 'second'}
+        ],
+      );
+      final sentMessages = await manager.sendMessages(<ClientMessage>[
+        first,
+        second,
+      ]);
+
+      expect(sentMessages, <ClientMessage>[first]);
+      expect(sentCallbacks.single, <ClientMessage>[first]);
+      expect(adapter.decodedSentMessages.single['requestId'], 1);
+      expect(adapter.isConnected, isFalse);
+
+      await manager.dispose();
+    });
+
     test('reconnect reuses session ID and increments connection count',
         () async {
       final adapter = MockWebSocketAdapter();
@@ -183,4 +261,18 @@ void main() {
       expect(metrics.toString(), contains('5.0MB'));
     });
   });
+}
+
+class _ThrowingSendAdapter extends MockWebSocketAdapter {
+  _ThrowingSendAdapter({required this.failAtSentCount});
+
+  final int failAtSentCount;
+
+  @override
+  void send(String message) {
+    if (sentMessages.length == failAtSentCount) {
+      throw StateError('send failed');
+    }
+    super.send(message);
+  }
 }

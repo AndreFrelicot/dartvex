@@ -4,23 +4,37 @@ import '../exceptions.dart';
 import '../protocol/encoding.dart';
 import '../protocol/messages.dart';
 
-class _PendingMutation {
-  _PendingMutation({required this.udfPath, required this.completer});
+enum _RequestStatus {
+  notSent,
+  requested,
+  completedMutationAwaitingTransition,
+}
 
-  final String udfPath;
+class _PendingMutation {
+  _PendingMutation({
+    required this.message,
+    required this.completer,
+    required this.status,
+  });
+
+  final Mutation message;
   final Completer<dynamic> completer;
+  _RequestStatus status;
   Object? result;
-  Object? errorData;
   List<String> logLines = const <String>[];
   String? serverTs;
-  String? errorMessage;
 }
 
 class _PendingAction {
-  _PendingAction({required this.udfPath, required this.completer});
+  _PendingAction({
+    required this.message,
+    required this.completer,
+    required this.status,
+  });
 
-  final String udfPath;
+  final Action message;
   final Completer<dynamic> completer;
+  _RequestStatus status;
 }
 
 class RequestManager {
@@ -28,27 +42,55 @@ class RequestManager {
       <int, _PendingMutation>{};
   final Map<int, _PendingAction> _pendingActions = <int, _PendingAction>{};
 
-  Future<dynamic> trackMutation(Mutation message) {
+  Future<dynamic> trackMutation(Mutation message, {bool sent = false}) {
     final completer = Completer<dynamic>();
     _pendingMutations[message.requestId] = _PendingMutation(
-      udfPath: message.udfPath,
+      message: message,
       completer: completer,
+      status: sent ? _RequestStatus.requested : _RequestStatus.notSent,
     );
     return completer.future;
   }
 
-  Future<dynamic> trackAction(Action message) {
+  Future<dynamic> trackAction(Action message, {bool sent = false}) {
     final completer = Completer<dynamic>();
     _pendingActions[message.requestId] = _PendingAction(
-      udfPath: message.udfPath,
+      message: message,
       completer: completer,
+      status: sent ? _RequestStatus.requested : _RequestStatus.notSent,
     );
     return completer.future;
+  }
+
+  void markSent(Iterable<ClientMessage> messages) {
+    for (final message in messages) {
+      switch (message) {
+        case Mutation():
+          final pending = _pendingMutations[message.requestId];
+          if (pending != null && pending.status == _RequestStatus.notSent) {
+            pending.status = _RequestStatus.requested;
+          }
+        case Action():
+          final pending = _pendingActions[message.requestId];
+          if (pending != null && pending.status == _RequestStatus.notSent) {
+            pending.status = _RequestStatus.requested;
+          }
+        case Connect():
+        case ModifyQuerySet():
+        case Authenticate():
+        case Event():
+        case RequestMessage():
+      }
+    }
   }
 
   void handleMutationResponse(MutationResponse response) {
     final pending = _pendingMutations[response.requestId];
     if (pending == null) {
+      return;
+    }
+
+    if (pending.status == _RequestStatus.completedMutationAwaitingTransition) {
       return;
     }
 
@@ -70,7 +112,10 @@ class RequestManager {
     if (response.ts == null) {
       pending.completer.complete(response.result);
       _pendingMutations.remove(response.requestId);
+      return;
     }
+
+    pending.status = _RequestStatus.completedMutationAwaitingTransition;
   }
 
   void handleActionResponse(ActionResponse response) {
@@ -95,6 +140,10 @@ class RequestManager {
     final transitionValue = decodeTs(transitionTs);
     final completedIds = <int>[];
     _pendingMutations.forEach((requestId, pending) {
+      if (pending.status !=
+          _RequestStatus.completedMutationAwaitingTransition) {
+        return;
+      }
       final pendingTs = pending.serverTs;
       if (pendingTs == null) {
         return;
@@ -109,8 +158,32 @@ class RequestManager {
     }
   }
 
+  void handleDisconnect(String reason) {
+    _failRequestedActions(
+      'Connection lost while action was in flight: $reason',
+    );
+  }
+
+  List<ClientMessage> prepareReconnect() {
+    _failRequestedActions('Connection lost while action was in flight');
+    final messagesByRequestId = <int, ClientMessage>{
+      for (final entry in _pendingMutations.entries)
+        entry.key: entry.value.message,
+      for (final entry in _pendingActions.entries)
+        if (entry.value.status == _RequestStatus.notSent)
+          entry.key: entry.value.message,
+    };
+    final requestIds = messagesByRequestId.keys.toList(growable: false)..sort();
+    return <ClientMessage>[
+      for (final requestId in requestIds) messagesByRequestId[requestId]!,
+    ];
+  }
+
+  bool get hasPendingRequests =>
+      _pendingMutations.isNotEmpty || _pendingActions.isNotEmpty;
+
   void failAll(String message) {
-    final error = ConvexException(message, retryable: true);
+    final error = ConvexException(message);
     for (final pending in _pendingMutations.values) {
       if (!pending.completer.isCompleted) {
         pending.completer.completeError(error);
@@ -125,6 +198,22 @@ class RequestManager {
     _pendingActions.clear();
   }
 
-  bool get hasPendingRequests =>
-      _pendingMutations.isNotEmpty || _pendingActions.isNotEmpty;
+  void _failRequestedActions(String message) {
+    final failedRequestIds = <int>[];
+    for (final entry in _pendingActions.entries) {
+      final pending = entry.value;
+      if (pending.status != _RequestStatus.requested) {
+        continue;
+      }
+      if (!pending.completer.isCompleted) {
+        pending.completer.completeError(
+          ConvexException(message, retryable: true),
+        );
+      }
+      failedRequestIds.add(entry.key);
+    }
+    for (final requestId in failedRequestIds) {
+      _pendingActions.remove(requestId);
+    }
+  }
 }

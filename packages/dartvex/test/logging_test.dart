@@ -137,6 +137,65 @@ void main() {
 
       authClient.dispose();
     });
+
+    test('request failure logging does not expose errorData or logLines',
+        () async {
+      final adapter = MockWebSocketAdapter();
+      final events = <DartvexLogEvent>[];
+      final client = ConvexClient(
+        'https://demo.convex.cloud',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          reconnectBackoff: const <Duration>[Duration.zero],
+          logLevel: DartvexLogLevel.error,
+          logger: events.add,
+        ),
+      );
+
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      final future = client.mutate(
+        'messages:send',
+        const <String, dynamic>{'body': 'hello'},
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      final mutation = adapter.decodedSentMessages
+          .where((message) => message['type'] == 'Mutation')
+          .single;
+      adapter.pushServerMessage(
+        MutationResponse(
+          requestId: mutation['requestId'] as int,
+          success: false,
+          errorMessage: 'Mutation failed',
+          errorData: const <String, dynamic>{'secret': 'payload'},
+          logLines: const <String>['secret log line'],
+        ).toJson(),
+      );
+
+      await expectLater(
+        future,
+        throwsA(
+          isA<ConvexException>().having(
+            (error) => error.data,
+            'data',
+            const <String, dynamic>{'secret': 'payload'},
+          ),
+        ),
+      );
+      final failureLog = events.singleWhere(
+        (event) => event.message == 'Mutation failed',
+      );
+      expect(
+        failureLog.error,
+        isA<ConvexException>()
+            .having((error) => error.data, 'data', isNull)
+            .having((error) => error.logLines, 'logLines', isEmpty),
+      );
+      expect(
+          '${failureLog.error} ${failureLog.data}', isNot(contains('secret')));
+
+      client.dispose();
+    });
   });
 }
 

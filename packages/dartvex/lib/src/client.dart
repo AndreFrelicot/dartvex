@@ -96,6 +96,12 @@ abstract interface class ConvexFunctionCaller {
   ]);
 
   /// Executes a mutation.
+  ///
+  /// If the transport is disconnected, the request is retained in memory and
+  /// sent after reconnect. The future resolves after the server responds and a
+  /// matching or later transition is observed. It is not persisted across
+  /// process restarts or client disposal, and uses the auth state active when
+  /// it is eventually sent.
   Future<dynamic> mutate(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
@@ -135,6 +141,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       onDisconnected: (reason) async {
         _baseClient.handleDisconnect(reason);
       },
+      onMessagesSent: _baseClient.markMessagesSent,
       onConnectionStateChanged: _handleConnectionStateChange,
       maxObservedTimestamp: () => _baseClient.maxObservedTimestamp,
       reconnectBackoff: _config.reconnectBackoff,
@@ -301,15 +308,16 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) async {
-    _assertConnectedForRequest('mutation');
+    _assertNotDisposed();
     _log(
       DartvexLogLevel.debug,
       'Starting mutation',
       data: _requestData(name, args),
     );
     try {
-      final result = _baseClient.mutate(name, args);
+      final future = _baseClient.mutate(name, args);
       await _flushOutgoing();
+      final result = await future;
       _log(
         DartvexLogLevel.debug,
         'Mutation succeeded',
@@ -323,7 +331,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       _log(
         DartvexLogLevel.error,
         'Mutation failed',
-        error: error,
+        error: _safeLogError(error),
         stackTrace: stackTrace,
         data: _requestData(name, args),
       );
@@ -334,19 +342,26 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   @override
 
   /// Executes an action.
+  ///
+  /// If the transport is disconnected before the action is sent, the request is
+  /// retained in memory and sent after reconnect. If the action is already in
+  /// flight when the connection is lost, the future fails because actions are
+  /// not idempotent. It is not persisted across process restarts or client
+  /// disposal, and uses the auth state active when it is eventually sent.
   Future<dynamic> action(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) async {
-    _assertConnectedForRequest('action');
+    _assertNotDisposed();
     _log(
       DartvexLogLevel.debug,
       'Starting action',
       data: _requestData(name, args),
     );
     try {
-      final result = _baseClient.action(name, args);
+      final future = _baseClient.action(name, args);
       await _flushOutgoing();
+      final result = await future;
       _log(
         DartvexLogLevel.debug,
         'Action succeeded',
@@ -360,7 +375,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       _log(
         DartvexLogLevel.error,
         'Action failed',
-        error: error,
+        error: _safeLogError(error),
         stackTrace: stackTrace,
         data: _requestData(name, args),
       );
@@ -431,6 +446,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     }
     _disposed = true;
     _log(DartvexLogLevel.debug, 'Disposing client');
+    _baseClient.failPendingRequests('ConvexClient has been disposed');
     final subscriptionControllers = _subscriptionControllers.values.toList();
     _subscriptionControllers.clear();
     scheduleMicrotask(() async {
@@ -540,17 +556,17 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     _connectionStateController.add(state);
   }
 
-  Future<void> _flushOutgoing() {
-    return _wsManager.sendMessages(_baseClient.drainOutgoing());
-  }
-
-  void _assertConnectedForRequest(String label) {
-    _assertNotDisposed();
+  Future<void> _flushOutgoing() async {
     if (!_wsManager.isConnected) {
-      throw ConvexException(
-        'Cannot send $label while disconnected',
-        retryable: true,
-      );
+      return;
+    }
+    final messages = _baseClient.drainOutgoing(assumeSent: false);
+    if (messages.isEmpty) {
+      return;
+    }
+    final sentMessages = await _wsManager.sendMessages(messages);
+    if (sentMessages.length < messages.length) {
+      _baseClient.requeueOutgoing(messages.skip(sentMessages.length));
     }
   }
 
@@ -558,6 +574,13 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     if (_disposed) {
       throw const ConvexException('ConvexClient has been disposed');
     }
+  }
+
+  Object _safeLogError(Object error) {
+    if (error is ConvexException) {
+      return ConvexException(error.message, retryable: error.retryable);
+    }
+    return error;
   }
 
   Map<String, Object?> _requestData(

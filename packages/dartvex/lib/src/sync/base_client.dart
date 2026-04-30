@@ -127,16 +127,20 @@ class BaseClient {
 
   void handleDisconnect(String reason) {
     _outgoing.clear();
-    _requestManager.failAll(
-      'Connection lost while request was in flight: $reason',
-    );
+    _requestManager.handleDisconnect(reason);
+  }
+
+  void failPendingRequests(String message) {
+    _outgoing.clear();
+    _requestManager.failAll(message);
   }
 
   List<ClientMessage> prepareReconnect() {
     _outgoing.clear();
     _remoteQuerySet.reset();
     _outgoing.addAll(_localState.prepareReconnect());
-    return drainOutgoing();
+    _outgoing.addAll(_requestManager.prepareReconnect());
+    return drainOutgoing(assumeSent: false);
   }
 
   StoredQueryResult? currentResultForQuery(int queryId) {
@@ -164,10 +168,24 @@ class BaseClient {
     return _localState.queryIdForSubscriber(subscriberId);
   }
 
-  List<ClientMessage> drainOutgoing() {
+  List<ClientMessage> drainOutgoing({bool assumeSent = true}) {
     final messages = List<ClientMessage>.from(_outgoing);
     _outgoing.clear();
+    if (assumeSent) {
+      _requestManager.markSent(messages);
+    }
     return messages;
+  }
+
+  void markMessagesSent(Iterable<ClientMessage> messages) {
+    _requestManager.markSent(messages);
+  }
+
+  void requeueOutgoing(Iterable<ClientMessage> messages) {
+    final queuedMessages = messages.toList(growable: false);
+    for (final message in queuedMessages.reversed) {
+      _outgoing.addFirst(message);
+    }
   }
 
   BaseClientReceiveResult receive(ServerMessage message) {

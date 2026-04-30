@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dartvex/src/exceptions.dart';
 import 'package:dartvex/src/protocol/encoding.dart';
 import 'package:dartvex/src/protocol/messages.dart';
 import 'package:dartvex/src/protocol/state_version.dart';
@@ -64,6 +65,118 @@ void main() {
       expect(await future, <String, dynamic>{'ok': true});
     });
 
+    test('mutation created while disconnected is sent on reconnect', () async {
+      final client = BaseClient();
+      final future = client.mutate('messages:send', <String, dynamic>{
+        'body': 'hello',
+      });
+
+      final reconnectMessages = client.prepareReconnect();
+      final mutation = reconnectMessages.single as Mutation;
+
+      client.receive(
+        MutationResponse(
+          requestId: mutation.requestId,
+          success: true,
+          result: const <String, dynamic>{'ok': true},
+          ts: encodeTs(4),
+        ),
+      );
+      client.receive(
+        Transition(
+          startVersion: const StateVersion.initial(),
+          endVersion: StateVersion(querySet: 0, identity: 0, ts: encodeTs(4)),
+          modifications: const <StateModification>[],
+        ),
+      );
+
+      expect(await future, <String, dynamic>{'ok': true});
+    });
+
+    test('in-flight mutation is replayed after reconnect', () async {
+      final client = BaseClient();
+      final future = client.mutate('messages:send', <String, dynamic>{
+        'body': 'hello',
+      });
+      final mutation = client.drainOutgoing().single as Mutation;
+
+      client.handleDisconnect('socket closed');
+      final reconnectMessages = client.prepareReconnect();
+
+      expect(reconnectMessages.single, isA<Mutation>());
+      expect(
+          (reconnectMessages.single as Mutation).requestId, mutation.requestId);
+
+      client.receive(
+        MutationResponse(
+          requestId: mutation.requestId,
+          success: true,
+          result: const <String, dynamic>{'ok': true},
+          ts: encodeTs(4),
+        ),
+      );
+      client.receive(
+        Transition(
+          startVersion: const StateVersion.initial(),
+          endVersion: StateVersion(querySet: 0, identity: 0, ts: encodeTs(4)),
+          modifications: const <StateModification>[],
+        ),
+      );
+
+      expect(await future, <String, dynamic>{'ok': true});
+    });
+
+    test('completed mutation is replayed until transition catches up',
+        () async {
+      final client = BaseClient();
+      final future = client.mutate('messages:send', <String, dynamic>{
+        'body': 'hello',
+      });
+      final mutation = client.drainOutgoing().single as Mutation;
+      var completions = 0;
+      future.then((_) {
+        completions += 1;
+      });
+
+      client.receive(
+        MutationResponse(
+          requestId: mutation.requestId,
+          success: true,
+          result: const <String, dynamic>{'ok': true},
+          ts: encodeTs(4),
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(completions, 0);
+
+      client.handleDisconnect('socket closed');
+      final reconnectMessages = client.prepareReconnect();
+      expect(
+          (reconnectMessages.single as Mutation).requestId, mutation.requestId);
+
+      client.receive(
+        MutationResponse(
+          requestId: mutation.requestId,
+          success: true,
+          result: const <String, dynamic>{'ok': 'duplicate'},
+          ts: encodeTs(4),
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(completions, 0);
+
+      client.receive(
+        Transition(
+          startVersion: const StateVersion.initial(),
+          endVersion: StateVersion(querySet: 0, identity: 0, ts: encodeTs(4)),
+          modifications: const <StateModification>[],
+        ),
+      );
+
+      expect(await future, <String, dynamic>{'ok': true});
+      expect(completions, 1);
+    });
+
     test('action resolves immediately', () async {
       final client = BaseClient();
       final future = client.action('messages:notify', <String, dynamic>{
@@ -81,6 +194,101 @@ void main() {
 
       expect(action.requestId, 0);
       expect(await future, 'ok');
+    });
+
+    test('in-flight action fails on disconnect', () async {
+      final client = BaseClient();
+      final future = client.action('messages:notify', <String, dynamic>{
+        'body': 'hello',
+      });
+      client.drainOutgoing();
+      final expectation = expectLater(
+        future,
+        throwsA(
+          isA<ConvexException>()
+              .having((error) => error.retryable, 'retryable', isTrue)
+              .having(
+                (error) => error.message,
+                'message',
+                contains('Connection lost while action was in flight'),
+              ),
+        ),
+      );
+
+      client.handleDisconnect('socket closed');
+
+      await expectation;
+      expect(client.prepareReconnect(), isEmpty);
+    });
+
+    test('unsent action is sent on reconnect', () async {
+      final client = BaseClient();
+      final future = client.action('messages:notify', <String, dynamic>{
+        'body': 'hello',
+      });
+      var completed = false;
+      future.then(
+        (_) {
+          completed = true;
+        },
+        onError: (_) {
+          completed = true;
+        },
+      );
+
+      client.handleDisconnect('socket closed');
+      await Future<void>.delayed(Duration.zero);
+      expect(completed, isFalse);
+
+      final reconnectMessages = client.prepareReconnect();
+      final action = reconnectMessages.single as Action;
+      client.receive(
+        ActionResponse(
+          requestId: action.requestId,
+          success: true,
+          result: 'ok',
+        ),
+      );
+
+      expect(await future, 'ok');
+    });
+
+    test('reconnect preserves original replayable request order', () {
+      final client = BaseClient();
+      unawaited(client.action('messages:notify', <String, dynamic>{
+        'body': 'hello',
+      }));
+      unawaited(client.mutate('messages:send', <String, dynamic>{
+        'body': 'world',
+      }));
+
+      final reconnectMessages = client.prepareReconnect();
+
+      expect(reconnectMessages, hasLength(2));
+      expect(reconnectMessages.first, isA<Action>());
+      expect(reconnectMessages.last, isA<Mutation>());
+    });
+
+    test('failPendingRequests completes queued requests with error', () async {
+      final client = BaseClient();
+      final future = client.mutate('messages:send', <String, dynamic>{
+        'body': 'hello',
+      });
+      final expectation = expectLater(
+        future,
+        throwsA(
+          isA<ConvexException>().having(
+            (error) => error.message,
+            'message',
+            'ConvexClient has been disposed',
+          ),
+        ),
+      );
+
+      client.failPendingRequests('ConvexClient has been disposed');
+
+      await expectation;
+      expect(client.prepareReconnect(), isEmpty);
     });
 
     test('ping queues pong event', () {
