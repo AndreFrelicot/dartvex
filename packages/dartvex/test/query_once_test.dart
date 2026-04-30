@@ -9,7 +9,7 @@ import 'package:test/test.dart';
 import 'test_helpers/mock_web_socket_adapter.dart';
 
 void main() {
-  group('queryOnce', () {
+  group('one-shot queries', () {
     Future<void> settle() async {
       await Future<void>.delayed(const Duration(milliseconds: 10));
     }
@@ -50,7 +50,8 @@ void main() {
       client.dispose();
     });
 
-    test('propagates errors as ConvexException', () async {
+    test('query propagates errors as ConvexException with data and log lines',
+        () async {
       final adapter = MockWebSocketAdapter();
       final client = ConvexClient(
         'https://demo.convex.cloud',
@@ -61,7 +62,7 @@ void main() {
       );
       await settle();
 
-      final future = client.queryOnce<String>('config:get');
+      final future = client.query('config:get');
       await settle();
 
       final querySet = adapter.decodedSentMessages
@@ -75,12 +76,32 @@ void main() {
           startVersion: const StateVersion.initial(),
           endVersion: StateVersion(querySet: 1, identity: 0, ts: encodeTs(1)),
           modifications: <StateModification>[
-            QueryFailed(queryId: queryId, errorMessage: 'not found'),
+            QueryFailed(
+              queryId: queryId,
+              errorMessage: 'not found',
+              errorData: const <String, dynamic>{'code': 'missing'},
+              logLines: const <String>['server log'],
+            ),
           ],
         ).toJson(),
       );
 
-      await expectLater(future, throwsA(isA<ConvexException>()));
+      await expectLater(
+        future,
+        throwsA(
+          isA<ConvexException>()
+              .having((error) => error.message, 'message', 'not found')
+              .having(
+            (error) => error.data,
+            'data',
+            const <String, dynamic>{'code': 'missing'},
+          ).having(
+            (error) => error.logLines,
+            'logLines',
+            const <String>['server log'],
+          ),
+        ),
+      );
       client.dispose();
     });
   });

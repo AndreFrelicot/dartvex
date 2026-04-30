@@ -5,6 +5,17 @@ final BigInt _minInt64 = BigInt.from(-0x8000000000000000);
 final BigInt _maxInt64 = BigInt.from(0x7fffffffffffffff);
 final BigInt _byteMask = BigInt.from(0xff);
 
+/// Creates an explicit Convex `int64` value for `v.int64()` arguments.
+///
+/// Plain Dart [int] values encode as JSON numbers for `v.number()` arguments.
+/// Use this helper, or [BigInt.from], when the Convex function expects
+/// `v.int64()`.
+BigInt convexInt64(int value) {
+  final int64 = BigInt.from(value);
+  _checkInt64(int64);
+  return int64;
+}
+
 dynamic convexToJson(dynamic value) {
   return _convexToJson(value);
 }
@@ -75,13 +86,7 @@ dynamic _convexToJson(dynamic value) {
     return value;
   }
   if (value is BigInt) {
-    if (value < _minInt64 || value > _maxInt64) {
-      throw ArgumentError.value(
-        value,
-        'value',
-        'BigInt $value does not fit into a signed 64-bit integer.',
-      );
-    }
+    _checkInt64(value);
     return <String, String>{r'$integer': _encodeInt64(value)};
   }
   if (value is int) {
@@ -134,6 +139,16 @@ dynamic _convexToJson(dynamic value) {
     'value',
     '${value.runtimeType} is not a supported Convex type.',
   );
+}
+
+void _checkInt64(BigInt value) {
+  if (value < _minInt64 || value > _maxInt64) {
+    throw ArgumentError.value(
+      value,
+      'value',
+      'BigInt $value does not fit into a signed 64-bit integer.',
+    );
+  }
 }
 
 String _encodeFloat64(double value) {

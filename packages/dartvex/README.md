@@ -122,6 +122,47 @@ final config = await client.queryOnce<Map<String, dynamic>>('settings:get');
 final userName = await client.queryOnce<String>('users:getName', {'id': userId});
 ```
 
+## Convex Values
+
+Use Dart `int` or `double` for Convex `v.number()` arguments:
+
+```dart
+await client.mutate('scores:set', {'score': 42, 'ratio': 0.5});
+```
+
+Use `convexInt64(value)` or `BigInt.from(value)` for Convex `v.int64()`
+arguments. Convex int64 results decode as `BigInt`.
+
+```dart
+await client.mutate('counters:set', {'count': convexInt64(42)});
+
+final count = await client.queryOnce<BigInt>('counters:get');
+```
+
+Plain Dart `int` values intentionally stay JSON numbers so `v.number()` calls
+continue to work as expected.
+
+## Query Errors
+
+Subscription errors expose the human-readable message plus optional structured
+Convex error data and server log lines:
+
+```dart
+subscription.stream.listen((result) {
+  switch (result) {
+    case QuerySuccess(:final value):
+      print(value);
+    case QueryError(:final message, :final data, :final logLines):
+      print(message);
+      print(data);
+      print(logLines);
+  }
+});
+```
+
+One-shot `query()` and `queryOnce<T>()` failures throw `ConvexException` with
+the same `message`, `data`, and `logLines` fields.
+
 ## File Storage
 
 Upload and download files using `ConvexStorage`:

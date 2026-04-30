@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:dartvex/dartvex.dart' as dartvex;
 import 'package:dartvex/src/protocol/encoding.dart';
 import 'package:dartvex/src/protocol/messages.dart';
 import 'package:dartvex/src/protocol/state_version.dart';
@@ -24,6 +25,14 @@ void main() {
         expect(encoded, contains(r'$integer'));
         expect(decoded, value);
       }
+    });
+
+    test('convexInt64 helper encodes to Convex integer', () {
+      final encoded = convexToJson(dartvex.convexInt64(42));
+      final decoded = jsonToConvex(encoded);
+
+      expect(encoded, contains(r'$integer'));
+      expect(decoded, BigInt.from(42));
     });
 
     test('out-of-range BigInt throws', () {
@@ -55,6 +64,10 @@ void main() {
     test('normal finite doubles stay plain JSON numbers', () {
       expect(convexToJson(42.5), 42.5);
       expect(convexToJson(3), 3);
+    });
+
+    test('plain int stays a JSON number', () {
+      expect(convexToJson(42), 42);
     });
 
     test('Uint8List round-trips', () {

@@ -50,4 +50,8 @@ void main() {
     expect(event.level, DartvexLogLevel.info);
     expect(event.tag, 'test');
   });
+
+  test('exports convexInt64 helper from the public barrel', () {
+    expect(convexInt64(7), BigInt.from(7));
+  });
 }

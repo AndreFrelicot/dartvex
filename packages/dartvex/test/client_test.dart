@@ -53,6 +53,69 @@ void main() {
       client.dispose();
     });
 
+    test('subscribe receives query errors with data and log lines', () async {
+      final adapter = MockWebSocketAdapter();
+      final client = ConvexClient(
+        'https://demo.convex.cloud',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+      await settle();
+
+      final subscription = client.subscribe('messages:list');
+      final future = subscription.stream.first;
+      await settle();
+
+      final querySet = adapter.decodedSentMessages
+          .where((message) => message['type'] == 'ModifyQuerySet')
+          .last;
+      final queryId = (((querySet['modifications'] as List<dynamic>).single
+          as Map<String, dynamic>)['queryId']) as int;
+
+      adapter.pushServerMessage(
+        Transition(
+          startVersion: const StateVersion.initial(),
+          endVersion: StateVersion(querySet: 1, identity: 0, ts: encodeTs(1)),
+          modifications: <StateModification>[
+            QueryFailed(
+              queryId: queryId,
+              errorMessage: 'not found',
+              errorData: const <String, dynamic>{'code': 'missing'},
+              logLines: const <String>['server log'],
+            ),
+          ],
+        ).toJson(),
+      );
+
+      await expectLater(
+        future,
+        completion(
+          isA<QueryError>()
+              .having((error) => error.message, 'message', 'not found')
+              .having(
+            (error) => error.data,
+            'data',
+            const <String, dynamic>{'code': 'missing'},
+          ).having(
+            (error) => error.logLines,
+            'logLines',
+            const <String>['server log'],
+          ),
+        ),
+      );
+      client.dispose();
+    });
+
+    test('QueryError positional constructor remains source-compatible', () {
+      const error = QueryError('message');
+
+      expect(error.message, 'message');
+      expect(error.data, isNull);
+      expect(error.logLines, isEmpty);
+    });
+
     test('mutation waits for transition before resolving', () async {
       final adapter = MockWebSocketAdapter();
       final client = ConvexClient(

@@ -45,10 +45,20 @@ class QuerySuccess extends QueryResult {
 /// Query result representing an error.
 class QueryError extends QueryResult {
   /// Creates a failed query result.
-  const QueryError(this.message);
+  const QueryError(
+    this.message, {
+    this.data,
+    this.logLines = const <String>[],
+  });
 
   /// Human-readable error message.
   final String message;
+
+  /// Optional structured error payload from Convex.
+  final Object? data;
+
+  /// Optional log lines attached to the query failure.
+  final List<String> logLines;
 }
 
 /// Handle for a live Convex query subscription.
@@ -226,7 +236,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
             },
           );
           completer.complete(value);
-        case QueryError(:final message):
+        case QueryError(:final message, :final data, :final logLines):
           _log(
             DartvexLogLevel.error,
             'Query failed',
@@ -235,7 +245,9 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
               'errorMessage': message,
             },
           );
-          completer.completeError(ConvexException(message));
+          completer.completeError(
+            ConvexException(message, data: data, logLines: logLines),
+          );
       }
       unawaited(streamSubscription.cancel());
       subscription.cancel();
@@ -521,7 +533,11 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       case StoredQuerySuccess():
         return QuerySuccess(result.value);
       case StoredQueryError():
-        return QueryError(result.message);
+        return QueryError(
+          result.message,
+          data: result.data,
+          logLines: result.logLines,
+        );
     }
   }
 
