@@ -175,5 +175,123 @@ void main() {
         isFalse,
       );
     });
+
+    test('Add Mutation and Action round-trip componentPath', () {
+      const componentPath = 'components/admin';
+
+      final addJson = Add(
+        queryId: 1,
+        udfPath: 'messages:list',
+        args: const <dynamic>[
+          {'channel': 'general'},
+        ],
+        componentPath: componentPath,
+      ).toJson();
+      final mutationJson = Mutation(
+        requestId: 2,
+        udfPath: 'messages:send',
+        args: const <dynamic>[
+          {'body': 'hello'},
+        ],
+        componentPath: componentPath,
+      ).toJson();
+      final actionJson = Action(
+        requestId: 3,
+        udfPath: 'messages:act',
+        args: const <dynamic>[
+          {'body': 'hello'},
+        ],
+        componentPath: componentPath,
+      ).toJson();
+
+      final add = QuerySetOperation.fromJson(addJson) as Add;
+      final mutation = ClientMessage.fromJson(mutationJson) as Mutation;
+      final action = ClientMessage.fromJson(actionJson) as Action;
+
+      expect(add.componentPath, componentPath);
+      expect(mutation.componentPath, componentPath);
+      expect(action.componentPath, componentPath);
+      expect(add.toJson(), addJson);
+      expect(mutation.toJson(), mutationJson);
+      expect(action.toJson(), actionJson);
+    });
+
+    test('Authenticate round-trips impersonating identity attributes', () {
+      final json = const Authenticate(
+        tokenType: 'Admin',
+        baseVersion: 4,
+        value: 'admin-key',
+        impersonating: <String, dynamic>{
+          'subject': 'user-123',
+          'issuer': 'https://issuer.example',
+          'name': 'Admin User',
+        },
+      ).toJson();
+
+      final message = ClientMessage.fromJson(json) as Authenticate;
+
+      expect(message.impersonating, <String, dynamic>{
+        'subject': 'user-123',
+        'issuer': 'https://issuer.example',
+        'name': 'Admin User',
+      });
+      expect(message.toJson(), json);
+    });
+
+    test('new optional protocol fields are omitted when unset', () {
+      expect(
+        Add(
+          queryId: 1,
+          udfPath: 'messages:list',
+          args: const <dynamic>[],
+        ).toJson(),
+        <String, dynamic>{
+          'type': 'Add',
+          'queryId': 1,
+          'udfPath': 'messages:list',
+          'args': const <dynamic>[],
+          'journal': null,
+        },
+      );
+      expect(
+        const Mutation(
+          requestId: 2,
+          udfPath: 'messages:send',
+          args: <dynamic>[],
+        ).toJson(),
+        <String, dynamic>{
+          'type': 'Mutation',
+          'requestId': 2,
+          'udfPath': 'messages:send',
+          'args': const <dynamic>[],
+        },
+      );
+      expect(
+        const Action(
+          requestId: 3,
+          udfPath: 'messages:act',
+          args: <dynamic>[],
+        ).toJson(),
+        <String, dynamic>{
+          'type': 'Action',
+          'requestId': 3,
+          'udfPath': 'messages:act',
+          'args': const <dynamic>[],
+        },
+      );
+      expect(
+        const Authenticate(
+          tokenType: 'User',
+          baseVersion: 5,
+          value: 'jwt-token',
+        ).toJson(),
+        <String, dynamic>{
+          'type': 'Authenticate',
+          'tokenType': 'User',
+          'baseVersion': 5,
+          'value': 'jwt-token',
+        },
+      );
+    });
   });
 }

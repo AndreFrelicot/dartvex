@@ -105,17 +105,169 @@ fi
 echo ""
 echo "🔬 Field-level analysis..."
 
-# Extract fields from Transition in JS
-JS_TRANSITION_FIELDS=$(echo "$LATEST_PROTOCOL" | awk '/^export type Transition = \{/,/\};/' | grep -oP '^\s+(\w+)' | sed 's/^ *//' | sort -u)
-# Extract fields from Transition in Dart
-DART_TRANSITION_FIELDS=$(
-  awk '/^class Transition extends ServerMessage/,/^}/' "$OUR_MESSAGES" |
-    sed -nE 's/^[[:space:]]*final[[:space:]]+[^;=]+[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*;/\1/p' |
-    sort -u
-)
+FIELD_DRIFT_REPORT=""
 
-echo "  Transition JS fields:   $(echo $JS_TRANSITION_FIELDS | tr '\n' ' ')"
-echo "  Transition Dart fields: $(echo $DART_TRANSITION_FIELDS | tr '\n' ' ')"
+extract_js_type_block() {
+  local type_name="$1"
+  printf '%s\n' "$LATEST_PROTOCOL" |
+    awk -v type_name="$type_name" '
+      $0 ~ "^(export[[:space:]]+)?type[[:space:]]+" type_name "[[:space:]]*=[[:space:]]*\\{" {
+        inside = 1
+        next
+      }
+      inside && /^[[:space:]]*};/ {
+        inside = 0
+      }
+      inside {
+        print
+      }
+    '
+}
+
+extract_js_object_fields() {
+  local type_name="$1"
+  extract_js_type_block "$type_name" |
+    sed -nE 's/^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)\??:[[:space:]]*.*/\1/p' |
+    sort -u
+}
+
+extract_js_authenticate_fields() {
+  {
+    extract_js_object_fields "AdminAuthentication"
+    printf '%s\n' "$LATEST_PROTOCOL" |
+      awk '
+        /^export type Authenticate =/ {
+          inside = 1
+        }
+        inside {
+          print
+        }
+        inside && /^[[:space:]]*};/ {
+          inside = 0
+        }
+      ' |
+      sed -nE 's/^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)\??:[[:space:]]*.*/\1/p'
+  } | sort -u
+}
+
+extract_js_response_fields() {
+  local success_type="$1"
+  local failed_type="$2"
+  {
+    extract_js_object_fields "$success_type"
+    extract_js_object_fields "$failed_type"
+  } | sort -u
+}
+
+extract_dart_class_body() {
+  local class_name="$1"
+  awk -v class_name="$class_name" '
+    $0 ~ "^class[[:space:]]+" class_name "[[:space:]]" {
+      inside = 1
+    }
+    inside {
+      print
+    }
+    inside && /^}/ {
+      inside = 0
+    }
+  ' "$OUR_MESSAGES"
+}
+
+extract_dart_to_json_fields() {
+  local class_name="$1"
+  extract_dart_class_body "$class_name" |
+    awk '
+      /Map<String, dynamic> toJson\(\)/ {
+        inside = 1
+        next
+      }
+      inside && /^[[:space:]]*}[[:space:]]*$/ {
+        inside = 0
+      }
+      inside {
+        print
+      }
+    ' |
+    sed -nE "s/.*'([A-Za-z_][A-Za-z0-9_]*)':[[:space:]]*.*/\1/p" |
+    sort -u
+}
+
+field_list_for_display() {
+  local file="$1"
+  tr '\n' ' ' < "$file" | sed 's/[[:space:]]*$//'
+}
+
+compare_message_fields() {
+  local message_name="$1"
+  local js_fields="$2"
+  local dart_fields="$3"
+  local js_file="$CACHE_DIR/js-fields-$message_name.txt"
+  local dart_file="$CACHE_DIR/dart-fields-$message_name.txt"
+
+  printf '%s\n' "$js_fields" | sed '/^$/d' | sort -u > "$js_file"
+  printf '%s\n' "$dart_fields" | sed '/^$/d' | sort -u > "$dart_file"
+
+  echo "  $message_name JS fields:   $(field_list_for_display "$js_file")"
+  echo "  $message_name Dart fields: $(field_list_for_display "$dart_file")"
+
+  local missing_fields
+  local extra_fields
+  missing_fields=$(comm -23 "$js_file" "$dart_file")
+  extra_fields=$(comm -13 "$js_file" "$dart_file")
+
+  if [ -n "$missing_fields" ]; then
+    echo -e "${RED}  🔴 $message_name fields missing in Dart:${NC}"
+    echo "$missing_fields" | while read -r field; do echo "     - $field"; done
+    FIELD_DRIFT_REPORT+=$'\n'"### $message_name missing in Dart"$'\n'
+    FIELD_DRIFT_REPORT+="$(echo "$missing_fields" | sed 's/^/- `/' | sed 's/$/`/')"$'\n'
+    DRIFT=1
+  fi
+
+  if [ -n "$extra_fields" ]; then
+    echo -e "${YELLOW}  ⚠️  $message_name fields in Dart NOT in JS:${NC}"
+    echo "$extra_fields" | while read -r field; do echo "     - $field"; done
+    FIELD_DRIFT_REPORT+=$'\n'"### $message_name extra in Dart"$'\n'
+    FIELD_DRIFT_REPORT+="$(echo "$extra_fields" | sed 's/^/- `/' | sed 's/$/`/')"$'\n'
+    DRIFT=1
+  fi
+
+  if [ -z "$missing_fields" ] && [ -z "$extra_fields" ]; then
+    echo -e "${GREEN}  ✅ $message_name fields match${NC}"
+  fi
+}
+
+for MESSAGE_NAME in Connect Add Mutation Action Authenticate Transition TransitionChunk MutationResponse ActionResponse AuthError; do
+  case "$MESSAGE_NAME" in
+    Connect)
+      JS_FIELDS=$(extract_js_object_fields "Connect")
+      ;;
+    Add)
+      JS_FIELDS=$(extract_js_object_fields "AddQuery")
+      ;;
+    Mutation)
+      JS_FIELDS=$(extract_js_object_fields "MutationRequest")
+      ;;
+    Action)
+      JS_FIELDS=$(extract_js_object_fields "ActionRequest")
+      ;;
+    Authenticate)
+      JS_FIELDS=$(extract_js_authenticate_fields)
+      ;;
+    MutationResponse)
+      JS_FIELDS=$(extract_js_response_fields "MutationSuccess" "MutationFailed")
+      ;;
+    ActionResponse)
+      JS_FIELDS=$(extract_js_response_fields "ActionSuccess" "ActionFailed")
+      ;;
+    *)
+      JS_FIELDS=$(extract_js_object_fields "$MESSAGE_NAME")
+      ;;
+  esac
+
+  DART_FIELDS=$(extract_dart_to_json_fields "$MESSAGE_NAME")
+  compare_message_fields "$MESSAGE_NAME" "$JS_FIELDS" "$DART_FIELDS"
+done
 
 # --- 6. Check Rust SDK version ---
 echo ""
@@ -192,6 +344,11 @@ echo ""
     echo ""
     echo "### ⚠️ Extra in Dart"
     echo "$EXTRA_IN_DART" | while read -r t; do echo "- \`$t\`"; done
+  fi
+  if [ -n "$FIELD_DRIFT_REPORT" ]; then
+    echo ""
+    echo "## Field Drift"
+    echo "$FIELD_DRIFT_REPORT"
   fi
   echo ""
   echo "## Drift: $([ $DRIFT -eq 0 ] && echo '✅ None' || echo '🔴 Detected')"

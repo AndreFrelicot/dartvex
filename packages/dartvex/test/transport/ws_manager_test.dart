@@ -34,6 +34,41 @@ void main() {
       await manager.dispose();
     });
 
+    test('reconnect reuses session ID and increments connection count',
+        () async {
+      final adapter = MockWebSocketAdapter();
+      final manager = WebSocketManager(
+        adapter: adapter,
+        deploymentUrl: 'https://demo.convex.cloud',
+        apiVersion: '0.1.0',
+        onConnected: () => const <ClientMessage>[],
+        onMessage: (_) => const <ClientMessage>[],
+        onDisconnected: (_) async {},
+        onConnectionStateChanged: (_, __) {},
+        maxObservedTimestamp: () => null,
+        reconnectBackoff: const <Duration>[Duration.zero],
+        inactivityTimeout: const Duration(seconds: 30),
+      );
+
+      await manager.start();
+      adapter.disconnect();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      final connectMessages = adapter.decodedSentMessages
+          .where((message) => message['type'] == 'Connect')
+          .toList(growable: false);
+
+      expect(connectMessages, hasLength(2));
+      expect(connectMessages.first['connectionCount'], 0);
+      expect(connectMessages.last['connectionCount'], 1);
+      expect(
+        connectMessages.last['sessionId'],
+        connectMessages.first['sessionId'],
+      );
+
+      await manager.dispose();
+    });
+
     test('reports metrics for direct transitions with timing fields', () async {
       final adapter = MockWebSocketAdapter();
       final metrics = <TransitionMetrics>[];

@@ -147,12 +147,14 @@ class Add extends QuerySetOperation {
     required this.udfPath,
     required this.args,
     this.journal,
+    this.componentPath,
   });
 
   final int queryId;
   final String udfPath;
   final List<dynamic> args;
   final String? journal;
+  final String? componentPath;
 
   factory Add.fromJson(Map<String, dynamic> json) {
     return Add(
@@ -162,6 +164,7 @@ class Add extends QuerySetOperation {
           .map(jsonToConvex)
           .toList(growable: false),
       journal: json['journal'] as String?,
+      componentPath: json['componentPath'] as String?,
     );
   }
 
@@ -173,6 +176,7 @@ class Add extends QuerySetOperation {
       'udfPath': udfPath,
       'args': args.map(convexToJson).toList(growable: false),
       'journal': journal,
+      if (componentPath != null) 'componentPath': componentPath,
     };
   }
 }
@@ -197,11 +201,13 @@ abstract class RequestMessage extends ClientMessage {
     required this.requestId,
     required this.udfPath,
     required this.args,
+    this.componentPath,
   });
 
   final int requestId;
   final String udfPath;
   final List<dynamic> args;
+  final String? componentPath;
 }
 
 class Mutation extends RequestMessage {
@@ -209,6 +215,7 @@ class Mutation extends RequestMessage {
     required super.requestId,
     required super.udfPath,
     required super.args,
+    super.componentPath,
   });
 
   factory Mutation.fromJson(Map<String, dynamic> json) {
@@ -218,6 +225,7 @@ class Mutation extends RequestMessage {
       args: (json['args'] as List<dynamic>)
           .map(jsonToConvex)
           .toList(growable: false),
+      componentPath: json['componentPath'] as String?,
     );
   }
 
@@ -228,6 +236,7 @@ class Mutation extends RequestMessage {
       'requestId': requestId,
       'udfPath': udfPath,
       'args': args.map(convexToJson).toList(growable: false),
+      if (componentPath != null) 'componentPath': componentPath,
     };
   }
 }
@@ -237,6 +246,7 @@ class Action extends RequestMessage {
     required super.requestId,
     required super.udfPath,
     required super.args,
+    super.componentPath,
   });
 
   factory Action.fromJson(Map<String, dynamic> json) {
@@ -246,6 +256,7 @@ class Action extends RequestMessage {
       args: (json['args'] as List<dynamic>)
           .map(jsonToConvex)
           .toList(growable: false),
+      componentPath: json['componentPath'] as String?,
     );
   }
 
@@ -256,6 +267,7 @@ class Action extends RequestMessage {
       'requestId': requestId,
       'udfPath': udfPath,
       'args': args.map(convexToJson).toList(growable: false),
+      if (componentPath != null) 'componentPath': componentPath,
     };
   }
 }
@@ -265,17 +277,22 @@ class Authenticate extends ClientMessage {
     required this.tokenType,
     required this.baseVersion,
     this.value,
+    this.impersonating,
   });
 
   final String tokenType;
   final int baseVersion;
   final String? value;
+  final Map<String, dynamic>? impersonating;
 
   factory Authenticate.fromJson(Map<String, dynamic> json) {
+    final impersonating = json['impersonating'];
     return Authenticate(
       tokenType: json['tokenType'] as String,
       baseVersion: json['baseVersion'] as int,
       value: json['value'] as String?,
+      impersonating:
+          impersonating is Map ? impersonating.cast<String, dynamic>() : null,
     );
   }
 
@@ -286,6 +303,7 @@ class Authenticate extends ClientMessage {
       'tokenType': tokenType,
       'baseVersion': baseVersion,
       if (value != null) 'value': value,
+      if (impersonating != null) 'impersonating': impersonating,
     };
   }
 }

@@ -110,7 +110,7 @@ class WebSocketManager {
 
   final Map<String, _TransitionChunkBuffer> _chunkBuffers =
       <String, _TransitionChunkBuffer>{};
-  final Uuid _uuid = const Uuid();
+  final String _sessionId = const Uuid().v4();
 
   StreamSubscription<String>? _messageSubscription;
   StreamSubscription<void>? _closeSubscription;
@@ -201,7 +201,7 @@ class WebSocketManager {
       adapter.send(
         jsonEncode(
           Connect(
-            sessionId: _uuid.v4(),
+            sessionId: _sessionId,
             connectionCount: _connectionCount,
             lastCloseReason: _lastCloseReason,
             maxObservedTimestamp: maxObservedTimestamp(),
