@@ -139,8 +139,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
           sync: true,
         ),
         _authStateController = StreamController<bool>.broadcast(sync: true),
-        _subscriptionControllers = <int, StreamController<QueryResult>>{},
-        _currentConnectionState = ConnectionState.connecting {
+        _subscriptionControllers = <int, StreamController<QueryResult>>{} {
     _wsManager = WebSocketManager(
       adapter: _config.adapterFactory?.call(_config.clientId) ??
           createDefaultWebSocketAdapter(_config.clientId),
@@ -169,9 +168,14 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
         }
       },
     );
+    if (_config.connectImmediately) {
+      _currentConnectionState = ConnectionState.connecting;
+    }
     _connectionStateController.add(_currentConnectionState);
     _authStateController.add(false);
-    unawaited(_wsManager.start());
+    if (_config.connectImmediately) {
+      unawaited(_ensureStarted());
+    }
   }
 
   final String _deploymentUrl;
@@ -182,7 +186,8 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   final StreamController<ConnectionState> _connectionStateController;
   final StreamController<bool> _authStateController;
   final Map<int, StreamController<QueryResult>> _subscriptionControllers;
-  ConnectionState _currentConnectionState;
+  ConnectionState _currentConnectionState = ConnectionState.disconnected;
+  Future<void>? _startFuture;
   bool _refreshAuthOnNextConnect = false;
   bool _disposed = false;
 
@@ -448,6 +453,9 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   /// and re-establishes the connection.
   Future<void> reconnectNow(String reason) {
     _assertNotDisposed();
+    if (_startFuture == null) {
+      return _ensureStarted();
+    }
     return _wsManager.reconnectNow(reason);
   }
 
@@ -479,6 +487,18 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       _baseClient.setAuth(tokenType: _config.authTokenType, token: token);
     }
     await _flushOutgoing();
+  }
+
+  Future<void> _ensureStarted() {
+    _assertNotDisposed();
+    final startFuture = _startFuture;
+    if (startFuture != null) {
+      return startFuture;
+    }
+    if (_currentConnectionState == ConnectionState.disconnected) {
+      _emitConnectionState(ConnectionState.connecting);
+    }
+    return _startFuture = _wsManager.start();
   }
 
   Future<List<ClientMessage>> _handleConnected() async {
@@ -573,6 +593,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   }
 
   Future<void> _flushOutgoing() async {
+    await _ensureStarted();
     if (!_wsManager.isConnected) {
       return;
     }

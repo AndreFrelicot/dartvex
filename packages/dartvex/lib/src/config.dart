@@ -20,6 +20,7 @@ class ConvexClientConfig {
       Duration(seconds: 16),
       Duration(seconds: 32),
     ],
+    this.connectImmediately = true,
     this.adapterFactory,
     this.logLevel = DartvexLogLevel.off,
     this.logger,
@@ -39,6 +40,12 @@ class ConvexClientConfig {
 
   /// Backoff schedule used for reconnect attempts.
   final List<Duration> reconnectBackoff;
+
+  /// Whether the WebSocket connection starts when the client is constructed.
+  ///
+  /// Set to `false` to defer opening the socket until the first backend
+  /// operation, auth update, or explicit reconnect request.
+  final bool connectImmediately;
 
   /// Optional override for the platform WebSocket adapter.
   final WebSocketAdapterFactory? adapterFactory;

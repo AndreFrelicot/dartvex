@@ -6,8 +6,8 @@ import 'package:dartvex/src/transport/ws_interface.dart';
 class MockWebSocketAdapter implements WebSocketAdapter {
   final StreamController<String> _messagesController =
       StreamController<String>.broadcast();
-  final StreamController<void> _closeController =
-      StreamController<void>.broadcast();
+  final StreamController<WebSocketCloseEvent> _closeController =
+      StreamController<WebSocketCloseEvent>.broadcast();
 
   final List<String> sentMessages = <String>[];
   final List<String> connectedUrls = <String>[];
@@ -37,16 +37,28 @@ class MockWebSocketAdapter implements WebSocketAdapter {
     _messagesController.add(jsonEncode(message));
   }
 
-  void disconnect() {
+  void disconnect({
+    int? code,
+    String? reason,
+    bool? wasClean,
+    String? errorMessage,
+  }) {
     _connected = false;
-    _closeController.add(null);
+    _closeController.add(
+      WebSocketCloseEvent(
+        code: code,
+        reason: reason,
+        wasClean: wasClean,
+        errorMessage: errorMessage,
+      ),
+    );
   }
 
   @override
   Stream<String> get messages => _messagesController.stream;
 
   @override
-  Stream<void> get closeEvents => _closeController.stream;
+  Stream<WebSocketCloseEvent> get closeEvents => _closeController.stream;
 
   @override
   Future<void> close() async {

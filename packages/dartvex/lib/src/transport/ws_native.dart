@@ -14,8 +14,8 @@ class NativeWebSocketAdapter implements WebSocketAdapter {
   final String clientId;
   final StreamController<String> _messagesController =
       StreamController<String>.broadcast();
-  final StreamController<void> _closeController =
-      StreamController<void>.broadcast();
+  final StreamController<WebSocketCloseEvent> _closeController =
+      StreamController<WebSocketCloseEvent>.broadcast();
 
   WebSocket? _socket;
 
@@ -27,6 +27,18 @@ class NativeWebSocketAdapter implements WebSocketAdapter {
       headers: <String, dynamic>{'Convex-Client': clientId},
     );
     _socket = socket;
+    var closeEventEmitted = false;
+    void emitClose(WebSocketCloseEvent event) {
+      if (closeEventEmitted) {
+        return;
+      }
+      closeEventEmitted = true;
+      if (identical(_socket, socket)) {
+        _socket = null;
+      }
+      _closeController.add(event);
+    }
+
     socket.listen(
       (dynamic event) {
         if (event is String) {
@@ -38,12 +50,21 @@ class NativeWebSocketAdapter implements WebSocketAdapter {
         }
       },
       onDone: () {
-        _socket = null;
-        _closeController.add(null);
+        emitClose(
+          WebSocketCloseEvent(
+            code: socket.closeCode,
+            reason: socket.closeReason,
+          ),
+        );
       },
-      onError: (Object _) {
-        _socket = null;
-        _closeController.add(null);
+      onError: (Object error) {
+        emitClose(
+          WebSocketCloseEvent(
+            code: socket.closeCode,
+            reason: socket.closeReason,
+            errorMessage: error.toString(),
+          ),
+        );
       },
       cancelOnError: false,
     );
@@ -53,7 +74,7 @@ class NativeWebSocketAdapter implements WebSocketAdapter {
   Stream<String> get messages => _messagesController.stream;
 
   @override
-  Stream<void> get closeEvents => _closeController.stream;
+  Stream<WebSocketCloseEvent> get closeEvents => _closeController.stream;
 
   @override
   void send(String message) {

@@ -12,8 +12,8 @@ WebSocketAdapter createWebSocketAdapter(String clientId) {
 class WebPlatformWebSocketAdapter implements WebSocketAdapter {
   final StreamController<String> _messagesController =
       StreamController<String>.broadcast();
-  final StreamController<void> _closeController =
-      StreamController<void>.broadcast();
+  final StreamController<WebSocketCloseEvent> _closeController =
+      StreamController<WebSocketCloseEvent>.broadcast();
 
   web.WebSocket? _socket;
 
@@ -41,12 +41,18 @@ class WebPlatformWebSocketAdapter implements WebSocketAdapter {
         completer.completeError(StateError('WebSocket failed to open'));
       }
     }).toJS;
-    socket.onclose = ((web.CloseEvent _) {
+    socket.onclose = ((web.CloseEvent event) {
       _socket = null;
       if (!completer.isCompleted) {
         completer.completeError(StateError('WebSocket closed during connect'));
       }
-      _closeController.add(null);
+      _closeController.add(
+        WebSocketCloseEvent(
+          code: event.code,
+          reason: event.reason,
+          wasClean: event.wasClean,
+        ),
+      );
     }).toJS;
 
     await completer.future;
@@ -56,7 +62,7 @@ class WebPlatformWebSocketAdapter implements WebSocketAdapter {
   Stream<String> get messages => _messagesController.stream;
 
   @override
-  Stream<void> get closeEvents => _closeController.stream;
+  Stream<WebSocketCloseEvent> get closeEvents => _closeController.stream;
 
   @override
   void send(String message) {

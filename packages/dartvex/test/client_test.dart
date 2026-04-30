@@ -15,6 +15,148 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 10));
     }
 
+    test('lazy config does not connect in constructor', () async {
+      final adapter = MockWebSocketAdapter();
+      final client = ConvexClient(
+        'https://demo.convex.cloud',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          connectImmediately: false,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+      await settle();
+
+      expect(adapter.connectedUrls, isEmpty);
+      expect(client.currentConnectionState, ConnectionState.disconnected);
+      client.dispose();
+    });
+
+    test('first lazy subscribe starts socket and flushes query add', () async {
+      final adapter = MockWebSocketAdapter();
+      final client = ConvexClient(
+        'https://demo.convex.cloud',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          connectImmediately: false,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+
+      final subscription = client.subscribe(
+        'messages:list',
+        const <String, dynamic>{'channel': 'general'},
+      );
+      await settle();
+
+      expect(adapter.connectedUrls, hasLength(1));
+      expect(
+        adapter.decodedSentMessages.map((message) => message['type']),
+        containsAllInOrder(<String>['Connect', 'ModifyQuerySet']),
+      );
+
+      subscription.cancel();
+      client.dispose();
+    });
+
+    test('first lazy mutation starts socket and sends mutation', () async {
+      final adapter = MockWebSocketAdapter();
+      final client = ConvexClient(
+        'https://demo.convex.cloud',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          connectImmediately: false,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+
+      final future = client.mutate('messages:send',
+          const <String, dynamic>{'body': 'hello'}).catchError((_) {});
+      await settle();
+
+      expect(adapter.connectedUrls, hasLength(1));
+      expect(
+        adapter.decodedSentMessages.map((message) => message['type']),
+        containsAllInOrder(<String>['Connect', 'Mutation']),
+      );
+
+      client.dispose();
+      await future;
+    });
+
+    test('first lazy action starts socket and sends action', () async {
+      final adapter = MockWebSocketAdapter();
+      final client = ConvexClient(
+        'https://demo.convex.cloud',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          connectImmediately: false,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+
+      final future = client.action('messages:notify',
+          const <String, dynamic>{'body': 'hello'}).catchError((_) {});
+      await settle();
+
+      expect(adapter.connectedUrls, hasLength(1));
+      expect(
+        adapter.decodedSentMessages.map((message) => message['type']),
+        containsAllInOrder(<String>['Connect', 'Action']),
+      );
+
+      client.dispose();
+      await future;
+    });
+
+    test('lazy auth starts socket and replays auth on connect', () async {
+      final adapter = MockWebSocketAdapter();
+      final client = ConvexClient(
+        'https://demo.convex.cloud',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          connectImmediately: false,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+
+      await client.setAuth('jwt-token');
+      await settle();
+
+      expect(adapter.connectedUrls, hasLength(1));
+      expect(
+        adapter.decodedSentMessages.map((message) => message['type']),
+        containsAllInOrder(<String>['Connect', 'Authenticate']),
+      );
+      final auth = adapter.decodedSentMessages
+          .where((message) => message['type'] == 'Authenticate')
+          .single;
+      expect(auth['tokenType'], 'User');
+      expect(auth['value'], 'jwt-token');
+
+      client.dispose();
+    });
+
+    test('lazy reconnectNow starts socket', () async {
+      final adapter = MockWebSocketAdapter();
+      final client = ConvexClient(
+        'https://demo.convex.cloud',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          connectImmediately: false,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+
+      await client.reconnectNow('AppResumed');
+      await settle();
+
+      expect(adapter.connectedUrls, hasLength(1));
+      expect(adapter.decodedSentMessages.single['type'], 'Connect');
+
+      client.dispose();
+    });
+
     test('subscribe receives query updates', () async {
       final adapter = MockWebSocketAdapter();
       final client = ConvexClient(

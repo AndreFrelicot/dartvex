@@ -120,15 +120,17 @@ class WebSocketManager {
   final String _sessionId = const Uuid().v4();
 
   StreamSubscription<String>? _messageSubscription;
-  StreamSubscription<void>? _closeSubscription;
+  StreamSubscription<WebSocketCloseEvent>? _closeSubscription;
   Timer? _reconnectTimer;
   Timer? _inactivityTimer;
 
   bool _disposed = false;
   bool _connecting = false;
+  bool _closeHandled = false;
   int _connectionCount = 0;
   int _reconnectIndex = 0;
   String _lastCloseReason = 'InitialConnect';
+  String? _pendingCloseReason;
 
   /// Whether the socket adapter is currently connected.
   bool get isConnected => adapter.isConnected;
@@ -159,6 +161,7 @@ class WebSocketManager {
     } catch (error, stackTrace) {
       _notifyMessagesSent(sentMessages);
       _lastCloseReason = 'FailedToSendMessage';
+      _pendingCloseReason = _lastCloseReason;
       _log(
         DartvexLogLevel.error,
         'Failed to send WebSocket message',
@@ -168,6 +171,8 @@ class WebSocketManager {
       if (adapter.isConnected) {
         await adapter.close();
       } else {
+        _pendingCloseReason = null;
+        _closeHandled = true;
         _scheduleReconnect(immediate: true);
       }
       return sentMessages;
@@ -192,9 +197,12 @@ class WebSocketManager {
       data: <String, Object?>{'reason': reason},
     );
     if (adapter.isConnected) {
+      _pendingCloseReason = reason;
       await adapter.close();
       return;
     }
+    _pendingCloseReason = null;
+    _closeHandled = true;
     _scheduleReconnect(immediate: true);
   }
 
@@ -211,8 +219,8 @@ class WebSocketManager {
 
   void _attachListeners() {
     _messageSubscription ??= adapter.messages.listen(_handleRawMessage);
-    _closeSubscription ??= adapter.closeEvents.listen((_) {
-      unawaited(_handleClosed(_lastCloseReason));
+    _closeSubscription ??= adapter.closeEvents.listen((event) {
+      unawaited(_handleClosed(event));
     });
   }
 
@@ -221,6 +229,7 @@ class WebSocketManager {
       return;
     }
     _connecting = true;
+    _closeHandled = false;
     _log(
       DartvexLogLevel.info,
       'Connecting WebSocket',
@@ -262,7 +271,7 @@ class WebSocketManager {
         'WebSocket connection failed',
         error: error,
       );
-      await _handleClosed(error.toString());
+      await _handleClosed(WebSocketCloseEvent(errorMessage: error.toString()));
     }
   }
 
@@ -365,14 +374,25 @@ class WebSocketManager {
     }
   }
 
-  Future<void> _handleClosed(String reason) async {
-    if (_disposed) {
+  Future<void> _handleClosed(WebSocketCloseEvent event) async {
+    if (_disposed || _closeHandled) {
       return;
     }
+    _closeHandled = true;
+    final reason = _pendingCloseReason ?? event.diagnosticReason;
+    _pendingCloseReason = null;
     _log(
       DartvexLogLevel.info,
       'WebSocket closed',
-      data: <String, Object?>{'reason': reason},
+      data: <String, Object?>{
+        'reason': reason,
+        if (event.code != null) 'code': event.code,
+        if (event.reason != null && event.reason!.isNotEmpty)
+          'closeReason': event.reason,
+        if (event.wasClean != null) 'wasClean': event.wasClean,
+        if (event.errorMessage != null && event.errorMessage!.isNotEmpty)
+          'errorMessage': event.errorMessage,
+      },
     );
     _inactivityTimer?.cancel();
     _connecting = false;
@@ -414,6 +434,7 @@ class WebSocketManager {
     _inactivityTimer?.cancel();
     _inactivityTimer = Timer(inactivityTimeout, () async {
       _lastCloseReason = 'ServerInactivity';
+      _pendingCloseReason = _lastCloseReason;
       _log(DartvexLogLevel.warn, 'Closing WebSocket after inactivity timeout');
       await adapter.close();
     });
