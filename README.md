@@ -83,11 +83,11 @@ void main() async {
 ```yaml
 # pubspec.yaml
 dependencies:
-  dartvex: ^0.1.4
-  dartvex_flutter: ^0.1.4  # If using Flutter
+  dartvex: ^0.1.5
+  dartvex_flutter: ^0.1.5  # If using Flutter
 
 dev_dependencies:
-  dartvex_codegen: ^0.1.3  # For code generation
+  dartvex_codegen: ^0.1.4  # For code generation
 ```
 
 ### 2. Configure your client

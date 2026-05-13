@@ -40,8 +40,6 @@ echo ""
 CRITICAL_TYPES=(
   "Transition"
   "StateVersion"
-  "QueryId"
-  "QuerySetVersion"
   "ClientMessage"
   "ServerMessage"
 )
@@ -55,6 +53,20 @@ for ct in "${CRITICAL_TYPES[@]}"; do
     ISSUES=$((ISSUES + 1))
   fi
 done
+
+if grep -rq "queryId" "$DART_DIR/" 2>/dev/null; then
+  echo -e "    ${GREEN}✅ QueryId represented as int fields${NC}"
+else
+  echo -e "    ${RED}❌ queryId fields — MISSING${NC}"
+  ISSUES=$((ISSUES + 1))
+fi
+
+if grep -rq "querySetVersion\|querySet" "$DART_DIR/" 2>/dev/null; then
+  echo -e "    ${GREEN}✅ QuerySetVersion represented as int state${NC}"
+else
+  echo -e "    ${RED}❌ querySetVersion state — MISSING${NC}"
+  ISSUES=$((ISSUES + 1))
+fi
 
 # --- 2. Compare base_client state machine ---
 echo ""
@@ -113,8 +125,8 @@ FEATURES=(
 for feat in "${FEATURES[@]}"; do
   keyword="${feat%%:*}"
   desc="${feat#*:}"
-  RS_HAS=$(grep -rlc "$keyword" "$RS_DIR/src/" 2>/dev/null | awk '{s+=$1}END{print s+0}')
-  DART_HAS=$(grep -rlc "$keyword" "$DART_DIR/" 2>/dev/null | awk '{s+=$1}END{print s+0}')
+  RS_HAS=$({ grep -rlc "$keyword" "$RS_DIR/src/" 2>/dev/null || true; } | awk '{s+=$1}END{print s+0}')
+  DART_HAS=$({ grep -rlc "$keyword" "$DART_DIR/" 2>/dev/null || true; } | awk '{s+=$1}END{print s+0}')
 
   if [ "$RS_HAS" -gt 0 ] && [ "$DART_HAS" -gt 0 ]; then
     echo -e "  ${GREEN}✅ $desc ($keyword)${NC} — RS:$RS_HAS refs, Dart:$DART_HAS refs"

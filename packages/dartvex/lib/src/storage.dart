@@ -105,11 +105,13 @@ class ConvexStorage {
 
   /// Get a download URL for a stored file.
   ///
-  /// Calls [getUrlAction] (a Convex query or action) with the given
-  /// [storageId] and returns the signed download URL.
+  /// Calls [getUrlAction] with the given [storageId] and returns the signed
+  /// download URL. By default this uses a Convex query; set [useAction] to
+  /// true when the backend resolver is an action.
   Future<String> getFileUrl({
     required String getUrlAction,
     required String storageId,
+    bool useAction = false,
   }) async {
     _log(
       DartvexLogLevel.debug,
@@ -119,10 +121,10 @@ class ConvexStorage {
         'storageId': storageId,
       },
     );
-    final url = await caller.query(
-      getUrlAction,
-      <String, dynamic>{'storageId': storageId},
-    );
+    final args = <String, dynamic>{'storageId': storageId};
+    final url = useAction
+        ? await caller.action(getUrlAction, args)
+        : await caller.query(getUrlAction, args);
     _log(DartvexLogLevel.debug, 'Resolved file URL');
     return url as String;
   }

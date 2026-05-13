@@ -1,0 +1,112 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:dartvex/src/auth/auth_manager.dart';
+import 'package:dartvex/src/config.dart';
+import 'package:dartvex/src/protocol/messages.dart';
+import 'package:test/test.dart';
+
+void main() {
+  group('AuthManager', () {
+    test('scheduled refresh force-refreshes token after confirmation',
+        () async {
+      final sentTokens = <String?>[];
+      final forceRefreshCalls = <bool>[];
+      final manager = AuthManager(
+        config: const ConvexClientConfig(connectImmediately: false),
+        sendAuth: (token) async {
+          sentTokens.add(token);
+        },
+        emitAuthState: (_) {},
+      );
+
+      await manager.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) async {
+          forceRefreshCalls.add(forceRefresh);
+          return _jwt(
+            subject: forceRefresh ? 'fresh' : 'cached',
+            issuedAt: forceRefresh ? 31 : 0,
+            expiresAt: forceRefresh ? 61 : 30,
+          );
+        },
+      );
+      manager.handleAuthConfirmed();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(forceRefreshCalls, <bool>[false, true]);
+      expect(sentTokens, hasLength(2));
+      expect(sentTokens.first, isNot(sentTokens.last));
+      await manager.stopRefreshing();
+    });
+
+    test('stale initial token fetch cannot resurrect auth after clear',
+        () async {
+      final sentTokens = <String?>[];
+      final tokenCompleter = Completer<String?>();
+      final manager = AuthManager(
+        config: const ConvexClientConfig(connectImmediately: false),
+        sendAuth: (token) async {
+          sentTokens.add(token);
+        },
+        emitAuthState: (_) {},
+      );
+
+      final handleFuture = manager.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) => tokenCompleter.future,
+      );
+      await manager.clearAuth();
+      tokenCompleter.complete('late-token');
+      await handleFuture;
+
+      expect(sentTokens, <String?>[null]);
+    });
+
+    test('non-update auth error is ignored while waiting for confirmation',
+        () async {
+      var fetchCount = 0;
+      final sentTokens = <String?>[];
+      final manager = AuthManager(
+        config: const ConvexClientConfig(connectImmediately: false),
+        sendAuth: (token) async {
+          sentTokens.add(token);
+        },
+        emitAuthState: (_) {},
+      );
+
+      await manager.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) async {
+          fetchCount += 1;
+          return 'token';
+        },
+      );
+      await manager.handleAuthError(
+        const AuthError(
+          error: 'expired',
+          baseVersion: 0,
+          authUpdateAttempted: false,
+        ),
+        currentAuthVersion: 1,
+      );
+
+      expect(fetchCount, 1);
+      expect(sentTokens, <String?>['token']);
+    });
+  });
+}
+
+String _jwt({
+  required String subject,
+  required int issuedAt,
+  required int expiresAt,
+}) {
+  final header = base64UrlEncode(utf8.encode(jsonEncode(<String, dynamic>{
+    'alg': 'none',
+    'typ': 'JWT',
+  }))).replaceAll('=', '');
+  final payload = base64UrlEncode(utf8.encode(jsonEncode(<String, dynamic>{
+    'sub': subject,
+    'iat': issuedAt,
+    'exp': expiresAt,
+  }))).replaceAll('=', '');
+  return '$header.$payload.';
+}

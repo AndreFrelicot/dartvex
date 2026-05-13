@@ -171,12 +171,9 @@ class BetterAuthClient {
 
     // Use Bearer auth (requires the `bearer()` plugin on the server).
     // This is the official approach for mobile/API clients without cookies.
-    print('[Dartvex] getSession: calling $uri with Bearer token');
     final response = await _http.get(uri, headers: {
       'Authorization': 'Bearer $sessionToken',
     });
-    print(
-        '[Dartvex] getSession: status=${response.statusCode}, body=${response.body.length > 200 ? '${response.body.substring(0, 200)}...' : response.body}');
 
     if (response.statusCode != 200) return null;
 
@@ -259,8 +256,6 @@ class BetterAuthClient {
     // Prefer the `set-auth-token` header (set by the Bearer plugin).
     // This is the official approach for mobile/API clients.
     final header = response.headers['set-auth-token'];
-    print(
-        '[Dartvex] _extractSessionToken: set-auth-token=${header != null ? '${header.substring(0, header.length > 30 ? 30 : header.length)}...' : 'null'}');
     if (header != null && header.isNotEmpty) {
       return header;
     }
@@ -270,8 +265,6 @@ class BetterAuthClient {
       response,
       'better-auth.session_token',
     );
-    print(
-        '[Dartvex] _extractSessionToken: cookie=${fromCookie != null ? '${fromCookie.substring(0, fromCookie.length > 20 ? 20 : fromCookie.length)}...' : 'null'}');
     if (fromCookie != null) {
       return fromCookie;
     }
@@ -312,7 +305,6 @@ class BetterAuthClient {
     String? bearerToken,
   }) async {
     final uri = Uri.parse('$_siteUrl$path');
-    print('[Dartvex] POST $uri');
     final headers = <String, String>{
       'Content-Type': 'application/json',
       if (bearerToken != null) 'Authorization': 'Bearer $bearerToken',
@@ -322,8 +314,6 @@ class BetterAuthClient {
       headers: headers,
       body: jsonEncode(body),
     );
-    print(
-        '[Dartvex] POST $path → ${response.statusCode} body=${response.body.length > 300 ? '${response.body.substring(0, 300)}...' : response.body}');
 
     if (response.statusCode != 200) {
       String detail = '';

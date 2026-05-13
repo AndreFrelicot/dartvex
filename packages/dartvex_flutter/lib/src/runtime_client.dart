@@ -208,8 +208,18 @@ class _ConvexClientRuntimeSubscription implements ConvexRuntimeSubscription {
           switch (event) {
             case convex.QuerySuccess(:final value):
               return ConvexRuntimeQuerySuccess(value);
-            case convex.QueryError(:final message):
-              return ConvexRuntimeQueryError(convex.ConvexException(message));
+            case convex.QueryError(
+                :final message,
+                :final data,
+                :final logLines
+              ):
+              return ConvexRuntimeQueryError(
+                convex.ConvexException(
+                  message,
+                  data: data,
+                  logLines: logLines,
+                ),
+              );
           }
         });
 

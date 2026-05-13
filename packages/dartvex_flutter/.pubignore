@@ -1,3 +1,11 @@
+.dart_tool/
+.packages
+build/
+coverage/
+pubspec.lock
 .flutter-plugins-dependencies
+example/.dart_tool/
+example/build/
 example/.flutter-plugins-dependencies
+example/pubspec.lock
 pubspec_overrides.yaml

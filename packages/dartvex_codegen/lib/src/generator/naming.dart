@@ -116,7 +116,7 @@ class Naming {
     if (parts.isEmpty) {
       return 'call';
     }
-    final first = parts.first.toLowerCase();
+    final first = _lowerFirst(parts.first);
     final rest = parts
         .skip(1)
         .map((part) => '${part[0].toUpperCase()}${part.substring(1)}')
@@ -130,7 +130,7 @@ class Naming {
     if (parts.isEmpty) {
       return 'value';
     }
-    final first = parts.first.toLowerCase();
+    final first = _lowerFirst(parts.first);
     final rest = parts
         .skip(1)
         .map((part) => '${part[0].toUpperCase()}${part.substring(1)}')
@@ -182,6 +182,13 @@ class Naming {
       }
       return '${part[0].toLowerCase()}${part.substring(1)}';
     }).toList(growable: false);
+  }
+
+  String _lowerFirst(String value) {
+    if (value.isEmpty) {
+      return value;
+    }
+    return '${value[0].toLowerCase()}${value.substring(1)}';
   }
 
   String _sanitizeTypeName(String value) {

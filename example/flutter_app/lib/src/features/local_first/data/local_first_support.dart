@@ -10,7 +10,7 @@ List<messages_api.ListPublicResultItem> decodeLocalPublicMessages(dynamic raw) {
       .map((item) {
         final map = expectMap(item, label: 'ListPublicResultItem');
         return (
-          creationtime: expectDouble(
+          creationTime: expectDouble(
             map['_creationTime'],
             label: 'ListPublicResultItemCreationTime',
           ),
@@ -32,7 +32,7 @@ List<tasks_api.ListBoardResultItem> decodeLocalTasks(dynamic raw) {
       .map((item) {
         final map = expectMap(item, label: 'ListBoardResultItem');
         return (
-          creationtime: expectDouble(
+          creationTime: expectDouble(
             map['_creationTime'],
             label: 'ListBoardResultItemCreationTime',
           ),
@@ -43,10 +43,10 @@ List<tasks_api.ListBoardResultItem> decodeLocalTasks(dynamic raw) {
                   map['assignee'],
                   label: 'ListBoardResultItemAssignee',
                 ),
-          dueat: map['dueAt'] == null
+          dueAt: map['dueAt'] == null
               ? null
               : expectDouble(map['dueAt'], label: 'ListBoardResultItemDueAt'),
-          estimatepoints: expectDouble(
+          estimatePoints: expectDouble(
             map['estimatePoints'],
             label: 'ListBoardResultItemEstimatePoints',
           ),

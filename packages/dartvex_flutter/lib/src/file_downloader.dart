@@ -55,32 +55,46 @@ class ConvexFileDownloader {
     String url, {
     ConvexDownloadProgressCallback? onProgress,
   }) async {
-    final request = await HttpClient().getUrl(Uri.parse(url));
-    final response = await request.close();
+    final uri = Uri.parse(url);
+    final client = HttpClient();
+    try {
+      final request = await client.getUrl(uri);
+      final response = await request.close();
 
-    final contentLength = response.contentLength;
-    final hasLength = contentLength > 0;
-    int received = 0;
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        await response.drain<void>();
+        throw HttpException(
+          'Failed to download file (status ${response.statusCode})',
+          uri: uri,
+        );
+      }
 
-    final chunks = <List<int>>[];
+      final contentLength = response.contentLength;
+      final hasLength = contentLength > 0;
+      int received = 0;
 
-    await for (final chunk in response) {
-      chunks.add(chunk);
-      received += chunk.length;
-      onProgress?.call(ConvexDownloadProgress(
-        received: received,
-        total: hasLength ? contentLength : -1,
-        progress: hasLength ? received / contentLength : -1,
-      ));
+      final chunks = <List<int>>[];
+
+      await for (final chunk in response) {
+        chunks.add(chunk);
+        received += chunk.length;
+        onProgress?.call(ConvexDownloadProgress(
+          received: received,
+          total: hasLength ? contentLength : -1,
+          progress: hasLength ? received / contentLength : -1,
+        ));
+      }
+
+      final bytes = Uint8List(received);
+      int offset = 0;
+      for (final chunk in chunks) {
+        bytes.setRange(offset, offset + chunk.length, chunk);
+        offset += chunk.length;
+      }
+
+      return bytes;
+    } finally {
+      client.close(force: true);
     }
-
-    final bytes = Uint8List(received);
-    int offset = 0;
-    for (final chunk in chunks) {
-      bytes.setRange(offset, offset + chunk.length, chunk);
-      offset += chunk.length;
-    }
-
-    return bytes;
   }
 }

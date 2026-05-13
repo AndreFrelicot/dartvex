@@ -62,6 +62,9 @@ class LocalConvexRuntimeClient implements ConvexRuntimeClient {
   }
 
   @override
+  Future<void> reconnectNow(String reason) async {}
+
+  @override
   Future<T> queryOnce<T>(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},

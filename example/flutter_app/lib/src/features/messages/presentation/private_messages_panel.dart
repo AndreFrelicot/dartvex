@@ -51,7 +51,7 @@ class _PrivateMessagesPanelState extends State<PrivateMessagesPanel> {
     });
 
     try {
-      await api.messages.sendprivate(text: text);
+      await api.messages.sendPrivate(text: text);
       _messageController.clear();
       setState(() {
         _status = 'Private message delivered.';
@@ -99,7 +99,7 @@ class _PrivateMessagesPanelState extends State<PrivateMessagesPanel> {
               List<messages_api.ListPrivateResultItem>
             >(
               subscriptionKey: widget.api!,
-              subscribe: widget.api!.messages.listprivateSubscribe,
+              subscribe: widget.api!.messages.listPrivateSubscribe,
               builder: (context, snapshot) {
                 if (snapshot.isLoading) {
                   return const _PrivateThreadSurface(
@@ -109,14 +109,14 @@ class _PrivateMessagesPanelState extends State<PrivateMessagesPanel> {
                   );
                 }
                 if (snapshot.hasError) {
-                  final isAuthError = snapshot.error!
-                      .toString()
-                      .contains('Authentication required');
+                  final isAuthError = snapshot.error!.toString().contains(
+                    'Authentication required',
+                  );
                   return InlineNotice(
                     message: isAuthError
                         ? 'Authentication required. '
-                            'Go to the Auth tab and tap Login to access '
-                            'private messages.'
+                              'Go to the Auth tab and tap Login to access '
+                              'private messages.'
                         : snapshot.error!,
                     backgroundColor: const Color(0xFFFFF1EF),
                     foregroundColor: const Color(0xFF8B4237),
@@ -144,8 +144,8 @@ class _PrivateMessagesPanelState extends State<PrivateMessagesPanel> {
                               title: item.author,
                               body: item.text,
                               meta:
-                                  'Viewer ${compactToken(item.tokenidentifier)} • '
-                                  '${formatMessageTimestamp(item.creationtime)}',
+                                  'Viewer ${compactToken(item.tokenIdentifier)} • '
+                                  '${formatMessageTimestamp(item.creationTime)}',
                               alignEnd: true,
                               accentColor: const Color(0xFFD4845A),
                               neutralColor: const Color(0xFF252D3D),

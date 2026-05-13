@@ -207,6 +207,12 @@ class FakeDemoAuthClient implements convex.ConvexAuthClient<DemoUserSession> {
   ]) async => throw UnimplementedError();
 
   @override
+  Future<T> queryOnce<T>(
+    String name, [
+    Map<String, dynamic> args = const <String, dynamic>{},
+  ]) async => throw UnimplementedError();
+
+  @override
   convex.ConvexSubscription subscribe(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},

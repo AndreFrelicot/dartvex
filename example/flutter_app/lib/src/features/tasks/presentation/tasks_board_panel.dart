@@ -90,10 +90,10 @@ class _TasksBoardPanelState extends State<TasksBoardPanel> {
     });
 
     try {
-      await api.tasks.createtask(
+      await api.tasks.createTask(
         assignee: _nullIfEmpty(_assigneeController.text),
-        dueat: _duePreset.toDueAt(),
-        estimatepoints: _estimatePoints,
+        dueAt: _duePreset.toDueAt(),
+        estimatePoints: _estimatePoints,
         labels: _parseLabels(_labelsController.text),
         priority: _priority,
         summary: _nullIfEmpty(_summaryController.text),
@@ -129,7 +129,7 @@ class _TasksBoardPanelState extends State<TasksBoardPanel> {
     });
 
     try {
-      final inserted = await api.tasks.seedboard();
+      final inserted = await api.tasks.seedBoard();
       setState(() {
         _statusMessage = inserted == 0
             ? 'Sample tasks already exist.'
@@ -157,9 +157,10 @@ class _TasksBoardPanelState extends State<TasksBoardPanel> {
       _statusMessage = null;
     });
     try {
-      final count = await api.tasks.clearboard();
+      final count = await api.tasks.clearTasks();
       setState(() {
-        _statusMessage = '${count.toInt()} task${count.toInt() == 1 ? '' : 's'} cleared.';
+        _statusMessage =
+            '${count.toInt()} task${count.toInt() == 1 ? '' : 's'} cleared.';
       });
     } catch (error) {
       setState(() {
@@ -181,7 +182,7 @@ class _TasksBoardPanelState extends State<TasksBoardPanel> {
     }
 
     try {
-      final result = await api.tasks.advancetask(taskid: task.id);
+      final result = await api.tasks.advanceTask(taskId: task.id);
       setState(() {
         _selectedStatus = result.status;
         _statusMessage =
@@ -212,12 +213,20 @@ class _TasksBoardPanelState extends State<TasksBoardPanel> {
                 spacing: 8,
                 children: <Widget>[
                   OutlinedButton.icon(
-                    onPressed: widget.api == null || _isClearing ? null : _clearBoard,
-                    icon: Icon(_isClearing ? Icons.hourglass_top : Icons.delete_sweep_rounded),
+                    onPressed: widget.api == null || _isClearing
+                        ? null
+                        : _clearBoard,
+                    icon: Icon(
+                      _isClearing
+                          ? Icons.hourglass_top
+                          : Icons.delete_sweep_rounded,
+                    ),
                     label: Text(_isClearing ? 'Clearing...' : 'Clear board'),
                   ),
                   FilledButton.tonalIcon(
-                    onPressed: widget.api == null || _isSeeding ? null : _seedBoard,
+                    onPressed: widget.api == null || _isSeeding
+                        ? null
+                        : _seedBoard,
                     icon: Icon(
                       _isSeeding ? Icons.hourglass_top : Icons.auto_awesome,
                     ),
@@ -246,7 +255,7 @@ class _TasksBoardPanelState extends State<TasksBoardPanel> {
                       List<tasks_api.ListBoardResultItem>
                     >(
                       subscriptionKey: widget.api!,
-                      subscribe: widget.api!.tasks.listboardSubscribe,
+                      subscribe: widget.api!.tasks.listBoardSubscribe,
                       builder: (context, snapshot) {
                         if (snapshot.isLoading) {
                           return const Padding(
@@ -385,9 +394,9 @@ class _TaskSummaryStrip extends StatelessWidget {
     final dueSoon = tasks
         .where(
           (task) =>
-              task.dueat != null &&
+              task.dueAt != null &&
               DateTime.fromMillisecondsSinceEpoch(
-                task.dueat!.toInt(),
+                task.dueAt!.toInt(),
               ).isBefore(now.add(const Duration(days: 4))),
         )
         .length;
@@ -672,17 +681,17 @@ class _TaskCard extends StatelessWidget {
               children: <Widget>[
                 _MetaBadge(
                   icon: Icons.scatter_plot_outlined,
-                  label: '${task.estimatepoints.toStringAsFixed(0)} pts',
+                  label: '${task.estimatePoints.toStringAsFixed(0)} pts',
                 ),
                 if (task.assignee != null)
                   _MetaBadge(
                     icon: Icons.person_outline_rounded,
                     label: task.assignee!,
                   ),
-                if (task.dueat != null)
+                if (task.dueAt != null)
                   _MetaBadge(
                     icon: Icons.event_outlined,
-                    label: _formatDueDate(task.dueat!),
+                    label: _formatDueDate(task.dueAt!),
                   ),
               ],
             ),

@@ -1,7 +1,6 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND.
 
 import 'dart:async';
-import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dartvex/dartvex.dart';
@@ -152,38 +151,18 @@ double expectDouble(dynamic value, {String? label}) {
   );
 }
 
-int expectInt(dynamic value, {String? label}) {
-  if (value is int) {
+BigInt expectBigInt(dynamic value, {String? label}) {
+  if (value is BigInt) {
     return value;
   }
-  if (value is num) {
-    return value.toInt();
-  }
-  if (value is String) {
-    final parsed = int.tryParse(value);
-    if (parsed != null) {
-      return parsed;
-    }
-  }
   throw FormatException(
-    'Expected ${label ?? 'int'}, got ${describeType(value)}',
+    'Expected ${label ?? 'bigint'}, got ${describeType(value)}',
   );
 }
 
 Uint8List expectBytes(dynamic value, {String? label}) {
   if (value is Uint8List) {
     return value;
-  }
-  if (value is List<int>) {
-    return Uint8List.fromList(value);
-  }
-  if (value is List) {
-    return Uint8List.fromList(
-      value.map((entry) => entry as int).toList(growable: false),
-    );
-  }
-  if (value is String) {
-    return Uint8List.fromList(base64Decode(value));
   }
   throw FormatException(
     'Expected ${label ?? 'bytes'}, got ${describeType(value)}',

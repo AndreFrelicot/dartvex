@@ -52,7 +52,7 @@ The web adapter is selected automatically via conditional import.
 
 ```yaml
 dependencies:
-  dartvex: ^0.1.4
+  dartvex: ^0.1.5
 ```
 
 ## Usage

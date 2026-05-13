@@ -12,6 +12,7 @@ class ConvexClientConfig {
     this.apiVersion = '0.1.0',
     this.authTokenType = 'User',
     this.inactivityTimeout = const Duration(seconds: 30),
+    this.queryTimeout,
     this.reconnectBackoff = const <Duration>[
       Duration(seconds: 1),
       Duration(seconds: 2),
@@ -37,6 +38,10 @@ class ConvexClientConfig {
 
   /// Maximum time to wait for server messages before reconnecting.
   final Duration inactivityTimeout;
+
+  /// Optional maximum wait for [ConvexClient.query] before cancelling the
+  /// temporary subscription and completing with a [TimeoutException].
+  final Duration? queryTimeout;
 
   /// Backoff schedule used for reconnect attempts.
   final List<Duration> reconnectBackoff;

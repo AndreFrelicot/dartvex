@@ -1,3 +1,4 @@
+import 'package:collection/collection.dart';
 import 'package:flutter/widgets.dart';
 
 import 'provider.dart';
@@ -90,6 +91,9 @@ class _PaginatedQueryBuilderState<T> extends State<PaginatedQueryBuilder<T>> {
   bool _isDone = false;
   bool _isLoadingPage = false;
   PaginationStatus _status = PaginationStatus.loading;
+  int _loadGeneration = 0;
+
+  static const DeepCollectionEquality _deepEquality = DeepCollectionEquality();
 
   @override
   void initState() {
@@ -102,7 +106,11 @@ class _PaginatedQueryBuilderState<T> extends State<PaginatedQueryBuilder<T>> {
   @override
   void didUpdateWidget(covariant PaginatedQueryBuilder<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.query != widget.query || oldWidget.args != widget.args) {
+    if (oldWidget.query != widget.query ||
+        oldWidget.pageSize != widget.pageSize ||
+        oldWidget.client != widget.client ||
+        oldWidget.fromJson != widget.fromJson ||
+        !_deepEquality.equals(oldWidget.args, widget.args)) {
       _reset();
       _loadPage();
     }
@@ -114,10 +122,12 @@ class _PaginatedQueryBuilderState<T> extends State<PaginatedQueryBuilder<T>> {
     _isDone = false;
     _isLoadingPage = false;
     _status = PaginationStatus.loading;
+    _loadGeneration += 1;
   }
 
   Future<void> _loadPage() async {
     if (_isLoadingPage || !mounted) return;
+    final generation = _loadGeneration;
     _isLoadingPage = true;
 
     setState(() {
@@ -136,7 +146,7 @@ class _PaginatedQueryBuilderState<T> extends State<PaginatedQueryBuilder<T>> {
         },
       }) as Map<String, dynamic>;
 
-      if (!mounted) return;
+      if (!mounted || generation != _loadGeneration) return;
 
       final page = (result['page'] as List<dynamic>)
           .cast<Map<String, dynamic>>()
@@ -152,12 +162,14 @@ class _PaginatedQueryBuilderState<T> extends State<PaginatedQueryBuilder<T>> {
         _status = _isDone ? PaginationStatus.allLoaded : PaginationStatus.idle;
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || generation != _loadGeneration) return;
       setState(() {
         _status = PaginationStatus.error;
       });
     } finally {
-      _isLoadingPage = false;
+      if (generation == _loadGeneration) {
+        _isLoadingPage = false;
+      }
     }
   }
 

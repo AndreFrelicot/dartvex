@@ -4,6 +4,7 @@ import 'dart:typed_data';
 final BigInt _minInt64 = BigInt.from(-0x8000000000000000);
 final BigInt _maxInt64 = BigInt.from(0x7fffffffffffffff);
 final BigInt _byteMask = BigInt.from(0xff);
+const int _maxIdentifierLength = 1024;
 
 /// Creates an explicit Convex `int64` value for `v.int64()` arguments.
 ///
@@ -174,7 +175,14 @@ double _decodeFloat64(String encoded) {
     );
   }
   final byteData = ByteData.sublistView(bytes);
-  return byteData.getFloat64(0, Endian.little);
+  final decoded = byteData.getFloat64(0, Endian.little);
+  if (!_isSpecialDouble(decoded)) {
+    throw FormatException(
+      'Float $decoded should be encoded as a number',
+      encoded,
+    );
+  }
+  return decoded;
 }
 
 BigInt _decodeInt64(String encoded) {
@@ -197,6 +205,14 @@ bool _isSpecialDouble(double value) {
 }
 
 void _validateObjectField(String key) {
+  if (key.length > _maxIdentifierLength) {
+    throw ArgumentError.value(
+      key,
+      'value',
+      'Field name $key exceeds maximum field name length '
+          '$_maxIdentifierLength.',
+    );
+  }
   if (key.startsWith(r'$')) {
     throw ArgumentError.value(
       key,

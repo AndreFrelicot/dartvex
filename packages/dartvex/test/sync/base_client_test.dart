@@ -291,14 +291,11 @@ void main() {
       expect(client.prepareReconnect(), isEmpty);
     });
 
-    test('ping queues pong event', () {
+    test('ping is ignored by sync layer', () {
       final client = BaseClient();
       final result = client.receive(const Ping());
-      expect(result.outgoing.single.toJson(), <String, dynamic>{
-        'type': 'Event',
-        'eventType': 'Pong',
-        'event': null,
-      });
+      expect(result.outgoing, isEmpty);
+      expect(result.events, isEmpty);
     });
 
     test('auth error produces auth error event', () {

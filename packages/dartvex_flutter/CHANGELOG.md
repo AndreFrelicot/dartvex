@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] - 2026-05-13
+
+### Fixed
+
+- Closes file-download HTTP clients and rejects non-success responses instead
+  of returning error bodies as image bytes.
+- Ignores stale async image/cache loads after widget inputs change.
+- Resets paginated queries when query inputs or client instances change.
+- Returns failed futures for overlapping action/mutation requests instead of
+  throwing synchronously.
+- Preserves structured query error data and server log lines in runtime errors.
+- Excludes build artifacts from the package archive.
+
 ## [0.1.4] - 2026-04-30
 
 ### Fixed

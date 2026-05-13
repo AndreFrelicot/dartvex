@@ -56,22 +56,25 @@ class ConvexOfflineImage extends StatefulWidget {
 
 class _ConvexOfflineImageState extends State<ConvexOfflineImage> {
   ConvexAssetSnapshot _snapshot = const ConvexAssetSnapshot.loading();
+  int _requestGeneration = 0;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _load(++_requestGeneration);
   }
 
   @override
   void didUpdateWidget(covariant ConvexOfflineImage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.cacheKey != widget.cacheKey || oldWidget.url != widget.url) {
-      _load();
+      _load(++_requestGeneration);
     }
   }
 
-  Future<void> _load() async {
+  Future<void> _load(int generation) async {
+    final cacheKey = widget.cacheKey;
+    final url = widget.url;
     if (mounted) {
       setState(() {
         _snapshot = const ConvexAssetSnapshot.loading();
@@ -80,9 +83,9 @@ class _ConvexOfflineImageState extends State<ConvexOfflineImage> {
 
     try {
       // Try cache first.
-      final cached = await widget.cache.get(widget.cacheKey);
+      final cached = await widget.cache.get(cacheKey);
       if (cached != null) {
-        if (mounted) {
+        if (_isCurrentRequest(generation, cacheKey, url)) {
           setState(() {
             _snapshot = ConvexAssetSnapshot(
               file: cached,
@@ -95,9 +98,8 @@ class _ConvexOfflineImageState extends State<ConvexOfflineImage> {
       }
 
       // No cache hit — download if URL available.
-      final url = widget.url;
       if (url == null) {
-        if (mounted) {
+        if (_isCurrentRequest(generation, cacheKey, url)) {
           setState(() {
             _snapshot = const ConvexAssetSnapshot(
               error: 'No cached asset and no URL available',
@@ -109,8 +111,8 @@ class _ConvexOfflineImageState extends State<ConvexOfflineImage> {
         return;
       }
 
-      final file = await widget.cache.prefetch(widget.cacheKey, url);
-      if (mounted) {
+      final file = await widget.cache.prefetch(cacheKey, url);
+      if (_isCurrentRequest(generation, cacheKey, url)) {
         setState(() {
           _snapshot = ConvexAssetSnapshot(
             file: file,
@@ -120,7 +122,7 @@ class _ConvexOfflineImageState extends State<ConvexOfflineImage> {
         });
       }
     } catch (error) {
-      if (mounted) {
+      if (_isCurrentRequest(generation, cacheKey, url)) {
         setState(() {
           _snapshot = ConvexAssetSnapshot(
             error: error,
@@ -130,6 +132,13 @@ class _ConvexOfflineImageState extends State<ConvexOfflineImage> {
         });
       }
     }
+  }
+
+  bool _isCurrentRequest(int generation, String cacheKey, String? url) {
+    return mounted &&
+        generation == _requestGeneration &&
+        widget.cacheKey == cacheKey &&
+        widget.url == url;
   }
 
   @override

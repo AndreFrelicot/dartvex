@@ -77,7 +77,9 @@ class _ConvexActionState<T> extends State<ConvexAction<T>> {
   ]) {
     final active = _inFlight;
     if (active != null) {
-      throw StateError('Action "${widget.action}" is already in progress.');
+      return Future<T>.error(
+        StateError('Action "${widget.action}" is already in progress.'),
+      );
     }
     final completer = Completer<T>();
     _inFlight = completer.future;

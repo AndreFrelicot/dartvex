@@ -56,7 +56,7 @@ class _PublicMessagesPanelState extends State<PublicMessagesPanel> {
     });
 
     try {
-      await api.messages.sendpublic(author: author, text: text);
+      await api.messages.sendPublic(author: author, text: text);
       _messageController.clear();
       setState(() {
         _status = 'Message sent to the public room.';
@@ -83,9 +83,10 @@ class _PublicMessagesPanelState extends State<PublicMessagesPanel> {
       _status = null;
     });
     try {
-      final count = await api.messages.clearpublic();
+      final count = await api.messages.clearPublicMessages();
       setState(() {
-        _status = '${count.toInt()} message${count.toInt() == 1 ? '' : 's'} cleared.';
+        _status =
+            '${count.toInt()} message${count.toInt() == 1 ? '' : 's'} cleared.';
       });
     } catch (error) {
       setState(() {
@@ -135,7 +136,7 @@ class _PublicMessagesPanelState extends State<PublicMessagesPanel> {
               List<messages_api.ListPublicResultItem>
             >(
               subscriptionKey: widget.api!,
-              subscribe: widget.api!.messages.listpublicSubscribe,
+              subscribe: widget.api!.messages.listPublicSubscribe,
               builder: (context, snapshot) {
                 if (snapshot.isLoading) {
                   return const _ThreadLoading();
@@ -173,7 +174,7 @@ class _PublicMessagesPanelState extends State<PublicMessagesPanel> {
                               title: item.author,
                               body: item.text,
                               meta:
-                                  'Live at ${formatMessageTimestamp(item.creationtime)}',
+                                  'Live at ${formatMessageTimestamp(item.creationTime)}',
                               alignEnd: isOwnMessage,
                               accentColor: const Color(0xFF10B981),
                               neutralColor: const Color(0xFF252D3D),
@@ -220,8 +221,14 @@ class _PublicMessagesPanelState extends State<PublicMessagesPanel> {
                       ),
                     ),
                     OutlinedButton.icon(
-                      onPressed: widget.api == null || _isClearing ? null : _clearAll,
-                      icon: Icon(_isClearing ? Icons.hourglass_top : Icons.delete_sweep_rounded),
+                      onPressed: widget.api == null || _isClearing
+                          ? null
+                          : _clearAll,
+                      icon: Icon(
+                        _isClearing
+                            ? Icons.hourglass_top
+                            : Icons.delete_sweep_rounded,
+                      ),
                       label: Text(_isClearing ? 'Clearing...' : 'Clear all'),
                     ),
                     const SizedBox(width: 8),

@@ -9,7 +9,7 @@ import 'package:dartvex_flutter_demo/src/core/unavailable_runtime_client.dart';
 import 'package:dartvex_flutter_demo/src/features/auth/data/auth_mode.dart';
 import 'package:dartvex_flutter_demo/src/features/auth/data/demo_auth_provider.dart';
 import 'package:dartvex_flutter_demo/src/features/auth/presentation/auth_panel.dart';
-import 'package:dartvex_flutter_demo/src/features/auth/presentation/clerk_auth_panel.dart';
+import 'package:dartvex_flutter_demo/src/features/auth/presentation/better_auth_panel.dart';
 
 void main() {
   group('Auth mode switching', () {
@@ -20,28 +20,29 @@ void main() {
 
       // Mode selector should be visible with Demo selected.
       expect(find.text('Demo Provider'), findsOneWidget);
-      expect(find.text('Clerk'), findsOneWidget);
+      expect(find.text('Better Auth'), findsOneWidget);
 
       // Demo auth panel content should be shown.
       expect(find.text('Provider-backed Auth Demo'), findsOneWidget);
     });
 
-    testWidgets('switching to Clerk mode without config shows setup panel', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        const ConvexFlutterDemoAppForTest(deploymentUrl: ''),
-      );
+    testWidgets(
+      'switching to Better Auth mode without config shows setup panel',
+      (tester) async {
+        await tester.pumpWidget(
+          const ConvexFlutterDemoAppForTest(deploymentUrl: ''),
+        );
 
-      // Switch to Clerk mode.
-      await tester.tap(find.text('Clerk'));
-      await tester.pumpAndSettle();
+        // Switch to Better Auth mode.
+        await tester.tap(find.text('Better Auth'));
+        await tester.pumpAndSettle();
 
-      // Should show setup instructions, not the Clerk auth panel.
-      expect(find.text('Clerk Not Configured'), findsOneWidget);
-      expect(find.textContaining('CLERK_PUBLISHABLE_KEY'), findsWidgets);
-      expect(find.text('Provider-backed Auth Demo'), findsNothing);
-    });
+        // Should show setup instructions, not the Better Auth panel.
+        expect(find.text('Better Auth Not Configured'), findsOneWidget);
+        expect(find.textContaining('BETTER_AUTH_SECRET'), findsWidgets);
+        expect(find.text('Provider-backed Auth Demo'), findsNothing);
+      },
+    );
 
     testWidgets('switching back to Demo mode restores Demo panel', (
       tester,
@@ -50,31 +51,33 @@ void main() {
         const ConvexFlutterDemoAppForTest(deploymentUrl: ''),
       );
 
-      // Switch to Clerk.
-      await tester.tap(find.text('Clerk'));
+      // Switch to Better Auth.
+      await tester.tap(find.text('Better Auth'));
       await tester.pumpAndSettle();
-      expect(find.text('Clerk Not Configured'), findsOneWidget);
+      expect(find.text('Better Auth Not Configured'), findsOneWidget);
 
       // Switch back to Demo.
       await tester.tap(find.text('Demo Provider'));
       await tester.pumpAndSettle();
       expect(find.text('Provider-backed Auth Demo'), findsOneWidget);
-      expect(find.text('Clerk Not Configured'), findsNothing);
+      expect(find.text('Better Auth Not Configured'), findsNothing);
     });
 
-    testWidgets('ClerkSetupPanel shows all checklist steps', (tester) async {
+    testWidgets('BetterAuthSetupPanel shows all checklist steps', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
-            body: const SingleChildScrollView(child: ClerkSetupPanel()),
+            body: const SingleChildScrollView(child: BetterAuthSetupPanel()),
           ),
         ),
       );
 
-      expect(find.text('Create a Clerk application'), findsOneWidget);
-      expect(find.text('Get your publishable key'), findsOneWidget);
-      expect(find.text('Configure Convex JWT template'), findsOneWidget);
-      expect(find.text('Run with --dart-define'), findsOneWidget);
+      expect(find.text('Install the component'), findsOneWidget);
+      expect(find.text('Set the secret'), findsOneWidget);
+      expect(find.text('Deploy'), findsOneWidget);
+      expect(find.text('Run the demo'), findsOneWidget);
     });
 
     testWidgets('Demo mode auth panel still wires all buttons', (tester) async {
@@ -160,9 +163,9 @@ class _ConvexFlutterDemoAppForTestState
   @override
   Widget build(BuildContext context) {
     Widget authPanel;
-    if (_authMode == AuthMode.clerk) {
-      // Clerk not configured (no publishable key in test).
-      authPanel = const ClerkSetupPanel();
+    if (_authMode == AuthMode.betterAuth) {
+      // Better Auth is not configured in this test harness.
+      authPanel = const BetterAuthSetupPanel();
     } else {
       authPanel = AuthPanel(
         api: null,
@@ -216,8 +219,8 @@ class _AuthModeSelectorForTest extends StatelessWidget {
           icon: Icon(Icons.science_outlined),
         ),
         ButtonSegment<AuthMode>(
-          value: AuthMode.clerk,
-          label: Text('Clerk'),
+          value: AuthMode.betterAuth,
+          label: Text('Better Auth'),
           icon: Icon(Icons.key_off_outlined),
         ),
       ],
@@ -278,6 +281,12 @@ class _FakeDemoAuthClient implements convex.ConvexAuthClient<DemoUserSession> {
 
   @override
   Future<dynamic> query(
+    String name, [
+    Map<String, dynamic> args = const <String, dynamic>{},
+  ]) async => throw UnimplementedError();
+
+  @override
+  Future<T> queryOnce<T>(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) async => throw UnimplementedError();

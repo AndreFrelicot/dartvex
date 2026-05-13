@@ -46,7 +46,7 @@ class _ActionPanelState extends State<ActionPanel> {
     });
 
     try {
-      final result = await api.demo.pingaction(
+      final result = await api.demo.pingAction(
         message: _messageController.text.trim(),
       );
       setState(() {
@@ -127,11 +127,11 @@ class _ActionPanelState extends State<ActionPanel> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Text('echoedText: ${_lastResult!.echoedtext}'),
+                  Text('echoedText: ${_lastResult!.echoedText}'),
                   const SizedBox(height: 6),
-                  Text('isAuthenticated: ${_lastResult!.isauthenticated}'),
+                  Text('isAuthenticated: ${_lastResult!.isAuthenticated}'),
                   const SizedBox(height: 6),
-                  Text('viewerName: ${_lastResult!.viewername ?? 'none'}'),
+                  Text('viewerName: ${_lastResult!.viewerName ?? 'none'}'),
                 ],
               ),
             )

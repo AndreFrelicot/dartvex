@@ -412,6 +412,8 @@ class LocalClientConfig {
     this.mutationHandlers = const <LocalMutationHandler>[],
     this.initialNetworkMode = LocalNetworkMode.auto,
     this.disposeRemoteClient = false,
+    this.logLevel = DartvexLogLevel.off,
+    this.logger,
   });
 
   /// Storage used for cached query results.
@@ -431,6 +433,12 @@ class LocalClientConfig {
 
   /// Whether a wrapped remote client should be disposed automatically.
   final bool disposeRemoteClient;
+
+  /// Minimum log level emitted by Dartvex Local internals.
+  final DartvexLogLevel logLevel;
+
+  /// Optional structured log sink.
+  final DartvexLogger? logger;
 }
 
 /// Offline-first client that layers cache and mutation replay onto Dartvex.
@@ -584,6 +592,15 @@ class ConvexLocalClient {
         return cached.value;
       }
       rethrow;
+    } catch (error) {
+      if (!_shouldQueueRemoteFailure(error)) {
+        rethrow;
+      }
+      final cached = await _queryCache.read(name, args);
+      if (cached != null) {
+        return cached.value;
+      }
+      rethrow;
     }
   }
 
@@ -644,8 +661,11 @@ class ConvexLocalClient {
             '$name — retryable error, falling through to queue: '
                 '${error.message}');
       } catch (error) {
-        _log('mutate', '$name — non-Convex error: $error');
-        return LocalMutationFailed(error);
+        if (!_shouldQueueRemoteFailure(error)) {
+          _log('mutate', '$name — non-Convex error: $error');
+          return LocalMutationFailed(error);
+        }
+        _log('mutate', '$name — remote unavailable, falling through to queue');
       }
     }
 
@@ -1005,6 +1025,17 @@ class ConvexLocalClient {
           await _dropFailedMutation(mutation, error);
         } catch (error, stack) {
           _log('replay:error', '[$iteration] $error\n$stack');
+          if (_shouldQueueRemoteFailure(error)) {
+            await _mutationQueue.markStatus(
+              mutation.id,
+              PendingMutationStatus.pending,
+              errorMessage: error.toString(),
+            );
+            _pendingMutations = await _mutationQueue.loadAll();
+            _pendingMutationsController.add(currentPendingMutations);
+            hitRetryableError = true;
+            break;
+          }
           await _dropFailedMutation(mutation, error);
         }
       }
@@ -1200,6 +1231,13 @@ class ConvexLocalClient {
     return (_pendingWritesByQueryKey[queryKey] ?? 0) > 0;
   }
 
+  bool _shouldQueueRemoteFailure(Object error) {
+    if (error is TimeoutException) {
+      return true;
+    }
+    return _lastRemoteConnectionState != LocalRemoteConnectionState.connected;
+  }
+
   void _emitToQueryKey(String queryKey, LocalQueryEvent event) {
     final queryState = _queryStates[queryKey];
     if (queryState == null) {
@@ -1245,8 +1283,22 @@ class ConvexLocalClient {
     return value;
   }
 
-  // ignore: avoid_print
-  static void _log(String tag, String msg) => print('[ConvexLocal:$tag] $msg');
+  void _log(String tag, String message) {
+    final logger = _config.logger;
+    if (logger == null || _config.logLevel == DartvexLogLevel.off) {
+      return;
+    }
+    if (DartvexLogLevel.debug.index > _config.logLevel.index) {
+      return;
+    }
+    logger(
+      DartvexLogEvent(
+        level: DartvexLogLevel.debug,
+        message: message,
+        tag: 'local.$tag',
+      ),
+    );
+  }
 
   void _assertNotDisposed() {
     if (_disposed) {

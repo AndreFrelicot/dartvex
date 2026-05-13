@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2026-05-13
+
+### Fixed
+
+- Uses the Convex value codec for local query keys and storage payloads so
+  `BigInt`, bytes, and special floating-point values round-trip correctly.
+- Queues retryable auto-mode mutations when the remote client is unavailable.
+- Retains retryable replay failures for later retry instead of dropping queued
+  mutations.
+- Falls back to cached query data on retryable remote failures.
+
 ## [0.1.2] - 2026-04-30
 
 ### Improved

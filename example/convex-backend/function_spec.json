@@ -310,6 +310,20 @@
         "type": "object",
         "value": {}
       },
+      "functionType": "Mutation",
+      "identifier": "messages.js:clearPublicMessages",
+      "returns": {
+        "type": "number"
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
       "functionType": "Query",
       "identifier": "tasks.js:listBoard",
       "returns": {
@@ -541,6 +555,20 @@
       },
       "functionType": "Mutation",
       "identifier": "tasks.js:seedBoard",
+      "returns": {
+        "type": "number"
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Mutation",
+      "identifier": "tasks.js:clearTasks",
       "returns": {
         "type": "number"
       },

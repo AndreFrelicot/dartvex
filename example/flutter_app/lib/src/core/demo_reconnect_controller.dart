@@ -42,7 +42,7 @@ class _ReconnectableWebSocketAdapter implements WebSocketAdapter {
   bool get isConnected => _delegate.isConnected;
 
   @override
-  Stream<void> get closeEvents => _delegate.closeEvents;
+  Stream<WebSocketCloseEvent> get closeEvents => _delegate.closeEvents;
 
   @override
   Stream<String> get messages => _delegate.messages;

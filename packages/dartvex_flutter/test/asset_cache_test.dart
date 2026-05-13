@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dartvex_flutter/dartvex_flutter.dart';
 import 'package:file/file.dart'; // ignore: depend_on_referenced_packages
 import 'package:file/memory.dart'; // ignore: depend_on_referenced_packages
@@ -214,6 +216,51 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('img-b'), findsOneWidget);
     });
+
+    testWidgets('ignores stale async cache results after cacheKey changes', (
+      tester,
+    ) async {
+      fakeCacheManager
+        ..putInCache('img-a')
+        ..putInCache('img-b')
+        ..delayGet('img-a');
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: ConvexOfflineImage(
+            cacheKey: 'img-a',
+            url: null,
+            cache: cache,
+            builder: (context, snapshot) {
+              return Text(snapshot.file?.path ?? 'loading');
+            },
+          ),
+        ),
+      );
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: ConvexOfflineImage(
+            cacheKey: 'img-b',
+            url: null,
+            cache: cache,
+            builder: (context, snapshot) {
+              return Text(snapshot.file?.path ?? 'loading');
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('/cache/img-b'), findsOneWidget);
+      fakeCacheManager.completeGet('img-a');
+      await tester.pumpAndSettle();
+
+      expect(find.text('/cache/img-b'), findsOneWidget);
+      expect(find.text('/cache/img-a'), findsNothing);
+    });
   });
 }
 
@@ -230,6 +277,7 @@ class GetSingleFileCall {
 class FakeCacheManager implements BaseCacheManager, ConvexAssetCacheMetrics {
   final MemoryFileSystem _fs = MemoryFileSystem();
   final Map<String, FileInfo> _cache = {};
+  final Map<String, Completer<void>> _getDelays = {};
   final List<GetSingleFileCall> getSingleFileCalls = [];
   final List<String> removedKeys = [];
   bool emptyCacheCalled = false;
@@ -250,11 +298,23 @@ class FakeCacheManager implements BaseCacheManager, ConvexAssetCacheMetrics {
     );
   }
 
+  void delayGet(String key) {
+    _getDelays[key] = Completer<void>();
+  }
+
+  void completeGet(String key) {
+    _getDelays.remove(key)?.complete();
+  }
+
   @override
   Future<FileInfo?> getFileFromCache(
     String key, {
     bool ignoreMemCache = false,
   }) async {
+    final delay = _getDelays[key];
+    if (delay != null) {
+      await delay.future;
+    }
     return _cache[key];
   }
 

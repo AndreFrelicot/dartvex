@@ -188,6 +188,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   final Map<int, StreamController<QueryResult>> _subscriptionControllers;
   ConnectionState _currentConnectionState = ConnectionState.disconnected;
   Future<void>? _startFuture;
+  Future<void>? _closeFuture;
   bool _refreshAuthOnNextConnect = false;
   bool _disposed = false;
 
@@ -226,6 +227,11 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     final subscription = subscribe(name, args);
     final completer = Completer<dynamic>();
     late final StreamSubscription<QueryResult> streamSubscription;
+    Future<void> cancelQuerySubscription() async {
+      await streamSubscription.cancel();
+      subscription.cancel();
+    }
+
     streamSubscription = subscription.stream.listen((event) {
       if (completer.isCompleted) {
         return;
@@ -254,10 +260,22 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
             ConvexException(message, data: data, logLines: logLines),
           );
       }
-      unawaited(streamSubscription.cancel());
-      subscription.cancel();
+      unawaited(cancelQuerySubscription());
     });
-    return completer.future;
+    final timeout = _config.queryTimeout;
+    if (timeout == null) {
+      return completer.future;
+    }
+    return completer.future.timeout(
+      timeout,
+      onTimeout: () {
+        unawaited(cancelQuerySubscription());
+        throw TimeoutException(
+          'Convex query "$name" timed out after $timeout',
+          timeout,
+        );
+      },
+    );
   }
 
   @override
@@ -311,6 +329,10 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
         final removed = _subscriptionControllers.remove(
           registration.subscriberId,
         );
+        if (_disposed) {
+          await removed?.close();
+          return;
+        }
         _baseClient.unsubscribe(registration.subscriberId);
         await _flushOutgoing();
         await removed?.close();
@@ -438,11 +460,14 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
 
   /// Returns an auth-aware wrapper around this client.
   ConvexClientWithAuth<TUser> withAuth<TUser>(
-      AuthProvider<TUser> authProvider) {
+    AuthProvider<TUser> authProvider, {
+    bool disposeClient = false,
+  }) {
     _assertNotDisposed();
     return ConvexClientWithAuth<TUser>(
       client: this,
       authProvider: authProvider,
+      disposeClient: disposeClient,
     );
   }
 
@@ -461,23 +486,33 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
 
   /// Disposes subscriptions, auth management, and transport resources.
   void dispose() {
+    unawaited(close());
+  }
+
+  /// Asynchronously closes subscriptions, auth management, and transport resources.
+  Future<void> close() {
+    final closeFuture = _closeFuture;
+    if (closeFuture != null) {
+      return closeFuture;
+    }
     if (_disposed) {
-      return;
+      return Future<void>.value();
     }
     _disposed = true;
     _log(DartvexLogLevel.debug, 'Disposing client');
     _baseClient.failPendingRequests('ConvexClient has been disposed');
     final subscriptionControllers = _subscriptionControllers.values.toList();
     _subscriptionControllers.clear();
-    scheduleMicrotask(() async {
+    _closeFuture = Future<void>(() async {
       for (final controller in subscriptionControllers) {
         await controller.close();
       }
       await _connectionStateController.close();
       await _authStateController.close();
+      await _authManager.stopRefreshing();
+      await _wsManager.dispose();
     });
-    unawaited(_authManager.stopRefreshing());
-    unawaited(_wsManager.dispose());
+    return _closeFuture!;
   }
 
   Future<void> _sendAuth(String? token) async {
@@ -540,7 +575,10 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
         case AuthConfirmedEvent():
           _authManager.handleAuthConfirmed();
         case AuthErrorEvent():
-          await _authManager.handleAuthError(event.error);
+          await _authManager.handleAuthError(
+            event.error,
+            currentAuthVersion: _baseClient.authVersion,
+          );
         case ReconnectRequiredEvent():
           await _wsManager.reconnectNow(event.reason);
       }

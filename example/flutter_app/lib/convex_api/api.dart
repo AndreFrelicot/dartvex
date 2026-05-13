@@ -13,7 +13,7 @@ export 'schema.dart';
 class ConvexApi {
   const ConvexApi(this._client);
 
-  final ConvexClient _client;
+  final ConvexFunctionCaller _client;
 
   DemoApi get demo => DemoApi(_client);
   MessagesApi get messages => MessagesApi(_client);

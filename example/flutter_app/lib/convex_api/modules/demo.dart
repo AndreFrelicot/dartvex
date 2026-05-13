@@ -7,9 +7,9 @@ import 'package:dartvex/dartvex.dart';
 class DemoApi {
   const DemoApi(this._client);
 
-  final ConvexClient _client;
+  final ConvexFunctionCaller _client;
 
-  Future<PingActionResult> pingaction({required String message}) async {
+  Future<PingActionResult> pingAction({required String message}) async {
     final raw = await _client.action(
       'demo:pingAction',
       _encodePingActionArgs((message: message)),
@@ -17,7 +17,7 @@ class DemoApi {
     return _decodePingActionResult(raw);
   }
 
-  Future<RequireAuthEchoResult> requireauthecho({
+  Future<RequireAuthEchoResult> requireAuthEcho({
     required String message,
   }) async {
     final raw = await _client.query(
@@ -27,7 +27,7 @@ class DemoApi {
     return _decodeRequireAuthEchoResult(raw);
   }
 
-  TypedConvexSubscription<RequireAuthEchoResult> requireauthechoSubscribe({
+  TypedConvexSubscription<RequireAuthEchoResult> requireAuthEchoSubscribe({
     required String message,
   }) {
     final subscription = _client.subscribe(
@@ -50,12 +50,12 @@ class DemoApi {
     );
   }
 
-  Future<WhoAmIResult?> whoami() async {
+  Future<WhoAmIResult?> whoAmI() async {
     final raw = await _client.query('demo:whoAmI', const <String, dynamic>{});
     return raw == null ? null : _decodeWhoAmIResult(raw);
   }
 
-  TypedConvexSubscription<WhoAmIResult?> whoamiSubscribe() {
+  TypedConvexSubscription<WhoAmIResult?> whoAmISubscribe() {
     final subscription = _client.subscribe(
       'demo:whoAmI',
       const <String, dynamic>{},
@@ -73,43 +73,43 @@ class DemoApi {
 }
 
 typedef PingActionResult = ({
-  String echoedtext,
-  bool isauthenticated,
-  double receivedat,
-  String? viewername,
+  String echoedText,
+  bool isAuthenticated,
+  double receivedAt,
+  String? viewerName,
 });
 
 Map<String, dynamic> _encodePingActionResult(PingActionResult value) {
   final (
-    echoedtext: echoedtext,
-    isauthenticated: isauthenticated,
-    receivedat: receivedat,
-    viewername: viewername,
+    echoedText: echoedText,
+    isAuthenticated: isAuthenticated,
+    receivedAt: receivedAt,
+    viewerName: viewerName,
   ) = value;
   return <String, dynamic>{
-    'echoedText': echoedtext,
-    'isAuthenticated': isauthenticated,
-    'receivedAt': receivedat,
-    'viewerName': viewername == null ? null : viewername,
+    'echoedText': echoedText,
+    'isAuthenticated': isAuthenticated,
+    'receivedAt': receivedAt,
+    'viewerName': viewerName == null ? null : viewerName,
   };
 }
 
 PingActionResult _decodePingActionResult(dynamic raw) {
   final map = expectMap(raw, label: 'PingActionResult');
   return (
-    echoedtext: expectString(
+    echoedText: expectString(
       map['echoedText'],
       label: 'PingActionResultEchoedText',
     ),
-    isauthenticated: expectBool(
+    isAuthenticated: expectBool(
       map['isAuthenticated'],
       label: 'PingActionResultIsAuthenticated',
     ),
-    receivedat: expectDouble(
+    receivedAt: expectDouble(
       map['receivedAt'],
       label: 'PingActionResultReceivedAt',
     ),
-    viewername: map['viewerName'] == null
+    viewerName: map['viewerName'] == null
         ? null
         : expectString(map['viewerName'], label: 'PingActionResultViewerName'),
   );
@@ -129,13 +129,13 @@ PingActionArgs _decodePingActionArgs(dynamic raw) {
   );
 }
 
-typedef RequireAuthEchoResult = ({String message, String tokenidentifier});
+typedef RequireAuthEchoResult = ({String message, String tokenIdentifier});
 
 Map<String, dynamic> _encodeRequireAuthEchoResult(RequireAuthEchoResult value) {
-  final (message: message, tokenidentifier: tokenidentifier) = value;
+  final (message: message, tokenIdentifier: tokenIdentifier) = value;
   return <String, dynamic>{
     'message': message,
-    'tokenIdentifier': tokenidentifier,
+    'tokenIdentifier': tokenIdentifier,
   };
 }
 
@@ -146,7 +146,7 @@ RequireAuthEchoResult _decodeRequireAuthEchoResult(dynamic raw) {
       map['message'],
       label: 'RequireAuthEchoResultMessage',
     ),
-    tokenidentifier: expectString(
+    tokenIdentifier: expectString(
       map['tokenIdentifier'],
       label: 'RequireAuthEchoResultTokenIdentifier',
     ),
@@ -172,7 +172,7 @@ typedef WhoAmIResult = ({
   String issuer,
   String? name,
   String subject,
-  String tokenidentifier,
+  String tokenIdentifier,
 });
 
 Map<String, dynamic> _encodeWhoAmIResult(WhoAmIResult value) {
@@ -181,14 +181,14 @@ Map<String, dynamic> _encodeWhoAmIResult(WhoAmIResult value) {
     issuer: issuer,
     name: name,
     subject: subject,
-    tokenidentifier: tokenidentifier,
+    tokenIdentifier: tokenIdentifier,
   ) = value;
   return <String, dynamic>{
     'email': email == null ? null : email,
     'issuer': issuer,
     'name': name == null ? null : name,
     'subject': subject,
-    'tokenIdentifier': tokenidentifier,
+    'tokenIdentifier': tokenIdentifier,
   };
 }
 
@@ -203,7 +203,7 @@ WhoAmIResult _decodeWhoAmIResult(dynamic raw) {
         ? null
         : expectString(map['name'], label: 'WhoAmIResultName'),
     subject: expectString(map['subject'], label: 'WhoAmIResultSubject'),
-    tokenidentifier: expectString(
+    tokenIdentifier: expectString(
       map['tokenIdentifier'],
       label: 'WhoAmIResultTokenIdentifier',
     ),

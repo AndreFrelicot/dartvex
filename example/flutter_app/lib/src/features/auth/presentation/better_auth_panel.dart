@@ -132,15 +132,15 @@ class _BetterAuthPanelState extends State<BetterAuthPanel>
                 onLogout: _logout,
               ),
             _ => _AuthForm(
-                nameController: _nameController,
-                emailController: _emailController,
-                passwordController: _passwordController,
-                isSignUp: _isSignUp,
-                isLoading: _isLoading,
-                error: _error,
-                onToggleMode: () => setState(() => _isSignUp = !_isSignUp),
-                onSubmit: _submit,
-              ),
+              nameController: _nameController,
+              emailController: _emailController,
+              passwordController: _passwordController,
+              isSignUp: _isSignUp,
+              isLoading: _isLoading,
+              error: _error,
+              onToggleMode: () => setState(() => _isSignUp = !_isSignUp),
+              onSubmit: _submit,
+            ),
           };
         },
       ),
@@ -177,7 +177,7 @@ class _AuthForm extends StatelessWidget {
         InlineNotice(
           message: isSignUp
               ? 'Create an account with email and password. '
-                'Your credentials are stored in the Convex database.'
+                    'Your credentials are stored in the Convex database.'
               : 'Sign in with your existing email and password.',
         ),
         const SizedBox(height: 16),
@@ -237,9 +237,11 @@ class _AuthForm extends StatelessWidget {
             ),
             TextButton(
               onPressed: onToggleMode,
-              child: Text(isSignUp
-                  ? 'Already have an account? Sign in'
-                  : 'Need an account? Sign up'),
+              child: Text(
+                isSignUp
+                    ? 'Already have an account? Sign in'
+                    : 'Need an account? Sign up',
+              ),
             ),
           ],
         ),
@@ -280,12 +282,12 @@ class _SignedInContent extends StatelessWidget {
                 label: 'Connection: ${connectionState.name}',
                 backgroundColor:
                     connectionState == ConvexConnectionState.connected
-                        ? const Color(0xFF0D3D37)
-                        : const Color(0xFF2C1F5C),
+                    ? const Color(0xFF0D3D37)
+                    : const Color(0xFF2C1F5C),
                 foregroundColor:
                     connectionState == ConvexConnectionState.connected
-                        ? const Color(0xFF10B981)
-                        : const Color(0xFF818CF8),
+                    ? const Color(0xFF10B981)
+                    : const Color(0xFF818CF8),
               ),
             ),
           ],
@@ -303,17 +305,16 @@ class _SignedInContent extends StatelessWidget {
               Text(
                 'Better Auth Session',
                 style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: const Color(0xFF10B981),
-                      fontWeight: FontWeight.w800,
-                    ),
+                  color: const Color(0xFF10B981),
+                  fontWeight: FontWeight.w800,
+                ),
               ),
               const SizedBox(height: 8),
               Text(
                 session.name ?? session.email,
-                style: Theme.of(context)
-                    .textTheme
-                    .titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w800),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 6),
               Text('email: ${session.email}'),
@@ -438,9 +439,9 @@ class _ChecklistItem extends StatelessWidget {
             child: Text(
               number,
               style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: const Color(0xFF10B981),
-                    fontWeight: FontWeight.w800,
-                  ),
+                color: const Color(0xFF10B981),
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ),
           const SizedBox(width: 12),
@@ -450,18 +451,17 @@ class _ChecklistItem extends StatelessWidget {
               children: <Widget>[
                 Text(
                   title,
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleSmall
-                      ?.copyWith(fontWeight: FontWeight.w700),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 4),
                 SelectableText(
                   detail,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: const Color(0xFFA0A9B8),
-                        fontWeight: FontWeight.w500,
-                      ),
+                    color: const Color(0xFFA0A9B8),
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ],
             ),
@@ -495,9 +495,9 @@ class _StatusPill extends StatelessWidget {
         child: Text(
           label,
           style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: foregroundColor,
-                fontWeight: FontWeight.w800,
-              ),
+            color: foregroundColor,
+            fontWeight: FontWeight.w800,
+          ),
         ),
       ),
     );

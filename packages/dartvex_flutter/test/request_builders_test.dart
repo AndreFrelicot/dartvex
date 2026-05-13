@@ -115,7 +115,7 @@ void main() {
 
     final future = mutate();
     await tester.pump();
-    expect(() => mutate(), throwsStateError);
+    await expectLater(mutate(), throwsStateError);
     completer.complete('ok');
     await future;
     await tester.pump();

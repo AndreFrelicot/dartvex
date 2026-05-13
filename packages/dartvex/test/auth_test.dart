@@ -1,6 +1,9 @@
 import 'dart:async';
 
 import 'package:dartvex/dartvex.dart';
+import 'package:dartvex/src/protocol/encoding.dart';
+import 'package:dartvex/src/protocol/messages.dart';
+import 'package:dartvex/src/protocol/state_version.dart';
 import 'package:test/test.dart';
 
 import 'test_helpers/mock_web_socket_adapter.dart';
@@ -9,6 +12,16 @@ void main() {
   group('ConvexClientWithAuth', () {
     Future<void> settle() async {
       await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+
+    void confirmAuth(MockWebSocketAdapter adapter) {
+      adapter.pushServerMessage(
+        Transition(
+          startVersion: const StateVersion.initial(),
+          endVersion: StateVersion(querySet: 0, identity: 1, ts: encodeTs(1)),
+          modifications: const <StateModification>[],
+        ).toJson(),
+      );
     }
 
     test('auth state transitions from loading to authenticated', () async {
@@ -44,6 +57,10 @@ void main() {
 
       expect(session.userInfo, 'alice');
       expect(states.first, isA<AuthLoading<FakeAuthSession>>());
+      expect(states.last, isA<AuthLoading<FakeAuthSession>>());
+      expect(authClient.currentAuthState, isA<AuthLoading<FakeAuthSession>>());
+      confirmAuth(adapter);
+      await settle();
       expect(states.last, isA<AuthAuthenticated<FakeAuthSession>>());
       expect(authClient.currentAuthState,
           isA<AuthAuthenticated<FakeAuthSession>>());

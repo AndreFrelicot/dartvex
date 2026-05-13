@@ -43,8 +43,8 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 
 ```yaml
 dependencies:
-  dartvex: ^0.1.4
-  dartvex_flutter: ^0.1.4
+  dartvex: ^0.1.5
+  dartvex_flutter: ^0.1.5
 ```
 
 ## Provider Setup

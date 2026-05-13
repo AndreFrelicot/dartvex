@@ -71,6 +71,8 @@ class BaseClient {
 
   String? get maxObservedTimestamp => _localState.maxObservedTimestamp;
 
+  int get authVersion => _localState.authVersion;
+
   final Map<String, StoredQueryResult> _resultCacheByToken =
       <String, StoredQueryResult>{};
 
@@ -240,7 +242,7 @@ class BaseClient {
       case ActionResponse():
         _requestManager.handleActionResponse(message);
       case Ping():
-        _outgoing.add(const Event(eventType: 'Pong', event: null));
+        break;
       case AuthError():
         events.add(AuthErrorEvent(error: message));
       case FatalError():

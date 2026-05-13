@@ -52,6 +52,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dart-lang/setup-dart@v1
         with: { sdk: stable }
+      - name: Use local dartvex dependency
+        if: matrix.package != 'dartvex'
+        run: |
+          cat > packages/${{ matrix.package }}/pubspec_overrides.yaml <<'YAML'
+          dependency_overrides:
+            dartvex:
+              path: ../dartvex
+          YAML
       - run: cd packages/${{ matrix.package }} && dart pub get && dart analyze --fatal-infos
 
   analyze-flutter:
@@ -64,6 +72,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with: { flutter-version: '3.x', channel: stable }
+      - name: Use local dartvex dependency
+        run: |
+          cat > packages/${{ matrix.package }}/pubspec_overrides.yaml <<'YAML'
+          dependency_overrides:
+            dartvex:
+              path: ../dartvex
+          YAML
       - run: cd packages/${{ matrix.package }} && flutter pub get && flutter analyze --fatal-infos
 
   test:
@@ -76,6 +91,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dart-lang/setup-dart@v1
         with: { sdk: stable }
+      - name: Use local dartvex dependency
+        if: matrix.package != 'dartvex'
+        run: |
+          cat > packages/${{ matrix.package }}/pubspec_overrides.yaml <<'YAML'
+          dependency_overrides:
+            dartvex:
+              path: ../dartvex
+          YAML
       - name: Install dependencies
         run: cd packages/${{ matrix.package }} && dart pub get
       - name: Regenerate golden files
@@ -93,7 +116,24 @@ jobs:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with: { flutter-version: '3.x', channel: stable }
+      - name: Use local dartvex dependency
+        run: |
+          cat > packages/${{ matrix.package }}/pubspec_overrides.yaml <<'YAML'
+          dependency_overrides:
+            dartvex:
+              path: ../dartvex
+          YAML
       - run: cd packages/${{ matrix.package }} && flutter pub get && flutter test
+
+  protocol-watch:
+    name: Protocol Watch
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: ./scripts/protocol-watch.sh
 
   publish-dry-run:
     name: Publish Dry Run
@@ -122,7 +162,11 @@ jobs:
         with: { flutter-version: '3.x', channel: stable }
       - name: Publish dry-run (Dart)
         if: matrix.tool == 'dart'
-        run: cd packages/${{ matrix.package }} && dart pub get && dart pub publish --dry-run
+        run: |
+          rm -f packages/${{ matrix.package }}/pubspec_overrides.yaml
+          cd packages/${{ matrix.package }} && dart pub get && dart pub publish --dry-run
       - name: Publish dry-run (Flutter)
         if: matrix.tool == 'flutter'
-        run: cd packages/${{ matrix.package }} && flutter pub get && flutter pub publish --dry-run
+        run: |
+          rm -f packages/${{ matrix.package }}/pubspec_overrides.yaml
+          cd packages/${{ matrix.package }} && flutter pub get && flutter pub publish --dry-run

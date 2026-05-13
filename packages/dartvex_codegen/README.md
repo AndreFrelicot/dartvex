@@ -24,7 +24,7 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 
 ```yaml
 dev_dependencies:
-  dartvex_codegen: ^0.1.3
+  dartvex_codegen: ^0.1.4
 ```
 
 ## Usage

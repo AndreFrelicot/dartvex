@@ -96,6 +96,20 @@ void main() {
         throwsA(isA<ArgumentError>()),
       );
     });
+
+    test('rejects missing output path', () async {
+      expect(
+        () => runConvexCodegen(
+          <String>[
+            'generate',
+            '--spec-file',
+            fixtureFile.path,
+          ],
+          log: (_) {},
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
   });
 }
 

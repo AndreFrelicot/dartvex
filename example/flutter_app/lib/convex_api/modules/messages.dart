@@ -7,9 +7,17 @@ import 'package:dartvex/dartvex.dart';
 class MessagesApi {
   const MessagesApi(this._client);
 
-  final ConvexClient _client;
+  final ConvexFunctionCaller _client;
 
-  Future<List<ListPrivateResultItem>> listprivate() async {
+  Future<double> clearPublicMessages() async {
+    final raw = await _client.mutate(
+      'messages:clearPublicMessages',
+      const <String, dynamic>{},
+    );
+    return expectDouble(raw, label: 'ClearPublicMessagesResult');
+  }
+
+  Future<List<ListPrivateResultItem>> listPrivate() async {
     final raw = await _client.query(
       'messages:listPrivate',
       const <String, dynamic>{},
@@ -20,7 +28,7 @@ class MessagesApi {
     ).map((item) => _decodeListPrivateResultItem(item)).toList();
   }
 
-  TypedConvexSubscription<List<ListPrivateResultItem>> listprivateSubscribe() {
+  TypedConvexSubscription<List<ListPrivateResultItem>> listPrivateSubscribe() {
     final subscription = _client.subscribe(
       'messages:listPrivate',
       const <String, dynamic>{},
@@ -44,7 +52,7 @@ class MessagesApi {
     );
   }
 
-  Future<List<ListPublicResultItem>> listpublic() async {
+  Future<List<ListPublicResultItem>> listPublic() async {
     final raw = await _client.query(
       'messages:listPublic',
       const <String, dynamic>{},
@@ -55,7 +63,7 @@ class MessagesApi {
     ).map((item) => _decodeListPublicResultItem(item)).toList();
   }
 
-  TypedConvexSubscription<List<ListPublicResultItem>> listpublicSubscribe() {
+  TypedConvexSubscription<List<ListPublicResultItem>> listPublicSubscribe() {
     final subscription = _client.subscribe(
       'messages:listPublic',
       const <String, dynamic>{},
@@ -79,7 +87,7 @@ class MessagesApi {
     );
   }
 
-  Future<PrivateMessagesId> sendprivate({required String text}) async {
+  Future<PrivateMessagesId> sendPrivate({required String text}) async {
     final raw = await _client.mutate(
       'messages:sendPrivate',
       _encodeSendPrivateArgs((text: text)),
@@ -87,7 +95,7 @@ class MessagesApi {
     return PrivateMessagesId(expectString(raw, label: 'SendPrivateResult'));
   }
 
-  Future<PublicMessagesId> sendpublic({
+  Future<PublicMessagesId> sendPublic({
     required String author,
     required String text,
   }) async {
@@ -97,45 +105,37 @@ class MessagesApi {
     );
     return PublicMessagesId(expectString(raw, label: 'SendPublicResult'));
   }
-
-  Future<double> clearpublic() async {
-    final raw = await _client.mutate(
-      'messages:clearPublicMessages',
-      const <String, dynamic>{},
-    );
-    return expectDouble(raw, label: 'ClearPublicMessagesResult');
-  }
 }
 
 typedef ListPrivateResultItem = ({
-  double creationtime,
+  double creationTime,
   PrivateMessagesId id,
   String author,
   String text,
-  String tokenidentifier,
+  String tokenIdentifier,
 });
 
 Map<String, dynamic> _encodeListPrivateResultItem(ListPrivateResultItem value) {
   final (
-    creationtime: creationtime,
+    creationTime: creationTime,
     id: id,
     author: author,
     text: text,
-    tokenidentifier: tokenidentifier,
+    tokenIdentifier: tokenIdentifier,
   ) = value;
   return <String, dynamic>{
-    '_creationTime': creationtime,
+    '_creationTime': creationTime,
     '_id': id.value,
     'author': author,
     'text': text,
-    'tokenIdentifier': tokenidentifier,
+    'tokenIdentifier': tokenIdentifier,
   };
 }
 
 ListPrivateResultItem _decodeListPrivateResultItem(dynamic raw) {
   final map = expectMap(raw, label: 'ListPrivateResultItem');
   return (
-    creationtime: expectDouble(
+    creationTime: expectDouble(
       map['_creationTime'],
       label: 'ListPrivateResultItemCreationTime',
     ),
@@ -144,7 +144,7 @@ ListPrivateResultItem _decodeListPrivateResultItem(dynamic raw) {
     ),
     author: expectString(map['author'], label: 'ListPrivateResultItemAuthor'),
     text: expectString(map['text'], label: 'ListPrivateResultItemText'),
-    tokenidentifier: expectString(
+    tokenIdentifier: expectString(
       map['tokenIdentifier'],
       label: 'ListPrivateResultItemTokenIdentifier',
     ),
@@ -152,17 +152,17 @@ ListPrivateResultItem _decodeListPrivateResultItem(dynamic raw) {
 }
 
 typedef ListPublicResultItem = ({
-  double creationtime,
+  double creationTime,
   PublicMessagesId id,
   String author,
   String text,
 });
 
 Map<String, dynamic> _encodeListPublicResultItem(ListPublicResultItem value) {
-  final (creationtime: creationtime, id: id, author: author, text: text) =
+  final (creationTime: creationTime, id: id, author: author, text: text) =
       value;
   return <String, dynamic>{
-    '_creationTime': creationtime,
+    '_creationTime': creationTime,
     '_id': id.value,
     'author': author,
     'text': text,
@@ -172,7 +172,7 @@ Map<String, dynamic> _encodeListPublicResultItem(ListPublicResultItem value) {
 ListPublicResultItem _decodeListPublicResultItem(dynamic raw) {
   final map = expectMap(raw, label: 'ListPublicResultItem');
   return (
-    creationtime: expectDouble(
+    creationTime: expectDouble(
       map['_creationTime'],
       label: 'ListPublicResultItemCreationTime',
     ),

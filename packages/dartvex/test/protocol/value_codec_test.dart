@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dartvex/dartvex.dart' as dartvex;
@@ -104,6 +105,22 @@ void main() {
       expect(
         () => convexToJson(<String, dynamic>{'bad\nkey': 1}),
         throwsArgumentError,
+      );
+      expect(
+        () => convexToJson(<String, dynamic>{
+          ''.padRight(1025, 'a'): 1,
+        }),
+        throwsArgumentError,
+      );
+    });
+
+    test(r'decoding finite $float throws', () {
+      final bytes = ByteData(8)..setFloat64(0, 1.5, Endian.little);
+      final encoded = base64Encode(bytes.buffer.asUint8List());
+
+      expect(
+        () => jsonToConvex(<String, dynamic>{r'$float': encoded}),
+        throwsFormatException,
       );
     });
 

@@ -75,7 +75,9 @@ class _ConvexMutationState<T> extends State<ConvexMutation<T>> {
   Future<T> _mutate([Map<String, dynamic> args = const <String, dynamic>{}]) {
     final active = _inFlight;
     if (active != null) {
-      throw StateError('Mutation "${widget.mutation}" is already in progress.');
+      return Future<T>.error(
+        StateError('Mutation "${widget.mutation}" is already in progress.'),
+      );
     }
     final completer = Completer<T>();
     _inFlight = completer.future;

@@ -1,5 +1,8 @@
 import 'dart:convert';
 
+// ignore: implementation_imports
+import 'package:dartvex/src/values/json_codec.dart' show convexToJson;
+
 /// Normalizes a Convex query [name] into a stable `module:function` form.
 String canonicalizeQueryName(String name) {
   final parts = name.split(':');
@@ -22,7 +25,7 @@ String canonicalizeQueryName(String name) {
 String serializeQueryKey(String queryName, Map<String, dynamic> args) {
   final normalized = <String, dynamic>{
     'udfPath': canonicalizeQueryName(queryName),
-    'args': canonicalizeJsonValue(args),
+    'args': convexToJson(args),
   };
   return jsonEncode(normalized);
 }

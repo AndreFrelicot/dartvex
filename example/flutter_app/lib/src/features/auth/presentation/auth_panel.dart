@@ -191,7 +191,7 @@ class AuthPanel extends StatelessWidget {
             else
               GeneratedSubscriptionBuilder<demo_api.WhoAmIResult?>(
                 subscriptionKey: api!,
-                subscribe: api!.demo.whoamiSubscribe,
+                subscribe: api!.demo.whoAmISubscribe,
                 builder: (context, snapshot) {
                   if (snapshot.isLoading) {
                     return const LinearProgressIndicator(minHeight: 2);
@@ -235,7 +235,7 @@ class AuthPanel extends StatelessWidget {
                         ),
                         const SizedBox(height: 8),
                         SelectableText(
-                          'tokenIdentifier: ${viewer.tokenidentifier}',
+                          'tokenIdentifier: ${viewer.tokenIdentifier}',
                         ),
                       ],
                     ),

@@ -51,7 +51,8 @@ class _ConvexFlutterDemoAppState extends State<ConvexFlutterDemoApp> {
   late final DemoAuthProvider _demoAuthProvider;
   final DemoReconnectController _reconnectController =
       DemoReconnectController();
-  final ValueNotifier<TransitionMetrics?> _latencyNotifier = ValueNotifier<TransitionMetrics?>(null);
+  final ValueNotifier<TransitionMetrics?> _latencyNotifier =
+      ValueNotifier<TransitionMetrics?>(null);
 
   ConvexBetterAuthProvider? _betterAuthProvider;
   ConvexClientWithAuth<BetterAuthSession>? _betterAuthClient;
@@ -251,8 +252,7 @@ class _ConvexFlutterDemoAppState extends State<ConvexFlutterDemoApp> {
       betterAuthProvider = ConvexBetterAuthProvider(
         client: BetterAuthClient(baseUrl: url),
       );
-      betterAuthClient =
-          client.withAuth<BetterAuthSession>(betterAuthProvider);
+      betterAuthClient = client.withAuth<BetterAuthSession>(betterAuthProvider);
     }
     final runtime = ConvexClientRuntime(client, disposeClient: false);
     final api = ConvexApi(client);
@@ -352,13 +352,14 @@ class _ConvexFlutterDemoAppState extends State<ConvexFlutterDemoApp> {
       title: 'Convex Flutter Demo',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF818CF8),
-          brightness: Brightness.dark,
-        ).copyWith(
-          surface: const Color(0xFF1A1F2E),
-          onSurface: const Color(0xFFF3F4F6),
-        ),
+        colorScheme:
+            ColorScheme.fromSeed(
+              seedColor: const Color(0xFF818CF8),
+              brightness: Brightness.dark,
+            ).copyWith(
+              surface: const Color(0xFF1A1F2E),
+              onSurface: const Color(0xFFF3F4F6),
+            ),
         scaffoldBackgroundColor: const Color(0xFF0F1419),
         useMaterial3: true,
         appBarTheme: const AppBarTheme(
@@ -443,9 +444,7 @@ class _ConvexFlutterDemoAppState extends State<ConvexFlutterDemoApp> {
           ),
         ),
         textButtonTheme: TextButtonThemeData(
-          style: TextButton.styleFrom(
-            foregroundColor: const Color(0xFF818CF8),
-          ),
+          style: TextButton.styleFrom(foregroundColor: const Color(0xFF818CF8)),
         ),
       ),
       home: _buildHome(),
@@ -916,7 +915,9 @@ class _DemoAppBar extends StatelessWidget implements PreferredSizeWidget {
       actions: <Widget>[
         Padding(
           padding: const EdgeInsets.only(right: 16),
-          child: Center(child: _ConnectionChip(latencyNotifier: latencyNotifier)),
+          child: Center(
+            child: _ConnectionChip(latencyNotifier: latencyNotifier),
+          ),
         ),
       ],
       bottom: bottom,
@@ -981,10 +982,11 @@ class _ConnectionChip extends StatelessWidget {
                       if (metrics == null) return const SizedBox.shrink();
                       return Text(
                         '${metrics.transitTimeMs.round()}ms',
-                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                          color: color.withValues(alpha: 0.7),
-                          fontWeight: FontWeight.w600,
-                        ),
+                        style: Theme.of(context).textTheme.labelMedium
+                            ?.copyWith(
+                              color: color.withValues(alpha: 0.7),
+                              fontWeight: FontWeight.w600,
+                            ),
                       );
                     },
                   ),
@@ -1137,10 +1139,7 @@ class _DemoDestination {
 // ---------------------------------------------------------------------------
 
 class _AuthModeSelector extends StatelessWidget {
-  const _AuthModeSelector({
-    required this.mode,
-    required this.onChanged,
-  });
+  const _AuthModeSelector({required this.mode, required this.onChanged});
 
   final AuthMode mode;
   final ValueChanged<AuthMode> onChanged;
@@ -1171,4 +1170,3 @@ class _AuthModeSelector extends StatelessWidget {
     );
   }
 }
-

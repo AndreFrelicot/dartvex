@@ -65,6 +65,7 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
   Object? _error;
   bool _loading = true;
   String? _loadedStorageId;
+  int _requestGeneration = 0;
 
   ConvexAssetCache get _cache => widget.cache ?? ConvexAssetCache.shared;
 
@@ -88,20 +89,23 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
       return;
     }
     _loadedStorageId = widget.storageId;
-    _fetchAndCache();
+    _fetchAndCache(++_requestGeneration);
   }
 
-  Future<void> _fetchAndCache() async {
+  Future<void> _fetchAndCache(int generation) async {
+    final storageId = widget.storageId;
+    final getUrlAction = widget.getUrlAction;
     setState(() {
       _loading = true;
       _error = null;
+      _file = null;
     });
 
     try {
       final client = widget.client ?? ConvexProvider.of(context);
-      final cached = await _cache.get(widget.storageId);
+      final cached = await _cache.get(storageId);
       if (cached != null) {
-        if (!mounted) return;
+        if (!_isCurrentRequest(generation, storageId, getUrlAction)) return;
         setState(() {
           _file = cached;
           _loading = false;
@@ -110,29 +114,40 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
       }
 
       final url = await client.query(
-        widget.getUrlAction,
-        <String, dynamic>{'storageId': widget.storageId},
+        getUrlAction,
+        <String, dynamic>{'storageId': storageId},
       );
-      if (!mounted) return;
+      if (!_isCurrentRequest(generation, storageId, getUrlAction)) return;
 
       final urlStr = url as String?;
       if (urlStr == null || urlStr.isEmpty) {
-        throw StateError('No URL returned for storageId ${widget.storageId}');
+        throw StateError('No URL returned for storageId $storageId');
       }
 
-      final file = await _cache.prefetch(widget.storageId, urlStr);
-      if (!mounted) return;
+      final file = await _cache.prefetch(storageId, urlStr);
+      if (!_isCurrentRequest(generation, storageId, getUrlAction)) return;
       setState(() {
         _file = file;
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!_isCurrentRequest(generation, storageId, getUrlAction)) return;
       setState(() {
         _error = error;
         _loading = false;
       });
     }
+  }
+
+  bool _isCurrentRequest(
+    int generation,
+    String storageId,
+    String getUrlAction,
+  ) {
+    return mounted &&
+        generation == _requestGeneration &&
+        widget.storageId == storageId &&
+        widget.getUrlAction == getUrlAction;
   }
 
   @override

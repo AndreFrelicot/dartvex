@@ -115,8 +115,7 @@ class WebSocketManager {
   /// Structured log sink.
   final DartvexLogger? logger;
 
-  final Map<String, _TransitionChunkBuffer> _chunkBuffers =
-      <String, _TransitionChunkBuffer>{};
+  _TransitionChunkBuffer? _chunkBuffer;
   final String _sessionId = const Uuid().v4();
 
   StreamSubscription<String>? _messageSubscription;
@@ -191,6 +190,7 @@ class WebSocketManager {
   /// Forces a reconnect using [reason] as the last close reason.
   Future<void> reconnectNow(String reason) async {
     _lastCloseReason = reason;
+    _chunkBuffer = null;
     _log(
       DartvexLogLevel.info,
       'Reconnect requested',
@@ -212,13 +212,16 @@ class WebSocketManager {
     _log(DartvexLogLevel.debug, 'Disposing WebSocket manager');
     _reconnectTimer?.cancel();
     _inactivityTimer?.cancel();
+    _chunkBuffer = null;
     await _messageSubscription?.cancel();
     await _closeSubscription?.cancel();
     await adapter.close();
   }
 
   void _attachListeners() {
-    _messageSubscription ??= adapter.messages.listen(_handleRawMessage);
+    _messageSubscription ??= adapter.messages.listen((raw) {
+      unawaited(_handleRawMessage(raw));
+    });
     _closeSubscription ??= adapter.closeEvents.listen((event) {
       unawaited(_handleClosed(event));
     });
@@ -263,7 +266,6 @@ class WebSocketManager {
         return;
       }
       onConnectionStateChanged(true, false);
-      _reconnectIndex = 0;
     } catch (error) {
       _connecting = false;
       _log(
@@ -287,47 +289,112 @@ class WebSocketManager {
   }
 
   Future<void> _handleRawMessage(String raw) async {
-    _resetInactivityTimer();
-    final messageLengthBytes = utf8.encode(raw).length;
-    final decoded = jsonDecode(raw);
-    if (decoded is! Map<String, dynamic>) {
-      throw FormatException('Server message must be an object', raw);
-    }
-    var message = ServerMessage.fromJson(decoded);
-    if (message is TransitionChunk) {
-      final assembledTransition = _appendTransitionChunk(message);
-      if (assembledTransition == null) {
+    try {
+      _resetInactivityTimer();
+      final messageLengthBytes = utf8.encode(raw).length;
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) {
+        throw FormatException('Server message must be an object', raw);
+      }
+      var message = ServerMessage.fromJson(decoded);
+      if (message is Ping) {
         return;
       }
-      _reportTransitionMetrics(
-        assembledTransition.transition,
-        assembledTransition.messageLengthBytes,
+      if (message is TransitionChunk) {
+        final assembledTransition = _appendTransitionChunk(message);
+        if (assembledTransition == null) {
+          return;
+        }
+        _reportTransitionMetrics(
+          assembledTransition.transition,
+          assembledTransition.messageLengthBytes,
+        );
+        message = assembledTransition.transition;
+      } else {
+        if (_chunkBuffer != null) {
+          _chunkBuffer = null;
+          _log(
+            DartvexLogLevel.warn,
+            'Received non-chunk message while buffering TransitionChunks',
+            data: <String, Object?>{'type': decoded['type']},
+          );
+        }
+        if (message is Transition) {
+          _reportTransitionMetrics(message, messageLengthBytes);
+        }
+      }
+      final outgoing = await onMessage(message);
+      await sendMessages(outgoing);
+      _reconnectIndex = 0;
+    } catch (error, stackTrace) {
+      _chunkBuffer = null;
+      _lastCloseReason = 'InvalidServerMessage';
+      _pendingCloseReason = _lastCloseReason;
+      _log(
+        DartvexLogLevel.error,
+        'Failed to handle WebSocket message',
+        error: error,
+        stackTrace: stackTrace,
       );
-      message = assembledTransition.transition;
-    } else if (message is Transition) {
-      _reportTransitionMetrics(message, messageLengthBytes);
+      if (adapter.isConnected) {
+        await adapter.close();
+      } else {
+        _pendingCloseReason = null;
+        _closeHandled = true;
+        _scheduleReconnect(immediate: true);
+      }
     }
-    final outgoing = await onMessage(message);
-    await sendMessages(outgoing);
   }
 
   _AssembledTransition? _appendTransitionChunk(TransitionChunk chunk) {
-    final buffer = _chunkBuffers.putIfAbsent(
-      chunk.transitionId,
-      () => _TransitionChunkBuffer(totalParts: chunk.totalParts),
-    );
-    buffer.parts[chunk.partNumber] = utf8.decode(base64Decode(chunk.chunk));
-    if (buffer.parts.length != buffer.totalParts) {
+    final buffer = _chunkBuffer;
+    if (chunk.totalParts <= 0 ||
+        chunk.partNumber < 0 ||
+        chunk.partNumber >= chunk.totalParts ||
+        (buffer != null &&
+            (buffer.totalParts != chunk.totalParts ||
+                buffer.transitionId != chunk.transitionId))) {
+      _chunkBuffer = null;
+      throw FormatException('Invalid TransitionChunk', chunk.toJson());
+    }
+
+    final activeBuffer = buffer ??
+        (_chunkBuffer = _TransitionChunkBuffer(
+          totalParts: chunk.totalParts,
+          transitionId: chunk.transitionId,
+        ));
+
+    if (chunk.partNumber != activeBuffer.parts.length) {
+      final expectedPart = activeBuffer.parts.length;
+      _chunkBuffer = null;
+      throw FormatException(
+        'TransitionChunk received out of order: expected part '
+        '$expectedPart, got ${chunk.partNumber}',
+        chunk.toJson(),
+      );
+    }
+
+    activeBuffer.parts.add(chunk.chunk);
+    if (activeBuffer.parts.length != activeBuffer.totalParts) {
       return null;
     }
-    final assembled = List<String>.generate(
-      buffer.totalParts,
-      (index) => buffer.parts[index + 1] ?? '',
-    ).join();
-    _chunkBuffers.remove(chunk.transitionId);
+
+    final assembled = activeBuffer.parts.join();
+    _chunkBuffer = null;
     final decoded = jsonDecode(assembled);
+    if (decoded is! Map<String, dynamic>) {
+      throw FormatException(
+          'Assembled Transition must be an object', assembled);
+    }
+    final message = ServerMessage.fromJson(decoded);
+    if (message is! Transition) {
+      throw FormatException(
+        'Expected Transition after assembling chunks, got ${decoded['type']}',
+        decoded,
+      );
+    }
     return _AssembledTransition(
-      transition: Transition.fromJson((decoded as Map).cast<String, dynamic>()),
+      transition: message,
       messageLengthBytes: utf8.encode(assembled).length,
     );
   }
@@ -395,6 +462,7 @@ class WebSocketManager {
       },
     );
     _inactivityTimer?.cancel();
+    _chunkBuffer = null;
     _connecting = false;
     onConnectionStateChanged(false, false);
     await onDisconnected(reason);
@@ -461,10 +529,14 @@ class WebSocketManager {
 }
 
 class _TransitionChunkBuffer {
-  _TransitionChunkBuffer({required this.totalParts});
+  _TransitionChunkBuffer({
+    required this.totalParts,
+    required this.transitionId,
+  });
 
   final int totalParts;
-  final Map<int, String> parts = <int, String>{};
+  final String transitionId;
+  final List<String> parts = <String>[];
 }
 
 class _AssembledTransition {

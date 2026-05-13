@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:dartvex/dartvex.dart';
 import 'package:dartvex_local/dartvex_local.dart';
@@ -159,6 +160,23 @@ void main() {
       expect(result, isA<LocalMutationQueued>());
       final cached = await localClient.query('messages:listPublic');
       expect((cached as List<dynamic>).last['text'], 'Queued');
+      expect(localClient.currentPendingMutations, hasLength(1));
+    });
+
+    test('queues auto-mode mutations on disconnected non-Convex failures',
+        () async {
+      remoteClient
+        ..setConnectionState(LocalRemoteConnectionState.disconnected)
+        ..mutationResults['messages:sendPublic'] = <Object?>[
+          StateError('socket closed'),
+        ];
+
+      final result = await localClient.mutate(
+        'messages:sendPublic',
+        <String, dynamic>{'author': 'Local', 'text': 'Queued'},
+      );
+
+      expect(result, isA<LocalMutationQueued>());
       expect(localClient.currentPendingMutations, hasLength(1));
     });
 
@@ -942,6 +960,20 @@ void main() {
       final a = codec.encode(<String, dynamic>{'b': 2, 'a': 1});
       final b = codec.encode(<String, dynamic>{'a': 1, 'b': 2});
       expect(a, b);
+    });
+
+    test('roundtrips Convex special values', () {
+      final value = <String, dynamic>{
+        'count': BigInt.from(42),
+        'bytes': Uint8List.fromList(<int>[1, 2, 3]),
+        'special': double.infinity,
+      };
+
+      final decoded = codec.decode(codec.encode(value)) as Map<String, dynamic>;
+
+      expect(decoded['count'], BigInt.from(42));
+      expect(decoded['bytes'], orderedEquals(<int>[1, 2, 3]));
+      expect(decoded['special'], double.infinity);
     });
   });
 }

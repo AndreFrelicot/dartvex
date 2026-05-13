@@ -374,7 +374,7 @@ class _LocalFirstPanelState extends State<LocalFirstPanel> {
                                       title: message.author,
                                       body: message.text,
                                       meta:
-                                          'Updated ${formatMessageTimestamp(message.creationtime)}',
+                                          'Updated ${formatMessageTimestamp(message.creationTime)}',
                                       alignEnd:
                                           currentAuthor.isNotEmpty &&
                                           message.author == currentAuthor,
@@ -421,9 +421,17 @@ class _LocalFirstPanelState extends State<LocalFirstPanel> {
                 ),
               ),
               OutlinedButton.icon(
-                onPressed: _chatBusy || _clearingMessages ? null : () => _clearPublicMessages(client),
-                style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF10B981)),
-                icon: Icon(_clearingMessages ? Icons.hourglass_top : Icons.delete_sweep_rounded),
+                onPressed: _chatBusy || _clearingMessages
+                    ? null
+                    : () => _clearPublicMessages(client),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF10B981),
+                ),
+                icon: Icon(
+                  _clearingMessages
+                      ? Icons.hourglass_top
+                      : Icons.delete_sweep_rounded,
+                ),
                 label: Text(_clearingMessages ? 'Clearing...' : 'Clear'),
               ),
               const SizedBox(width: 8),
@@ -557,8 +565,14 @@ class _LocalFirstPanelState extends State<LocalFirstPanel> {
                 ),
               ),
               OutlinedButton.icon(
-                onPressed: _taskBusy || _clearingTasks ? null : () => _clearTasks(client),
-                icon: Icon(_clearingTasks ? Icons.hourglass_top : Icons.delete_sweep_rounded),
+                onPressed: _taskBusy || _clearingTasks
+                    ? null
+                    : () => _clearTasks(client),
+                icon: Icon(
+                  _clearingTasks
+                      ? Icons.hourglass_top
+                      : Icons.delete_sweep_rounded,
+                ),
                 label: Text(_clearingTasks ? 'Clearing...' : 'Clear'),
               ),
               const SizedBox(width: 8),
@@ -705,7 +719,10 @@ class _LocalFirstPanelState extends State<LocalFirstPanel> {
       _chatStatus = null;
     });
     try {
-      final result = await client.mutate('messages:clearPublicMessages', const <String, dynamic>{});
+      final result = await client.mutate(
+        'messages:clearPublicMessages',
+        const <String, dynamic>{},
+      );
       setState(() {
         _chatStatus = switch (result) {
           LocalMutationQueued() => 'Clear queued for replay.',
@@ -732,7 +749,10 @@ class _LocalFirstPanelState extends State<LocalFirstPanel> {
       _taskStatus = null;
     });
     try {
-      final result = await client.mutate('tasks:clearTasks', const <String, dynamic>{});
+      final result = await client.mutate(
+        'tasks:clearTasks',
+        const <String, dynamic>{},
+      );
       setState(() {
         _taskStatus = switch (result) {
           LocalMutationQueued() => 'Clear queued for replay.',

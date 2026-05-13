@@ -1,6 +1,8 @@
 import 'dart:convert';
 
-import 'query_key.dart';
+// ignore: implementation_imports
+import 'package:dartvex/src/values/json_codec.dart'
+    show convexToJson, jsonToConvex;
 
 /// Encodes cached values and queued mutations for local persistence.
 abstract class ValueCodec {
@@ -26,14 +28,14 @@ class JsonValueCodec implements ValueCodec {
 
   /// Decodes a JSON payload into a Dart value.
   dynamic decode(String value) {
-    return jsonDecode(value);
+    return jsonToConvex(jsonDecode(value));
   }
 
   @override
 
   /// Decodes a JSON object payload into a mutable map.
   Map<String, dynamic> decodeMap(String value) {
-    final decoded = jsonDecode(value);
+    final decoded = jsonToConvex(jsonDecode(value));
     if (decoded is Map<String, dynamic>) {
       return decoded;
     }
@@ -47,6 +49,6 @@ class JsonValueCodec implements ValueCodec {
 
   /// Encodes a value after canonicalizing JSON map ordering.
   String encode(dynamic value) {
-    return jsonEncode(canonicalizeJsonValue(value));
+    return jsonEncode(convexToJson(value));
   }
 }

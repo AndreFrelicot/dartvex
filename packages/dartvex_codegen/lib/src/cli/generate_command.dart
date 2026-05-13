@@ -83,19 +83,20 @@ class GenerateCommand {
       dryRun: parsed['dry-run'] as bool,
       verbose: parsed['verbose'] as bool,
       watch: parsed['watch'] as bool,
-    ).normalize();
+    );
     config.validate();
+    final normalizedConfig = config.normalize();
 
-    if (!config.watch) {
-      await _generateOnce(config);
+    if (!normalizedConfig.watch) {
+      await _generateOnce(normalizedConfig);
       return 0;
     }
 
-    await _generateOnce(config);
+    await _generateOnce(normalizedConfig);
     _log('Watching for changes...');
-    await for (final _ in _watchEvents(config)) {
+    await for (final _ in _watchEvents(normalizedConfig)) {
       try {
-        await _generateOnce(config);
+        await _generateOnce(normalizedConfig);
       } catch (error) {
         _log(error.toString());
       }

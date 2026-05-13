@@ -16,17 +16,22 @@ class ConvexClientWithAuth<TUser>
   ConvexClientWithAuth({
     required ConvexClient client,
     required AuthProvider<TUser> authProvider,
+    this.disposeClient = false,
   })  : _client = client,
         _authProvider = authProvider;
 
   final ConvexClient _client;
   final AuthProvider<TUser> _authProvider;
+
+  /// Whether disposing this wrapper should also dispose the wrapped client.
+  final bool disposeClient;
   final StreamController<AuthState<TUser>> _authStateController =
       StreamController<AuthState<TUser>>.broadcast(sync: true);
 
   AuthState<TUser> _currentAuthState = AuthUnauthenticated<TUser>();
   AuthTokenBridge<TUser>? _authBridge;
   AuthHandle? _authHandle;
+  AuthAuthenticated<TUser>? _pendingAuthenticatedState;
   bool _disposed = false;
 
   @override
@@ -83,7 +88,9 @@ class ConvexClientWithAuth<TUser>
     if (handle != null) {
       unawaited(handle.cancel());
     }
-    _client.dispose();
+    if (disposeClient) {
+      _client.dispose();
+    }
     unawaited(_authStateController.close());
   }
 
@@ -182,7 +189,7 @@ class ConvexClientWithAuth<TUser>
             bridge.fetchToken(forceRefresh: forceRefresh),
         onAuthChange: _handleBaseAuthStateChanged,
       );
-      _emitAuthState(AuthAuthenticated<TUser>(authResult));
+      _pendingAuthenticatedState = AuthAuthenticated<TUser>(authResult);
       return authResult;
     } catch (_) {
       await _resetBaseAuth();
@@ -207,7 +214,14 @@ class ConvexClientWithAuth<TUser>
   void _handleBaseAuthStateChanged(bool isAuthenticated) {
     if (!isAuthenticated) {
       _authBridge = null;
+      _pendingAuthenticatedState = null;
       _emitAuthState(AuthUnauthenticated<TUser>());
+      return;
+    }
+    final pendingState = _pendingAuthenticatedState;
+    if (pendingState != null) {
+      _pendingAuthenticatedState = null;
+      _emitAuthState(pendingState);
     }
   }
 
@@ -232,6 +246,7 @@ class ConvexClientWithAuth<TUser>
 
   Future<void> _resetBaseAuth() async {
     _authBridge = null;
+    _pendingAuthenticatedState = null;
     final handle = _authHandle;
     _authHandle = null;
     if (handle != null) {

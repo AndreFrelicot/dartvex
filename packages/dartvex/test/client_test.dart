@@ -258,6 +258,36 @@ void main() {
       expect(error.logLines, isEmpty);
     });
 
+    test('query timeout cancels one-shot subscription', () async {
+      final adapter = MockWebSocketAdapter();
+      final client = ConvexClient(
+        'https://demo.convex.cloud',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          reconnectBackoff: const <Duration>[Duration.zero],
+          queryTimeout: const Duration(milliseconds: 1),
+        ),
+      );
+      await settle();
+
+      await expectLater(
+        client.query('messages:list', const <String, dynamic>{}),
+        throwsA(isA<TimeoutException>()),
+      );
+      await settle();
+
+      final removeMessages = adapter.decodedSentMessages
+          .where((message) => message['type'] == 'ModifyQuerySet')
+          .where((message) {
+        final modifications = message['modifications'] as List<dynamic>;
+        return (modifications.single as Map<String, dynamic>)['type'] ==
+            'Remove';
+      }).toList(growable: false);
+      expect(removeMessages, hasLength(1));
+
+      client.dispose();
+    });
+
     test('mutation waits for transition before resolving', () async {
       final adapter = MockWebSocketAdapter();
       final client = ConvexClient(
@@ -513,7 +543,7 @@ void main() {
       await expectation;
     });
 
-    test('ping triggers pong event', () async {
+    test('ping is handled by transport without protocol response', () async {
       final adapter = MockWebSocketAdapter();
       final client = ConvexClient(
         'https://demo.convex.cloud',
@@ -523,11 +553,12 @@ void main() {
         ),
       );
       await settle();
+      final sentBeforePing = adapter.decodedSentMessages.length;
 
       adapter.pushServerMessage(const Ping().toJson());
       await settle();
 
-      expect(adapter.decodedSentMessages.last['eventType'], 'Pong');
+      expect(adapter.decodedSentMessages, hasLength(sentBeforePing));
       client.dispose();
     });
 
@@ -563,6 +594,39 @@ void main() {
       expect(states.last, isFalse);
 
       await subscription.cancel();
+      client.dispose();
+    });
+
+    test('stale auth error is ignored after newer auth update', () async {
+      final adapter = MockWebSocketAdapter();
+      final client = ConvexClient(
+        'https://demo.convex.cloud',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+      await settle();
+
+      await client.setAuth('first-token');
+      await client.setAuth('second-token');
+      await settle();
+
+      adapter.pushServerMessage(
+        const AuthError(
+          error: 'stale token',
+          baseVersion: 0,
+          authUpdateAttempted: true,
+        ).toJson(),
+      );
+      await settle();
+
+      final authMessages = adapter.decodedSentMessages
+          .where((message) => message['type'] == 'Authenticate')
+          .toList(growable: false);
+      expect(authMessages.last['value'], 'second-token');
+      expect(authMessages.last['tokenType'], 'User');
+
       client.dispose();
     });
 
@@ -746,16 +810,16 @@ void main() {
       final midpoint = raw.length ~/ 2;
       adapter.pushServerMessage(
         TransitionChunk(
-          chunk: base64Encode(raw.substring(0, midpoint).codeUnits),
-          partNumber: 1,
+          chunk: raw.substring(0, midpoint),
+          partNumber: 0,
           totalParts: 2,
           transitionId: 'transition-1',
         ).toJson(),
       );
       adapter.pushServerMessage(
         TransitionChunk(
-          chunk: base64Encode(raw.substring(midpoint).codeUnits),
-          partNumber: 2,
+          chunk: raw.substring(midpoint),
+          partNumber: 1,
           totalParts: 2,
           transitionId: 'transition-1',
         ).toJson(),

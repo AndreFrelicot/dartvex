@@ -53,5 +53,6 @@ void main() {
 
   test('exports convexInt64 helper from the public barrel', () {
     expect(convexInt64(7), BigInt.from(7));
+    expect(jsonToConvex(convexToJson(convexInt64(7))), BigInt.from(7));
   });
 }

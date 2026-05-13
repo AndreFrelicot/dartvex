@@ -22,4 +22,5 @@ export 'src/logging.dart' show DartvexLogEvent, DartvexLogger, DartvexLogLevel;
 export 'src/storage.dart' show ConvexStorage;
 export 'src/transport/ws_manager.dart'
     show TransitionMetrics, TransitionMetricsCallback;
-export 'src/values/json_codec.dart' show convexInt64;
+export 'src/values/json_codec.dart'
+    show convexInt64, convexToJson, jsonToConvex;

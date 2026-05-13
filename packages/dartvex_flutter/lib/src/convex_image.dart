@@ -83,6 +83,7 @@ class _ConvexImageState extends State<ConvexImage> {
   bool _loading = true;
   ConvexDownloadProgress? _progress;
   String? _loadedStorageId;
+  int _requestGeneration = 0;
 
   @override
   void didChangeDependencies() {
@@ -104,52 +105,66 @@ class _ConvexImageState extends State<ConvexImage> {
       return;
     }
     _loadedStorageId = widget.storageId;
-    _fetchAndDownload();
+    _fetchAndDownload(++_requestGeneration);
   }
 
-  Future<void> _fetchAndDownload() async {
+  Future<void> _fetchAndDownload(int generation) async {
+    final storageId = widget.storageId;
+    final getUrlAction = widget.getUrlAction;
     setState(() {
       _loading = true;
       _error = null;
       _progress = null;
+      _bytes = null;
     });
 
     try {
       // Step 1: resolve the download URL from Convex
       final client = widget.client ?? ConvexProvider.of(context);
       final url = await client.query(
-        widget.getUrlAction,
-        <String, dynamic>{'storageId': widget.storageId},
+        getUrlAction,
+        <String, dynamic>{'storageId': storageId},
       );
-      if (!mounted) return;
+      if (!_isCurrentRequest(generation, storageId, getUrlAction)) return;
 
       final urlStr = url as String?;
       if (urlStr == null || urlStr.isEmpty) {
-        throw StateError('No URL returned for storageId ${widget.storageId}');
+        throw StateError('No URL returned for storageId $storageId');
       }
 
       // Step 2: download with progress tracking
       final bytes = await ConvexFileDownloader.download(
         urlStr,
         onProgress: (p) {
-          if (!mounted) return;
+          if (!_isCurrentRequest(generation, storageId, getUrlAction)) return;
           setState(() => _progress = p);
           widget.onProgress?.call(p);
         },
       );
 
-      if (!mounted) return;
+      if (!_isCurrentRequest(generation, storageId, getUrlAction)) return;
       setState(() {
         _bytes = bytes;
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!_isCurrentRequest(generation, storageId, getUrlAction)) return;
       setState(() {
         _error = error;
         _loading = false;
       });
     }
+  }
+
+  bool _isCurrentRequest(
+    int generation,
+    String storageId,
+    String getUrlAction,
+  ) {
+    return mounted &&
+        generation == _requestGeneration &&
+        widget.storageId == storageId &&
+        widget.getUrlAction == getUrlAction;
   }
 
   @override

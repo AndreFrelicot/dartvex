@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] - 2026-05-13
+
+### Fixed
+
+- Aligns `TransitionChunk` handling with the current Convex protocol, including
+  raw chunk payloads, zero-based part ordering, and invalid-chunk reconnects.
+- Treats protocol `Ping` as a transport heartbeat without sending client
+  protocol messages in response.
+- Hardens auth refresh against stale token fetches, stale `AuthError` messages,
+  and refresh scheduling that reused cached tokens.
+- Adds one-shot query timeout cleanup and safer disposal of temporary
+  subscriptions.
+- Rejects invalid Convex JSON field names and finite `$float` encodings.
+
+### Added
+
+- `ConvexClientConfig.queryTimeout`.
+- `ConvexStorage.getFileUrl(..., useAction: true)` for action-based URL
+  resolvers.
+
 ## [0.1.4] - 2026-04-30
 
 ### Added

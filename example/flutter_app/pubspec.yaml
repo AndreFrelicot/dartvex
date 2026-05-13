@@ -1,4 +1,4 @@
-name: dartvex_demo
+name: dartvex_flutter_demo
 description: Demo app wiring dartvex, dartvex_codegen, and dartvex_flutter.
 publish_to: 'none'
 
@@ -23,6 +23,10 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+
+dependency_overrides:
+  dartvex:
+    path: ../../packages/dartvex
 
 flutter:
   uses-material-design: true

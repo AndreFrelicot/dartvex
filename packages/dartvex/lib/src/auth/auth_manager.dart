@@ -43,6 +43,11 @@ class AuthManager {
   void Function(bool)? _onAuthChange;
   Timer? _refreshTimer;
   String? _currentToken;
+  int _authGeneration = 0;
+  int _tokenConfirmationAttempts = 0;
+  bool _awaitingConfirmation = false;
+
+  static const int _maxTokenConfirmationAttempts = 3;
 
   /// Sets a fixed auth [token] without a refresh callback.
   Future<void> setAuth(String? token) async {
@@ -51,9 +56,12 @@ class AuthManager {
       token == null ? 'Auth cleared via setAuth' : 'Auth token set',
     );
     _cancelRefreshTimer();
+    _authGeneration += 1;
     _fetchToken = null;
     _onAuthChange = null;
     _currentToken = token;
+    _awaitingConfirmation = token != null;
+    _tokenConfirmationAttempts = 0;
     await sendAuth(token);
     if (token == null) {
       _emit(false);
@@ -67,10 +75,16 @@ class AuthManager {
   }) async {
     _log(DartvexLogLevel.debug, 'Configuring auth refresh flow');
     _cancelRefreshTimer();
+    final generation = ++_authGeneration;
     _fetchToken = fetchToken;
     _onAuthChange = onAuthChange;
     final token = await fetchToken(forceRefresh: false);
+    if (!_isCurrentFlow(generation, fetchToken)) {
+      return _StaleAuthHandle();
+    }
     _currentToken = token;
+    _awaitingConfirmation = token != null;
+    _tokenConfirmationAttempts = 0;
     await sendAuth(token);
     if (token == null) {
       _emit(false);
@@ -82,9 +96,12 @@ class AuthManager {
   Future<void> clearAuth() async {
     _log(DartvexLogLevel.info, 'Auth cleared');
     _cancelRefreshTimer();
+    _authGeneration += 1;
     _fetchToken = null;
     _onAuthChange = null;
     _currentToken = null;
+    _awaitingConfirmation = false;
+    _tokenConfirmationAttempts = 0;
     await sendAuth(null);
     _emit(false);
   }
@@ -96,14 +113,18 @@ class AuthManager {
       return;
     }
     _log(DartvexLogLevel.debug, 'Refreshing auth token for reconnect');
+    final generation = _authGeneration;
     final freshToken = await fetchToken(forceRefresh: true);
+    if (!_isCurrentFlow(generation, fetchToken)) {
+      return;
+    }
     _currentToken = freshToken;
+    _awaitingConfirmation = freshToken != null;
+    _tokenConfirmationAttempts = 0;
     if (freshToken == null) {
       _log(DartvexLogLevel.warn, 'Reconnect auth refresh returned no token');
       _emit(false);
-      return;
     }
-    _scheduleRefresh(freshToken);
   }
 
   /// The most recently applied auth token, if any.
@@ -112,11 +133,12 @@ class AuthManager {
   /// Updates the current auth token and reschedules refresh if needed.
   Future<void> updateToken(String token) async {
     _log(DartvexLogLevel.info, 'Auth token updated');
+    _cancelRefreshTimer();
+    _authGeneration += 1;
     _currentToken = token;
+    _awaitingConfirmation = true;
+    _tokenConfirmationAttempts = 0;
     await sendAuth(token);
-    if (_fetchToken != null) {
-      _scheduleRefresh(token);
-    }
   }
 
   /// Marks the current auth token as confirmed by the backend.
@@ -126,6 +148,8 @@ class AuthManager {
       DartvexLogLevel.debug,
       isAuthenticated ? 'Auth confirmed' : 'Auth confirmed without token',
     );
+    _awaitingConfirmation = false;
+    _tokenConfirmationAttempts = 0;
     _emit(isAuthenticated);
     if (isAuthenticated && _fetchToken != null) {
       _scheduleRefresh(_currentToken!);
@@ -133,46 +157,80 @@ class AuthManager {
   }
 
   /// Handles an [AuthError] reported by the backend.
-  Future<void> handleAuthError(AuthError error) async {
+  Future<void> handleAuthError(
+    AuthError error, {
+    required int currentAuthVersion,
+  }) async {
     _log(
       DartvexLogLevel.warn,
       'Auth error received from backend',
       data: <String, Object?>{
         'authUpdateAttempted': error.authUpdateAttempted,
+        'baseVersion': error.baseVersion,
+        'currentAuthVersion': currentAuthVersion,
       },
     );
+    if (error.authUpdateAttempted == false && _awaitingConfirmation) {
+      _log(
+        DartvexLogLevel.debug,
+        'Ignoring auth error unrelated to current auth update',
+      );
+      return;
+    }
+    if (error.baseVersion + 1 < currentAuthVersion) {
+      _log(DartvexLogLevel.debug, 'Ignoring stale auth error');
+      return;
+    }
     final fetchToken = _fetchToken;
     if (fetchToken == null) {
       _currentToken = null;
+      _awaitingConfirmation = false;
+      _tokenConfirmationAttempts = 0;
       _emit(false);
       await sendAuth(null);
       return;
     }
+    if (_awaitingConfirmation &&
+        _tokenConfirmationAttempts >= _maxTokenConfirmationAttempts) {
+      _log(DartvexLogLevel.error, 'Auth confirmation retries exhausted');
+      _currentToken = null;
+      _awaitingConfirmation = false;
+      _emit(false);
+      await sendAuth(null);
+      return;
+    }
+    if (_awaitingConfirmation) {
+      _tokenConfirmationAttempts += 1;
+    }
 
+    final generation = _authGeneration;
     final freshToken = await fetchToken(forceRefresh: true);
+    if (!_isCurrentFlow(generation, fetchToken)) {
+      return;
+    }
     _currentToken = freshToken;
+    _awaitingConfirmation = freshToken != null;
     await sendAuth(freshToken);
     if (freshToken == null) {
       _log(DartvexLogLevel.warn, 'Forced auth refresh returned no token');
       _emit(false);
-      return;
-    }
-
-    if (error.authUpdateAttempted == true) {
-      _scheduleRefresh(freshToken);
     }
   }
 
   /// Stops any active refresh flow without changing the current token.
   Future<void> stopRefreshing() async {
     _log(DartvexLogLevel.debug, 'Stopping auth refresh flow');
+    _authGeneration += 1;
     _fetchToken = null;
     _onAuthChange = null;
+    _awaitingConfirmation = false;
+    _tokenConfirmationAttempts = 0;
     _cancelRefreshTimer();
   }
 
   void _scheduleRefresh(String token) {
     _cancelRefreshTimer();
+    final generation = _authGeneration;
     int? exp;
     int? iat;
     try {
@@ -206,8 +264,12 @@ class AuthManager {
       if (fetchToken == null) {
         return;
       }
-      final freshToken = await fetchToken(forceRefresh: false);
+      final freshToken = await fetchToken(forceRefresh: true);
+      if (!_isCurrentFlow(generation, fetchToken)) {
+        return;
+      }
       _currentToken = freshToken;
+      _awaitingConfirmation = freshToken != null;
       await sendAuth(freshToken);
       if (freshToken == null) {
         _log(
@@ -219,6 +281,10 @@ class AuthManager {
         _log(DartvexLogLevel.debug, 'Scheduled auth refresh succeeded');
       }
     });
+  }
+
+  bool _isCurrentFlow(int generation, AuthTokenFetcher fetchToken) {
+    return generation == _authGeneration && identical(fetchToken, _fetchToken);
   }
 
   void _emit(bool isAuthenticated) {
@@ -256,4 +322,9 @@ class _RefreshAuthHandle implements AuthHandle {
   Future<void> cancel() {
     return _manager.stopRefreshing();
   }
+}
+
+class _StaleAuthHandle implements AuthHandle {
+  @override
+  Future<void> cancel() async {}
 }

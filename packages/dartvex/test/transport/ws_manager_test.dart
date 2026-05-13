@@ -339,13 +339,13 @@ void main() {
       );
       final raw = jsonEncode(transition.toJson());
       final midpoint = raw.length ~/ 2;
-      final partOne = base64Encode(utf8.encode(raw.substring(0, midpoint)));
-      final partTwo = base64Encode(utf8.encode(raw.substring(midpoint)));
+      final partOne = raw.substring(0, midpoint);
+      final partTwo = raw.substring(midpoint);
 
       adapter.pushServerMessage(
         TransitionChunk(
           chunk: partOne,
-          partNumber: 1,
+          partNumber: 0,
           totalParts: 2,
           transitionId: 'chunk-1',
         ).toJson(),
@@ -353,7 +353,7 @@ void main() {
       adapter.pushServerMessage(
         TransitionChunk(
           chunk: partTwo,
-          partNumber: 2,
+          partNumber: 1,
           totalParts: 2,
           transitionId: 'chunk-1',
         ).toJson(),
@@ -364,6 +364,47 @@ void main() {
       expect(metrics, hasLength(1));
       expect(metrics.single.messageSizeBytes, utf8.encode(raw).length);
       expect(metrics.single.transitTimeMs, greaterThan(0));
+      await manager.dispose();
+    });
+
+    test(
+        'invalid transition chunks close and reconnect instead of leaking async',
+        () async {
+      final adapter = MockWebSocketAdapter();
+      final disconnectReasons = <String>[];
+      final manager = WebSocketManager(
+        adapter: adapter,
+        deploymentUrl: 'https://demo.convex.cloud',
+        apiVersion: '0.1.0',
+        onConnected: () => const <ClientMessage>[],
+        onMessage: (_) => const <ClientMessage>[],
+        onDisconnected: (reason) async {
+          disconnectReasons.add(reason);
+        },
+        onConnectionStateChanged: (_, __) {},
+        maxObservedTimestamp: () => null,
+        reconnectBackoff: const <Duration>[Duration.zero],
+        inactivityTimeout: const Duration(seconds: 30),
+      );
+
+      await manager.start();
+      adapter.pushServerMessage(
+        const TransitionChunk(
+          chunk: '{}',
+          partNumber: 1,
+          totalParts: 2,
+          transitionId: 'chunk-1',
+        ).toJson(),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(disconnectReasons, contains('InvalidServerMessage'));
+      expect(
+        adapter.decodedSentMessages
+            .where((message) => message['type'] == 'Connect'),
+        hasLength(2),
+      );
+
       await manager.dispose();
     });
 
