@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-final BigInt _minInt64 = BigInt.from(-0x8000000000000000);
-final BigInt _maxInt64 = BigInt.from(0x7fffffffffffffff);
+final BigInt _minInt64 = BigInt.parse('-9223372036854775808');
+final BigInt _maxInt64 = BigInt.parse('9223372036854775807');
 final BigInt _byteMask = BigInt.from(0xff);
 const int _maxIdentifierLength = 1024;
 
