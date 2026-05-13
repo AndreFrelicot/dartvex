@@ -829,6 +829,12 @@ Future<List<String>> _runDryRuns({
     stdout.writeln(
       '\n==> ${package.name} ${package.version} (${package.publishTool.name})',
     );
+    final tempRoot = await Directory.systemTemp.createTemp(
+      'dartvex-publish-${package.name}-',
+    );
+    final tempPackage = Directory(
+      _joinPath(tempRoot.path, package.directoryName),
+    );
     final getArgs = package.publishTool == PublishTool.flutter
         ? ['pub', 'get']
         : ['pub', 'get'];
@@ -839,31 +845,90 @@ Future<List<String>> _runDryRuns({
         ? 'flutter'
         : 'dart';
 
-    final getResult = await Process.start(
-      executable,
-      getArgs,
-      workingDirectory: package.directory.path,
-      mode: ProcessStartMode.inheritStdio,
-    );
-    final getExitCode = await getResult.exitCode;
-    if (getExitCode != 0) {
-      failures.add(package.name);
-      stdout.writeln('Failed during `$executable ${getArgs.join(' ')}`.');
-      continue;
-    }
+    try {
+      await _copyDirectoryForPublish(package.directory, tempPackage);
+      final getResult = await Process.start(
+        executable,
+        getArgs,
+        workingDirectory: tempPackage.path,
+        mode: ProcessStartMode.inheritStdio,
+      );
+      final getExitCode = await getResult.exitCode;
+      if (getExitCode != 0) {
+        failures.add(package.name);
+        stdout.writeln('Failed during `$executable ${getArgs.join(' ')}`.');
+        continue;
+      }
 
-    final publishResult = await Process.start(
-      executable,
-      publishArgs,
-      workingDirectory: package.directory.path,
-      mode: ProcessStartMode.inheritStdio,
-    );
-    final publishExitCode = await publishResult.exitCode;
-    if (publishExitCode != 0) {
-      failures.add(package.name);
+      final publishResult = await Process.start(
+        executable,
+        publishArgs,
+        workingDirectory: tempPackage.path,
+        mode: ProcessStartMode.inheritStdio,
+      );
+      final publishExitCode = await publishResult.exitCode;
+      if (publishExitCode != 0) {
+        failures.add(package.name);
+      }
+    } finally {
+      await tempRoot.delete(recursive: true);
     }
   }
   return failures;
+}
+
+const Set<String> _publishCopyExcludedNames = <String>{
+  '.dart_tool',
+  '.flutter-plugins-dependencies',
+  '.git',
+  '.packages',
+  'build',
+  'coverage',
+  'pubspec.lock',
+  'pubspec_overrides.yaml',
+};
+
+Future<void> _copyDirectoryForPublish(
+  Directory source,
+  Directory destination,
+) async {
+  await destination.create(recursive: true);
+  await for (final entity in source.list(followLinks: false)) {
+    final name = _basename(entity.path);
+    if (_publishCopyExcludedNames.contains(name)) {
+      continue;
+    }
+    final targetPath = _joinPath(destination.path, name);
+    if (entity is Directory) {
+      await _copyDirectoryForPublish(entity, Directory(targetPath));
+    } else if (entity is File) {
+      await entity.copy(targetPath);
+    } else if (entity is Link) {
+      final target = await entity.target();
+      await Link(targetPath).create(target);
+    }
+  }
+}
+
+String _joinPath(String parent, String child) {
+  if (parent.endsWith('/') || parent.endsWith(r'\')) {
+    return '$parent$child';
+  }
+  return '$parent${Platform.pathSeparator}$child';
+}
+
+String _basename(String path) {
+  var normalized = path;
+  while (normalized.endsWith('/') || normalized.endsWith(r'\')) {
+    normalized = normalized.substring(0, normalized.length - 1);
+  }
+  final slash = normalized.lastIndexOf('/');
+  final backslash = normalized.lastIndexOf(r'\');
+  final index = slash > backslash ? slash : backslash;
+  if (index < 0) {
+    return normalized;
+  }
+  return normalized.substring(index + 1);
 }
 
 Future<List<String>> _packagesWithTrackedChanges({

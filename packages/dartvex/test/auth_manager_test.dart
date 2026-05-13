@@ -39,6 +39,37 @@ void main() {
       await manager.stopRefreshing();
     });
 
+    test('scheduled refresh failures are caught instead of escaping the zone',
+        () async {
+      final zoneErrors = <Object>[];
+      final forceRefreshCalls = <bool>[];
+      await runZonedGuarded(() async {
+        final manager = AuthManager(
+          config: const ConvexClientConfig(connectImmediately: false),
+          sendAuth: (_) async {},
+          emitAuthState: (_) {},
+        );
+
+        await manager.setAuthWithRefresh(
+          fetchToken: ({required bool forceRefresh}) async {
+            forceRefreshCalls.add(forceRefresh);
+            if (forceRefresh) {
+              throw StateError('refresh failed');
+            }
+            return _jwt(subject: 'cached', issuedAt: 0, expiresAt: 30);
+          },
+        );
+        manager.handleAuthConfirmed();
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        await manager.stopRefreshing();
+      }, (error, _) {
+        zoneErrors.add(error);
+      });
+
+      expect(forceRefreshCalls, <bool>[false, true]);
+      expect(zoneErrors, isEmpty);
+    });
+
     test('stale initial token fetch cannot resurrect auth after clear',
         () async {
       final sentTokens = <String?>[];

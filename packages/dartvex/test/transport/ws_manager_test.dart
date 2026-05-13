@@ -264,6 +264,82 @@ void main() {
       await manager.dispose();
     });
 
+    test('reconnectNow during connect does not suppress failed-connect retry',
+        () async {
+      final adapter = _DelayedFailingThenConnectingAdapter();
+      final disconnectReasons = <String>[];
+      final manager = WebSocketManager(
+        adapter: adapter,
+        deploymentUrl: 'https://demo.convex.cloud',
+        apiVersion: '0.1.0',
+        onConnected: () => const <ClientMessage>[],
+        onMessage: (_) => const <ClientMessage>[],
+        onDisconnected: (reason) async {
+          disconnectReasons.add(reason);
+        },
+        onConnectionStateChanged: (_, __) {},
+        maxObservedTimestamp: () => null,
+        reconnectBackoff: const <Duration>[Duration.zero],
+        inactivityTimeout: const Duration(seconds: 30),
+      );
+
+      final startFuture = manager.start();
+      await Future<void>.delayed(Duration.zero);
+      await manager.reconnectNow('AppResumed');
+      adapter.failFirstConnect();
+      await startFuture;
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(adapter.connectAttempts, 2);
+      expect(disconnectReasons, <String>['AppResumed']);
+      final connectMessages = adapter.decodedSentMessages
+          .where((message) => message['type'] == 'Connect')
+          .toList(growable: false);
+      expect(connectMessages, hasLength(1));
+      expect(connectMessages.single['lastCloseReason'], 'AppResumed');
+
+      await manager.dispose();
+    });
+
+    test('reconnectNow during successful connect does not leak close reason',
+        () async {
+      final adapter = _DelayedConnectingAdapter();
+      final disconnectReasons = <String>[];
+      final manager = WebSocketManager(
+        adapter: adapter,
+        deploymentUrl: 'https://demo.convex.cloud',
+        apiVersion: '0.1.0',
+        onConnected: () => const <ClientMessage>[],
+        onMessage: (_) => const <ClientMessage>[],
+        onDisconnected: (reason) async {
+          disconnectReasons.add(reason);
+        },
+        onConnectionStateChanged: (_, __) {},
+        maxObservedTimestamp: () => null,
+        reconnectBackoff: const <Duration>[Duration(hours: 1)],
+        inactivityTimeout: const Duration(seconds: 30),
+      );
+
+      final startFuture = manager.start();
+      await Future<void>.delayed(Duration.zero);
+      await manager.reconnectNow('AppResumed');
+      adapter.completeConnect();
+      await startFuture;
+
+      final connectMessages = adapter.decodedSentMessages
+          .where((message) => message['type'] == 'Connect')
+          .toList(growable: false);
+      expect(connectMessages, hasLength(1));
+      expect(connectMessages.single['lastCloseReason'], 'AppResumed');
+
+      adapter.disconnect(code: 1006);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(disconnectReasons, <String>['WebSocket closed with code 1006']);
+
+      await manager.dispose();
+    });
+
     test('reports metrics for direct transitions with timing fields', () async {
       final adapter = MockWebSocketAdapter();
       final metrics = <TransitionMetrics>[];
@@ -484,6 +560,142 @@ class _FailingThenConnectingAdapter implements WebSocketAdapter {
     }
     _connected = false;
     _closeController.add(const WebSocketCloseEvent());
+  }
+
+  @override
+  bool get isConnected => _connected;
+}
+
+class _DelayedFailingThenConnectingAdapter implements WebSocketAdapter {
+  final StreamController<String> _messagesController =
+      StreamController<String>.broadcast();
+  final StreamController<WebSocketCloseEvent> _closeController =
+      StreamController<WebSocketCloseEvent>.broadcast(sync: true);
+  final Completer<void> _firstConnectCompleter = Completer<void>();
+
+  final List<String> sentMessages = <String>[];
+  final List<String> connectedUrls = <String>[];
+  int connectAttempts = 0;
+  bool _connected = false;
+
+  @override
+  Future<void> connect(String url) async {
+    connectedUrls.add(url);
+    connectAttempts += 1;
+    if (connectAttempts == 1) {
+      await _firstConnectCompleter.future;
+      _closeController.add(const WebSocketCloseEvent(code: 1006));
+      throw StateError('connect failed');
+    }
+    _connected = true;
+  }
+
+  void failFirstConnect() {
+    if (!_firstConnectCompleter.isCompleted) {
+      _firstConnectCompleter.complete();
+    }
+  }
+
+  @override
+  void send(String message) {
+    if (!_connected) {
+      throw StateError('Mock socket is disconnected');
+    }
+    sentMessages.add(message);
+  }
+
+  List<Map<String, dynamic>> get decodedSentMessages {
+    return sentMessages
+        .map((message) => jsonDecode(message) as Map<String, dynamic>)
+        .toList(growable: false);
+  }
+
+  @override
+  Stream<String> get messages => _messagesController.stream;
+
+  @override
+  Stream<WebSocketCloseEvent> get closeEvents => _closeController.stream;
+
+  @override
+  Future<void> close() async {
+    if (!_connected) {
+      return;
+    }
+    _connected = false;
+    _closeController.add(const WebSocketCloseEvent());
+  }
+
+  @override
+  bool get isConnected => _connected;
+}
+
+class _DelayedConnectingAdapter implements WebSocketAdapter {
+  final StreamController<String> _messagesController =
+      StreamController<String>.broadcast();
+  final StreamController<WebSocketCloseEvent> _closeController =
+      StreamController<WebSocketCloseEvent>.broadcast(sync: true);
+  final Completer<void> _connectCompleter = Completer<void>();
+
+  final List<String> sentMessages = <String>[];
+  final List<String> connectedUrls = <String>[];
+  bool _connected = false;
+
+  @override
+  Future<void> connect(String url) async {
+    connectedUrls.add(url);
+    await _connectCompleter.future;
+    _connected = true;
+  }
+
+  void completeConnect() {
+    if (!_connectCompleter.isCompleted) {
+      _connectCompleter.complete();
+    }
+  }
+
+  void disconnect({
+    int? code,
+    String? reason,
+    bool? wasClean,
+    String? errorMessage,
+  }) {
+    _connected = false;
+    _closeController.add(
+      WebSocketCloseEvent(
+        code: code,
+        reason: reason,
+        wasClean: wasClean,
+        errorMessage: errorMessage,
+      ),
+    );
+  }
+
+  @override
+  void send(String message) {
+    if (!_connected) {
+      throw StateError('Mock socket is disconnected');
+    }
+    sentMessages.add(message);
+  }
+
+  List<Map<String, dynamic>> get decodedSentMessages {
+    return sentMessages
+        .map((message) => jsonDecode(message) as Map<String, dynamic>)
+        .toList(growable: false);
+  }
+
+  @override
+  Stream<String> get messages => _messagesController.stream;
+
+  @override
+  Stream<WebSocketCloseEvent> get closeEvents => _closeController.stream;
+
+  @override
+  Future<void> close() async {
+    if (!_connected) {
+      return;
+    }
+    disconnect();
   }
 
   @override

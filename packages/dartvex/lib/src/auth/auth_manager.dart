@@ -264,21 +264,33 @@ class AuthManager {
       if (fetchToken == null) {
         return;
       }
-      final freshToken = await fetchToken(forceRefresh: true);
-      if (!_isCurrentFlow(generation, fetchToken)) {
-        return;
-      }
-      _currentToken = freshToken;
-      _awaitingConfirmation = freshToken != null;
-      await sendAuth(freshToken);
-      if (freshToken == null) {
+      try {
+        final freshToken = await fetchToken(forceRefresh: true);
+        if (!_isCurrentFlow(generation, fetchToken)) {
+          return;
+        }
+        _currentToken = freshToken;
+        _awaitingConfirmation = freshToken != null;
+        await sendAuth(freshToken);
+        if (freshToken == null) {
+          _log(
+            DartvexLogLevel.warn,
+            'Scheduled auth refresh returned no token',
+          );
+          _emit(false);
+        } else {
+          _log(DartvexLogLevel.debug, 'Scheduled auth refresh succeeded');
+        }
+      } catch (error, stackTrace) {
+        if (!_isCurrentFlow(generation, fetchToken)) {
+          return;
+        }
         _log(
-          DartvexLogLevel.warn,
-          'Scheduled auth refresh returned no token',
+          DartvexLogLevel.error,
+          'Scheduled auth refresh failed',
+          error: error,
+          stackTrace: stackTrace,
         );
-        _emit(false);
-      } else {
-        _log(DartvexLogLevel.debug, 'Scheduled auth refresh succeeded');
       }
     });
   }
@@ -300,6 +312,8 @@ class AuthManager {
   void _log(
     DartvexLogLevel level,
     String message, {
+    Object? error,
+    StackTrace? stackTrace,
     Map<String, Object?>? data,
   }) {
     emitDartvexLog(
@@ -308,6 +322,8 @@ class AuthManager {
       eventLevel: level,
       message: message,
       tag: 'auth',
+      error: error,
+      stackTrace: stackTrace,
       data: data,
     );
   }

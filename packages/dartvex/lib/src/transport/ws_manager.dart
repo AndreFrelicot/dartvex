@@ -201,6 +201,10 @@ class WebSocketManager {
       await adapter.close();
       return;
     }
+    if (_connecting) {
+      _pendingCloseReason = reason;
+      return;
+    }
     _pendingCloseReason = null;
     _closeHandled = true;
     _scheduleReconnect(immediate: true);
@@ -246,6 +250,7 @@ class WebSocketManager {
         return;
       }
       _connecting = false;
+      _pendingCloseReason = null;
       _reconnectTimer?.cancel();
       _resetInactivityTimer();
       _log(DartvexLogLevel.info, 'WebSocket connected');
