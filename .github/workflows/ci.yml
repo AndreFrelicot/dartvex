@@ -135,6 +135,20 @@ jobs:
           node-version: '22'
       - run: ./scripts/protocol-watch.sh
 
+  web-compile:
+    name: Web Compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with: { sdk: stable }
+      - run: cd packages/dartvex && dart pub get
+      - name: Compile web transport test with dart2js
+        run: |
+          cd packages/dartvex
+          dart compile js -O0 test/transport/web_transport_test.dart \
+            -o /tmp/dartvex_web_transport_test.js
+
   publish-dry-run:
     name: Publish Dry Run
     runs-on: ubuntu-latest
