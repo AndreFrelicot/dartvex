@@ -132,7 +132,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     ConvexClientConfig? config,
     TransitionMetricsCallback? onTransitionMetrics,
   })  : _deploymentUrl = deploymentUrl,
-        _config = config ?? const ConvexClientConfig(),
+        _config = _normalizeConfig(config ?? const ConvexClientConfig()),
         _baseClient = BaseClient(),
         _connectionStateController =
             StreamController<ConnectionState>.broadcast(
@@ -191,6 +191,39 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   Future<void>? _closeFuture;
   bool _refreshAuthOnNextConnect = false;
   bool _disposed = false;
+
+  static ConvexClientConfig _normalizeConfig(ConvexClientConfig config) {
+    final reconnectBackoff =
+        List<Duration>.unmodifiable(config.reconnectBackoff);
+    if (reconnectBackoff.isEmpty) {
+      throw ArgumentError.value(
+        config.reconnectBackoff,
+        'config.reconnectBackoff',
+        'must contain at least one duration',
+      );
+    }
+    for (final duration in reconnectBackoff) {
+      if (duration.isNegative) {
+        throw ArgumentError.value(
+          duration,
+          'config.reconnectBackoff',
+          'must not contain negative durations',
+        );
+      }
+    }
+    return ConvexClientConfig(
+      clientId: config.clientId,
+      apiVersion: config.apiVersion,
+      authTokenType: config.authTokenType,
+      inactivityTimeout: config.inactivityTimeout,
+      queryTimeout: config.queryTimeout,
+      reconnectBackoff: reconnectBackoff,
+      connectImmediately: config.connectImmediately,
+      adapterFactory: config.adapterFactory,
+      logLevel: config.logLevel,
+      logger: config.logger,
+    );
+  }
 
   /// Broadcasts connection state changes.
   Stream<ConnectionState> get connectionState =>

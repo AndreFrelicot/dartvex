@@ -44,6 +44,8 @@ class ConvexClientConfig {
   final Duration? queryTimeout;
 
   /// Backoff schedule used for reconnect attempts.
+  ///
+  /// Must contain at least one non-negative duration.
   final List<Duration> reconnectBackoff;
 
   /// Whether the WebSocket connection starts when the client is constructed.

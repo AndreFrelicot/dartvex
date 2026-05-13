@@ -15,6 +15,44 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 10));
     }
 
+    test('rejects empty reconnect backoff configuration', () {
+      expect(
+        () => ConvexClient(
+          'https://demo.convex.cloud',
+          config: const ConvexClientConfig(
+            connectImmediately: false,
+            reconnectBackoff: <Duration>[],
+          ),
+        ),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.name,
+            'name',
+            'config.reconnectBackoff',
+          ),
+        ),
+      );
+    });
+
+    test('rejects negative reconnect backoff entries', () {
+      expect(
+        () => ConvexClient(
+          'https://demo.convex.cloud',
+          config: const ConvexClientConfig(
+            connectImmediately: false,
+            reconnectBackoff: <Duration>[Duration(milliseconds: -1)],
+          ),
+        ),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.name,
+            'name',
+            'config.reconnectBackoff',
+          ),
+        ),
+      );
+    });
+
     test('lazy config does not connect in constructor', () async {
       final adapter = MockWebSocketAdapter();
       final client = ConvexClient(
