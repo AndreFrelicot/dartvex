@@ -112,6 +112,20 @@ jobs:
         run: bash scripts/ci-local-dependency-overrides.sh packages/${{ matrix.package }}
       - run: cd packages/${{ matrix.package }} && flutter pub get && flutter test
 
+  package-flutter-example:
+    name: Package Flutter Example
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: subosito/flutter-action@v2
+        with: { flutter-version: '3.x', channel: stable }
+      - name: Use local dartvex dependency
+        run: bash scripts/ci-local-dependency-overrides.sh packages/dartvex_flutter
+      - run: cd packages/dartvex_flutter/example && flutter pub get
+      - run: cd packages/dartvex_flutter/example && flutter analyze --fatal-infos
+      - run: cd packages/dartvex_flutter/example && flutter test
+      - run: cd packages/dartvex_flutter/example && flutter build web --no-wasm-dry-run
+
   example-flutter:
     name: Example Flutter App
     runs-on: ubuntu-latest

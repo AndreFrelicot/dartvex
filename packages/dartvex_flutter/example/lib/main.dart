@@ -99,7 +99,7 @@ class ExampleHomePage extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.w700,
-                  letterSpacing: -0.5,
+                  letterSpacing: 0,
                 ),
               ),
               const SizedBox(height: 8),
@@ -122,7 +122,8 @@ class ExampleHomePage extends StatelessWidget {
                     final messages = snapshot.data ?? const <String>[];
                     return ListView.separated(
                       itemCount: messages.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 12),
+                      separatorBuilder: (context, index) =>
+                          const SizedBox(height: 12),
                       itemBuilder: (context, index) {
                         return DecoratedBox(
                           decoration: BoxDecoration(

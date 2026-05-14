@@ -7,6 +7,8 @@ pubspec.lock
 example/.dart_tool/
 example/build/
 example/.flutter-plugins-dependencies
+example/.idea/
+example/*.iml
 example/pubspec.lock
 example/pubspec_overrides.yaml
 pubspec_overrides.yaml
