@@ -13,6 +13,14 @@ topics:
   - sync
   - widgets
 
+platforms:
+  android:
+  ios:
+  linux:
+  macos:
+  web:
+  windows:
+
 environment:
   sdk: ^3.6.0
 
