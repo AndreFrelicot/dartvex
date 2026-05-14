@@ -13,7 +13,7 @@ jobs:
     name: Format
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dart-lang/setup-dart@v1
         with: { sdk: stable }
       - uses: subosito/flutter-action@v2
@@ -62,7 +62,7 @@ jobs:
       matrix:
         package: [dartvex, dartvex_codegen, dartvex_local, dartvex_auth_better]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dart-lang/setup-dart@v1
         with: { sdk: stable }
       - name: Use local dartvex dependency
@@ -82,7 +82,7 @@ jobs:
       matrix:
         package: [dartvex_flutter]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: subosito/flutter-action@v2
         with: { flutter-version: '3.x', channel: stable }
       - name: Use local dartvex dependency
@@ -101,7 +101,7 @@ jobs:
       matrix:
         package: [dartvex, dartvex_codegen, dartvex_local, dartvex_auth_better]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dart-lang/setup-dart@v1
         with: { sdk: stable }
       - name: Use local dartvex dependency
@@ -126,7 +126,7 @@ jobs:
       matrix:
         package: [dartvex_flutter]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: subosito/flutter-action@v2
         with: { flutter-version: '3.x', channel: stable }
       - name: Use local dartvex dependency
@@ -142,7 +142,7 @@ jobs:
     name: Example Flutter App
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: subosito/flutter-action@v2
         with: { flutter-version: '3.x', channel: stable }
       - run: cd example/flutter_app && flutter pub get
@@ -154,8 +154,8 @@ jobs:
     name: Protocol Watch
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
       - run: ./scripts/protocol-watch.sh
@@ -164,7 +164,7 @@ jobs:
     name: Web Compile
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dart-lang/setup-dart@v1
         with: { sdk: stable }
       - run: cd packages/dartvex && dart pub get
@@ -191,7 +191,7 @@ jobs:
           - package: dartvex_auth_better
             tool: dart
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dart-lang/setup-dart@v1
         if: matrix.tool == 'dart'
         with: { sdk: stable }
