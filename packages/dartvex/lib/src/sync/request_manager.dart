@@ -85,6 +85,13 @@ class RequestManager {
   }
 
   void handleMutationResponse(MutationResponse response) {
+    handleMutationResponseWithAppliedTransition(response);
+  }
+
+  void handleMutationResponseWithAppliedTransition(
+    MutationResponse response, {
+    String? appliedTransitionTs,
+  }) {
     final pending = _pendingMutations[response.requestId];
     if (pending == null) {
       return;
@@ -116,6 +123,11 @@ class RequestManager {
     }
 
     pending.status = _RequestStatus.completedMutationAwaitingTransition;
+    if (appliedTransitionTs != null &&
+        compareEncodedTs(response.ts!, appliedTransitionTs) <= 0) {
+      pending.completer.complete(pending.result);
+      _pendingMutations.remove(response.requestId);
+    }
   }
 
   void handleActionResponse(ActionResponse response) {
@@ -137,7 +149,6 @@ class RequestManager {
   }
 
   void resolveMutationsUpTo(String transitionTs) {
-    final transitionValue = decodeTs(transitionTs);
     final completedIds = <int>[];
     _pendingMutations.forEach((requestId, pending) {
       if (pending.status !=
@@ -148,7 +159,7 @@ class RequestManager {
       if (pendingTs == null) {
         return;
       }
-      if (decodeTs(pendingTs) <= transitionValue) {
+      if (compareEncodedTs(pendingTs, transitionTs) <= 0) {
         pending.completer.complete(pending.result);
         completedIds.add(requestId);
       }

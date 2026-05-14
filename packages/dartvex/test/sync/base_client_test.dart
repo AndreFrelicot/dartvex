@@ -65,6 +65,34 @@ void main() {
       expect(await future, <String, dynamic>{'ok': true});
     });
 
+    test('mutation resolves when matching transition was already applied',
+        () async {
+      final client = BaseClient();
+      final future = client.mutate('messages:send', <String, dynamic>{
+        'body': 'hello',
+      });
+      final mutation = client.drainOutgoing().single as Mutation;
+
+      client.receive(
+        Transition(
+          startVersion: const StateVersion.initial(),
+          endVersion: StateVersion(querySet: 0, identity: 0, ts: encodeTs(10)),
+          modifications: const <StateModification>[],
+        ),
+      );
+
+      client.receive(
+        MutationResponse(
+          requestId: mutation.requestId,
+          success: true,
+          result: const <String, dynamic>{'ok': true},
+          ts: encodeTs(4),
+        ),
+      );
+
+      expect(await future, <String, dynamic>{'ok': true});
+    });
+
     test('mutation created while disconnected is sent on reconnect', () async {
       final client = BaseClient();
       final future = client.mutate('messages:send', <String, dynamic>{
@@ -319,6 +347,30 @@ void main() {
       expect(outgoing, hasLength(1));
       expect(first.queryId, second.queryId);
       expect(client.subscriberIdsForQuery(first.queryId), hasLength(2));
+    });
+
+    test('requeued query set changes preserve version chain', () {
+      final client = BaseClient();
+      client.subscribe('messages:list', const <String, dynamic>{
+        'channel': 'general',
+      });
+      client.subscribe('messages:byAuthor', const <String, dynamic>{
+        'author': 'ada',
+      });
+
+      final sentBatch = client.drainOutgoing();
+      client.requeueOutgoing(sentBatch.skip(1));
+      client.subscribe('messages:recent', const <String, dynamic>{});
+
+      final replayBatch = client.drainOutgoing(assumeSent: false);
+      expect(replayBatch, hasLength(2));
+
+      final requeued = replayBatch.first as ModifyQuerySet;
+      final newer = replayBatch.last as ModifyQuerySet;
+      expect(requeued.baseVersion, 1);
+      expect(requeued.newVersion, 2);
+      expect(newer.baseVersion, 2);
+      expect(newer.newVersion, 3);
     });
 
     test('prepare reconnect rebuilds subscriptions from version zero', () {

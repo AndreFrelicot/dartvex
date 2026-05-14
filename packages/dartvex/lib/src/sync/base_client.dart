@@ -238,7 +238,10 @@ class BaseClient {
         if (message.success && message.ts != null) {
           _localState.observeTimestamp(message.ts!);
         }
-        _requestManager.handleMutationResponse(message);
+        _requestManager.handleMutationResponseWithAppliedTransition(
+          message,
+          appliedTransitionTs: _remoteQuerySet.version.ts,
+        );
       case ActionResponse():
         _requestManager.handleActionResponse(message);
       case Ping():
