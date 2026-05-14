@@ -17,10 +17,18 @@ BigInt convexInt64(int value) {
   return int64;
 }
 
+/// Encodes Dart values into Convex's canonical JSON representation.
+///
+/// [BigInt], [Uint8List], and special [double] values are encoded with the
+/// tagged shapes expected by the Convex sync protocol.
 dynamic convexToJson(dynamic value) {
   return _convexToJson(value);
 }
 
+/// Decodes Convex's canonical JSON representation into Dart values.
+///
+/// Convex `int64`, `bytes`, and special floating-point sentinels are converted
+/// to [BigInt], [Uint8List], and [double] values respectively.
 dynamic jsonToConvex(dynamic value) {
   if (value == null || value is bool || value is num || value is String) {
     return value;

@@ -26,6 +26,9 @@ dependencies:
   dart_style: ^3.1.2
   path: ^1.9.1
 
+executables:
+  dartvex_codegen: dartvex_codegen
+
 dev_dependencies:
   dartvex: ^0.1.5
   lints: ^5.1.1
