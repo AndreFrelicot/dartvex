@@ -234,6 +234,44 @@ void main() {
       expect((refreshed as List<dynamic>).length, 2);
     });
 
+    test('refresh timeout cancels one-shot remote subscription', () async {
+      await localClient.dispose();
+      store = await SqliteLocalStore.openInMemory();
+      remoteClient = FakeRemoteClient();
+      localClient = await ConvexLocalClient.openWithRemote(
+        remoteClient: remoteClient,
+        config: LocalClientConfig(
+          cacheStorage: store,
+          queueStorage: store,
+          refreshQueryTimeout: const Duration(milliseconds: 1),
+          mutationHandlers: const <LocalMutationHandler>[
+            PublicMessageMutationHandler(),
+          ],
+        ),
+      );
+
+      remoteClient.queryResults['messages:listPublic'] = <dynamic>[];
+      await localClient.query('messages:listPublic');
+      await localClient.setNetworkMode(LocalNetworkMode.offline);
+      await localClient.mutate(
+        'messages:sendPublic',
+        <String, dynamic>{'author': 'A', 'text': 'queued'},
+      );
+
+      final refreshStream = StreamController<LocalRemoteQueryEvent>.broadcast();
+      remoteClient.subscriptionStreams['messages:listPublic'] =
+          refreshStream.stream;
+      remoteClient.mutationResults['messages:sendPublic'] = <Object?>[
+        'server-id-1',
+      ];
+
+      await localClient.setNetworkMode(LocalNetworkMode.auto);
+      await Future<void>.delayed(const Duration(milliseconds: 25));
+
+      expect(remoteClient.subscriptionCancelCounts['messages:listPublic'], 1);
+      await refreshStream.close();
+    });
+
     test('replay stops and retains queue on retryable error', () async {
       remoteClient.queryResults['messages:listPublic'] = <dynamic>[];
       await localClient.query('messages:listPublic');
@@ -1031,6 +1069,9 @@ class FakeRemoteClient implements LocalRemoteClient {
   final Map<String, ConvexException> queryErrors = <String, ConvexException>{};
   final Map<String, List<Object?>> mutationResults = <String, List<Object?>>{};
   final List<RemoteCall> mutationCalls = <RemoteCall>[];
+  final Map<String, Stream<LocalRemoteQueryEvent>> subscriptionStreams =
+      <String, Stream<LocalRemoteQueryEvent>>{};
+  final Map<String, int> subscriptionCancelCounts = <String, int>{};
   final StreamController<LocalRemoteConnectionState>
       _connectionStateController =
       StreamController<LocalRemoteConnectionState>.broadcast(sync: true);
@@ -1101,10 +1142,16 @@ class FakeRemoteClient implements LocalRemoteClient {
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) {
+    final stream = subscriptionStreams[name] ??
+        Stream<LocalRemoteQueryEvent>.value(
+          LocalRemoteQuerySuccess(queryResults[name]),
+        );
     return FakeRemoteSubscription(
-      Stream<LocalRemoteQueryEvent>.value(
-        LocalRemoteQuerySuccess(queryResults[name]),
-      ),
+      stream,
+      onCancel: () {
+        subscriptionCancelCounts.update(name, (count) => count + 1,
+            ifAbsent: () => 1);
+      },
     );
   }
 
@@ -1115,15 +1162,24 @@ class FakeRemoteClient implements LocalRemoteClient {
 }
 
 class FakeRemoteSubscription implements LocalRemoteSubscription {
-  FakeRemoteSubscription(this._stream);
+  FakeRemoteSubscription(this._stream, {void Function()? onCancel})
+      : _onCancel = onCancel;
 
   final Stream<LocalRemoteQueryEvent> _stream;
+  final void Function()? _onCancel;
+  bool _canceled = false;
 
   @override
   Stream<LocalRemoteQueryEvent> get stream => _stream;
 
   @override
-  void cancel() {}
+  void cancel() {
+    if (_canceled) {
+      return;
+    }
+    _canceled = true;
+    _onCancel?.call();
+  }
 }
 
 class RemoteCall {

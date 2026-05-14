@@ -411,6 +411,7 @@ class LocalClientConfig {
     this.valueCodec = const JsonValueCodec(),
     this.mutationHandlers = const <LocalMutationHandler>[],
     this.initialNetworkMode = LocalNetworkMode.auto,
+    this.refreshQueryTimeout = const Duration(seconds: 5),
     this.disposeRemoteClient = false,
     this.logLevel = DartvexLogLevel.off,
     this.logger,
@@ -430,6 +431,9 @@ class LocalClientConfig {
 
   /// Initial network mode applied when the client opens.
   final LocalNetworkMode initialNetworkMode;
+
+  /// Maximum time spent waiting for a remote cache refresh after replay.
+  final Duration refreshQueryTimeout;
 
   /// Whether a wrapped remote client should be disposed automatically.
   final bool disposeRemoteClient;
@@ -1120,13 +1124,10 @@ class ConvexLocalClient {
     for (final target in targets) {
       try {
         _log('refresh:query', 'querying ${target.name}…');
-        // Timeout guards against ConvexClient.query() hanging when the
-        // broadcast stream already emitted the cached result before the
-        // listener was attached. The subscription from the widget tree
-        // will still receive the live update via the normal Transition flow.
-        final value = await _remoteClient
-            .query(target.name, target.args)
-            .timeout(const Duration(seconds: 5));
+        final value = await _remoteQueryOnce(
+          target,
+          timeout: _config.refreshQueryTimeout,
+        );
         _log('refresh:query-ok', '${target.name} returned');
         await _queryCache.write(
             name: target.name, args: target.args, value: value);
@@ -1143,6 +1144,61 @@ class ConvexLocalClient {
       }
     }
     _log('refresh:done', '${mutation.mutationName} targets refreshed');
+  }
+
+  Future<dynamic> _remoteQueryOnce(
+    LocalQueryDescriptor target, {
+    required Duration timeout,
+  }) {
+    final completer = Completer<dynamic>();
+    final subscription = _remoteClient.subscribe(target.name, target.args);
+    StreamSubscription<LocalRemoteQueryEvent>? eventSubscription;
+    Timer? timer;
+
+    void cleanup() {
+      timer?.cancel();
+      unawaited(eventSubscription?.cancel());
+      subscription.cancel();
+    }
+
+    void completeError(Object error, [StackTrace? stackTrace]) {
+      if (completer.isCompleted) {
+        return;
+      }
+      cleanup();
+      if (stackTrace == null) {
+        completer.completeError(error);
+      } else {
+        completer.completeError(error, stackTrace);
+      }
+    }
+
+    timer = Timer(timeout, () {
+      completeError(
+        TimeoutException(
+          'Remote query "${target.name}" timed out after '
+          '${timeout.inMilliseconds}ms',
+          timeout,
+        ),
+      );
+    });
+    eventSubscription = subscription.stream.listen(
+      (event) {
+        if (completer.isCompleted) {
+          return;
+        }
+        switch (event) {
+          case LocalRemoteQuerySuccess(:final value):
+            cleanup();
+            completer.complete(value);
+          case LocalRemoteQueryError(:final error):
+            completeError(error);
+        }
+      },
+      onError: completeError,
+    );
+
+    return completer.future;
   }
 
   List<LocalMutationPatch> _buildPatches(
