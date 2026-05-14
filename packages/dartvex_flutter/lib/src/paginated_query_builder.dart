@@ -34,6 +34,8 @@ typedef PaginatedQueryWidgetBuilder<T> = Widget Function(
 ///
 /// Convex paginated queries accept `paginationOpts` with `numItems` and
 /// `cursor`, and return `{ page, continueCursor, isDone }`.
+/// Pages are fetched with one-shot queries when the widget loads or when
+/// `loadMore` is called; existing pages are not live subscriptions.
 ///
 /// ```dart
 /// PaginatedQueryBuilder<Message>(

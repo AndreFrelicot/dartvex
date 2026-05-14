@@ -31,7 +31,7 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 - `ConvexMutation` / `ConvexAction` — request builder widgets
 - `ConvexImage` — display images from Convex file storage
 - `ConvexCachedImage` — display Convex storage images with persistent disk caching
-- `PaginatedQueryBuilder` — cursor-based pagination with load-more
+- `PaginatedQueryBuilder` — cursor-based one-shot pagination with load-more
 - `ConvexAuthProvider` / `ConvexAuthBuilder` — auth state widgets
 - `ConvexConnectionBuilder` / `ConvexConnectionIndicator` — connection status
 - `ConvexOfflineImage` / `ConvexAssetCache` — offline binary asset caching
@@ -140,6 +140,9 @@ by default. Set `useAction: true` when the resolver is implemented as an action.
 
 ## Pagination
 
+`PaginatedQueryBuilder` uses one-shot page fetches. Use `ConvexQuery` directly
+when a live subscription is required for a non-paginated query result.
+
 ```dart
 PaginatedQueryBuilder<Message>(
   query: 'messages:list',
@@ -177,7 +180,7 @@ await tester.pumpWidget(
 | `ConvexQuery` | Reactive query with automatic re-rendering |
 | `ConvexMutation` | Mutation trigger with loading/error state |
 | `ConvexAction` | Action trigger with loading/error state |
-| `PaginatedQueryBuilder` | Cursor-based paginated query |
+| `PaginatedQueryBuilder` | Cursor-based one-shot paginated query |
 | `ConvexAuthBuilder` | Renders based on auth state |
 | `ConvexConnectionBuilder` | Renders based on connection state |
 | `ConvexImage` | Image from Convex storage |

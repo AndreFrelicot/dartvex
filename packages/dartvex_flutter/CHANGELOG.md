@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Preserves structured query error data and server log lines in runtime errors.
 - Supports action-based storage URL resolvers in `ConvexImage` and
   `ConvexCachedImage`.
+- Clarifies that `PaginatedQueryBuilder` performs one-shot page fetches.
 - Excludes build artifacts from the package archive.
 
 ## [0.1.4] - 2026-04-30
