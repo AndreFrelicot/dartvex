@@ -115,8 +115,14 @@ class _ConvexRemoteSubscriptionAdapter implements LocalRemoteSubscription {
           switch (event) {
             case QuerySuccess(:final value):
               return LocalRemoteQuerySuccess(value);
-            case QueryError(:final message):
-              return LocalRemoteQueryError(ConvexException(message));
+            case QueryError(:final message, :final data, :final logLines):
+              return LocalRemoteQueryError(
+                ConvexException(
+                  message,
+                  data: data,
+                  logLines: logLines,
+                ),
+              );
           }
         });
 

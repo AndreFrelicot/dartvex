@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Retains retryable replay failures for later retry instead of dropping queued
   mutations.
 - Falls back to cached query data on retryable remote failures.
+- Preserves structured remote query error data and server log lines in the
+  local runtime adapter.
 
 ## [0.1.2] - 2026-04-30
 
