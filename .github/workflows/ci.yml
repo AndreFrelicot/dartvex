@@ -21,7 +21,19 @@ jobs:
       - name: Resolve packages
         run: |
           for dir in packages/*/; do
-            (cd "$dir" && dart pub get 2>/dev/null || flutter pub get 2>/dev/null) || true
+            package="$(basename "$dir")"
+            if [ "$package" != "dartvex" ] && grep -qE '^[[:space:]]+dartvex:' "$dir/pubspec.yaml"; then
+              printf '%s\n' \
+                'dependency_overrides:' \
+                '  dartvex:' \
+                '    path: ../dartvex' \
+                > "$dir/pubspec_overrides.yaml"
+            fi
+            if grep -q 'sdk: flutter' "$dir/pubspec.yaml"; then
+              (cd "$dir" && flutter pub get)
+            else
+              (cd "$dir" && dart pub get)
+            fi
           done
           (cd example/flutter_app && flutter pub get)
       - name: Format check (excluding generated goldens)
@@ -56,11 +68,11 @@ jobs:
       - name: Use local dartvex dependency
         if: matrix.package != 'dartvex'
         run: |
-          cat > packages/${{ matrix.package }}/pubspec_overrides.yaml <<'YAML'
-          dependency_overrides:
-            dartvex:
-              path: ../dartvex
-          YAML
+          printf '%s\n' \
+            'dependency_overrides:' \
+            '  dartvex:' \
+            '    path: ../dartvex' \
+            > packages/${{ matrix.package }}/pubspec_overrides.yaml
       - run: cd packages/${{ matrix.package }} && dart pub get && dart analyze --fatal-infos
 
   analyze-flutter:
@@ -75,11 +87,11 @@ jobs:
         with: { flutter-version: '3.x', channel: stable }
       - name: Use local dartvex dependency
         run: |
-          cat > packages/${{ matrix.package }}/pubspec_overrides.yaml <<'YAML'
-          dependency_overrides:
-            dartvex:
-              path: ../dartvex
-          YAML
+          printf '%s\n' \
+            'dependency_overrides:' \
+            '  dartvex:' \
+            '    path: ../dartvex' \
+            > packages/${{ matrix.package }}/pubspec_overrides.yaml
       - run: cd packages/${{ matrix.package }} && flutter pub get && flutter analyze --fatal-infos
 
   test:
@@ -95,11 +107,11 @@ jobs:
       - name: Use local dartvex dependency
         if: matrix.package != 'dartvex'
         run: |
-          cat > packages/${{ matrix.package }}/pubspec_overrides.yaml <<'YAML'
-          dependency_overrides:
-            dartvex:
-              path: ../dartvex
-          YAML
+          printf '%s\n' \
+            'dependency_overrides:' \
+            '  dartvex:' \
+            '    path: ../dartvex' \
+            > packages/${{ matrix.package }}/pubspec_overrides.yaml
       - name: Install dependencies
         run: cd packages/${{ matrix.package }} && dart pub get
       - name: Regenerate golden files
@@ -119,11 +131,11 @@ jobs:
         with: { flutter-version: '3.x', channel: stable }
       - name: Use local dartvex dependency
         run: |
-          cat > packages/${{ matrix.package }}/pubspec_overrides.yaml <<'YAML'
-          dependency_overrides:
-            dartvex:
-              path: ../dartvex
-          YAML
+          printf '%s\n' \
+            'dependency_overrides:' \
+            '  dartvex:' \
+            '    path: ../dartvex' \
+            > packages/${{ matrix.package }}/pubspec_overrides.yaml
       - run: cd packages/${{ matrix.package }} && flutter pub get && flutter test
 
   example-flutter:
@@ -187,13 +199,17 @@ jobs:
       - uses: subosito/flutter-action@v2
         if: matrix.tool == 'flutter'
         with: { flutter-version: '3.x', channel: stable }
+      - name: Use local dartvex dependency
+        if: matrix.package != 'dartvex'
+        run: |
+          printf '%s\n' \
+            'dependency_overrides:' \
+            '  dartvex:' \
+            '    path: ../dartvex' \
+            > packages/${{ matrix.package }}/pubspec_overrides.yaml
       - name: Publish dry-run (Dart)
         if: matrix.tool == 'dart'
-        run: |
-          rm -f packages/${{ matrix.package }}/pubspec_overrides.yaml
-          cd packages/${{ matrix.package }} && dart pub get && dart pub publish --dry-run
+        run: cd packages/${{ matrix.package }} && dart pub get && dart pub publish --dry-run
       - name: Publish dry-run (Flutter)
         if: matrix.tool == 'flutter'
-        run: |
-          rm -f packages/${{ matrix.package }}/pubspec_overrides.yaml
-          cd packages/${{ matrix.package }} && flutter pub get && flutter pub publish --dry-run
+        run: cd packages/${{ matrix.package }} && flutter pub get && flutter pub publish --dry-run
