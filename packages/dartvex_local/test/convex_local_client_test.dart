@@ -117,6 +117,54 @@ void main() {
       sub.cancel();
     });
 
+    test('subscribe ignores stale cache seed after remote event', () async {
+      await localClient.dispose();
+      final cacheStore = await SqliteLocalStore.openInMemory();
+      final queueStore = await SqliteLocalStore.openInMemory();
+      await QueryCache(
+        storage: cacheStore,
+        codec: const JsonValueCodec(),
+      ).write(name: 'tasks:list', args: const <String, dynamic>{}, value: [
+        'stale',
+      ]);
+      final readGate = Completer<void>();
+      final delayedCache = DelayedReadCacheStorage(
+        cacheStore,
+        delayAfterRead: readGate.future,
+      );
+      remoteClient = FakeRemoteClient();
+      remoteClient.subscriptionStreams['tasks:list'] =
+          Stream<LocalRemoteQueryEvent>.value(
+        const LocalRemoteQuerySuccess(<dynamic>['fresh']),
+      );
+      localClient = await ConvexLocalClient.openWithRemote(
+        remoteClient: remoteClient,
+        config: LocalClientConfig(
+          cacheStorage: delayedCache,
+          queueStorage: queueStore,
+        ),
+      );
+
+      final events = <LocalQueryEvent>[];
+      final sub = localClient.subscribe('tasks:list');
+      final listener = sub.stream.listen(events.add);
+      await pumpEventQueue();
+
+      expect(events, hasLength(1));
+      expect(events.single, isA<LocalQuerySuccess>());
+      final remoteEvent = events.single as LocalQuerySuccess;
+      expect(remoteEvent.source, LocalQuerySource.remote);
+      expect(remoteEvent.value, <dynamic>['fresh']);
+
+      readGate.complete();
+      await pumpEventQueue();
+
+      expect(events, hasLength(1));
+
+      await listener.cancel();
+      sub.cancel();
+    });
+
     test('subscribe emits error when offline with no cache', () async {
       await localClient.setNetworkMode(LocalNetworkMode.offline);
 
@@ -1063,6 +1111,35 @@ void main() {
 // ---------------------------------------------------------------------------
 // Test doubles
 // ---------------------------------------------------------------------------
+
+class DelayedReadCacheStorage implements CacheStorage {
+  DelayedReadCacheStorage(this._delegate, {required this.delayAfterRead});
+
+  final CacheStorage _delegate;
+  final Future<void> delayAfterRead;
+
+  @override
+  Future<void> clearCache() {
+    return _delegate.clearCache();
+  }
+
+  @override
+  Future<void> close() {
+    return _delegate.close();
+  }
+
+  @override
+  Future<StoredCacheEntry?> read(String key) async {
+    final entry = await _delegate.read(key);
+    await delayAfterRead;
+    return entry;
+  }
+
+  @override
+  Future<void> upsert(StoredCacheEntry entry) {
+    return _delegate.upsert(entry);
+  }
+}
 
 class FakeRemoteClient implements LocalRemoteClient {
   final Map<String, dynamic> queryResults = <String, dynamic>{};

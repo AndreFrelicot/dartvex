@@ -805,6 +805,9 @@ class ConvexLocalClient {
     if (_disposed || !_subscriptionStates.containsKey(state.id)) {
       return;
     }
+    if (state.hasRemoteEvent) {
+      return;
+    }
     if (cached != null) {
       state.controller.add(
         LocalQuerySuccess(
@@ -874,6 +877,7 @@ class ConvexLocalClient {
     _LocalQueryState queryState,
     LocalRemoteQueryEvent event,
   ) async {
+    _markRemoteEventSeen(queryState);
     switch (event) {
       case LocalRemoteQuerySuccess(:final value):
         await _queryCache.write(
@@ -1144,6 +1148,12 @@ class ConvexLocalClient {
       }
     }
     _log('refresh:done', '${mutation.mutationName} targets refreshed');
+  }
+
+  void _markRemoteEventSeen(_LocalQueryState queryState) {
+    for (final subscriptionId in queryState.subscriberIds) {
+      _subscriptionStates[subscriptionId]?.hasRemoteEvent = true;
+    }
   }
 
   Future<dynamic> _remoteQueryOnce(
@@ -1426,4 +1436,5 @@ class _LocalSubscriptionState {
   final int id;
   final LocalQueryDescriptor descriptor;
   final StreamController<LocalQueryEvent> controller;
+  bool hasRemoteEvent = false;
 }
