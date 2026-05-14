@@ -912,12 +912,25 @@ Future<void> _writeInternalDependencyOverrides({
       ..writeln("    path: '${_yamlSingleQuoted(dependency.directory.path)}'");
   }
 
-  await File(
-    _joinPath(tempPackage.path, 'pubspec_overrides.yaml'),
-  ).writeAsString(buffer.toString());
+  for (final packageDirectory in _pubspecDirectories(tempPackage)) {
+    await File(
+      _joinPath(packageDirectory.path, 'pubspec_overrides.yaml'),
+    ).writeAsString(buffer.toString());
+  }
 }
 
 String _yamlSingleQuoted(String value) => value.replaceAll("'", "''");
+
+List<Directory> _pubspecDirectories(Directory root) {
+  final directories = <String>{root.path};
+  for (final entity in root.listSync(recursive: true, followLinks: false)) {
+    if (entity is File && _basename(entity.path) == 'pubspec.yaml') {
+      directories.add(entity.parent.path);
+    }
+  }
+  return directories.map(Directory.new).toList()
+    ..sort((left, right) => left.path.compareTo(right.path));
+}
 
 const Set<String> _publishCopyExcludedNames = <String>{
   '.dart_tool',

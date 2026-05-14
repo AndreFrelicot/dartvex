@@ -112,9 +112,10 @@ It also expects a clean git state for the selected packages, because pub.dev
 warns on modified tracked files.
 
 By default the helper writes temporary `pubspec_overrides.yaml` files in its
-publish copies so unreleased internal packages can be validated together. After
-publishing an internal dependency, rerun affected dependents without these
-overrides to verify the same package resolution that pub.dev users will get:
+publish copies, including copied examples, so unreleased internal packages can
+be validated together. After publishing an internal dependency, rerun affected
+dependents without these overrides to verify the same package resolution that
+pub.dev users will get:
 
 ```sh
 dart scripts/release_packages.dart dry-run --include-dependents --no-internal-overrides
