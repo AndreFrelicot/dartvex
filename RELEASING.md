@@ -111,6 +111,15 @@ The helper automatically uses `dart` or `flutter` based on the package type.
 It also expects a clean git state for the selected packages, because pub.dev
 warns on modified tracked files.
 
+By default the helper writes temporary `pubspec_overrides.yaml` files in its
+publish copies so unreleased internal packages can be validated together. After
+publishing an internal dependency, rerun affected dependents without these
+overrides to verify the same package resolution that pub.dev users will get:
+
+```sh
+dart scripts/release_packages.dart dry-run --include-dependents --no-internal-overrides
+```
+
 When you are preparing on one machine and publishing on another:
 
 1. commit the version, changelog, README, and example updates

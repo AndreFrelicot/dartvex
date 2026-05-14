@@ -122,7 +122,10 @@ Future<void> main(List<String> args) async {
         exit(2);
       }
 
-      final failures = await _runDryRuns(packages: publishOrder);
+      final failures = await _runDryRuns(
+        packages: publishOrder,
+        useInternalDependencyOverrides: cli.useInternalDependencyOverrides,
+      );
       if (failures.isNotEmpty) {
         stderr.writeln('\nDry-run failures: ${failures.join(', ')}');
         exit(1);
@@ -137,7 +140,7 @@ Future<void> main(List<String> args) async {
 const _usage = '''
 Usage:
   dart scripts/release_packages.dart plan [--since-ref=<git-ref>] [--include-dependents] [--all]
-  dart scripts/release_packages.dart dry-run [--since-ref=<git-ref>] [--include-dependents] [--all]
+  dart scripts/release_packages.dart dry-run [--since-ref=<git-ref>] [--include-dependents] [--all] [--no-internal-overrides]
 
 What it does:
   - Detects packages changed since their package tag (<package>-v<version>)
@@ -145,6 +148,7 @@ What it does:
   - Computes internal dependents affected by those changes
   - Orders selected packages so dependencies publish first
   - Runs pub.dev dry-runs with dart or flutter as appropriate
+  - Use --no-internal-overrides to verify public pub.dev resolution exactly
 
 Recommended tag format:
   dartvex-v0.1.0
@@ -157,6 +161,7 @@ class CliOptions {
     required this.sinceRef,
     required this.includeDependents,
     required this.selectAll,
+    required this.useInternalDependencyOverrides,
     required this.showHelp,
   });
 
@@ -164,6 +169,7 @@ class CliOptions {
   final String? sinceRef;
   final bool includeDependents;
   final bool selectAll;
+  final bool useInternalDependencyOverrides;
   final bool showHelp;
 
   static CliOptions parse(List<String> args) {
@@ -171,6 +177,7 @@ class CliOptions {
     String? sinceRef;
     var includeDependents = false;
     var selectAll = false;
+    var useInternalDependencyOverrides = true;
     var showHelp = false;
 
     for (final arg in args) {
@@ -180,6 +187,8 @@ class CliOptions {
         includeDependents = true;
       } else if (arg == '--all') {
         selectAll = true;
+      } else if (arg == '--no-internal-overrides') {
+        useInternalDependencyOverrides = false;
       } else if (arg.startsWith('--since-ref=')) {
         sinceRef = arg.substring('--since-ref='.length);
       } else if (arg.startsWith('-')) {
@@ -198,6 +207,7 @@ class CliOptions {
       sinceRef: sinceRef,
       includeDependents: includeDependents,
       selectAll: selectAll,
+      useInternalDependencyOverrides: useInternalDependencyOverrides,
       showHelp: showHelp,
     );
   }
@@ -817,7 +827,10 @@ void _printPlan({
   }
 }
 
-Future<List<String>> _runDryRuns({required List<PackageInfo> packages}) async {
+Future<List<String>> _runDryRuns({
+  required List<PackageInfo> packages,
+  required bool useInternalDependencyOverrides,
+}) async {
   final failures = <String>[];
   final packageByName = {for (final package in packages) package.name: package};
   for (final package in packages) {
@@ -842,11 +855,13 @@ Future<List<String>> _runDryRuns({required List<PackageInfo> packages}) async {
 
     try {
       await _copyDirectoryForPublish(package.directory, tempPackage);
-      await _writeInternalDependencyOverrides(
-        tempPackage: tempPackage,
-        package: package,
-        packageByName: packageByName,
-      );
+      if (useInternalDependencyOverrides) {
+        await _writeInternalDependencyOverrides(
+          tempPackage: tempPackage,
+          package: package,
+          packageByName: packageByName,
+        );
+      }
       final getResult = await Process.start(
         executable,
         getArgs,
