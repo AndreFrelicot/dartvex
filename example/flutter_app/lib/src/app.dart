@@ -188,7 +188,7 @@ class _ConvexFlutterDemoAppState extends State<ConvexFlutterDemoApp> {
     }
     setState(() {
       _authStatus =
-          'Logged out. Cached session is retained for Login From Cache.';
+          'Logged out. Cached session is retained for Restore Session.';
     });
   });
 
@@ -479,12 +479,14 @@ class _DemoHomePageState extends State<DemoHomePage> {
         api: widget.api,
         deploymentUrl: widget.deploymentUrl,
         authMode: widget.authMode,
+        authProviderReady: _authProviderReady,
         latencyNotifier: widget.latencyNotifier,
       ),
       _TasksScreen(
         api: widget.api,
         deploymentUrl: widget.deploymentUrl,
         authMode: widget.authMode,
+        authProviderReady: _authProviderReady,
         latencyNotifier: widget.latencyNotifier,
       ),
       _SessionScreen(
@@ -496,6 +498,7 @@ class _DemoHomePageState extends State<DemoHomePage> {
         deploymentUrl: widget.deploymentUrl,
         authStatus: widget.authStatus,
         authMode: widget.authMode,
+        authProviderReady: _authProviderReady,
         betterAuthNameController: widget.betterAuthNameController,
         betterAuthEmailController: widget.betterAuthEmailController,
         betterAuthPasswordController: widget.betterAuthPasswordController,
@@ -511,11 +514,13 @@ class _DemoHomePageState extends State<DemoHomePage> {
         localRuntime: widget.localRuntime,
         deploymentUrl: widget.deploymentUrl,
         authMode: widget.authMode,
+        authProviderReady: _authProviderReady,
         availabilityError: widget.localAvailabilityError,
         latencyNotifier: widget.latencyNotifier,
       ),
       _AboutScreen(
         authMode: widget.authMode,
+        authProviderReady: _authProviderReady,
         latencyNotifier: widget.latencyNotifier,
       ),
     ];
@@ -554,6 +559,7 @@ class _DemoHomePageState extends State<DemoHomePage> {
                             selectedIndex: _selectedIndex,
                             deploymentUrl: widget.deploymentUrl,
                             authMode: widget.authMode,
+                            authProviderReady: _authProviderReady,
                             latencyNotifier: widget.latencyNotifier,
                             onSelected: (index) {
                               _selectedIndex = index;
@@ -576,6 +582,13 @@ class _DemoHomePageState extends State<DemoHomePage> {
       },
     );
   }
+
+  bool get _authProviderReady {
+    return switch (widget.authMode) {
+      AuthMode.demo => widget.authClient != null,
+      AuthMode.betterAuth => widget.betterAuthClient != null,
+    };
+  }
 }
 
 class _ChatsScreen extends StatelessWidget {
@@ -583,12 +596,14 @@ class _ChatsScreen extends StatelessWidget {
     required this.api,
     required this.deploymentUrl,
     required this.authMode,
+    required this.authProviderReady,
     required this.latencyNotifier,
   });
 
   final ConvexApi? api;
   final String deploymentUrl;
   final AuthMode authMode;
+  final bool authProviderReady;
   final ValueNotifier<TransitionMetrics?> latencyNotifier;
 
   @override
@@ -602,6 +617,7 @@ class _ChatsScreen extends StatelessWidget {
               title: 'Chats',
               subtitle: _deploymentSubtitle(deploymentUrl),
               authMode: authMode,
+              authProviderReady: authProviderReady,
               latencyNotifier: latencyNotifier,
             ),
             body: SingleChildScrollView(
@@ -625,6 +641,7 @@ class _ChatsScreen extends StatelessWidget {
               title: 'Chats',
               subtitle: _deploymentSubtitle(deploymentUrl),
               authMode: authMode,
+              authProviderReady: authProviderReady,
               latencyNotifier: latencyNotifier,
               bottom: const TabBar(
                 tabs: <Widget>[
@@ -657,12 +674,14 @@ class _TasksScreen extends StatelessWidget {
     required this.api,
     required this.deploymentUrl,
     required this.authMode,
+    required this.authProviderReady,
     required this.latencyNotifier,
   });
 
   final ConvexApi? api;
   final String deploymentUrl;
   final AuthMode authMode;
+  final bool authProviderReady;
   final ValueNotifier<TransitionMetrics?> latencyNotifier;
 
   @override
@@ -672,6 +691,7 @@ class _TasksScreen extends StatelessWidget {
         title: 'Tasks',
         subtitle: _deploymentSubtitle(deploymentUrl),
         authMode: authMode,
+        authProviderReady: authProviderReady,
         latencyNotifier: latencyNotifier,
       ),
       body: SingleChildScrollView(
@@ -692,6 +712,7 @@ class _SessionScreen extends StatelessWidget {
     required this.deploymentUrl,
     required this.authStatus,
     required this.authMode,
+    required this.authProviderReady,
     required this.betterAuthNameController,
     required this.betterAuthEmailController,
     required this.betterAuthPasswordController,
@@ -711,6 +732,7 @@ class _SessionScreen extends StatelessWidget {
   final String deploymentUrl;
   final String? authStatus;
   final AuthMode authMode;
+  final bool authProviderReady;
   final TextEditingController betterAuthNameController;
   final TextEditingController betterAuthEmailController;
   final TextEditingController betterAuthPasswordController;
@@ -760,6 +782,7 @@ class _SessionScreen extends StatelessWidget {
         title: 'Auth',
         subtitle: _deploymentSubtitle(deploymentUrl),
         authMode: authMode,
+        authProviderReady: authProviderReady,
         latencyNotifier: latencyNotifier,
       ),
       body: LayoutBuilder(
@@ -801,6 +824,7 @@ class _LocalScreen extends StatelessWidget {
     required this.localRuntime,
     required this.deploymentUrl,
     required this.authMode,
+    required this.authProviderReady,
     required this.availabilityError,
     required this.latencyNotifier,
   });
@@ -809,6 +833,7 @@ class _LocalScreen extends StatelessWidget {
   final LocalConvexRuntimeClient? localRuntime;
   final String deploymentUrl;
   final AuthMode authMode;
+  final bool authProviderReady;
   final String? availabilityError;
   final ValueNotifier<TransitionMetrics?> latencyNotifier;
 
@@ -819,6 +844,7 @@ class _LocalScreen extends StatelessWidget {
         title: 'Local',
         subtitle: _deploymentSubtitle(deploymentUrl),
         authMode: authMode,
+        authProviderReady: authProviderReady,
         latencyNotifier: latencyNotifier,
       ),
       body: SingleChildScrollView(
@@ -835,12 +861,17 @@ class _LocalScreen extends StatelessWidget {
 }
 
 class _AboutScreen extends StatelessWidget {
-  const _AboutScreen({required this.authMode, required this.latencyNotifier});
+  const _AboutScreen({
+    required this.authMode,
+    required this.authProviderReady,
+    required this.latencyNotifier,
+  });
 
   static const String _website = 'https://andrefrelicot.dev';
   static const String _github = 'https://github.com/AndreFrelicot/dartvex/';
 
   final AuthMode authMode;
+  final bool authProviderReady;
   final ValueNotifier<TransitionMetrics?> latencyNotifier;
 
   @override
@@ -851,6 +882,7 @@ class _AboutScreen extends StatelessWidget {
         title: 'About',
         subtitle: 'Dartvex Flutter SDK',
         authMode: authMode,
+        authProviderReady: authProviderReady,
         latencyNotifier: latencyNotifier,
       ),
       body: SingleChildScrollView(
@@ -1013,6 +1045,7 @@ class _DemoAppBar extends StatelessWidget implements PreferredSizeWidget {
   const _DemoAppBar({
     required this.title,
     required this.subtitle,
+    required this.authProviderReady,
     this.bottom,
     this.authMode,
     this.latencyNotifier,
@@ -1022,9 +1055,10 @@ class _DemoAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String subtitle;
   final PreferredSizeWidget? bottom;
   final AuthMode? authMode;
+  final bool authProviderReady;
   final ValueNotifier<TransitionMetrics?>? latencyNotifier;
 
-  static const double _toolbarHeight = 72;
+  static const double _toolbarHeight = 96;
 
   @override
   Size get preferredSize =>
@@ -1046,65 +1080,87 @@ class _DemoAppBar extends StatelessWidget implements PreferredSizeWidget {
           ),
         ),
       ),
-      title: Row(
-        children: <Widget>[
-          const DartvexLogoMark(size: 42, padding: 3),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text(
-                  title,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: ConciergeColors.text,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  subtitle,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: ConciergeColors.textDim,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-      actions: <Widget>[
-        Padding(
-          padding: const EdgeInsets.only(right: 16),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 260),
-            child: Center(
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: _ConnectionChip(
-                  authMode: authMode,
-                  latencyNotifier: latencyNotifier,
+      title: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 620;
+          final titleBlock = Row(
+            children: <Widget>[
+              const DartvexLogoMark(size: 42, padding: 3),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(
+                      title,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        color: ConciergeColors.text,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: ConciergeColors.textDim,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                  ],
                 ),
               ),
+            ],
+          );
+          final statusCluster = Align(
+            alignment: compact ? Alignment.centerLeft : Alignment.centerRight,
+            child: _HeaderStatusCluster(
+              authMode: authMode,
+              authProviderReady: authProviderReady,
+              latencyNotifier: latencyNotifier,
             ),
-          ),
-        ),
-      ],
+          );
+
+          if (compact) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                titleBlock,
+                const SizedBox(height: 8),
+                statusCluster,
+              ],
+            );
+          }
+
+          return Row(
+            children: <Widget>[
+              Expanded(child: titleBlock),
+              const SizedBox(width: 16),
+              Flexible(child: statusCluster),
+            ],
+          );
+        },
+      ),
       bottom: bottom,
     );
   }
 }
 
-class _ConnectionChip extends StatelessWidget {
-  const _ConnectionChip({this.authMode, this.latencyNotifier});
+class _HeaderStatusCluster extends StatelessWidget {
+  const _HeaderStatusCluster({
+    required this.authProviderReady,
+    this.authMode,
+    this.latencyNotifier,
+  });
 
   final AuthMode? authMode;
+  final bool authProviderReady;
   final ValueNotifier<TransitionMetrics?>? latencyNotifier;
 
   @override
@@ -1113,69 +1169,153 @@ class _ConnectionChip extends StatelessWidget {
       builder: (context, state) {
         final (label, color) = switch (state) {
           ConvexConnectionState.connected => (
-            'Connected',
+            'Realtime online',
             ConciergeColors.success,
           ),
           ConvexConnectionState.connecting => (
-            'Connecting',
+            'Realtime connecting',
             ConciergeColors.cyan,
           ),
           ConvexConnectionState.reconnecting => (
-            'Reconnecting',
+            'Realtime reconnecting',
             ConciergeColors.cyan,
           ),
           ConvexConnectionState.disconnected => (
-            'Disconnected',
+            'Realtime offline',
             ConciergeColors.warning,
           ),
         };
 
         final notifier = latencyNotifier;
-        Widget chip = DecoratedBox(
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: color.withValues(alpha: 0.18)),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Icon(Icons.circle, size: 10, color: color),
-                const SizedBox(width: 8),
-                Text(
-                  authMode == null
-                      ? label
-                      : '$label • ${_authMechanismLabel(authMode!)}',
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: color,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                if (notifier != null) ...<Widget>[
-                  const SizedBox(width: 8),
-                  ValueListenableBuilder<TransitionMetrics?>(
-                    valueListenable: notifier,
-                    builder: (context, metrics, _) {
-                      if (metrics == null) return const SizedBox.shrink();
-                      return Text(
-                        '${metrics.transitTimeMs.round()}ms',
-                        style: Theme.of(context).textTheme.labelMedium
-                            ?.copyWith(
-                              color: color.withValues(alpha: 0.7),
-                              fontWeight: FontWeight.w600,
-                            ),
-                      );
-                    },
-                  ),
-                ],
-              ],
+        return Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          alignment: WrapAlignment.end,
+          children: <Widget>[
+            _HeaderStatusPill(
+              icon: Icons.sync_rounded,
+              label: label,
+              color: color,
+              trailing: notifier == null
+                  ? null
+                  : ValueListenableBuilder<TransitionMetrics?>(
+                      valueListenable: notifier,
+                      builder: (context, metrics, _) {
+                        if (metrics == null) return const SizedBox.shrink();
+                        return Text(
+                          '${metrics.transitTimeMs.round()}ms',
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: color.withValues(alpha: 0.72),
+                                fontWeight: FontWeight.w700,
+                              ),
+                        );
+                      },
+                    ),
             ),
-          ),
+            if (authMode != null)
+              _AuthHeaderPill(
+                authMode: authMode!,
+                authProviderReady: authProviderReady,
+              ),
+          ],
         );
-        return chip;
       },
+    );
+  }
+}
+
+class _AuthHeaderPill extends StatelessWidget {
+  const _AuthHeaderPill({
+    required this.authMode,
+    required this.authProviderReady,
+  });
+
+  final AuthMode authMode;
+  final bool authProviderReady;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!authProviderReady) {
+      return _HeaderStatusPill(
+        icon: Icons.verified_user_outlined,
+        label: '${_authMechanismLabel(authMode)} auth',
+        color: ConciergeColors.textMuted,
+        backgroundColor: ConciergeColors.surfaceHigh,
+        borderColor: ConciergeColors.outline.withValues(alpha: 0.5),
+      );
+    }
+
+    return switch (authMode) {
+      AuthMode.demo => ConvexAuthBuilder<DemoUserSession>(
+        builder: (context, state) => _HeaderStatusPill(
+          icon: Icons.verified_user_outlined,
+          label: 'Demo: ${_compactAuthStateLabel(state)}',
+          color: _compactAuthStateColor(state),
+          backgroundColor: _compactAuthStateBackground(state),
+          borderColor: _compactAuthStateColor(state).withValues(alpha: 0.22),
+        ),
+      ),
+      AuthMode.betterAuth => ConvexAuthBuilder<BetterAuthSession>(
+        builder: (context, state) => _HeaderStatusPill(
+          icon: Icons.verified_user_outlined,
+          label: 'Better Auth: ${_compactAuthStateLabel(state)}',
+          color: _compactAuthStateColor(state),
+          backgroundColor: _compactAuthStateBackground(state),
+          borderColor: _compactAuthStateColor(state).withValues(alpha: 0.22),
+        ),
+      ),
+    };
+  }
+}
+
+class _HeaderStatusPill extends StatelessWidget {
+  const _HeaderStatusPill({
+    required this.icon,
+    required this.label,
+    required this.color,
+    this.backgroundColor,
+    this.borderColor,
+    this.trailing,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+  final Color? backgroundColor;
+  final Color? borderColor;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: backgroundColor ?? color.withValues(alpha: 0.11),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: borderColor ?? color.withValues(alpha: 0.2)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(icon, size: 13, color: color),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: color,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0,
+              ),
+            ),
+            if (trailing != null) ...<Widget>[
+              const SizedBox(width: 6),
+              trailing!,
+            ],
+          ],
+        ),
+      ),
     );
   }
 }
@@ -1186,6 +1326,7 @@ class _DesktopNavigation extends StatelessWidget {
     required this.selectedIndex,
     required this.deploymentUrl,
     required this.authMode,
+    required this.authProviderReady,
     required this.onSelected,
     this.latencyNotifier,
   });
@@ -1194,6 +1335,7 @@ class _DesktopNavigation extends StatelessWidget {
   final int selectedIndex;
   final String deploymentUrl;
   final AuthMode authMode;
+  final bool authProviderReady;
   final ValueChanged<int> onSelected;
   final ValueNotifier<TransitionMetrics?>? latencyNotifier;
 
@@ -1276,8 +1418,9 @@ class _DesktopNavigation extends StatelessWidget {
               const SizedBox(height: 8),
             ],
             const Spacer(),
-            _ConnectionChip(
+            _HeaderStatusCluster(
               authMode: authMode,
+              authProviderReady: authProviderReady,
               latencyNotifier: latencyNotifier,
             ),
           ],
@@ -1289,8 +1432,32 @@ class _DesktopNavigation extends StatelessWidget {
 
 String _authMechanismLabel(AuthMode mode) {
   return switch (mode) {
-    AuthMode.demo => 'Demo JWT',
+    AuthMode.demo => 'Demo',
     AuthMode.betterAuth => 'Better Auth',
+  };
+}
+
+String _compactAuthStateLabel<TUser>(AuthState<TUser> state) {
+  return switch (state) {
+    AuthLoading<TUser>() => 'loading',
+    AuthAuthenticated<TUser>() => 'signed in',
+    AuthUnauthenticated<TUser>() => 'signed out',
+  };
+}
+
+Color _compactAuthStateColor<TUser>(AuthState<TUser> state) {
+  return switch (state) {
+    AuthLoading<TUser>() => ConciergeColors.cyan,
+    AuthAuthenticated<TUser>() => ConciergeColors.success,
+    AuthUnauthenticated<TUser>() => const Color(0xFFFF8A80),
+  };
+}
+
+Color _compactAuthStateBackground<TUser>(AuthState<TUser> state) {
+  return switch (state) {
+    AuthLoading<TUser>() => const Color(0xFF2C1F5C),
+    AuthAuthenticated<TUser>() => const Color(0xFF0D3D37),
+    AuthUnauthenticated<TUser>() => const Color(0xFF5F1515),
   };
 }
 
