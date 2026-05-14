@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../convex_api/api.dart';
 import '../../../../convex_api/modules/messages.dart' as messages_api;
 import '../../shared/presentation/conversation_widgets.dart';
+import '../../shared/presentation/concierge_design.dart';
 import '../../shared/presentation/generated_subscription_builder.dart';
 import '../../shared/presentation/section_card.dart';
 
@@ -112,11 +113,10 @@ class _PublicMessagesPanelState extends State<PublicMessagesPanel> {
           'post, and instantly see updates.',
       trailing: const ThreadPill(
         label: 'No auth',
-        backgroundColor: Color(0xFF0D3D37),
-        foregroundColor: Color(0xFF10B981),
+        backgroundColor: Color(0x1A00D1FF),
+        foregroundColor: ConciergeColors.cyanSoft,
         icon: Icons.public,
       ),
-      backgroundColor: Color(0xFF1A1F2E).withValues(alpha: 0.92),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -124,7 +124,7 @@ class _PublicMessagesPanelState extends State<PublicMessagesPanel> {
             title: '# public-lobby',
             description:
                 'Baseline Convex flow: query + mutation without login.',
-            accentColor: const Color(0xFF10B981),
+            accentColor: ConciergeColors.cyan,
           ),
           const SizedBox(height: 16),
           if (widget.api == null)
@@ -144,8 +144,10 @@ class _PublicMessagesPanelState extends State<PublicMessagesPanel> {
                 if (snapshot.hasError) {
                   return InlineNotice(
                     message: snapshot.error!,
-                    backgroundColor: const Color(0xFFFFF1EF),
-                    foregroundColor: const Color(0xFF8B4237),
+                    backgroundColor: ConciergeColors.danger.withValues(
+                      alpha: 0.14,
+                    ),
+                    foregroundColor: ConciergeColors.danger,
                   );
                 }
                 final items =
@@ -176,8 +178,8 @@ class _PublicMessagesPanelState extends State<PublicMessagesPanel> {
                               meta:
                                   'Live at ${formatMessageTimestamp(item.creationTime)}',
                               alignEnd: isOwnMessage,
-                              accentColor: const Color(0xFF10B981),
-                              neutralColor: const Color(0xFF252D3D),
+                              accentColor: ConciergeColors.cyan,
+                              neutralColor: ConciergeColors.surfaceHigh,
                             );
                           },
                         ),
@@ -186,7 +188,7 @@ class _PublicMessagesPanelState extends State<PublicMessagesPanel> {
             ),
           const SizedBox(height: 18),
           _ComposerCard(
-            accentColor: const Color(0xFF10B981),
+            accentColor: ConciergeColors.cyan,
             title: 'Send to #public-lobby',
             status: _status,
             child: Column(
@@ -209,17 +211,9 @@ class _PublicMessagesPanelState extends State<PublicMessagesPanel> {
                   ),
                 ),
                 const SizedBox(height: 14),
-                Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: Text(
-                        'Anonymous and realtime.',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: const Color(0xFFA0A9B8),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
+                ResponsiveActionFooter(
+                  message: 'Anonymous and realtime.',
+                  actions: <Widget>[
                     OutlinedButton.icon(
                       onPressed: widget.api == null || _isClearing
                           ? null
@@ -231,13 +225,13 @@ class _PublicMessagesPanelState extends State<PublicMessagesPanel> {
                       ),
                       label: Text(_isClearing ? 'Clearing...' : 'Clear all'),
                     ),
-                    const SizedBox(width: 8),
                     FilledButton.icon(
                       onPressed: widget.api == null || _isSending
                           ? null
                           : _send,
                       style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFF10B981),
+                        backgroundColor: ConciergeColors.cyan,
+                        foregroundColor: ConciergeColors.surfaceLowest,
                       ),
                       icon: Icon(
                         _isSending ? Icons.hourglass_top : Icons.send_rounded,
@@ -325,7 +319,7 @@ class _RoomHeader extends StatelessWidget {
                 Text(
                   description,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: const Color(0xFFA0A9B8),
+                    color: ConciergeColors.textMuted,
                   ),
                 ),
               ],
@@ -349,12 +343,15 @@ class _ThreadSurface extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: <Color>[Color(0xFF1A1F2E), Color(0xFF252D3D)],
+          colors: <Color>[
+            ConciergeColors.surfaceLow,
+            ConciergeColors.surfaceHigh,
+          ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(26),
-        border: Border.all(color: const Color(0xFF2D3748)),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: ConciergeColors.cyan.withValues(alpha: 0.12)),
       ),
       child: child,
     );
@@ -379,8 +376,8 @@ class _ComposerCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: accentColor.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(24),
+        color: ConciergeColors.surfaceHigh.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: accentColor.withValues(alpha: 0.25)),
       ),
       child: Column(
@@ -398,8 +395,8 @@ class _ComposerCard extends StatelessWidget {
             const SizedBox(height: 12),
             InlineNotice(
               message: status!,
-              backgroundColor: Colors.white.withValues(alpha: 0.7),
-              foregroundColor: const Color(0xFF47635F),
+              backgroundColor: accentColor.withValues(alpha: 0.12),
+              foregroundColor: ConciergeColors.cyanSoft,
             ),
           ],
         ],

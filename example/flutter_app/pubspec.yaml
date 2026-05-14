@@ -18,6 +18,9 @@ dependencies:
     path: ../../packages/dartvex_local
   dartvex_auth_better:
     path: ../../packages/dartvex_auth_better
+  flutter_svg: ^2.3.0
+  path_provider: ^2.1.5
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:
@@ -30,3 +33,5 @@ dependency_overrides:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/dartvex-logo.svg

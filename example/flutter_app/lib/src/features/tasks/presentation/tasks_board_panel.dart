@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../convex_api/api.dart';
 import '../../../../convex_api/modules/tasks.dart' as tasks_api;
 import '../../shared/presentation/conversation_widgets.dart';
+import '../../shared/presentation/concierge_design.dart';
 import '../../shared/presentation/generated_subscription_builder.dart';
 import '../../shared/presentation/section_card.dart';
 
@@ -20,19 +21,19 @@ class _TasksBoardPanelState extends State<TasksBoardPanel> {
     _TaskLaneSpec(
       status: 'backlog',
       label: 'Backlog',
-      accentColor: Color(0xFF7C3AED),
+      accentColor: ConciergeColors.secondary,
       icon: Icons.inbox_outlined,
     ),
     _TaskLaneSpec(
       status: 'in_progress',
       label: 'In progress',
-      accentColor: Color(0xFF0F766E),
+      accentColor: ConciergeColors.cyan,
       icon: Icons.timelapse_rounded,
     ),
     _TaskLaneSpec(
       status: 'done',
       label: 'Done',
-      accentColor: Color(0xFF2563EB),
+      accentColor: ConciergeColors.blue,
       icon: Icons.task_alt_rounded,
     ),
   ];
@@ -270,8 +271,10 @@ class _TasksBoardPanelState extends State<TasksBoardPanel> {
                         if (snapshot.hasError) {
                           return InlineNotice(
                             message: snapshot.error!,
-                            backgroundColor: const Color(0xFFFFF1EF),
-                            foregroundColor: const Color(0xFF8B4237),
+                            backgroundColor: ConciergeColors.danger.withValues(
+                              alpha: 0.14,
+                            ),
+                            foregroundColor: ConciergeColors.danger,
                           );
                         }
 
@@ -435,8 +438,11 @@ class _SummaryPill extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: const Color(0xFF1F2937),
+        color: ConciergeColors.surfaceHigh,
         borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: ConciergeColors.outline.withValues(alpha: 0.45),
+        ),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
@@ -446,7 +452,7 @@ class _SummaryPill extends StatelessWidget {
             Text(
               label,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: const Color(0xFFA0A9B8),
+                color: ConciergeColors.textMuted,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -454,7 +460,7 @@ class _SummaryPill extends StatelessWidget {
             Text(
               value,
               style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: const Color(0xFFF3F4F6),
+                color: ConciergeColors.text,
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -490,22 +496,25 @@ class _CompactBoard extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        SegmentedButton<String>(
-          segments: lanes
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: lanes
               .map(
-                (lane) => ButtonSegment<String>(
-                  value: lane.status,
+                (lane) => ChoiceChip(
+                  avatar: Icon(
+                    lane.icon,
+                    size: 18,
+                    color: selectedStatus == lane.status
+                        ? ConciergeColors.cyanSoft
+                        : ConciergeColors.textMuted,
+                  ),
                   label: Text(lane.label),
-                  icon: Icon(lane.icon, size: 18),
+                  selected: selectedStatus == lane.status,
+                  onSelected: (_) => onStatusSelected(lane.status),
                 ),
               )
               .toList(),
-          selected: <String>{selectedStatus},
-          onSelectionChanged: (selection) {
-            if (selection.isNotEmpty) {
-              onStatusSelected(selection.first);
-            }
-          },
         ),
         const SizedBox(height: 12),
         _LaneSection(
@@ -568,7 +577,7 @@ class _LaneSection extends StatelessWidget {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: lane.accentColor.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: lane.accentColor.withValues(alpha: 0.20)),
       ),
       child: Column(
@@ -640,9 +649,11 @@ class _TaskCard extends StatelessWidget {
     final theme = Theme.of(context);
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1F2E),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFF2D3748)),
+        color: ConciergeColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: ConciergeColors.outline.withValues(alpha: 0.55),
+        ),
       ),
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -669,7 +680,7 @@ class _TaskCard extends StatelessWidget {
               Text(
                 task.summary!,
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: const Color(0xFFA0A9B8),
+                  color: ConciergeColors.textMuted,
                   height: 1.35,
                 ),
               ),
@@ -704,7 +715,7 @@ class _TaskCard extends StatelessWidget {
                     .map(
                       (label) => DecoratedBox(
                         decoration: BoxDecoration(
-                          color: const Color(0xFF252D3D),
+                          color: ConciergeColors.surfaceHigh,
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: Padding(
@@ -715,7 +726,7 @@ class _TaskCard extends StatelessWidget {
                           child: Text(
                             '#$label',
                             style: theme.textTheme.labelSmall?.copyWith(
-                              color: const Color(0xFFA0A9B8),
+                              color: ConciergeColors.textMuted,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -726,16 +737,9 @@ class _TaskCard extends StatelessWidget {
               ),
             ],
             const SizedBox(height: 12),
-            Row(
-              children: <Widget>[
-                Text(
-                  _compactTaskId(task.id.value),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: const Color(0xFF6B7280),
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const Spacer(),
+            ResponsiveActionFooter(
+              message: _compactTaskId(task.id.value),
+              actions: <Widget>[
                 if (onAdvance == null)
                   ThreadPill(
                     label: 'Done',
@@ -766,9 +770,9 @@ class _PriorityChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (label, color) = switch (priority) {
-      'high' => ('High', const Color(0xFFB91C1C)),
-      'medium' => ('Medium', const Color(0xFFB45309)),
-      _ => ('Low', const Color(0xFF2563EB)),
+      'high' => ('High', ConciergeColors.danger),
+      'medium' => ('Medium', ConciergeColors.warning),
+      _ => ('Low', ConciergeColors.secondary),
     };
 
     return ThreadPill(
@@ -789,21 +793,23 @@ class _MetaBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: const Color(0xFF252D3D),
+        color: ConciergeColors.surfaceHigh,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: const Color(0xFF2D3748)),
+        border: Border.all(
+          color: ConciergeColors.outline.withValues(alpha: 0.55),
+        ),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(icon, size: 14, color: const Color(0xFFA0A9B8)),
+            Icon(icon, size: 14, color: ConciergeColors.textMuted),
             const SizedBox(width: 6),
             Text(
               label,
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                color: const Color(0xFFF3F4F6),
+                color: ConciergeColors.text,
                 fontWeight: FontWeight.w700,
               ),
             ),

@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../../../../convex_api/modules/messages.dart' as messages_api;
 import '../../../../convex_api/modules/tasks.dart' as tasks_api;
 import '../../shared/presentation/conversation_widgets.dart';
+import '../../shared/presentation/concierge_design.dart';
 import '../../shared/presentation/section_card.dart';
 import '../data/local_first_support.dart';
 
@@ -15,11 +16,13 @@ class LocalFirstPanel extends StatefulWidget {
     super.key,
     required this.client,
     required this.runtime,
+    required this.demoConfigured,
     this.availabilityError,
   });
 
   final ConvexLocalClient? client;
   final ConvexRuntimeClient? runtime;
+  final bool demoConfigured;
   final String? availabilityError;
 
   @override
@@ -60,23 +63,25 @@ class _LocalFirstPanelState extends State<LocalFirstPanel> {
     final client = widget.client;
     final runtime = widget.runtime;
     if (client == null || runtime == null) {
+      final unavailableMessage = widget.demoConfigured
+          ? widget.availabilityError ??
+                'The local SQLite runtime is unavailable on this target.'
+          : 'Set CONVEX_DEMO_URL to enable the local-first demo.';
       return SectionCard(
         eyebrow: 'LOCAL-FIRST',
         title: 'Offline Lab Unavailable',
         subtitle:
-            'The local-first demo needs the local SQLite-backed store to boot successfully.',
+            'The local-first demo needs a live backend and a local SQLite-backed store.',
         trailing: const ThreadPill(
           label: 'Unavailable',
-          backgroundColor: Color(0xFFFFF1EF),
-          foregroundColor: Color(0xFF8B4237),
+          backgroundColor: Color(0x24FF8A80),
+          foregroundColor: ConciergeColors.danger,
           icon: Icons.error_outline,
         ),
         child: InlineNotice(
-          message:
-              widget.availabilityError ??
-              'Set CONVEX_DEMO_URL and make sure the local SQLite runtime is available.',
-          backgroundColor: const Color(0xFFFFF1EF),
-          foregroundColor: const Color(0xFF8B4237),
+          message: unavailableMessage,
+          backgroundColor: ConciergeColors.danger.withValues(alpha: 0.14),
+          foregroundColor: ConciergeColors.danger,
         ),
       );
     }
@@ -139,17 +144,14 @@ class _LocalFirstPanelState extends State<LocalFirstPanel> {
                         : 'Auto sync',
                     backgroundColor: mode == LocalNetworkMode.offline
                         ? const Color(0xFF54340E)
-                        : const Color(0xFF1E3A5C),
+                        : const Color(0x1A00D1FF),
                     foregroundColor: mode == LocalNetworkMode.offline
-                        ? const Color(0xFFF59E0B)
-                        : const Color(0xFF3B82F6),
+                        ? ConciergeColors.warning
+                        : ConciergeColors.cyanSoft,
                     icon: mode == LocalNetworkMode.offline
                         ? Icons.wifi_off_rounded
                         : Icons.sync_rounded,
                   ),
-                  backgroundColor: const Color(
-                    0xFF1A1F2E,
-                  ).withValues(alpha: 0.95),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: <Widget>[
@@ -160,23 +162,20 @@ class _LocalFirstPanelState extends State<LocalFirstPanel> {
                           _StateChip(
                             label: 'Connection ${connection.name}',
                             color: switch (connection) {
-                              LocalConnectionState.online => const Color(
-                                0xFF10B981,
-                              ),
-                              LocalConnectionState.syncing => const Color(
-                                0xFF818CF8,
-                              ),
-                              LocalConnectionState.offline => const Color(
-                                0xFFF59E0B,
-                              ),
+                              LocalConnectionState.online =>
+                                ConciergeColors.success,
+                              LocalConnectionState.syncing =>
+                                ConciergeColors.cyan,
+                              LocalConnectionState.offline =>
+                                ConciergeColors.warning,
                             },
                           ),
                           _StateChip(
                             label:
                                 '${pending.length} pending write${pending.length == 1 ? '' : 's'}',
                             color: pending.isEmpty
-                                ? const Color(0xFF6B7280)
-                                : const Color(0xFFEF4444),
+                                ? ConciergeColors.textDim
+                                : ConciergeColors.danger,
                           ),
                         ],
                       ),
@@ -252,8 +251,8 @@ class _LocalFirstPanelState extends State<LocalFirstPanel> {
                         const SizedBox(height: 16),
                         DecoratedBox(
                           decoration: BoxDecoration(
-                            color: const Color(0xFF252D3D),
-                            borderRadius: BorderRadius.circular(18),
+                            color: ConciergeColors.surfaceHigh,
+                            borderRadius: BorderRadius.circular(14),
                           ),
                           child: Padding(
                             padding: const EdgeInsets.all(14),
@@ -306,11 +305,10 @@ class _LocalFirstPanelState extends State<LocalFirstPanel> {
           'Load the public feed online, switch offline, post locally, then resume sync to replay the queued mutation.',
       trailing: const ThreadPill(
         label: 'Cache + queue',
-        backgroundColor: Color(0xFFE4F4EF),
-        foregroundColor: Color(0xFF0E635A),
+        backgroundColor: Color(0x1A00D1FF),
+        foregroundColor: ConciergeColors.cyanSoft,
         icon: Icons.chat_bubble_outline_rounded,
       ),
-      backgroundColor: const Color(0xFF1A1F2E).withValues(alpha: 0.95),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -328,8 +326,10 @@ class _LocalFirstPanelState extends State<LocalFirstPanel> {
               if (snapshot.hasError) {
                 return InlineNotice(
                   message: snapshot.error.toString(),
-                  backgroundColor: const Color(0xFFFFF1EF),
-                  foregroundColor: const Color(0xFF8B4237),
+                  backgroundColor: ConciergeColors.danger.withValues(
+                    alpha: 0.14,
+                  ),
+                  foregroundColor: ConciergeColors.danger,
                 );
               }
 
@@ -345,13 +345,13 @@ class _LocalFirstPanelState extends State<LocalFirstPanel> {
                       _StateChip(
                         label: 'Source ${snapshot.source.name}',
                         color: snapshot.source == ConvexQuerySource.cache
-                            ? const Color(0xFFF59E0B)
-                            : const Color(0xFF10B981),
+                            ? ConciergeColors.warning
+                            : ConciergeColors.success,
                       ),
                       if (snapshot.hasPendingWrites)
                         const _StateChip(
                           label: 'Pending writes',
-                          color: Color(0xFFEF4444),
+                          color: ConciergeColors.danger,
                         ),
                     ],
                   ),
@@ -378,8 +378,8 @@ class _LocalFirstPanelState extends State<LocalFirstPanel> {
                                       alignEnd:
                                           currentAuthor.isNotEmpty &&
                                           message.author == currentAuthor,
-                                      accentColor: const Color(0xFF10B981),
-                                      neutralColor: const Color(0xFF2D3748),
+                                      accentColor: ConciergeColors.cyan,
+                                      neutralColor: ConciergeColors.surfaceHigh,
                                     ),
                                   ),
                                 )
@@ -409,23 +409,16 @@ class _LocalFirstPanelState extends State<LocalFirstPanel> {
             ),
           ),
           const SizedBox(height: 14),
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: Text(
-                  'Queued mutations stay visible through the cache-backed query.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: const Color(0xFFA0A9B8),
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
+          ResponsiveActionFooter(
+            message:
+                'Queued mutations stay visible through the cache-backed query.',
+            actions: <Widget>[
               OutlinedButton.icon(
                 onPressed: _chatBusy || _clearingMessages
                     ? null
                     : () => _clearPublicMessages(client),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF10B981),
+                  foregroundColor: ConciergeColors.cyanSoft,
                 ),
                 icon: Icon(
                   _clearingMessages
@@ -434,11 +427,11 @@ class _LocalFirstPanelState extends State<LocalFirstPanel> {
                 ),
                 label: Text(_clearingMessages ? 'Clearing...' : 'Clear'),
               ),
-              const SizedBox(width: 8),
               FilledButton.icon(
                 onPressed: _chatBusy ? null : () => _sendPublicMessage(client),
                 style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF10B981),
+                  backgroundColor: ConciergeColors.cyan,
+                  foregroundColor: ConciergeColors.surfaceLowest,
                 ),
                 icon: Icon(
                   _chatBusy ? Icons.hourglass_top : Icons.send_rounded,
@@ -468,8 +461,8 @@ class _LocalFirstPanelState extends State<LocalFirstPanel> {
           'Create or advance tasks offline, keep the board reactive from cache, and then replay to the server.',
       trailing: const ThreadPill(
         label: 'Optimistic lane moves',
-        backgroundColor: Color(0xFFE8F3FF),
-        foregroundColor: Color(0xFF155EEF),
+        backgroundColor: Color(0x1AB6C4FF),
+        foregroundColor: ConciergeColors.secondary,
         icon: Icons.task_alt_outlined,
       ),
       child: Column(
@@ -489,8 +482,10 @@ class _LocalFirstPanelState extends State<LocalFirstPanel> {
               if (snapshot.hasError) {
                 return InlineNotice(
                   message: snapshot.error.toString(),
-                  backgroundColor: const Color(0xFFFFF1EF),
-                  foregroundColor: const Color(0xFF8B4237),
+                  backgroundColor: ConciergeColors.danger.withValues(
+                    alpha: 0.14,
+                  ),
+                  foregroundColor: ConciergeColors.danger,
                 );
               }
 
@@ -506,13 +501,13 @@ class _LocalFirstPanelState extends State<LocalFirstPanel> {
                       _StateChip(
                         label: 'Source ${snapshot.source.name}',
                         color: snapshot.source == ConvexQuerySource.cache
-                            ? const Color(0xFFF59E0B)
-                            : const Color(0xFF3B82F6),
+                            ? ConciergeColors.warning
+                            : ConciergeColors.secondary,
                       ),
                       if (snapshot.hasPendingWrites)
                         const _StateChip(
                           label: 'Pending writes',
-                          color: Color(0xFFEF4444),
+                          color: ConciergeColors.danger,
                         ),
                     ],
                   ),
@@ -553,17 +548,10 @@ class _LocalFirstPanelState extends State<LocalFirstPanel> {
             ),
           ),
           const SizedBox(height: 14),
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: Text(
-                  'Create locally now. The board is patched optimistically before replay.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: const Color(0xFFA0A9B8),
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
+          ResponsiveActionFooter(
+            message:
+                'Create locally now. The board is patched optimistically before replay.',
+            actions: <Widget>[
               OutlinedButton.icon(
                 onPressed: _taskBusy || _clearingTasks
                     ? null
@@ -575,7 +563,6 @@ class _LocalFirstPanelState extends State<LocalFirstPanel> {
                 ),
                 label: Text(_clearingTasks ? 'Clearing...' : 'Clear'),
               ),
-              const SizedBox(width: 8),
               FilledButton.icon(
                 onPressed: _taskBusy ? null : () => _createTask(client),
                 icon: Icon(
@@ -789,9 +776,11 @@ class _TaskPreviewTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: const Color(0xFF252D3D),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFF2D3748)),
+        color: ConciergeColors.surfaceHigh,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: ConciergeColors.outline.withValues(alpha: 0.55),
+        ),
       ),
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -811,9 +800,9 @@ class _TaskPreviewTile extends StatelessWidget {
                 _StateChip(
                   label: task.status.replaceAll('_', ' '),
                   color: switch (task.status) {
-                    'done' => const Color(0xFF3B82F6),
-                    'in_progress' => const Color(0xFF10B981),
-                    _ => const Color(0xFF8B5CF6),
+                    'done' => ConciergeColors.secondary,
+                    'in_progress' => ConciergeColors.cyan,
+                    _ => ConciergeColors.warning,
                   },
                 ),
               ],
@@ -822,23 +811,15 @@ class _TaskPreviewTile extends StatelessWidget {
               const SizedBox(height: 6),
               Text(
                 task.summary!,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: const Color(0xFFA0A9B8)),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: ConciergeColors.textMuted,
+                ),
               ),
             ],
             const SizedBox(height: 10),
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: Text(
-                    '${task.priority} priority • ${task.labels.join(', ')}',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: const Color(0xFFA0A9B8),
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
+            ResponsiveActionFooter(
+              message: '${task.priority} priority - ${task.labels.join(', ')}',
+              actions: <Widget>[
                 FilledButton.tonalIcon(
                   onPressed: busy ? null : onAdvance,
                   icon: const Icon(Icons.arrow_forward_rounded),

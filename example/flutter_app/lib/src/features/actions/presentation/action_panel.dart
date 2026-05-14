@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../convex_api/api.dart';
 import '../../../../convex_api/modules/demo.dart' as demo_api;
 import '../../shared/presentation/conversation_widgets.dart';
+import '../../shared/presentation/concierge_design.dart';
 import '../../shared/presentation/section_card.dart';
 
 class ActionPanel extends StatefulWidget {
@@ -75,8 +76,8 @@ class _ActionPanelState extends State<ActionPanel> {
           'server saw the current request as authenticated.',
       trailing: const ThreadPill(
         label: 'Server action',
-        backgroundColor: Color(0xFF1E2A5C),
-        foregroundColor: Color(0xFF7C9AFF),
+        backgroundColor: Color(0x1AB6C4FF),
+        foregroundColor: ConciergeColors.secondary,
         icon: Icons.bolt_outlined,
       ),
       child: Column(
@@ -94,7 +95,8 @@ class _ActionPanelState extends State<ActionPanel> {
             child: FilledButton.icon(
               onPressed: widget.api == null || _isRunning ? null : _runAction,
               style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF7C9AFF),
+                backgroundColor: ConciergeColors.secondary,
+                foregroundColor: ConciergeColors.surfaceLowest,
               ),
               icon: Icon(
                 _isRunning ? Icons.hourglass_top : Icons.play_arrow_rounded,
@@ -106,15 +108,18 @@ class _ActionPanelState extends State<ActionPanel> {
           if (_lastError != null)
             InlineNotice(
               message: _lastError!,
-              backgroundColor: const Color(0xFFFFF1EF),
-              foregroundColor: const Color(0xFF8B4237),
+              backgroundColor: ConciergeColors.danger.withValues(alpha: 0.14),
+              foregroundColor: ConciergeColors.danger,
             )
           else if (_lastResult != null)
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: const Color(0xFF1E2A5C),
-                borderRadius: BorderRadius.circular(22),
+                color: ConciergeColors.secondary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: ConciergeColors.secondary.withValues(alpha: 0.20),
+                ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -122,7 +127,7 @@ class _ActionPanelState extends State<ActionPanel> {
                   Text(
                     'Action response',
                     style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: const Color(0xFF7C9AFF),
+                      color: ConciergeColors.secondary,
                       fontWeight: FontWeight.w800,
                     ),
                   ),

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'concierge_design.dart';
+
 class ThreadPill extends StatelessWidget {
   const ThreadPill({
     super.key,
@@ -20,6 +22,7 @@ class ThreadPill extends StatelessWidget {
       decoration: BoxDecoration(
         color: backgroundColor,
         borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: foregroundColor.withValues(alpha: 0.22)),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -36,6 +39,7 @@ class ThreadPill extends StatelessWidget {
                 color: foregroundColor,
                 fontWeight: FontWeight.w700,
                 fontSize: 12,
+                letterSpacing: 0,
               ),
             ),
           ],
@@ -52,8 +56,8 @@ class ChatBubble extends StatelessWidget {
     required this.body,
     required this.meta,
     this.alignEnd = false,
-    this.accentColor = const Color(0xFF4F46E5),
-    this.neutralColor = const Color(0xFF252D3D),
+    this.accentColor = ConciergeColors.cyan,
+    this.neutralColor = ConciergeColors.surfaceHigh,
   });
 
   final String title;
@@ -66,20 +70,44 @@ class ChatBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bubbleColor = alignEnd ? accentColor : neutralColor;
-    final foreground = alignEnd ? Colors.white : const Color(0xFFF3F4F6);
+    const foreground = ConciergeColors.text;
     return Align(
       alignment: alignEnd ? Alignment.centerRight : Alignment.centerLeft,
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 420),
-        child: DecoratedBox(
+        child: Container(
           decoration: BoxDecoration(
-            color: bubbleColor,
-            borderRadius: BorderRadius.circular(20),
+            color: alignEnd ? null : bubbleColor,
+            gradient: alignEnd
+                ? LinearGradient(
+                    colors: <Color>[
+                      ConciergeColors.surfaceHigh,
+                      accentColor.withValues(alpha: 0.36),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  )
+                : null,
+            borderRadius: BorderRadius.only(
+              topLeft: const Radius.circular(18),
+              topRight: const Radius.circular(18),
+              bottomLeft: Radius.circular(alignEnd ? 18 : 4),
+              bottomRight: Radius.circular(alignEnd ? 4 : 18),
+            ),
             border: Border.all(
               color: alignEnd
-                  ? accentColor.withValues(alpha: 0.25)
-                  : const Color(0xFF2D3748),
+                  ? accentColor.withValues(alpha: 0.34)
+                  : ConciergeColors.outline.withValues(alpha: 0.58),
             ),
+            boxShadow: <BoxShadow>[
+              BoxShadow(
+                color: (alignEnd ? accentColor : Colors.black).withValues(
+                  alpha: alignEnd ? 0.10 : 0.24,
+                ),
+                blurRadius: 18,
+                offset: const Offset(0, 10),
+              ),
+            ],
           ),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
@@ -90,19 +118,21 @@ class ChatBubble extends StatelessWidget {
                   title,
                   style: TextStyle(
                     color: foreground,
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.w800,
                     fontSize: 13,
+                    letterSpacing: 0,
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(body, style: TextStyle(color: foreground, height: 1.32)),
+                const SizedBox(height: 5),
+                Text(body, style: TextStyle(color: foreground, height: 1.36)),
                 const SizedBox(height: 8),
                 Text(
                   meta,
                   style: TextStyle(
-                    color: foreground.withValues(alpha: alignEnd ? 0.76 : 0.62),
+                    color: foreground.withValues(alpha: 0.62),
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
+                    letterSpacing: 0,
                   ),
                 ),
               ],
@@ -134,7 +164,7 @@ class EmptyThreadState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(icon, size: 24, color: const Color(0xFF6B7280)),
+            Icon(icon, size: 24, color: ConciergeColors.textDim),
             const SizedBox(height: 10),
             Text(
               title,
@@ -147,7 +177,7 @@ class EmptyThreadState extends StatelessWidget {
             Text(
               body,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: const Color(0xFFA0A9B8),
+                color: ConciergeColors.textMuted,
                 height: 1.35,
               ),
               textAlign: TextAlign.center,
@@ -163,8 +193,8 @@ class InlineNotice extends StatelessWidget {
   const InlineNotice({
     super.key,
     required this.message,
-    this.backgroundColor = const Color(0xFF1F2937),
-    this.foregroundColor = const Color(0xFFA0A9B8),
+    this.backgroundColor = ConciergeColors.surfaceHigh,
+    this.foregroundColor = ConciergeColors.textMuted,
   });
 
   final String message;
@@ -176,7 +206,8 @@ class InlineNotice extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: backgroundColor,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: foregroundColor.withValues(alpha: 0.14)),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -188,6 +219,62 @@ class InlineNotice extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class ResponsiveActionFooter extends StatelessWidget {
+  const ResponsiveActionFooter({
+    super.key,
+    required this.message,
+    required this.actions,
+  });
+
+  final String message;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    final messageText = Text(
+      message,
+      softWrap: true,
+      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+        color: ConciergeColors.textMuted,
+        fontWeight: FontWeight.w600,
+        height: 1.35,
+      ),
+    );
+    final actionWrap = Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      alignment: WrapAlignment.end,
+      children: actions,
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 560) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              messageText,
+              const SizedBox(height: 12),
+              Align(alignment: Alignment.centerLeft, child: actionWrap),
+            ],
+          );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: <Widget>[
+            Expanded(child: messageText),
+            const SizedBox(width: 12),
+            Flexible(
+              child: Align(alignment: Alignment.centerRight, child: actionWrap),
+            ),
+          ],
+        );
+      },
     );
   }
 }

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../convex_api/api.dart';
 import '../../../../convex_api/modules/messages.dart' as messages_api;
 import '../../shared/presentation/conversation_widgets.dart';
+import '../../shared/presentation/concierge_design.dart';
 import '../../shared/presentation/generated_subscription_builder.dart';
 import '../../shared/presentation/section_card.dart';
 
@@ -79,11 +80,10 @@ class _PrivateMessagesPanelState extends State<PrivateMessagesPanel> {
           'viewer and guarded by JWT auth.',
       trailing: const ThreadPill(
         label: 'JWT required',
-        backgroundColor: Color(0xFF3C2620),
-        foregroundColor: Color(0xFFD4845A),
+        backgroundColor: Color(0x1AB6C4FF),
+        foregroundColor: ConciergeColors.secondary,
         icon: Icons.lock_outline_rounded,
       ),
-      backgroundColor: Color(0xFF1A1F2E).withValues(alpha: 0.92),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -118,8 +118,10 @@ class _PrivateMessagesPanelState extends State<PrivateMessagesPanel> {
                               'Go to the Auth tab and tap Login to access '
                               'private messages.'
                         : snapshot.error!,
-                    backgroundColor: const Color(0xFFFFF1EF),
-                    foregroundColor: const Color(0xFF8B4237),
+                    backgroundColor: ConciergeColors.danger.withValues(
+                      alpha: 0.14,
+                    ),
+                    foregroundColor: ConciergeColors.danger,
                   );
                 }
                 final items =
@@ -147,8 +149,8 @@ class _PrivateMessagesPanelState extends State<PrivateMessagesPanel> {
                                   'Viewer ${compactToken(item.tokenIdentifier)} • '
                                   '${formatMessageTimestamp(item.creationTime)}',
                               alignEnd: true,
-                              accentColor: const Color(0xFFD4845A),
-                              neutralColor: const Color(0xFF252D3D),
+                              accentColor: ConciergeColors.secondary,
+                              neutralColor: ConciergeColors.surfaceHigh,
                             );
                           },
                         ),
@@ -159,10 +161,10 @@ class _PrivateMessagesPanelState extends State<PrivateMessagesPanel> {
           Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
-              color: const Color(0xFFD4845A).withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(24),
+              color: ConciergeColors.surfaceHigh.withValues(alpha: 0.72),
+              borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: const Color(0xFFD4845A).withValues(alpha: 0.25),
+                color: ConciergeColors.secondary.withValues(alpha: 0.26),
               ),
             ),
             child: Column(
@@ -185,23 +187,15 @@ class _PrivateMessagesPanelState extends State<PrivateMessagesPanel> {
                   ),
                 ),
                 const SizedBox(height: 14),
-                Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: Text(
-                        'Protected by Convex auth context.',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: const Color(0xFFA0A9B8),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
+                ResponsiveActionFooter(
+                  message: 'Protected by Convex auth context.',
+                  actions: <Widget>[
                     FilledButton.tonalIcon(
                       onPressed: widget.api == null || _isSending
                           ? null
                           : _send,
                       style: FilledButton.styleFrom(
-                        foregroundColor: const Color(0xFFD4845A),
+                        foregroundColor: ConciergeColors.secondary,
                       ),
                       icon: Icon(
                         _isSending ? Icons.hourglass_top : Icons.lock_open,
@@ -214,8 +208,10 @@ class _PrivateMessagesPanelState extends State<PrivateMessagesPanel> {
                   const SizedBox(height: 12),
                   InlineNotice(
                     message: _status!,
-                    backgroundColor: Color(0xFF252D3D).withValues(alpha: 0.72),
-                    foregroundColor: const Color(0xFFA0A9B8),
+                    backgroundColor: ConciergeColors.surfaceHigh.withValues(
+                      alpha: 0.72,
+                    ),
+                    foregroundColor: ConciergeColors.textMuted,
                   ),
                 ],
               ],
@@ -236,9 +232,9 @@ class _PrivateHeader extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: <Color>[Color(0xFF3C2620), Color(0xFF1A1F2E)],
+          colors: <Color>[ConciergeColors.surfaceHigh, ConciergeColors.surface],
         ),
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
         children: <Widget>[
@@ -246,10 +242,13 @@ class _PrivateHeader extends StatelessWidget {
             width: 42,
             height: 42,
             decoration: BoxDecoration(
-              color: const Color(0xFF8D4B3A),
-              borderRadius: BorderRadius.circular(14),
+              color: ConciergeColors.secondary.withValues(alpha: 0.16),
+              borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(Icons.shield_moon_outlined, color: Colors.white),
+            child: const Icon(
+              Icons.shield_moon_outlined,
+              color: ConciergeColors.secondary,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -266,7 +265,7 @@ class _PrivateHeader extends StatelessWidget {
                 Text(
                   'If auth is missing, the query returns an error instead of data.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: const Color(0xFFA0A9B8),
+                    color: ConciergeColors.textMuted,
                   ),
                 ),
               ],
@@ -290,12 +289,17 @@ class _PrivateThreadSurface extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: <Color>[Color(0xFF1A1F2E), Color(0xFF252D3D)],
+          colors: <Color>[
+            ConciergeColors.surfaceLow,
+            ConciergeColors.surfaceHigh,
+          ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(26),
-        border: Border.all(color: const Color(0xFF2D3748)),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: ConciergeColors.secondary.withValues(alpha: 0.14),
+        ),
       ),
       child: child,
     );

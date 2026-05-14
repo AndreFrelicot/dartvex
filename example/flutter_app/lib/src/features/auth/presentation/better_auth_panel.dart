@@ -4,6 +4,7 @@ import 'package:dartvex_flutter/dartvex_flutter.dart';
 import 'package:flutter/material.dart';
 
 import '../../shared/presentation/conversation_widgets.dart';
+import '../../shared/presentation/concierge_design.dart';
 import '../../shared/presentation/section_card.dart';
 
 /// Auth panel shown when Better Auth mode is active.
@@ -117,8 +118,8 @@ class _BetterAuthPanelState extends State<BetterAuthPanel>
           'No external auth service needed — just HTTP calls.',
       trailing: const ThreadPill(
         label: 'Self-hosted',
-        backgroundColor: Color(0xFF0D3D37),
-        foregroundColor: Color(0xFF10B981),
+        backgroundColor: Color(0x1A00D1FF),
+        foregroundColor: ConciergeColors.cyanSoft,
         icon: Icons.lock_outlined,
       ),
       child: ConvexAuthBuilder<BetterAuthSession>(
@@ -216,8 +217,8 @@ class _AuthForm extends StatelessWidget {
           const SizedBox(height: 12),
           InlineNotice(
             message: error!,
-            backgroundColor: const Color(0xFF5F1515),
-            foregroundColor: const Color(0xFFEF4444),
+            backgroundColor: ConciergeColors.danger.withValues(alpha: 0.14),
+            foregroundColor: ConciergeColors.danger,
           ),
         ],
         const SizedBox(height: 16),
@@ -275,7 +276,7 @@ class _SignedInContent extends StatelessWidget {
             const _StatusPill(
               label: 'Authenticated',
               backgroundColor: Color(0xFF0D3D37),
-              foregroundColor: Color(0xFF10B981),
+              foregroundColor: ConciergeColors.success,
             ),
             ConvexConnectionBuilder(
               builder: (context, connectionState) => _StatusPill(
@@ -286,8 +287,8 @@ class _SignedInContent extends StatelessWidget {
                     : const Color(0xFF2C1F5C),
                 foregroundColor:
                     connectionState == ConvexConnectionState.connected
-                    ? const Color(0xFF10B981)
-                    : const Color(0xFF818CF8),
+                    ? ConciergeColors.success
+                    : ConciergeColors.cyan,
               ),
             ),
           ],
@@ -305,7 +306,7 @@ class _SignedInContent extends StatelessWidget {
               Text(
                 'Better Auth Session',
                 style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: const Color(0xFF10B981),
+                  color: ConciergeColors.cyanSoft,
                   fontWeight: FontWeight.w800,
                 ),
               ),
@@ -326,8 +327,8 @@ class _SignedInContent extends StatelessWidget {
           const SizedBox(height: 12),
           InlineNotice(
             message: error!,
-            backgroundColor: const Color(0xFF5F1515),
-            foregroundColor: const Color(0xFFEF4444),
+            backgroundColor: ConciergeColors.danger.withValues(alpha: 0.14),
+            foregroundColor: ConciergeColors.danger,
           ),
         ],
         const SizedBox(height: 16),
@@ -361,7 +362,7 @@ class BetterAuthSetupPanel extends StatelessWidget {
       trailing: const ThreadPill(
         label: 'Setup',
         backgroundColor: Color(0xFF54340E),
-        foregroundColor: Color(0xFFF59E0B),
+        foregroundColor: ConciergeColors.warning,
         icon: Icons.warning_amber_rounded,
       ),
       child: Column(
@@ -421,9 +422,11 @@ class _ChecklistItem extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFF252D3D),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF2D3748)),
+        color: ConciergeColors.surfaceHigh.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: ConciergeColors.outline.withValues(alpha: 0.58),
+        ),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -439,7 +442,7 @@ class _ChecklistItem extends StatelessWidget {
             child: Text(
               number,
               style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: const Color(0xFF10B981),
+                color: ConciergeColors.cyanSoft,
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -459,7 +462,7 @@ class _ChecklistItem extends StatelessWidget {
                 SelectableText(
                   detail,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: const Color(0xFFA0A9B8),
+                    color: ConciergeColors.textMuted,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -489,6 +492,7 @@ class _StatusPill extends StatelessWidget {
       decoration: BoxDecoration(
         color: backgroundColor,
         borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: foregroundColor.withValues(alpha: 0.18)),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),

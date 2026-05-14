@@ -5,10 +5,12 @@ import 'package:dartvex/dartvex.dart';
 import 'package:dartvex_flutter/dartvex_flutter.dart';
 import 'package:dartvex_local/dartvex_local.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../convex_api/api.dart';
 import 'core/bundled_demo_token.dart';
 import 'core/demo_reconnect_controller.dart';
+import 'core/local_store_path.dart';
 import 'core/local_runtime_client.dart';
 import 'core/unavailable_runtime_client.dart';
 import 'features/actions/presentation/action_panel.dart';
@@ -20,6 +22,7 @@ import 'features/local_first/data/local_first_support.dart';
 import 'features/local_first/presentation/local_first_panel.dart';
 import 'features/messages/presentation/private_messages_panel.dart';
 import 'features/messages/presentation/public_messages_panel.dart';
+import 'features/shared/presentation/concierge_design.dart';
 import 'features/tasks/presentation/tasks_board_panel.dart';
 
 void runDemoApp() {
@@ -261,7 +264,7 @@ class _ConvexFlutterDemoAppState extends State<ConvexFlutterDemoApp> {
     String? localAvailabilityError;
 
     try {
-      final store = await SqliteLocalStore.open('dartvex_demo.sqlite');
+      final store = await SqliteLocalStore.open(await resolveLocalStorePath());
       localClient = await ConvexLocalClient.open(
         client: client,
         config: LocalClientConfig(
@@ -349,104 +352,9 @@ class _ConvexFlutterDemoAppState extends State<ConvexFlutterDemoApp> {
   Widget build(BuildContext context) {
     final runtime = _runtime ?? const UnavailableRuntimeClient();
     Widget app = MaterialApp(
-      title: 'Convex Flutter Demo',
+      title: 'Dartvex Demo',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme:
-            ColorScheme.fromSeed(
-              seedColor: const Color(0xFF818CF8),
-              brightness: Brightness.dark,
-            ).copyWith(
-              surface: const Color(0xFF1A1F2E),
-              onSurface: const Color(0xFFF3F4F6),
-            ),
-        scaffoldBackgroundColor: const Color(0xFF0F1419),
-        useMaterial3: true,
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF0F1419),
-          foregroundColor: Color(0xFFF3F4F6),
-          elevation: 0,
-          scrolledUnderElevation: 0,
-          surfaceTintColor: Colors.transparent,
-        ),
-        cardTheme: CardThemeData(
-          color: const Color(0xFF1A1F2E),
-          margin: EdgeInsets.zero,
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
-            side: const BorderSide(color: Color(0xFF2D3748)),
-          ),
-        ),
-        dividerTheme: const DividerThemeData(
-          space: 1,
-          thickness: 1,
-          color: Color(0xFF2D3748),
-        ),
-        navigationBarTheme: NavigationBarThemeData(
-          backgroundColor: const Color(0xFF141922),
-          indicatorColor: const Color(0xFF818CF8).withValues(alpha: 0.2),
-          labelTextStyle: WidgetStateProperty.resolveWith<TextStyle?>(
-            (states) => TextStyle(
-              color: states.contains(WidgetState.selected)
-                  ? const Color(0xFFF3F4F6)
-                  : const Color(0xFF6B7280),
-              fontWeight: states.contains(WidgetState.selected)
-                  ? FontWeight.w700
-                  : FontWeight.w500,
-            ),
-          ),
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: const Color(0xFF1A1F2E),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 14,
-            vertical: 14,
-          ),
-          labelStyle: const TextStyle(color: Color(0xFFA0A9B8)),
-          hintStyle: const TextStyle(color: Color(0xFF6B7280)),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(18),
-            borderSide: const BorderSide(color: Color(0xFF2D3748)),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(18),
-            borderSide: const BorderSide(color: Color(0xFF2D3748)),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(18),
-            borderSide: const BorderSide(color: Color(0xFF818CF8), width: 1.4),
-          ),
-        ),
-        chipTheme: ChipThemeData(
-          side: BorderSide.none,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(999),
-          ),
-        ),
-        filledButtonTheme: FilledButtonThemeData(
-          style: FilledButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-          ),
-        ),
-        outlinedButtonTheme: OutlinedButtonThemeData(
-          style: OutlinedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-            foregroundColor: const Color(0xFFA0A9B8),
-            side: const BorderSide(color: Color(0xFF2D3748)),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-          ),
-        ),
-        textButtonTheme: TextButtonThemeData(
-          style: TextButton.styleFrom(foregroundColor: const Color(0xFF818CF8)),
-        ),
-      ),
+      theme: buildConciergeTheme(),
       home: _buildHome(),
     );
     if (_authMode == AuthMode.demo && _authClient != null) {
@@ -539,6 +447,11 @@ class _DemoHomePageState extends State<DemoHomePage> {
       icon: Icons.offline_bolt_outlined,
       selectedIcon: Icons.offline_bolt_rounded,
     ),
+    const _DemoDestination(
+      label: 'About',
+      icon: Icons.info_outline_rounded,
+      selectedIcon: Icons.info_rounded,
+    ),
   ];
 
   @override
@@ -577,13 +490,14 @@ class _DemoHomePageState extends State<DemoHomePage> {
         availabilityError: widget.localAvailabilityError,
         latencyNotifier: widget.latencyNotifier,
       ),
+      _AboutScreen(latencyNotifier: widget.latencyNotifier),
     ];
 
     return LayoutBuilder(
       builder: (context, constraints) {
         final isWide = constraints.maxWidth >= 960;
         return Scaffold(
-          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+          backgroundColor: ConciergeColors.background,
           bottomNavigationBar: isWide
               ? null
               : NavigationBar(
@@ -602,31 +516,33 @@ class _DemoHomePageState extends State<DemoHomePage> {
                       .toList(),
                 ),
           body: SafeArea(
-            child: isWide
-                ? Row(
-                    children: <Widget>[
-                      SizedBox(
-                        width: 240,
-                        child: _DesktopNavigation(
-                          destinations: _destinations,
-                          selectedIndex: _selectedIndex,
-                          deploymentUrl: widget.deploymentUrl,
-                          latencyNotifier: widget.latencyNotifier,
-                          onSelected: (index) {
-                            _selectedIndex = index;
-                          },
+            child: ConciergeBackground(
+              child: isWide
+                  ? Row(
+                      children: <Widget>[
+                        SizedBox(
+                          width: 288,
+                          child: _DesktopNavigation(
+                            destinations: _destinations,
+                            selectedIndex: _selectedIndex,
+                            deploymentUrl: widget.deploymentUrl,
+                            latencyNotifier: widget.latencyNotifier,
+                            onSelected: (index) {
+                              _selectedIndex = index;
+                            },
+                          ),
                         ),
-                      ),
-                      const VerticalDivider(width: 1),
-                      Expanded(
-                        child: IndexedStack(
-                          index: _selectedIndex,
-                          children: screens,
+                        const VerticalDivider(width: 1),
+                        Expanded(
+                          child: IndexedStack(
+                            index: _selectedIndex,
+                            children: screens,
+                          ),
                         ),
-                      ),
-                    ],
-                  )
-                : IndexedStack(index: _selectedIndex, children: screens),
+                      ],
+                    )
+                  : IndexedStack(index: _selectedIndex, children: screens),
+            ),
           ),
         );
       },
@@ -658,12 +574,12 @@ class _ChatsScreen extends StatelessWidget {
               latencyNotifier: latencyNotifier,
             ),
             body: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+              padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
                   Expanded(child: PublicMessagesPanel(api: api)),
-                  const SizedBox(width: 16),
+                  const SizedBox(width: 20),
                   Expanded(child: PrivateMessagesPanel(api: api)),
                 ],
               ),
@@ -688,11 +604,11 @@ class _ChatsScreen extends StatelessWidget {
             body: TabBarView(
               children: <Widget>[
                 SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
                   child: PublicMessagesPanel(api: api),
                 ),
                 SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
                   child: PrivateMessagesPanel(api: api),
                 ),
               ],
@@ -724,7 +640,7 @@ class _TasksScreen extends StatelessWidget {
         latencyNotifier: latencyNotifier,
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
         child: TasksBoardPanel(api: api),
       ),
     );
@@ -805,24 +721,24 @@ class _SessionScreen extends StatelessWidget {
         builder: (context, constraints) {
           final isWide = constraints.maxWidth >= 1040;
           return SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 modeSelector,
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
                 if (isWide)
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
                       Expanded(child: authPanel),
-                      const SizedBox(width: 16),
+                      const SizedBox(width: 20),
                       Expanded(child: ActionPanel(api: api)),
                     ],
                   )
                 else ...<Widget>[
                   authPanel,
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 20),
                   ActionPanel(api: api),
                 ],
               ],
@@ -858,15 +774,189 @@ class _LocalScreen extends StatelessWidget {
         latencyNotifier: latencyNotifier,
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
         child: LocalFirstPanel(
           client: localClient,
           runtime: localRuntime,
+          demoConfigured: deploymentUrl.isNotEmpty,
           availabilityError: availabilityError,
         ),
       ),
     );
   }
+}
+
+class _AboutScreen extends StatelessWidget {
+  const _AboutScreen({required this.latencyNotifier});
+
+  static const String _website = 'https://andrefrelicot.dev';
+  static const String _github = 'https://github.com/AndreFrelicot/dartvex/';
+
+  final ValueNotifier<TransitionMetrics?> latencyNotifier;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return Scaffold(
+      appBar: _DemoAppBar(
+        title: 'About',
+        subtitle: 'Dartvex Flutter SDK',
+        latencyNotifier: latencyNotifier,
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: <Color>[
+                    Color(0xFF1C2636),
+                    ConciergeColors.surfaceLow,
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: ConciergeColors.cyan.withValues(alpha: 0.16),
+                ),
+                boxShadow: <BoxShadow>[
+                  BoxShadow(
+                    color: ConciergeColors.surfaceLowest.withValues(
+                      alpha: 0.48,
+                    ),
+                    blurRadius: 32,
+                    offset: const Offset(0, 18),
+                  ),
+                ],
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 30,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: <Widget>[
+                    const DartvexLogoMark(size: 140, padding: 8, glow: true),
+                    const SizedBox(height: 22),
+                    Text(
+                      'Dartvex',
+                      textAlign: TextAlign.center,
+                      style: textTheme.headlineMedium?.copyWith(
+                        color: ConciergeColors.cyanSoft,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Flutter demo app for the Dartvex SDK.',
+                      textAlign: TextAlign.center,
+                      style: textTheme.bodyLarge?.copyWith(
+                        color: ConciergeColors.textMuted,
+                        height: 1.35,
+                      ),
+                    ),
+                    const SizedBox(height: 22),
+                    _AboutInfoLine(
+                      icon: Icons.copyright_rounded,
+                      label: 'Copyright © 2026 André Frélicot',
+                    ),
+                    const SizedBox(height: 10),
+                    const _AboutInfoLine(
+                      icon: Icons.balance_rounded,
+                      label: 'MIT License',
+                    ),
+                    const SizedBox(height: 10),
+                    const _AboutInfoLine(
+                      icon: Icons.link_rounded,
+                      label: _website,
+                      selectable: true,
+                    ),
+                    const SizedBox(height: 10),
+                    const _AboutInfoLine(
+                      icon: Icons.code_rounded,
+                      label: _github,
+                      selectable: true,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AboutInfoLine extends StatelessWidget {
+  const _AboutInfoLine({
+    required this.icon,
+    required this.label,
+    this.selectable = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool selectable;
+
+  @override
+  Widget build(BuildContext context) {
+    final textStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
+      color: selectable ? ConciergeColors.cyanSoft : ConciergeColors.textMuted,
+      fontWeight: FontWeight.w700,
+    );
+    final content = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Icon(
+          icon,
+          size: 18,
+          color: selectable
+              ? ConciergeColors.cyanSoft
+              : ConciergeColors.textMuted,
+        ),
+        const SizedBox(width: 10),
+        Flexible(
+          child: Text(label, textAlign: TextAlign.center, style: textStyle),
+        ),
+      ],
+    );
+
+    final decoratedLine = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: ConciergeColors.surfaceHigh.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: ConciergeColors.outline.withValues(alpha: 0.55),
+        ),
+      ),
+      child: content,
+    );
+
+    if (!selectable) {
+      return decoratedLine;
+    }
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _openExternalUrl(label),
+        child: decoratedLine,
+      ),
+    );
+  }
+}
+
+Future<void> _openExternalUrl(String rawUrl) async {
+  final uri = Uri.parse(rawUrl);
+  await launchUrl(uri, mode: LaunchMode.externalApplication);
 }
 
 class _DemoAppBar extends StatelessWidget implements PreferredSizeWidget {
@@ -882,32 +972,57 @@ class _DemoAppBar extends StatelessWidget implements PreferredSizeWidget {
   final PreferredSizeWidget? bottom;
   final ValueNotifier<TransitionMetrics?>? latencyNotifier;
 
+  static const double _toolbarHeight = 72;
+
   @override
   Size get preferredSize =>
-      Size.fromHeight(kToolbarHeight + (bottom?.preferredSize.height ?? 0));
+      Size.fromHeight(_toolbarHeight + (bottom?.preferredSize.height ?? 0));
 
   @override
   Widget build(BuildContext context) {
     return AppBar(
       automaticallyImplyLeading: false,
+      toolbarHeight: _toolbarHeight,
       titleSpacing: 20,
-      title: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Text(
-            title,
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.6,
+      flexibleSpace: DecoratedBox(
+        decoration: BoxDecoration(
+          color: ConciergeColors.surfaceLow.withValues(alpha: 0.96),
+          border: Border(
+            bottom: BorderSide(
+              color: ConciergeColors.outline.withValues(alpha: 0.26),
             ),
           ),
-          const SizedBox(height: 2),
-          Text(
-            subtitle,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: const Color(0xFF6B7280),
-              fontWeight: FontWeight.w600,
+        ),
+      ),
+      title: Row(
+        children: <Widget>[
+          const DartvexLogoMark(size: 42, padding: 3),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  title,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    color: ConciergeColors.text,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: ConciergeColors.textDim,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -937,19 +1052,19 @@ class _ConnectionChip extends StatelessWidget {
         final (label, color) = switch (state) {
           ConvexConnectionState.connected => (
             'Connected',
-            const Color(0xFF10B981),
+            ConciergeColors.success,
           ),
           ConvexConnectionState.connecting => (
             'Connecting',
-            const Color(0xFF818CF8),
+            ConciergeColors.cyan,
           ),
           ConvexConnectionState.reconnecting => (
             'Reconnecting',
-            const Color(0xFF818CF8),
+            ConciergeColors.cyan,
           ),
           ConvexConnectionState.disconnected => (
             'Disconnected',
-            const Color(0xFFF59E0B),
+            ConciergeColors.warning,
           ),
         };
 
@@ -1019,26 +1134,66 @@ class _DesktopNavigation extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final host = _deploymentHost(deploymentUrl);
-    return ColoredBox(
-      color: const Color(0xFF141922),
+    return Container(
+      decoration: BoxDecoration(
+        color: ConciergeColors.surfaceLow.withValues(alpha: 0.96),
+        border: Border(
+          right: BorderSide(
+            color: ConciergeColors.outline.withValues(alpha: 0.28),
+          ),
+        ),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: ConciergeColors.surfaceLowest.withValues(alpha: 0.36),
+            blurRadius: 28,
+            offset: const Offset(12, 0),
+          ),
+        ],
+      ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            Text(
-              'Convex Demo',
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.6,
-              ),
+            Row(
+              children: <Widget>[
+                const DartvexLogoMark(size: 52, padding: 4, glow: true),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        'Dartvex',
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(
+                              color: ConciergeColors.cyanSoft,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0,
+                            ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Flutter SDK Demo',
+                        style: Theme.of(context).textTheme.labelMedium
+                            ?.copyWith(
+                              color: ConciergeColors.textDim,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 18),
             Text(
               host ?? 'Set CONVEX_DEMO_URL to connect a live backend.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: const Color(0xFF6B7280),
+                color: ConciergeColors.textMuted,
                 fontWeight: FontWeight.w600,
+                height: 1.35,
               ),
             ),
             const SizedBox(height: 24),
@@ -1079,26 +1234,33 @@ class _RailDestinationTile extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(12),
       child: Ink(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
         decoration: BoxDecoration(
           color: selected
-              ? scheme.primary.withValues(alpha: 0.10)
+              ? scheme.primary.withValues(alpha: 0.14)
               : Colors.transparent,
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected
+                ? scheme.primary.withValues(alpha: 0.24)
+                : Colors.transparent,
+          ),
         ),
         child: Row(
           children: <Widget>[
             Icon(
               selected ? destination.selectedIcon : destination.icon,
-              color: selected ? scheme.primary : const Color(0xFF6B7280),
+              color: selected ? scheme.primary : ConciergeColors.textDim,
             ),
             const SizedBox(width: 12),
             Text(
               destination.label,
               style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                color: selected ? scheme.primary : const Color(0xFFA0A9B8),
+                color: selected
+                    ? ConciergeColors.cyanSoft
+                    : ConciergeColors.textMuted,
                 fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
               ),
             ),
@@ -1111,7 +1273,7 @@ class _RailDestinationTile extends StatelessWidget {
 
 String _deploymentSubtitle(String deploymentUrl) {
   final host = _deploymentHost(deploymentUrl);
-  return host ?? 'Set CONVEX_DEMO_URL to connect a live backend.';
+  return host ?? 'No backend URL';
 }
 
 String? _deploymentHost(String deploymentUrl) {

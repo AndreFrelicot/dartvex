@@ -6,6 +6,7 @@ import '../../../../convex_api/api.dart';
 import '../../../../convex_api/modules/demo.dart' as demo_api;
 import '../data/demo_auth_provider.dart';
 import '../../shared/presentation/conversation_widgets.dart';
+import '../../shared/presentation/concierge_design.dart';
 import '../../shared/presentation/generated_subscription_builder.dart';
 import '../../shared/presentation/section_card.dart';
 
@@ -42,8 +43,8 @@ class AuthPanel extends StatelessWidget {
           'reuses them, and Force Reconnect exercises silent refresh.',
       trailing: const ThreadPill(
         label: 'Auth API',
-        backgroundColor: Color(0xFF0D3D37),
-        foregroundColor: Color(0xFF10B981),
+        backgroundColor: Color(0x1A00D1FF),
+        foregroundColor: ConciergeColors.cyanSoft,
         icon: Icons.verified_user_outlined,
       ),
       child: Column(
@@ -59,8 +60,8 @@ class AuthPanel extends StatelessWidget {
             const SizedBox(height: 12),
             InlineNotice(
               message: authStatus!,
-              backgroundColor: const Color(0xFF1F2937),
-              foregroundColor: const Color(0xFFA0A9B8),
+              backgroundColor: ConciergeColors.surfaceHigh,
+              foregroundColor: ConciergeColors.textMuted,
             ),
           ],
           const SizedBox(height: 18),
@@ -105,13 +106,13 @@ class AuthPanel extends StatelessWidget {
                           },
                           foregroundColor: switch (state) {
                             AuthLoading<DemoUserSession>() => const Color(
-                              0xFF818CF8,
+                              0xFF00D1FF,
                             ),
                             AuthAuthenticated<DemoUserSession>() => const Color(
-                              0xFF10B981,
+                              0xFF3DFFC2,
                             ),
                             AuthUnauthenticated<DemoUserSession>() =>
-                              const Color(0xFFEF4444),
+                              const Color(0xFFFF8A80),
                           },
                         ),
                         ConvexConnectionBuilder(
@@ -125,8 +126,8 @@ class AuthPanel extends StatelessWidget {
                             foregroundColor:
                                 connectionState ==
                                     ConvexConnectionState.connected
-                                ? const Color(0xFF10B981)
-                                : const Color(0xFF818CF8),
+                                ? ConciergeColors.success
+                                : ConciergeColors.cyan,
                           ),
                         ),
                         AnimatedBuilder(
@@ -139,8 +140,8 @@ class AuthPanel extends StatelessWidget {
                                 ? const Color(0xFF1F2937)
                                 : const Color(0xFF54340E),
                             foregroundColor: demoAuthProvider.hasCachedSession
-                                ? const Color(0xFFA0A9B8)
-                                : const Color(0xFFF59E0B),
+                                ? ConciergeColors.textMuted
+                                : ConciergeColors.warning,
                           ),
                         ),
                       ],
@@ -199,8 +200,10 @@ class AuthPanel extends StatelessWidget {
                   if (snapshot.hasError) {
                     return InlineNotice(
                       message: snapshot.error!,
-                      backgroundColor: const Color(0xFF5F1515),
-                      foregroundColor: const Color(0xFFEF4444),
+                      backgroundColor: ConciergeColors.danger.withValues(
+                        alpha: 0.14,
+                      ),
+                      foregroundColor: ConciergeColors.danger,
                     );
                   }
                   final viewer = snapshot.data;
@@ -213,8 +216,11 @@ class AuthPanel extends StatelessWidget {
                   return Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF0D3D37),
-                      borderRadius: BorderRadius.circular(22),
+                      color: ConciergeColors.cyan.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: ConciergeColors.cyan.withValues(alpha: 0.18),
+                      ),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -223,7 +229,7 @@ class AuthPanel extends StatelessWidget {
                           'Current viewer',
                           style: Theme.of(context).textTheme.labelLarge
                               ?.copyWith(
-                                color: const Color(0xFF10B981),
+                                color: ConciergeColors.cyanSoft,
                                 fontWeight: FontWeight.w800,
                               ),
                         ),
@@ -259,9 +265,11 @@ class _ProviderDiagnostics extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF252D3D),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFF2D3748)),
+        color: ConciergeColors.surfaceHigh.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: ConciergeColors.outline.withValues(alpha: 0.58),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -297,7 +305,7 @@ class _ProviderDiagnostics extends StatelessWidget {
               'Cached session: ${provider.cachedSession!.displayName} '
               '(${provider.cachedSession!.tokenLabel})',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: const Color(0xFFA0A9B8),
+                color: ConciergeColors.textMuted,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -316,7 +324,7 @@ class _ProviderDiagnostics extends StatelessWidget {
               child: Text(
                 event,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: const Color(0xFFA0A9B8),
+                  color: ConciergeColors.textMuted,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -339,9 +347,11 @@ class _MetricTile extends StatelessWidget {
       constraints: const BoxConstraints(minWidth: 120),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1F2E),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF2D3748)),
+        color: ConciergeColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: ConciergeColors.outline.withValues(alpha: 0.58),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -356,7 +366,7 @@ class _MetricTile extends StatelessWidget {
           Text(
             label,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: const Color(0xFFA0A9B8),
+              color: ConciergeColors.textMuted,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -376,8 +386,9 @@ class _SessionSummary extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF0D3D37),
-        borderRadius: BorderRadius.circular(22),
+        color: ConciergeColors.cyan.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: ConciergeColors.cyan.withValues(alpha: 0.18)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -385,7 +396,7 @@ class _SessionSummary extends StatelessWidget {
           Text(
             'Authenticated session',
             style: Theme.of(context).textTheme.labelLarge?.copyWith(
-              color: const Color(0xFF10B981),
+              color: ConciergeColors.cyanSoft,
               fontWeight: FontWeight.w800,
             ),
           ),
@@ -423,6 +434,7 @@ class _StatusPill extends StatelessWidget {
       decoration: BoxDecoration(
         color: backgroundColor,
         borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: foregroundColor.withValues(alpha: 0.18)),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),

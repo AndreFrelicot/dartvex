@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'concierge_design.dart';
+
 class SectionCard extends StatelessWidget {
   const SectionCard({
     super.key,
@@ -23,74 +25,98 @@ class SectionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      decoration: BoxDecoration(
-        color: backgroundColor ?? scheme.surface,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: borderColor ?? scheme.outlineVariant.withValues(alpha: 0.45),
-        ),
-        boxShadow: <BoxShadow>[
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.3),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isCompactHeader = trailing != null && constraints.maxWidth < 560;
+        final cardPadding = constraints.maxWidth < 380 ? 16.0 : 20.0;
+        final titleBlock = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      if (eyebrow != null) ...<Widget>[
-                        Text(
-                          eyebrow!,
-                          style: textTheme.labelMedium?.copyWith(
-                            color: const Color(0xFF818CF8),
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0.8,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                      ],
-                      Text(
-                        title,
-                        style: textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -0.4,
-                        ),
-                      ),
-                    ],
-                  ),
+            if (eyebrow != null) ...<Widget>[
+              Text(
+                eyebrow!,
+                softWrap: true,
+                style: textTheme.labelMedium?.copyWith(
+                  color: ConciergeColors.cyanSoft,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0,
                 ),
-                if (trailing != null) ...<Widget>[
-                  const SizedBox(width: 12),
-                  trailing!,
-                ],
-              ],
-            ),
-            const SizedBox(height: 6),
+              ),
+              const SizedBox(height: 6),
+            ],
             Text(
-              subtitle,
-              style: textTheme.bodyMedium?.copyWith(
-                color: const Color(0xFF94A3B8),
-                height: 1.35,
+              title,
+              softWrap: true,
+              style: textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0,
               ),
             ),
-            const SizedBox(height: 16),
-            child,
           ],
-        ),
-      ),
+        );
+
+        return Container(
+          decoration: BoxDecoration(
+            color: backgroundColor,
+            gradient: backgroundColor == null
+                ? const LinearGradient(
+                    colors: <Color>[
+                      Color(0xFF1C2636),
+                      ConciergeColors.surfaceLow,
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  )
+                : null,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color:
+                  borderColor ?? ConciergeColors.cyan.withValues(alpha: 0.14),
+            ),
+            boxShadow: <BoxShadow>[
+              BoxShadow(
+                color: ConciergeColors.surfaceLowest.withValues(alpha: 0.48),
+                blurRadius: 32,
+                offset: const Offset(0, 18),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: EdgeInsets.all(cardPadding),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                if (isCompactHeader) ...<Widget>[
+                  titleBlock,
+                  const SizedBox(height: 12),
+                  Align(alignment: Alignment.centerLeft, child: trailing),
+                ] else
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Expanded(child: titleBlock),
+                      if (trailing != null) ...<Widget>[
+                        const SizedBox(width: 12),
+                        Flexible(child: Align(child: trailing)),
+                      ],
+                    ],
+                  ),
+                const SizedBox(height: 6),
+                Text(
+                  subtitle,
+                  softWrap: true,
+                  style: textTheme.bodyMedium?.copyWith(
+                    color: ConciergeColors.textMuted,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                child,
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
