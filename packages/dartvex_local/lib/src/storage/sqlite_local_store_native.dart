@@ -263,38 +263,48 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
 
   void _migrate() {
     final database = _assertOpen();
-    database.execute(
-      '''
-      CREATE TABLE IF NOT EXISTS query_cache (
-        key TEXT PRIMARY KEY,
-        query_name TEXT NOT NULL,
-        args_json TEXT NOT NULL,
-        value_json TEXT NOT NULL,
-        updated_at INTEGER NOT NULL
+    database.execute('PRAGMA journal_mode = WAL;');
+    database.execute('PRAGMA foreign_keys = ON;');
+    database.execute('PRAGMA synchronous = NORMAL;');
+
+    final versionRow = database.select('PRAGMA user_version;').single;
+    final currentVersion = (versionRow['user_version'] as num).toInt();
+
+    if (currentVersion < 1) {
+      database.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS query_cache (
+          key TEXT PRIMARY KEY,
+          query_name TEXT NOT NULL,
+          args_json TEXT NOT NULL,
+          value_json TEXT NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+        ''',
       );
-      ''',
-    );
-    database.execute(
-      '''
-      CREATE TABLE IF NOT EXISTS mutation_queue (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        mutation_name TEXT NOT NULL,
-        args_json TEXT NOT NULL,
-        optimistic_json TEXT,
-        created_at INTEGER NOT NULL,
-        status TEXT NOT NULL DEFAULT 'pending',
-        error_message TEXT
+      database.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS mutation_queue (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          mutation_name TEXT NOT NULL,
+          args_json TEXT NOT NULL,
+          optimistic_json TEXT,
+          created_at INTEGER NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending',
+          error_message TEXT
+        );
+        ''',
       );
-      ''',
-    );
-    database.execute(
-      '''
-      CREATE TABLE IF NOT EXISTS id_remap (
-        local_id TEXT PRIMARY KEY,
-        server_id TEXT NOT NULL
+      database.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS id_remap (
+          local_id TEXT PRIMARY KEY,
+          server_id TEXT NOT NULL
+        );
+        ''',
       );
-      ''',
-    );
+      database.execute('PRAGMA user_version = 1;');
+    }
   }
 
   StoredPendingMutation _storedPendingMutationFromRow(

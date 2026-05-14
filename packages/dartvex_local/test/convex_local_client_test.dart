@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dartvex/dartvex.dart';
 import 'package:dartvex_local/dartvex_local.dart';
+import 'package:sqlite3/sqlite3.dart' as sqlite;
 import 'package:test/test.dart';
 
 void main() {
@@ -810,6 +812,27 @@ void main() {
       expect(mutations.first.mutationName, 'test:mutate');
 
       await store.close();
+    });
+
+    test('open initializes schema version for future migrations', () async {
+      final dir = await Directory.systemTemp.createTemp('dartvex-local-test-');
+      addTearDown(() async {
+        if (await dir.exists()) {
+          await dir.delete(recursive: true);
+        }
+      });
+      final path = '${dir.path}/local.db';
+      final store = await SqliteLocalStore.open(path);
+      await store.close();
+
+      final database = sqlite.sqlite3.open(path);
+      addTearDown(database.close);
+
+      final version = (database
+              .select('PRAGMA user_version;')
+              .single['user_version'] as num)
+          .toInt();
+      expect(version, 1);
     });
 
     test('read returns null for missing key', () async {
