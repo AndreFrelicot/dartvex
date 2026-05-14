@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../convex_api/modules/messages.dart' as messages_api;
 import '../../../../convex_api/modules/tasks.dart' as tasks_api;
+import '../../../core/platform_display_name.dart';
 import '../../shared/presentation/conversation_widgets.dart';
 import '../../shared/presentation/concierge_design.dart';
 import '../../shared/presentation/section_card.dart';
@@ -45,7 +46,9 @@ class _LocalFirstPanelState extends State<LocalFirstPanel> {
   @override
   void initState() {
     super.initState();
-    _authorController = TextEditingController(text: 'Offline Explorer');
+    _authorController = TextEditingController(
+      text: platformDisplayName('Offline Explorer'),
+    );
     _messageController = TextEditingController();
     _taskTitleController = TextEditingController();
   }
@@ -393,9 +396,9 @@ class _LocalFirstPanelState extends State<LocalFirstPanel> {
           const SizedBox(height: 16),
           TextField(
             controller: _authorController,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Author',
-              hintText: 'Offline Explorer',
+              hintText: platformDisplayName('Offline Explorer'),
             ),
           ),
           const SizedBox(height: 12),

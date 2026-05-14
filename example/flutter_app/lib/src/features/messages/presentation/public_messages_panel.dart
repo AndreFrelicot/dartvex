@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../convex_api/api.dart';
 import '../../../../convex_api/modules/messages.dart' as messages_api;
+import '../../../core/platform_display_name.dart';
 import '../../shared/presentation/conversation_widgets.dart';
 import '../../shared/presentation/concierge_design.dart';
 import '../../shared/presentation/generated_subscription_builder.dart';
@@ -26,7 +27,9 @@ class _PublicMessagesPanelState extends State<PublicMessagesPanel> {
   @override
   void initState() {
     super.initState();
-    _authorController = TextEditingController(text: 'Anonymous Friend');
+    _authorController = TextEditingController(
+      text: platformDisplayName('Anonymous Friend'),
+    );
     _messageController = TextEditingController();
   }
 
@@ -195,9 +198,9 @@ class _PublicMessagesPanelState extends State<PublicMessagesPanel> {
               children: <Widget>[
                 TextField(
                   controller: _authorController,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Display name',
-                    hintText: 'Anonymous Friend',
+                    hintText: platformDisplayName('Anonymous Friend'),
                   ),
                 ),
                 const SizedBox(height: 12),
