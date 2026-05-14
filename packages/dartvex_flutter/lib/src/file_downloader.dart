@@ -1,6 +1,5 @@
 import 'dart:io';
-
-import 'package:flutter/foundation.dart';
+import 'dart:typed_data';
 
 /// Snapshot of an in-progress file download.
 class ConvexDownloadProgress {
@@ -73,10 +72,10 @@ class ConvexFileDownloader {
       final hasLength = contentLength > 0;
       int received = 0;
 
-      final chunks = <List<int>>[];
+      final builder = BytesBuilder(copy: false);
 
       await for (final chunk in response) {
-        chunks.add(chunk);
+        builder.add(chunk);
         received += chunk.length;
         onProgress?.call(ConvexDownloadProgress(
           received: received,
@@ -85,14 +84,7 @@ class ConvexFileDownloader {
         ));
       }
 
-      final bytes = Uint8List(received);
-      int offset = 0;
-      for (final chunk in chunks) {
-        bytes.setRange(offset, offset + chunk.length, chunk);
-        offset += chunk.length;
-      }
-
-      return bytes;
+      return builder.toBytes();
     } finally {
       client.close(force: true);
     }
