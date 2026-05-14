@@ -15,9 +15,10 @@ class BetterAuthClient {
   ///
   /// Optionally provide a custom [httpClient] for testing or proxy use.
   BetterAuthClient({
-    required this.baseUrl,
+    required String baseUrl,
     http.Client? httpClient,
-  })  : _http = httpClient ?? http.Client(),
+  })  : baseUrl = _normalizeBaseUrl(baseUrl),
+        _http = httpClient ?? http.Client(),
         _ownsHttp = httpClient == null;
 
   /// The Convex deployment URL (e.g. "https://your-app.convex.cloud").
@@ -25,12 +26,41 @@ class BetterAuthClient {
   final http.Client _http;
   final bool _ownsHttp;
 
+  static String _normalizeBaseUrl(String baseUrl) {
+    final uri = Uri.tryParse(baseUrl);
+    if (uri == null ||
+        uri.scheme.isEmpty ||
+        uri.host.isEmpty ||
+        !const <String>{'http', 'https'}.contains(uri.scheme)) {
+      throw ArgumentError.value(
+        baseUrl,
+        'baseUrl',
+        'must be an absolute Convex HTTP URL with http or https scheme',
+      );
+    }
+    if ((uri.path.isNotEmpty && uri.path != '/') ||
+        uri.hasQuery ||
+        uri.hasFragment) {
+      throw ArgumentError.value(
+        baseUrl,
+        'baseUrl',
+        'must be a Convex deployment origin without path, query, or fragment',
+      );
+    }
+    return uri.replace(path: '', query: null, fragment: null).toString();
+  }
+
   String get _siteUrl {
     final uri = Uri.parse(baseUrl);
     final host = uri.host;
     if (host.endsWith('.convex.cloud')) {
       return uri
-          .replace(host: host.replaceFirst('.convex.cloud', '.convex.site'))
+          .replace(
+            host: host.replaceFirst('.convex.cloud', '.convex.site'),
+            path: '',
+            query: null,
+            fragment: null,
+          )
           .toString();
     }
     return baseUrl;

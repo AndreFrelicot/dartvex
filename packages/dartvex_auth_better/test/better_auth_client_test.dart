@@ -179,6 +179,54 @@ void main() {
       expect(requestedHosts, everyElement('test-app.convex.site'));
     });
 
+    test('normalizes trailing slash baseUrl', () async {
+      final requestedUris = <Uri>[];
+      final mock = MockClient((request) async {
+        requestedUris.add(request.url);
+        if (request.url.path == '/api/auth/sign-in/email') {
+          return http.Response(
+            jsonEncode(_defaultSignInResponse),
+            200,
+            headers: {'set-auth-token': 'tok'},
+          );
+        }
+        if (request.url.path == '/api/auth/convex/token') {
+          return http.Response(jsonEncode({'token': 'jwt'}), 200);
+        }
+        return http.Response('Not found', 404);
+      });
+      final client = BetterAuthClient(
+        baseUrl: 'https://test-app.convex.cloud/',
+        httpClient: mock,
+      );
+
+      await client.signIn(email: 'a@b.com', password: 'p');
+
+      expect(
+        requestedUris.map((uri) => uri.toString()),
+        everyElement(startsWith('https://test-app.convex.site/api/auth/')),
+      );
+    });
+
+    test('rejects baseUrl with path query or fragment', () {
+      for (final baseUrl in <String>[
+        'https://test-app.convex.cloud/api/auth',
+        'https://test-app.convex.cloud?token=secret',
+        'https://test-app.convex.cloud#fragment',
+      ]) {
+        expect(
+          () => BetterAuthClient(baseUrl: baseUrl),
+          throwsA(
+            isA<ArgumentError>().having(
+              (error) => error.name,
+              'name',
+              'baseUrl',
+            ),
+          ),
+        );
+      }
+    });
+
     test('throws when sign-in returns non-200', () async {
       final mock = MockClient((request) async {
         return http.Response('{"error":"invalid"}', 401);
