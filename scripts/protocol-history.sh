@@ -10,7 +10,14 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 REPORT="$ROOT_DIR/docs/protocol-evolution.md"
 
-SINCE="${2:-2023-01-01}"
+SINCE="2023-01-01"
+if [ "${1:-}" = "--since" ]; then
+  SINCE="${2:-$SINCE}"
+elif [ -n "${1:-}" ]; then
+  SINCE="$1"
+fi
+
+mkdir -p "$(dirname "$REPORT")"
 
 echo "📜 Convex Protocol Evolution Analysis"
 echo "======================================"
