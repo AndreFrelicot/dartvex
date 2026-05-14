@@ -264,13 +264,13 @@ class _SignedInContent extends StatelessWidget {
           runSpacing: 10,
           children: <Widget>[
             const _StatusPill(
-              label: 'Authenticated',
+              label: 'Auth: Signed in',
               backgroundColor: Color(0xFF0D3D37),
               foregroundColor: ConciergeColors.success,
             ),
             ConvexConnectionBuilder(
               builder: (context, connectionState) => _StatusPill(
-                label: 'Connection: ${connectionState.name}',
+                label: 'Realtime: ${connectionState.name}',
                 backgroundColor:
                     connectionState == ConvexConnectionState.connected
                     ? const Color(0xFF0D3D37)
@@ -485,12 +485,13 @@ class _StatusPill extends StatelessWidget {
         border: Border.all(color: foregroundColor.withValues(alpha: 0.18)),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
         child: Text(
           label,
-          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
             color: foregroundColor,
             fontWeight: FontWeight.w800,
+            letterSpacing: 0,
           ),
         ),
       ),

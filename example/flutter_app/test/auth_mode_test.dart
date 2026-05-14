@@ -23,7 +23,7 @@ void main() {
       expect(find.text('Better Auth'), findsOneWidget);
 
       // Demo auth panel content should be shown.
-      expect(find.text('Provider-backed Auth Demo'), findsOneWidget);
+      expect(find.text('Demo Auth'), findsOneWidget);
     });
 
     testWidgets(
@@ -40,7 +40,7 @@ void main() {
         // Should show setup instructions, not the Better Auth panel.
         expect(find.text('Better Auth Not Configured'), findsOneWidget);
         expect(find.textContaining('BETTER_AUTH_SECRET'), findsWidgets);
-        expect(find.text('Provider-backed Auth Demo'), findsNothing);
+        expect(find.text('Demo Auth'), findsNothing);
       },
     );
 
@@ -59,7 +59,7 @@ void main() {
       // Switch back to Demo.
       await tester.tap(find.text('Demo Provider'));
       await tester.pumpAndSettle();
-      expect(find.text('Provider-backed Auth Demo'), findsOneWidget);
+      expect(find.text('Demo Auth'), findsOneWidget);
       expect(find.text('Better Auth Not Configured'), findsNothing);
     });
 
@@ -80,7 +80,9 @@ void main() {
       expect(find.text('Run the demo'), findsOneWidget);
     });
 
-    testWidgets('Demo mode auth panel still wires all buttons', (tester) async {
+    testWidgets('Demo mode auth panel gates signed-out actions', (
+      tester,
+    ) async {
       final demoAuthProvider = DemoAuthProvider(
         preferredToken: 'demo-token',
         tokenLabel: 'test token',
@@ -127,7 +129,15 @@ void main() {
 
       await tester.tap(find.text('Logout'));
       await tester.pump();
-      expect(logoutCalls, 1);
+      expect(logoutCalls, 0);
+      expect(
+        tester
+            .widget<ButtonStyleButton>(
+              find.widgetWithText(OutlinedButton, 'Logout'),
+            )
+            .enabled,
+        isFalse,
+      );
     });
   });
 }

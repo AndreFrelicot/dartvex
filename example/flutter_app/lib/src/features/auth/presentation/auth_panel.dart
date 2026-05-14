@@ -36,13 +36,12 @@ class AuthPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return SectionCard(
       eyebrow: 'AUTH FLOW',
-      title: 'Provider-backed Auth Demo',
+      title: 'Demo Auth',
       subtitle:
-          'This demo uses ConvexClientWithAuth<TUser> with a local '
-          'DemoAuthProvider. Login seeds cached credentials, Login From Cache '
-          'reuses them, and Force Reconnect exercises silent refresh.',
+          'Showcases provider-backed login, cached session restore, and silent '
+          'token refresh after reconnect.',
       trailing: const ThreadPill(
-        label: 'Auth API',
+        label: 'Auth client',
         backgroundColor: Color(0x1A00D1FF),
         foregroundColor: ConciergeColors.cyanSoft,
         icon: Icons.verified_user_outlined,
@@ -52,9 +51,8 @@ class AuthPanel extends StatelessWidget {
         children: <Widget>[
           const InlineNotice(
             message:
-                'This is a deterministic demo provider, not a production auth '
-                'integration. The reconnect button intentionally drops the '
-                'socket so the silent refresh path becomes visible.',
+                'Local demo provider. Reconnect drops the socket so silent '
+                'refresh becomes visible.',
           ),
           if (authStatus != null) ...<Widget>[
             const SizedBox(height: 12),
@@ -75,10 +73,12 @@ class AuthPanel extends StatelessWidget {
               builder: (context, state) {
                 final stateLabel = switch (state) {
                   AuthLoading<DemoUserSession>() => 'Loading',
-                  AuthAuthenticated<DemoUserSession>() => 'Authenticated',
+                  AuthAuthenticated<DemoUserSession>() => 'Signed in',
                   AuthUnauthenticated<DemoUserSession>() => 'Signed out',
                 };
                 final isLoading = state is AuthLoading<DemoUserSession>;
+                final isAuthenticated =
+                    state is AuthAuthenticated<DemoUserSession>;
                 final session = switch (state) {
                   AuthAuthenticated<DemoUserSession>(:final userInfo) =>
                     userInfo,
@@ -117,7 +117,7 @@ class AuthPanel extends StatelessWidget {
                         ),
                         ConvexConnectionBuilder(
                           builder: (context, connectionState) => _StatusPill(
-                            label: 'Connection: ${connectionState.name}',
+                            label: 'Realtime: ${connectionState.name}',
                             backgroundColor:
                                 connectionState ==
                                     ConvexConnectionState.connected
@@ -134,8 +134,8 @@ class AuthPanel extends StatelessWidget {
                           animation: demoAuthProvider,
                           builder: (context, _) => _StatusPill(
                             label: demoAuthProvider.hasCachedSession
-                                ? 'Cache ready'
-                                : 'Cache empty',
+                                ? 'Session cached'
+                                : 'No session cache',
                             backgroundColor: demoAuthProvider.hasCachedSession
                                 ? const Color(0xFF1F2937)
                                 : const Color(0xFF54340E),
@@ -147,27 +147,42 @@ class AuthPanel extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 16),
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 12,
-                      children: <Widget>[
-                        FilledButton(
-                          onPressed: isLoading ? null : onLogin,
-                          child: Text(isLoading ? 'Logging in...' : 'Login'),
-                        ),
-                        FilledButton.tonal(
-                          onPressed: isLoading ? null : onLoginFromCache,
-                          child: const Text('Login From Cache'),
-                        ),
-                        OutlinedButton(
-                          onPressed: isLoading ? null : onLogout,
-                          child: const Text('Logout'),
-                        ),
-                        OutlinedButton(
-                          onPressed: isLoading ? null : onForceReconnect,
-                          child: const Text('Force Reconnect'),
-                        ),
-                      ],
+                    ConvexConnectionBuilder(
+                      builder: (context, connectionState) {
+                        final canUseCache =
+                            !isLoading && demoAuthProvider.hasCachedSession;
+                        final canLogout = !isLoading && isAuthenticated;
+                        final canForceReconnect =
+                            !isLoading &&
+                            connectionState == ConvexConnectionState.connected;
+
+                        return Wrap(
+                          spacing: 12,
+                          runSpacing: 12,
+                          children: <Widget>[
+                            FilledButton(
+                              onPressed: isLoading ? null : onLogin,
+                              child: Text(
+                                isLoading ? 'Logging in...' : 'Login',
+                              ),
+                            ),
+                            FilledButton.tonal(
+                              onPressed: canUseCache ? onLoginFromCache : null,
+                              child: const Text('Restore Session'),
+                            ),
+                            OutlinedButton(
+                              onPressed: canLogout ? onLogout : null,
+                              child: const Text('Logout'),
+                            ),
+                            OutlinedButton(
+                              onPressed: canForceReconnect
+                                  ? onForceReconnect
+                                  : null,
+                              child: const Text('Reconnect'),
+                            ),
+                          ],
+                        );
+                      },
                     ),
                     if (session != null) ...<Widget>[
                       const SizedBox(height: 16),
@@ -437,12 +452,13 @@ class _StatusPill extends StatelessWidget {
         border: Border.all(color: foregroundColor.withValues(alpha: 0.18)),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
         child: Text(
           label,
-          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
             color: foregroundColor,
             fontWeight: FontWeight.w800,
+            letterSpacing: 0,
           ),
         ),
       ),

@@ -18,9 +18,10 @@ void main() {
     required Future<void> Function() onLogout,
     required Future<void> Function() onForceReconnect,
     String? authStatus,
+    ConvexRuntimeClient runtime = const UnavailableRuntimeClient(),
   }) {
     return ConvexProvider(
-      client: const UnavailableRuntimeClient(),
+      client: runtime,
       child: ConvexAuthProvider<DemoUserSession>(
         client: authClient,
         child: MaterialApp(
@@ -66,8 +67,33 @@ void main() {
     );
 
     expect(find.text('Auth: Signed out'), findsOneWidget);
-    expect(find.text('Connection: disconnected'), findsOneWidget);
+    expect(find.text('Realtime: disconnected'), findsOneWidget);
+    expect(
+      tester
+          .widget<ButtonStyleButton>(
+            find.widgetWithText(FilledButton, 'Restore Session'),
+          )
+          .enabled,
+      isFalse,
+    );
+    expect(
+      tester
+          .widget<ButtonStyleButton>(
+            find.widgetWithText(OutlinedButton, 'Logout'),
+          )
+          .enabled,
+      isFalse,
+    );
+    expect(
+      tester
+          .widget<ButtonStyleButton>(
+            find.widgetWithText(OutlinedButton, 'Reconnect'),
+          )
+          .enabled,
+      isFalse,
+    );
 
+    await demoAuthProvider.login(onIdToken: (_) {});
     authClient.emit(
       convex.AuthAuthenticated<DemoUserSession>(
         DemoUserSession(
@@ -82,9 +108,25 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Auth: Authenticated'), findsOneWidget);
+    expect(find.text('Auth: Signed in'), findsOneWidget);
     expect(find.text('Authenticated session'), findsOneWidget);
     expect(find.textContaining('cache refresh count: 1'), findsOneWidget);
+    expect(
+      tester
+          .widget<ButtonStyleButton>(
+            find.widgetWithText(FilledButton, 'Restore Session'),
+          )
+          .enabled,
+      isTrue,
+    );
+    expect(
+      tester
+          .widget<ButtonStyleButton>(
+            find.widgetWithText(OutlinedButton, 'Logout'),
+          )
+          .enabled,
+      isTrue,
+    );
   });
 
   testWidgets('AuthPanel wires login and reconnect actions', (tester) async {
@@ -92,6 +134,7 @@ void main() {
       preferredToken: 'demo-token',
       tokenLabel: 'test token',
     );
+    await demoAuthProvider.login(onIdToken: (_) {});
     final authClient = FakeDemoAuthClient(
       convex.AuthAuthenticated<DemoUserSession>(
         DemoUserSession(
@@ -126,16 +169,17 @@ void main() {
         onForceReconnect: () async {
           reconnectCalls += 1;
         },
+        runtime: const _FixedRuntimeClient(ConvexConnectionState.connected),
       ),
     );
 
     await tester.tap(find.text('Login'));
     await tester.pump();
-    await tester.tap(find.text('Login From Cache'));
+    await tester.tap(find.text('Restore Session'));
     await tester.pump();
     await tester.tap(find.text('Logout'));
     await tester.pump();
-    await tester.tap(find.text('Force Reconnect'));
+    await tester.tap(find.text('Reconnect'));
     await tester.pump();
 
     expect(loginCalls, 1);
@@ -144,6 +188,55 @@ void main() {
     expect(reconnectCalls, 1);
     expect(find.text('Forced reconnect requested.'), findsOneWidget);
   });
+}
+
+class _FixedRuntimeClient implements ConvexRuntimeClient {
+  const _FixedRuntimeClient(this.state);
+
+  final ConvexConnectionState state;
+
+  @override
+  Stream<ConvexConnectionState> get connectionState =>
+      Stream<ConvexConnectionState>.value(state);
+
+  @override
+  ConvexConnectionState get currentConnectionState => state;
+
+  @override
+  Future<dynamic> action(
+    String name, [
+    Map<String, dynamic> args = const <String, dynamic>{},
+  ]) async => throw UnimplementedError();
+
+  @override
+  void dispose() {}
+
+  @override
+  Future<dynamic> mutate(
+    String name, [
+    Map<String, dynamic> args = const <String, dynamic>{},
+  ]) async => throw UnimplementedError();
+
+  @override
+  Future<dynamic> query(
+    String name, [
+    Map<String, dynamic> args = const <String, dynamic>{},
+  ]) async => throw UnimplementedError();
+
+  @override
+  Future<T> queryOnce<T>(
+    String name, [
+    Map<String, dynamic> args = const <String, dynamic>{},
+  ]) async => throw UnimplementedError();
+
+  @override
+  Future<void> reconnectNow(String reason) async {}
+
+  @override
+  ConvexRuntimeSubscription subscribe(
+    String name, [
+    Map<String, dynamic> args = const <String, dynamic>{},
+  ]) => throw UnimplementedError();
 }
 
 class FakeDemoAuthClient implements convex.ConvexAuthClient<DemoUserSession> {
