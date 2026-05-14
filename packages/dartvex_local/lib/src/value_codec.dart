@@ -1,8 +1,6 @@
 import 'dart:convert';
 
-// ignore: implementation_imports
-import 'package:dartvex/src/values/json_codec.dart'
-    show convexToJson, jsonToConvex;
+import 'package:dartvex/dartvex.dart' show convexToJson, jsonToConvex;
 
 /// Encodes cached values and queued mutations for local persistence.
 abstract class ValueCodec {

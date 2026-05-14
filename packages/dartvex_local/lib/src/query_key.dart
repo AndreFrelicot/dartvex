@@ -1,7 +1,6 @@
 import 'dart:convert';
 
-// ignore: implementation_imports
-import 'package:dartvex/src/values/json_codec.dart' show convexToJson;
+import 'package:dartvex/dartvex.dart' show convexToJson;
 
 /// Normalizes a Convex query [name] into a stable `module:function` form.
 String canonicalizeQueryName(String name) {
