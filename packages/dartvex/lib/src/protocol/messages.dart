@@ -567,9 +567,7 @@ class MutationResponse extends ResponseMessage {
       result: success && json.containsKey('result')
           ? jsonToConvex(json['result'])
           : null,
-      errorMessage: success
-          ? null
-          : (json['errorMessage'] as String? ?? json['result'] as String?),
+      errorMessage: success ? null : _readErrorMessage(json),
       errorData: json.containsKey('errorData')
           ? jsonToConvex(json['errorData'])
           : null,
@@ -611,9 +609,7 @@ class ActionResponse extends ResponseMessage {
       result: success && json.containsKey('result')
           ? jsonToConvex(json['result'])
           : null,
-      errorMessage: success
-          ? null
-          : (json['errorMessage'] as String? ?? json['result'] as String?),
+      errorMessage: success ? null : _readErrorMessage(json),
       errorData: json.containsKey('errorData')
           ? jsonToConvex(json['errorData'])
           : null,
@@ -633,6 +629,18 @@ class ActionResponse extends ResponseMessage {
       'logLines': logLines,
     };
   }
+}
+
+String? _readErrorMessage(Map<String, dynamic> json) {
+  final errorMessage = json['errorMessage'];
+  if (errorMessage is String) {
+    return errorMessage;
+  }
+  final result = json['result'];
+  if (result is String) {
+    return result;
+  }
+  return null;
 }
 
 class Ping extends ServerMessage {
