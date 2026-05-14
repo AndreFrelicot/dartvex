@@ -1,4 +1,5 @@
 import { betterAuth } from "better-auth";
+import { bearer } from "better-auth/plugins";
 import { convex } from "@convex-dev/better-auth/plugins";
 import { createClient, type GenericCtx } from "@convex-dev/better-auth";
 import type { DataModel } from "./_generated/dataModel";
@@ -16,6 +17,6 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
     emailAndPassword: {
       enabled: true,
     },
-    plugins: [convex({ authConfig })],
+    plugins: [bearer(), convex({ authConfig })],
   });
 };
