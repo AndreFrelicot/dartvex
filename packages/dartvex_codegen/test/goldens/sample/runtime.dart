@@ -84,9 +84,15 @@ class TypedQuerySuccess<T> extends TypedQueryResult<T> {
 }
 
 class TypedQueryError<T> extends TypedQueryResult<T> {
-  const TypedQueryError(this.message);
+  const TypedQueryError(
+    this.message, {
+    this.data,
+    this.logLines = const <String>[],
+  });
 
   final String message;
+  final Object? data;
+  final List<String> logLines;
 }
 
 class TypedConvexSubscription<T> {

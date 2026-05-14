@@ -32,7 +32,12 @@ class ConvexApi {
         QuerySuccess(:final value) => TypedQuerySuccess<HealthResult>(
           _decodeHealthResult(value),
         ),
-        QueryError(:final message) => TypedQueryError<HealthResult>(message),
+        QueryError(:final message, :final data, :final logLines) =>
+          TypedQueryError<HealthResult>(
+            message,
+            data: data,
+            logLines: logLines,
+          ),
       },
     );
     return TypedConvexSubscription<HealthResult>(subscription, typedStream);

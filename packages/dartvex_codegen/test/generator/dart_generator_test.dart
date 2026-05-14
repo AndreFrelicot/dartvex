@@ -75,10 +75,16 @@ void main() {
 
       expect(runtime, contains('BigInt expectBigInt'));
       expect(runtime, contains("Expected \${label ?? 'bigint'}"));
+      expect(runtime, contains('final Object? data;'));
+      expect(runtime, contains('final List<String> logLines;'));
       expect(runtime, isNot(contains('base64Decode')));
       expect(runtime, isNot(contains('List<int>')));
 
       expect(api, contains('final ConvexFunctionCaller _client;'));
+      expect(
+        api,
+        contains('QueryError(:final message, :final data, :final logLines)'),
+      );
       expect(
           messages,
           contains(

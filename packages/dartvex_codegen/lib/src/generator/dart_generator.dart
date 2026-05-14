@@ -325,8 +325,9 @@ class DartGenerator {
           'TypedQuerySuccess<${resultType.annotation}>(${resultType.decode('value')}),',
         )
         ..writeln(
-          '    QueryError(:final message) => '
-          'TypedQueryError<${resultType.annotation}>(message),',
+          '    QueryError(:final message, :final data, :final logLines) => '
+          'TypedQueryError<${resultType.annotation}>('
+          'message, data: data, logLines: logLines),',
         )
         ..writeln('  });')
         ..writeln(
@@ -451,9 +452,15 @@ class TypedQuerySuccess<T> extends TypedQueryResult<T> {
 }
 
 class TypedQueryError<T> extends TypedQueryResult<T> {
-  const TypedQueryError(this.message);
+  const TypedQueryError(
+    this.message, {
+    this.data,
+    this.logLines = const <String>[],
+  });
 
   final String message;
+  final Object? data;
+  final List<String> logLines;
 }
 
 class TypedConvexSubscription<T> {

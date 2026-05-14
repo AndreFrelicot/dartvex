@@ -42,9 +42,12 @@ class MessagesApi {
             label: 'ListResult',
           ).map((item) => _decodeListResultItem(item)).toList(),
         ),
-        QueryError(:final message) => TypedQueryError<List<ListResultItem>>(
-          message,
-        ),
+        QueryError(:final message, :final data, :final logLines) =>
+          TypedQueryError<List<ListResultItem>>(
+            message,
+            data: data,
+            logLines: logLines,
+          ),
       },
     );
     return TypedConvexSubscription<List<ListResultItem>>(
