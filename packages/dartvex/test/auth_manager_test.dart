@@ -12,6 +12,7 @@ void main() {
         () async {
       final sentTokens = <String?>[];
       final forceRefreshCalls = <bool>[];
+      final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
       final manager = AuthManager(
         config: const ConvexClientConfig(connectImmediately: false),
         sendAuth: (token) async {
@@ -25,8 +26,8 @@ void main() {
           forceRefreshCalls.add(forceRefresh);
           return _jwt(
             subject: forceRefresh ? 'fresh' : 'cached',
-            issuedAt: forceRefresh ? 31 : 0,
-            expiresAt: forceRefresh ? 61 : 30,
+            issuedAt: forceRefresh ? nowSeconds + 1 : nowSeconds - 3600,
+            expiresAt: forceRefresh ? nowSeconds + 3601 : nowSeconds + 1,
           );
         },
       );

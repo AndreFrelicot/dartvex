@@ -250,9 +250,10 @@ class AuthManager {
       );
       return;
     }
-    final lifetimeSeconds = exp - iat;
+    final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final secondsUntilRefresh = exp - nowSeconds - 60;
     final refreshDelay = Duration(
-      seconds: lifetimeSeconds > 60 ? lifetimeSeconds - 60 : 0,
+      seconds: secondsUntilRefresh > 0 ? secondsUntilRefresh : 0,
     );
     _log(
       DartvexLogLevel.debug,
