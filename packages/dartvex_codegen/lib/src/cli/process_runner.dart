@@ -72,7 +72,7 @@ class SystemProcessRunner implements ProcessRunner {
       final stdoutText = '${result.stdout}'.trim();
       final stderrText = '${result.stderr}'.trim();
       if (result.exitCode == 0) {
-        return _extractJson(stdoutText);
+        return extractFunctionSpecJson(stdoutText);
       }
       if (verbose) {
         stdout.writeln(stdoutText);
@@ -95,34 +95,77 @@ class SystemProcessRunner implements ProcessRunner {
     );
   }
 
-  String _extractJson(String stdoutText) {
-    if (stdoutText.isEmpty) {
-      throw ProcessRunnerException('convex function-spec produced no output.');
-    }
-    final start = stdoutText.indexOf('{');
-    final end = stdoutText.lastIndexOf('}');
-    if (start == -1 || end == -1 || end < start) {
-      throw ProcessRunnerException(
-        'convex function-spec did not emit valid JSON.',
-        stdout: stdoutText,
-      );
-    }
-    final candidate = stdoutText.substring(start, end + 1);
-    try {
-      jsonDecode(candidate);
-    } catch (e) {
-      throw ProcessRunnerException(
-        'convex function-spec output contains invalid JSON: $e',
-        stdout: stdoutText,
-      );
-    }
-    return candidate;
-  }
-
   bool _looksLikeMissingExecutable(String stderrText) {
     final lowered = stderrText.toLowerCase();
     return lowered.contains('not found') ||
         lowered.contains('command not found') ||
         lowered.contains('is not recognized');
   }
+}
+
+/// Extracts the first balanced JSON object from Convex CLI stdout.
+String extractFunctionSpecJson(String stdoutText) {
+  if (stdoutText.isEmpty) {
+    throw ProcessRunnerException('convex function-spec produced no output.');
+  }
+
+  var searchStart = stdoutText.indexOf('{');
+  if (searchStart == -1) {
+    throw ProcessRunnerException(
+      'convex function-spec did not emit valid JSON.',
+      stdout: stdoutText,
+    );
+  }
+
+  Object? lastError;
+  while (searchStart != -1) {
+    var depth = 0;
+    var inString = false;
+    var escaped = false;
+    for (var index = searchStart; index < stdoutText.length; index += 1) {
+      final char = stdoutText.codeUnitAt(index);
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (char == 0x5c) {
+          escaped = true;
+        } else if (char == 0x22) {
+          inString = false;
+        }
+        continue;
+      }
+
+      if (char == 0x22) {
+        inString = true;
+      } else if (char == 0x7b) {
+        depth += 1;
+      } else if (char == 0x7d) {
+        depth -= 1;
+        if (depth == 0) {
+          final candidate = stdoutText.substring(searchStart, index + 1);
+          try {
+            final decoded = jsonDecode(candidate);
+            if (decoded is Map<String, dynamic>) {
+              return candidate;
+            }
+            lastError = 'JSON value is ${decoded.runtimeType}, not an object';
+          } catch (error) {
+            lastError = error;
+          }
+          break;
+        }
+        if (depth < 0) {
+          break;
+        }
+      }
+    }
+    searchStart = stdoutText.indexOf('{', searchStart + 1);
+  }
+
+  throw ProcessRunnerException(
+    lastError == null
+        ? 'convex function-spec did not emit a complete JSON object.'
+        : 'convex function-spec output contains invalid JSON: $lastError',
+    stdout: stdoutText,
+  );
 }
