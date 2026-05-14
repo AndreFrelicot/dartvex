@@ -96,5 +96,81 @@ void main() {
           contains(
               "count: expectBigInt(map['count'], label: 'SyncTypeResultCount')"));
     });
+
+    test('throws when function names generate duplicate methods', () {
+      final collidingSpec = FunctionsSpec(
+        url: 'https://sample.convex.cloud',
+        functions: <BaseFunctionSpec>[
+          _function(identifier: 'messages.ts:send-public'),
+          _function(identifier: 'messages.ts:send_public'),
+        ],
+      );
+
+      expect(
+        () => DartGenerator().generate(collidingSpec),
+        throwsA(
+          isA<NamingException>().having(
+            (error) => error.message,
+            'message',
+            contains('sendPublic'),
+          ),
+        ),
+      );
+    });
+
+    test('throws when query subscription helper collides with function', () {
+      final collidingSpec = FunctionsSpec(
+        url: 'https://sample.convex.cloud',
+        functions: <BaseFunctionSpec>[
+          _function(identifier: 'messages.ts:list', functionType: 'Query'),
+          _function(identifier: 'messages.ts:list-subscribe'),
+        ],
+      );
+
+      expect(
+        () => DartGenerator().generate(collidingSpec),
+        throwsA(
+          isA<NamingException>().having(
+            (error) => error.message,
+            'message',
+            contains('listSubscribe'),
+          ),
+        ),
+      );
+    });
+
+    test('throws when child module getter collides with function', () {
+      final collidingSpec = FunctionsSpec(
+        url: 'https://sample.convex.cloud',
+        functions: <BaseFunctionSpec>[
+          _function(identifier: 'index.ts:admin-users'),
+          _function(identifier: 'admin_users.ts:list'),
+        ],
+      );
+
+      expect(
+        () => DartGenerator().generate(collidingSpec),
+        throwsA(
+          isA<NamingException>().having(
+            (error) => error.message,
+            'message',
+            contains('adminUsers'),
+          ),
+        ),
+      );
+    });
   });
+}
+
+FunctionSpec _function({
+  required String identifier,
+  String functionType = 'Mutation',
+}) {
+  return FunctionSpec(
+    functionType: functionType,
+    args: const ConvexObjectType(<String, ConvexField>{}),
+    returns: const ConvexStringType(),
+    identifier: identifier,
+    visibility: const Visibility('public'),
+  );
 }

@@ -91,7 +91,44 @@ class DartGenerator {
     }
 
     _collectTableNames(root);
+    _validateGeneratedMembers(root);
     return root;
+  }
+
+  void _validateGeneratedMembers(_ModuleNode root) {
+    for (final node in _flattenNodes(root)) {
+      final members = <String, String>{};
+      final className = _naming.moduleClassName(node.pathSegments);
+
+      void addMember(String memberName, String description) {
+        final existing = members[memberName];
+        if (existing != null) {
+          throw NamingException(
+            'Generated member name collision in $className: "$memberName" '
+            'is used by $existing and $description. Rename one of the '
+            'Convex functions or modules.',
+          );
+        }
+        members[memberName] = description;
+      }
+
+      for (final child in node.children.values) {
+        addMember(
+          _naming.moduleGetterName(child.pathSegments.last),
+          'module "${child.pathSegments.join('/')}"',
+        );
+      }
+      for (final function in node.functions) {
+        final methodName = _naming.methodName(function.functionName);
+        addMember(methodName, 'function "${function.identifier}"');
+        if (function.functionType == 'Query') {
+          addMember(
+            '${methodName}Subscribe',
+            'subscription helper for "${function.identifier}"',
+          );
+        }
+      }
+    }
   }
 
   void _collectTableNames(_ModuleNode node) {

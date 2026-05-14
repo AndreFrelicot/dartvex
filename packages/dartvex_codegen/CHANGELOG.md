@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Rejects generated API member name collisions before writing invalid Dart.
+- Uses `dartvex` 0.1.5 for golden fixture validation.
 - Preserves existing camelCase boundaries in generated method and field names.
 - Rejects missing `--output` paths before path normalization.
 
