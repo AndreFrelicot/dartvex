@@ -417,10 +417,14 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       data: _requestData(name, args),
     );
     try {
+      final request = _baseClient.trackMutation(name, args);
       final future = _withOptionalTimeout(
-        _baseClient.mutate(name, args),
+        request.future,
         _config.mutationTimeout,
         'Mutation "$name"',
+        onTimeout: (error) {
+          _baseClient.cancelMutation(request.requestId, error);
+        },
       );
       await _flushOutgoing();
       final result = await future;
@@ -465,10 +469,14 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       data: _requestData(name, args),
     );
     try {
+      final request = _baseClient.trackAction(name, args);
       final future = _withOptionalTimeout(
-        _baseClient.action(name, args),
+        request.future,
         _config.actionTimeout,
         'Action "$name"',
+        onTimeout: (error) {
+          _baseClient.cancelAction(request.requestId, error);
+        },
       );
       await _flushOutgoing();
       final result = await future;
@@ -496,18 +504,42 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   Future<dynamic> _withOptionalTimeout(
     Future<dynamic> future,
     Duration? timeout,
-    String operation,
-  ) {
+    String operation, {
+    void Function(TimeoutException error)? onTimeout,
+  }) {
     if (timeout == null) {
       return future;
     }
-    return future.timeout(
-      timeout,
-      onTimeout: () => throw TimeoutException(
+    final completer = Completer<dynamic>();
+    Timer? timer;
+    timer = Timer(timeout, () {
+      if (completer.isCompleted) {
+        return;
+      }
+      final error = TimeoutException(
         '$operation timed out after ${timeout.inMilliseconds}ms',
         timeout,
-      ),
+      );
+      onTimeout?.call(error);
+      completer.completeError(error);
+    });
+    future.then(
+      (value) {
+        if (completer.isCompleted) {
+          return;
+        }
+        timer?.cancel();
+        completer.complete(value);
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        if (completer.isCompleted) {
+          return;
+        }
+        timer?.cancel();
+        completer.completeError(error, stackTrace);
+      },
     );
+    return completer.future;
   }
 
   /// Applies a fixed auth token to the client.

@@ -154,6 +154,22 @@ void main() {
       expect(await future, <String, dynamic>{'ok': true});
     });
 
+    test('canceled mutation is not replayed after reconnect', () async {
+      final client = BaseClient();
+      final request = client.trackMutation('messages:send', <String, dynamic>{
+        'body': 'hello',
+      });
+      final expectation = expectLater(
+        request.future,
+        throwsA(isA<TimeoutException>()),
+      );
+
+      client.cancelMutation(request.requestId, TimeoutException('timed out'));
+
+      await expectation;
+      expect(client.prepareReconnect(), isEmpty);
+    });
+
     test('completed mutation is replayed until transition catches up',
         () async {
       final client = BaseClient();
@@ -244,6 +260,22 @@ void main() {
       );
 
       client.handleDisconnect('socket closed');
+
+      await expectation;
+      expect(client.prepareReconnect(), isEmpty);
+    });
+
+    test('canceled action is not replayed after reconnect', () async {
+      final client = BaseClient();
+      final request = client.trackAction('messages:notify', <String, dynamic>{
+        'body': 'hello',
+      });
+      final expectation = expectLater(
+        request.future,
+        throwsA(isA<TimeoutException>()),
+      );
+
+      client.cancelAction(request.requestId, TimeoutException('timed out'));
 
       await expectation;
       expect(client.prepareReconnect(), isEmpty);

@@ -62,6 +62,22 @@ class RequestManager {
     return completer.future;
   }
 
+  void cancelMutation(int requestId, Object error) {
+    final pending = _pendingMutations.remove(requestId);
+    if (pending == null || pending.completer.isCompleted) {
+      return;
+    }
+    pending.completer.completeError(error);
+  }
+
+  void cancelAction(int requestId, Object error) {
+    final pending = _pendingActions.remove(requestId);
+    if (pending == null || pending.completer.isCompleted) {
+      return;
+    }
+    pending.completer.completeError(error);
+  }
+
   void markSent(Iterable<ClientMessage> messages) {
     for (final message in messages) {
       switch (message) {

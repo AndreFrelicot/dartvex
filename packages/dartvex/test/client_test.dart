@@ -428,6 +428,13 @@ void main() {
         ),
         throwsA(isA<TimeoutException>()),
       );
+      adapter.disconnect(reason: 'timeout test reconnect');
+      await settle();
+
+      final mutationMessages = adapter.decodedSentMessages
+          .where((message) => message['type'] == 'Mutation')
+          .toList(growable: false);
+      expect(mutationMessages, hasLength(1));
 
       client.dispose();
     });
@@ -451,6 +458,13 @@ void main() {
         ),
         throwsA(isA<TimeoutException>()),
       );
+      adapter.disconnect(reason: 'timeout test reconnect');
+      await settle();
+
+      final actionMessages = adapter.decodedSentMessages
+          .where((message) => message['type'] == 'Action')
+          .toList(growable: false);
+      expect(actionMessages, hasLength(1));
 
       client.dispose();
     });

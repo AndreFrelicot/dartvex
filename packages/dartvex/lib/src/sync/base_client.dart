@@ -51,6 +51,13 @@ class BaseClientReceiveResult {
   final List<ClientMessage> outgoing;
 }
 
+class TrackedRequest {
+  const TrackedRequest({required this.requestId, required this.future});
+
+  final int requestId;
+  final Future<dynamic> future;
+}
+
 class BaseClient {
   BaseClient({
     LocalSyncState? localState,
@@ -95,24 +102,48 @@ class BaseClient {
     }
   }
 
-  Future<dynamic> mutate(String udfPath, Map<String, dynamic> args) {
+  TrackedRequest trackMutation(String udfPath, Map<String, dynamic> args) {
     final message = Mutation(
       requestId: _nextRequestId++,
       udfPath: LocalSyncState.canonicalizeUdfPath(udfPath),
       args: <dynamic>[Map<String, dynamic>.from(args)],
     );
     _outgoing.add(message);
-    return _requestManager.trackMutation(message);
+    return TrackedRequest(
+      requestId: message.requestId,
+      future: _requestManager.trackMutation(message),
+    );
   }
 
-  Future<dynamic> action(String udfPath, Map<String, dynamic> args) {
+  Future<dynamic> mutate(String udfPath, Map<String, dynamic> args) {
+    return trackMutation(udfPath, args).future;
+  }
+
+  TrackedRequest trackAction(String udfPath, Map<String, dynamic> args) {
     final message = Action(
       requestId: _nextRequestId++,
       udfPath: LocalSyncState.canonicalizeUdfPath(udfPath),
       args: <dynamic>[Map<String, dynamic>.from(args)],
     );
     _outgoing.add(message);
-    return _requestManager.trackAction(message);
+    return TrackedRequest(
+      requestId: message.requestId,
+      future: _requestManager.trackAction(message),
+    );
+  }
+
+  Future<dynamic> action(String udfPath, Map<String, dynamic> args) {
+    return trackAction(udfPath, args).future;
+  }
+
+  void cancelMutation(int requestId, Object error) {
+    _removeOutgoingRequest(requestId, isMutation: true);
+    _requestManager.cancelMutation(requestId, error);
+  }
+
+  void cancelAction(int requestId, Object error) {
+    _removeOutgoingRequest(requestId, isMutation: false);
+    _requestManager.cancelAction(requestId, error);
   }
 
   void setAuth({required String tokenType, String? token}) {
@@ -177,6 +208,18 @@ class BaseClient {
       _requestManager.markSent(messages);
     }
     return messages;
+  }
+
+  void _removeOutgoingRequest(int requestId, {required bool isMutation}) {
+    _outgoing.removeWhere((message) {
+      if (message is Mutation) {
+        return isMutation && message.requestId == requestId;
+      }
+      if (message is Action) {
+        return !isMutation && message.requestId == requestId;
+      }
+      return false;
+    });
   }
 
   void markMessagesSent(Iterable<ClientMessage> messages) {
