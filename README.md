@@ -50,11 +50,11 @@ void main() async {
 
 | Package | Description | Version |
 |---------|-------------|---------|
-| [`dartvex`](packages/dartvex/) | Core client — WebSocket sync, subscriptions, auth | 0.1.4 |
-| [`dartvex_flutter`](packages/dartvex_flutter/) | Flutter widgets — Provider, Query, Mutation | 0.1.4 |
-| [`dartvex_codegen`](packages/dartvex_codegen/) | CLI code generator — type-safe Dart bindings from schema | 0.1.3 |
-| [`dartvex_local`](packages/dartvex_local/) | Offline support — SQLite cache, mutation queue | 0.1.2 |
-| [`dartvex_auth_better`](packages/dartvex_auth_better/) | Better Auth adapter | 0.1.3 |
+| [`dartvex`](packages/dartvex/) | Core client — WebSocket sync, subscriptions, auth | 0.1.5 |
+| [`dartvex_flutter`](packages/dartvex_flutter/) | Flutter widgets — Provider, Query, Mutation | 0.1.5 |
+| [`dartvex_codegen`](packages/dartvex_codegen/) | CLI code generator — type-safe Dart bindings from schema | 0.1.4 |
+| [`dartvex_local`](packages/dartvex_local/) | Offline support — SQLite cache, mutation queue | 0.1.3 |
+| [`dartvex_auth_better`](packages/dartvex_auth_better/) | Better Auth adapter | 0.1.4 |
 
 ## Architecture
 

@@ -12,7 +12,7 @@ It exposes:
 ## Install
 
 ```bash
-cd demo/convex-backend
+cd example/convex-backend
 npm install
 ```
 
