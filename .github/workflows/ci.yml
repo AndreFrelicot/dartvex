@@ -23,9 +23,10 @@ jobs:
           for dir in packages/*/; do
             (cd "$dir" && dart pub get 2>/dev/null || flutter pub get 2>/dev/null) || true
           done
+          (cd example/flutter_app && flutter pub get)
       - name: Format check (excluding generated goldens)
         run: |
-          for dir in packages/*/; do
+          for dir in packages/*/ example/flutter_app/; do
             (
               cd "$dir"
               paths=()
@@ -124,6 +125,18 @@ jobs:
               path: ../dartvex
           YAML
       - run: cd packages/${{ matrix.package }} && flutter pub get && flutter test
+
+  example-flutter:
+    name: Example Flutter App
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with: { flutter-version: '3.x', channel: stable }
+      - run: cd example/flutter_app && flutter pub get
+      - run: cd example/flutter_app && flutter analyze --fatal-infos
+      - run: cd example/flutter_app && flutter test
+      - run: cd example/flutter_app && flutter build web --no-wasm-dry-run
 
   protocol-watch:
     name: Protocol Watch
