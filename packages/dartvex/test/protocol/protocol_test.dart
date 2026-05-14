@@ -7,7 +7,21 @@ void main() {
   group('protocol encoding', () {
     test('timestamp round-trips', () {
       const input = 123456789;
-      expect(decodeTs(encodeTs(input)), input);
+      expect(decodeTs(encodeTs(input)), BigInt.from(input));
+    });
+
+    test('timestamp encoding handles full u64 values without ByteData uint64',
+        () {
+      final input = (BigInt.one << 63) + BigInt.from(42);
+      expect(decodeTs(encodeTsBigInt(input)), input);
+      expect(compareEncodedTs(encodeTsBigInt(input), encodeTs(42)),
+          greaterThan(0));
+    });
+
+    test('timestamp decoding rejects malformed byte lengths', () {
+      expect(() => decodeTs('AA=='), throwsFormatException);
+      expect(
+          () => compareEncodedTs(encodeTs(1), 'AA=='), throwsFormatException);
     });
 
     test('state version ts comparison uses decoded timestamp', () {

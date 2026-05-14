@@ -25,7 +25,7 @@ class StateVersion {
   final String ts;
 
   /// Decoded integer timestamp represented by [ts].
-  int get decodedTs => decodeTs(ts);
+  BigInt get decodedTs => decodeTs(ts);
 
   /// Serializes this version to JSON.
   Map<String, dynamic> toJson() {
@@ -54,7 +54,7 @@ class StateVersion {
 
   /// Returns whether this version's timestamp is at least [otherTs].
   bool isTsAtLeast(String otherTs) {
-    return decodedTs >= decodeTs(otherTs);
+    return compareEncodedTs(ts, otherTs) >= 0;
   }
 
   @override

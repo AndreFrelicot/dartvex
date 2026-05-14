@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../protocol/encoding.dart';
 import '../protocol/messages.dart';
 import '../values/json_codec.dart';
 
@@ -271,14 +272,6 @@ class LocalSyncState {
   }
 
   int _compareTs(String left, String right) {
-    final leftBytes = base64Decode(left);
-    final rightBytes = base64Decode(right);
-    for (var index = leftBytes.length - 1; index >= 0; index -= 1) {
-      final difference = leftBytes[index] - rightBytes[index];
-      if (difference != 0) {
-        return difference;
-      }
-    }
-    return 0;
+    return compareEncodedTs(left, right);
   }
 }
