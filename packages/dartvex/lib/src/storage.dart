@@ -126,7 +126,10 @@ class ConvexStorage {
         ? await caller.action(getUrlAction, args)
         : await caller.query(getUrlAction, args);
     _log(DartvexLogLevel.debug, 'Resolved file URL');
-    return url as String;
+    if (url is String && url.isNotEmpty) {
+      return url;
+    }
+    throw StateError('No URL returned for storageId $storageId');
   }
 
   void _log(

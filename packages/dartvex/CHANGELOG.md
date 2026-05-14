@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Throws a clear error when a storage URL resolver returns `null` for a
+  missing storage object.
 - Aligns `TransitionChunk` handling with the current Convex protocol, including
   raw chunk payloads, zero-based part ordering, and invalid-chunk reconnects.
 - Treats protocol `Ping` as a transport heartbeat without sending client

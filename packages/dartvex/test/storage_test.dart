@@ -12,6 +12,8 @@ class _FakeCaller implements ConvexFunctionCaller {
       <String, dynamic Function(Map<String, dynamic>)>{};
   final Map<String, dynamic Function(Map<String, dynamic>)> queries =
       <String, dynamic Function(Map<String, dynamic>)>{};
+  final Map<String, dynamic Function(Map<String, dynamic>)> actions =
+      <String, dynamic Function(Map<String, dynamic>)>{};
 
   @override
   Future<dynamic> mutate(
@@ -51,7 +53,7 @@ class _FakeCaller implements ConvexFunctionCaller {
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) async {
-    throw UnimplementedError();
+    return actions[name]!(args);
   }
 }
 
@@ -145,6 +147,43 @@ void main() {
       );
 
       expect(url, 'https://cdn.convex.cloud/file/kg2abc123');
+    });
+
+    test('getFileUrl returns URL from action when requested', () async {
+      final caller = _FakeCaller()
+        ..actions['files:getUrl'] = (args) {
+          expect(args['storageId'], 'kg2abc123');
+          return 'https://cdn.convex.cloud/file/kg2abc123';
+        };
+
+      final storage = ConvexStorage(caller);
+      final url = await storage.getFileUrl(
+        getUrlAction: 'files:getUrl',
+        storageId: 'kg2abc123',
+        useAction: true,
+      );
+
+      expect(url, 'https://cdn.convex.cloud/file/kg2abc123');
+    });
+
+    test('getFileUrl throws StateError when resolver returns null', () async {
+      final caller = _FakeCaller()..queries['files:getUrl'] = (_) => null;
+
+      final storage = ConvexStorage(caller);
+
+      expect(
+        () => storage.getFileUrl(
+          getUrlAction: 'files:getUrl',
+          storageId: 'missing',
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            contains('No URL returned for storageId missing'),
+          ),
+        ),
+      );
     });
   });
 }
