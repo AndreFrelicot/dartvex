@@ -291,7 +291,12 @@ class WebSocketManager {
       _ => 'wss',
     };
     return uri
-        .replace(scheme: wsScheme, path: '/api/$apiVersion/sync')
+        .replace(
+          scheme: wsScheme,
+          path: '/api/$apiVersion/sync',
+          query: null,
+          fragment: null,
+        )
         .toString();
   }
 

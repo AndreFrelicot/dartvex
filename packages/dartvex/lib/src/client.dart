@@ -194,19 +194,26 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
 
   static String _normalizeDeploymentUrl(String deploymentUrl) {
     final uri = Uri.tryParse(deploymentUrl);
-    final scheme = uri?.scheme;
     if (uri == null ||
-        scheme == null ||
-        scheme.isEmpty ||
+        uri.scheme.isEmpty ||
         uri.host.isEmpty ||
-        !const <String>{'http', 'https', 'ws', 'wss'}.contains(scheme)) {
+        !const <String>{'http', 'https', 'ws', 'wss'}.contains(uri.scheme)) {
       throw ArgumentError.value(
         deploymentUrl,
         'deploymentUrl',
         'must be an absolute Convex URL with http, https, ws, or wss scheme',
       );
     }
-    return uri.toString();
+    if ((uri.path.isNotEmpty && uri.path != '/') ||
+        uri.hasQuery ||
+        uri.hasFragment) {
+      throw ArgumentError.value(
+        deploymentUrl,
+        'deploymentUrl',
+        'must be a Convex deployment origin without path, query, or fragment',
+      );
+    }
+    return uri.replace(path: '', query: null, fragment: null).toString();
   }
 
   static ConvexClientConfig _normalizeConfig(ConvexClientConfig config) {

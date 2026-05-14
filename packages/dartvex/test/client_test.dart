@@ -69,6 +69,51 @@ void main() {
       );
     });
 
+    test('rejects deployment URLs with path query or fragment', () {
+      for (final deploymentUrl in <String>[
+        'https://demo.convex.cloud/api',
+        'https://demo.convex.cloud?token=secret',
+        'https://demo.convex.cloud#fragment',
+      ]) {
+        expect(
+          () => ConvexClient(
+            deploymentUrl,
+            config: const ConvexClientConfig(connectImmediately: false),
+          ),
+          throwsA(
+            isA<ArgumentError>().having(
+              (error) => error.name,
+              'name',
+              'deploymentUrl',
+            ),
+          ),
+        );
+      }
+    });
+
+    test('normalizes trailing slash deployment URL', () async {
+      final adapter = MockWebSocketAdapter();
+      final client = ConvexClient(
+        'https://demo.convex.cloud/',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          connectImmediately: false,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+
+      final subscription = client.subscribe('messages:list');
+      await settle();
+
+      expect(
+        adapter.connectedUrls.single,
+        'wss://demo.convex.cloud/api/0.1.0/sync',
+      );
+
+      subscription.cancel();
+      client.dispose();
+    });
+
     test('preserves ws scheme when building WebSocket URL', () async {
       final adapter = MockWebSocketAdapter();
       final client = ConvexClient(
