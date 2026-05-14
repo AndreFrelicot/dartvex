@@ -36,17 +36,23 @@ class NativeWebSocketAdapter implements WebSocketAdapter {
       if (identical(_socket, socket)) {
         _socket = null;
       }
-      _closeController.add(event);
+      if (!_closeController.isClosed) {
+        _closeController.add(event);
+      }
     }
 
     socket.listen(
       (dynamic event) {
         if (event is String) {
-          _messagesController.add(event);
+          if (!_messagesController.isClosed) {
+            _messagesController.add(event);
+          }
           return;
         }
         if (event is List<int>) {
-          _messagesController.add(utf8.decode(event));
+          if (!_messagesController.isClosed) {
+            _messagesController.add(utf8.decode(event));
+          }
         }
       },
       onDone: () {
@@ -90,7 +96,10 @@ class NativeWebSocketAdapter implements WebSocketAdapter {
     final socket = _socket;
     _socket = null;
     if (socket != null) {
-      await socket.close();
+      await socket.close().timeout(
+            const Duration(seconds: 2),
+            onTimeout: () {},
+          );
     }
   }
 

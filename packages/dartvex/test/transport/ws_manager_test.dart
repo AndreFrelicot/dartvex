@@ -484,6 +484,48 @@ void main() {
       await manager.dispose();
     });
 
+    test('fatal errors do not reset reconnect backoff', () async {
+      final adapter = MockWebSocketAdapter();
+      final events = <DartvexLogEvent>[];
+      late final WebSocketManager manager;
+      manager = WebSocketManager(
+        adapter: adapter,
+        deploymentUrl: 'https://demo.convex.cloud',
+        apiVersion: '0.1.0',
+        onConnected: () => const <ClientMessage>[],
+        onMessage: (message) async {
+          if (message is FatalError) {
+            await manager.reconnectNow(message.error);
+          }
+          return const <ClientMessage>[];
+        },
+        onDisconnected: (_) async {},
+        onConnectionStateChanged: (_, __) {},
+        maxObservedTimestamp: () => null,
+        reconnectBackoff: const <Duration>[
+          Duration(milliseconds: 10),
+          Duration(milliseconds: 20),
+        ],
+        inactivityTimeout: const Duration(seconds: 30),
+        logLevel: DartvexLogLevel.info,
+        logger: events.add,
+      );
+
+      await manager.start();
+      adapter.disconnect();
+      await Future<void>.delayed(const Duration(milliseconds: 15));
+
+      adapter.pushServerMessage(const FatalError(error: 'fatal').toJson());
+      await Future<void>.delayed(Duration.zero);
+
+      final schedules = events
+          .where((event) => event.message == 'Reconnect scheduled')
+          .toList(growable: false);
+      expect(schedules.last.data?['delayMs'], 20);
+
+      await manager.dispose();
+    });
+
     test('TransitionMetrics toString is human-readable', () {
       final metrics = TransitionMetrics(
         transitTimeMs: 150,

@@ -286,6 +286,8 @@ class WebSocketManager {
     final uri = Uri.parse(deploymentUrl);
     final wsScheme = switch (uri.scheme) {
       'http' => 'ws',
+      'ws' => 'ws',
+      'wss' => 'wss',
       _ => 'wss',
     };
     return uri
@@ -294,6 +296,9 @@ class WebSocketManager {
   }
 
   Future<void> _handleRawMessage(String raw) async {
+    if (_disposed) {
+      return;
+    }
     try {
       _resetInactivityTimer();
       final messageLengthBytes = utf8.encode(raw).length;
@@ -330,7 +335,9 @@ class WebSocketManager {
       }
       final outgoing = await onMessage(message);
       await sendMessages(outgoing);
-      _reconnectIndex = 0;
+      if (_shouldResetReconnectBackoff(message)) {
+        _reconnectIndex = 0;
+      }
     } catch (error, stackTrace) {
       _chunkBuffer = null;
       _lastCloseReason = 'InvalidServerMessage';
@@ -349,6 +356,12 @@ class WebSocketManager {
         _scheduleReconnect(immediate: true);
       }
     }
+  }
+
+  bool _shouldResetReconnectBackoff(ServerMessage message) {
+    return message is Transition ||
+        message is MutationResponse ||
+        message is ActionResponse;
   }
 
   _AssembledTransition? _appendTransitionChunk(TransitionChunk chunk) {
@@ -506,10 +519,22 @@ class WebSocketManager {
   void _resetInactivityTimer() {
     _inactivityTimer?.cancel();
     _inactivityTimer = Timer(inactivityTimeout, () async {
+      if (_disposed) {
+        return;
+      }
       _lastCloseReason = 'ServerInactivity';
       _pendingCloseReason = _lastCloseReason;
       _log(DartvexLogLevel.warn, 'Closing WebSocket after inactivity timeout');
-      await adapter.close();
+      try {
+        await adapter.close();
+      } catch (error, stackTrace) {
+        _log(
+          DartvexLogLevel.error,
+          'Failed to close WebSocket after inactivity timeout',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
     });
   }
 

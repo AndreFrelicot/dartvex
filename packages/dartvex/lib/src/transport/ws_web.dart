@@ -32,7 +32,7 @@ class WebPlatformWebSocketAdapter implements WebSocketAdapter {
     socket.onmessage = ((web.MessageEvent event) {
       final data = event.data;
       final stringValue = (data as JSString?)?.toDart;
-      if (stringValue != null) {
+      if (stringValue != null && !_messagesController.isClosed) {
         _messagesController.add(stringValue);
       }
     }).toJS;
@@ -46,13 +46,15 @@ class WebPlatformWebSocketAdapter implements WebSocketAdapter {
       if (!completer.isCompleted) {
         completer.completeError(StateError('WebSocket closed during connect'));
       }
-      _closeController.add(
-        WebSocketCloseEvent(
-          code: event.code,
-          reason: event.reason,
-          wasClean: event.wasClean,
-        ),
-      );
+      if (!_closeController.isClosed) {
+        _closeController.add(
+          WebSocketCloseEvent(
+            code: event.code,
+            reason: event.reason,
+            wasClean: event.wasClean,
+          ),
+        );
+      }
     }).toJS;
 
     await completer.future;
