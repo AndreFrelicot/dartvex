@@ -187,7 +187,23 @@ void main() {
 
       expect(
         () => client.signIn(email: 'a@b.com', password: 'bad'),
-        throwsA(isA<StateError>()),
+        throwsA(isA<BetterAuthException>()),
+      );
+    });
+
+    test('throws when sign-in returns 200 with error body', () async {
+      final mock = MockClient((request) async {
+        return http.Response(
+          jsonEncode({'error': 'invalid_credentials'}),
+          200,
+          headers: {'set-auth-token': 'tok'},
+        );
+      });
+      final client = BetterAuthClient(baseUrl: baseUrl, httpClient: mock);
+
+      expect(
+        () => client.signIn(email: 'a@b.com', password: 'bad'),
+        throwsA(isA<BetterAuthException>()),
       );
     });
 
@@ -203,8 +219,30 @@ void main() {
 
       expect(
         () => client.signIn(email: 'a@b.com', password: 'p'),
-        throwsA(isA<StateError>()),
+        throwsA(isA<BetterAuthException>()),
       );
+    });
+
+    test('extracts cookies when Expires contains a comma', () async {
+      final mock = MockClient((request) async {
+        if (request.url.path == '/api/auth/sign-in/email') {
+          return http.Response(
+            jsonEncode(_defaultSignInResponse),
+            200,
+            headers: {
+              'set-cookie':
+                  'better-auth.session_token=ses_cookie; Expires=Wed, 09 Jun 2027 10:18:14 GMT; Path=/, better-auth.convex_jwt=jwt_cookie; Path=/',
+            },
+          );
+        }
+        return http.Response('Not found', 404);
+      });
+      final client = BetterAuthClient(baseUrl: baseUrl, httpClient: mock);
+
+      final session = await client.signIn(email: 'a@b.com', password: 'p');
+
+      expect(session.sessionToken, 'ses_cookie');
+      expect(session.token, 'jwt_cookie');
     });
 
     test('preserves baseUrl when not .convex.cloud', () async {

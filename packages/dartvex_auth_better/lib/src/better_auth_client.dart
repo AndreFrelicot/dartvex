@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'better_auth_exception.dart';
 import 'better_auth_session.dart';
 
 /// HTTP client for Better Auth endpoints hosted on a Convex deployment.
@@ -123,7 +124,7 @@ class BetterAuthClient {
           detail = ': $message';
         }
       } catch (_) {}
-      throw StateError(
+      throw BetterAuthException(
         'Magic link verification failed '
         '(status ${response.statusCode})$detail',
       );
@@ -243,7 +244,7 @@ class BetterAuthClient {
     });
 
     if (response.statusCode != 200) {
-      throw StateError(
+      throw BetterAuthSessionExpiredException(
         'Failed to fetch Convex token (status ${response.statusCode}).',
       );
     }
@@ -269,7 +270,7 @@ class BetterAuthClient {
       return fromCookie;
     }
 
-    throw StateError(
+    throw BetterAuthException(
       'Better Auth did not return a session token '
       '(status ${response.statusCode}).',
     );
@@ -284,7 +285,7 @@ class BetterAuthClient {
     // comma-separated string.
     final raw = response.headers['set-cookie'];
     if (raw == null) return null;
-    for (final part in raw.split(RegExp(r',(?=[^;]*=)'))) {
+    for (final part in raw.split(RegExp(r',\s*(?=[^=;,\s]+=)'))) {
       final cookie = part.trim();
       final eqIndex = cookie.indexOf('=');
       if (eqIndex < 0) continue;
@@ -324,11 +325,41 @@ class BetterAuthClient {
           detail = ': $message';
         }
       } catch (_) {}
-      throw StateError(
+      throw BetterAuthException(
         'Better Auth request to $path failed '
         '(status ${response.statusCode})$detail',
       );
     }
+    _throwIfErrorBody(path, response.body);
     return response;
+  }
+
+  void _throwIfErrorBody(String path, String bodyText) {
+    if (bodyText.isEmpty) {
+      return;
+    }
+    try {
+      final body = jsonDecode(bodyText);
+      if (body is! Map<String, dynamic>) {
+        return;
+      }
+      final error = body['error'];
+      final message = body['message'];
+      final detail = switch ((error, message)) {
+        (final String error, final String message) when message.isNotEmpty =>
+          '$error: $message',
+        (final String error, _) when error.isNotEmpty => error,
+        (_, final String message) when message.isNotEmpty => message,
+        _ => null,
+      };
+      if (detail != null) {
+        throw BetterAuthException(
+          'Better Auth request to $path failed: $detail',
+          data: body,
+        );
+      }
+    } on FormatException {
+      return;
+    }
   }
 }
