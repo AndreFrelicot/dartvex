@@ -232,10 +232,8 @@ class AuthManager {
     _cancelRefreshTimer();
     final generation = _authGeneration;
     int? exp;
-    int? iat;
     try {
       exp = jwtExp(token);
-      iat = jwtIat(token);
     } on FormatException {
       _log(
         DartvexLogLevel.warn,
@@ -243,10 +241,10 @@ class AuthManager {
       );
       return;
     }
-    if (exp == null || iat == null) {
+    if (exp == null) {
       _log(
         DartvexLogLevel.warn,
-        'Skipping auth refresh scheduling because token timestamps are missing',
+        'Skipping auth refresh scheduling because token expiration is missing',
       );
       return;
     }

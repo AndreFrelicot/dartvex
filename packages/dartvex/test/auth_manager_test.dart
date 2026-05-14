@@ -71,6 +71,36 @@ void main() {
       expect(zoneErrors, isEmpty);
     });
 
+    test('scheduled refresh only requires token expiration', () async {
+      final sentTokens = <String?>[];
+      final forceRefreshCalls = <bool>[];
+      final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final manager = AuthManager(
+        config: const ConvexClientConfig(connectImmediately: false),
+        sendAuth: (token) async {
+          sentTokens.add(token);
+        },
+        emitAuthState: (_) {},
+      );
+
+      await manager.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) async {
+          forceRefreshCalls.add(forceRefresh);
+          return _jwt(
+            subject: forceRefresh ? 'fresh' : 'cached',
+            issuedAt: forceRefresh ? nowSeconds + 1 : null,
+            expiresAt: forceRefresh ? nowSeconds + 3601 : nowSeconds + 1,
+          );
+        },
+      );
+      manager.handleAuthConfirmed();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(forceRefreshCalls, <bool>[false, true]);
+      expect(sentTokens, hasLength(2));
+      await manager.stopRefreshing();
+    });
+
     test('stale initial token fetch cannot resurrect auth after clear',
         () async {
       final sentTokens = <String?>[];
@@ -128,7 +158,7 @@ void main() {
 
 String _jwt({
   required String subject,
-  required int issuedAt,
+  required int? issuedAt,
   required int expiresAt,
 }) {
   final header = base64UrlEncode(utf8.encode(jsonEncode(<String, dynamic>{
@@ -137,7 +167,7 @@ String _jwt({
   }))).replaceAll('=', '');
   final payload = base64UrlEncode(utf8.encode(jsonEncode(<String, dynamic>{
     'sub': subject,
-    'iat': issuedAt,
+    if (issuedAt != null) 'iat': issuedAt,
     'exp': expiresAt,
   }))).replaceAll('=', '');
   return '$header.$payload.';

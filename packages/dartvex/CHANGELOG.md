@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   protocol messages in response.
 - Hardens auth refresh against stale token fetches, stale `AuthError` messages,
   and refresh scheduling that reused cached tokens.
+- Schedules auth refresh from JWT expiration even when the token omits `iat`.
 - Adds one-shot query timeout cleanup and safer disposal of temporary
   subscriptions.
 - Rejects invalid Convex JSON field names and finite `$float` encodings.
