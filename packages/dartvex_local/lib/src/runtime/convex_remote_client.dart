@@ -9,7 +9,10 @@ class ConvexRemoteClientAdapter implements LocalRemoteClient {
   /// Creates an adapter around [_client].
   ///
   /// When [disposeClient] is true, disposing the adapter also disposes the client.
-  ConvexRemoteClientAdapter(this._client, {this.disposeClient = false}) {
+  ConvexRemoteClientAdapter(this._client, {this.disposeClient = false})
+      : _currentConnectionState = _mapConnectionState(
+          _client.currentConnectionState,
+        ) {
     _connectionStateSubscription = _client.connectionState.listen((state) {
       _currentConnectionState = _mapConnectionState(state);
       if (!_connectionStateController.isClosed) {
@@ -26,8 +29,7 @@ class ConvexRemoteClientAdapter implements LocalRemoteClient {
       _connectionStateController =
       StreamController<LocalRemoteConnectionState>.broadcast(sync: true);
   late final StreamSubscription<ConnectionState> _connectionStateSubscription;
-  LocalRemoteConnectionState _currentConnectionState =
-      LocalRemoteConnectionState.connecting;
+  LocalRemoteConnectionState _currentConnectionState;
   bool _disposed = false;
 
   @override

@@ -106,7 +106,8 @@ class ConvexClientRuntime implements ConvexRuntimeClient {
   /// Creates a runtime adapter around [_client].
   ///
   /// When [disposeClient] is true, disposing this runtime also disposes the client.
-  ConvexClientRuntime(this._client, {this.disposeClient = false}) {
+  ConvexClientRuntime(this._client, {this.disposeClient = false})
+      : _currentConnectionState = _client.currentConnectionState {
     _connectionStateSubscription = _client.connectionState.listen((state) {
       _currentConnectionState = state;
     });
@@ -118,8 +119,7 @@ class ConvexClientRuntime implements ConvexRuntimeClient {
   final bool disposeClient;
   late final StreamSubscription<ConvexConnectionState>
       _connectionStateSubscription;
-  ConvexConnectionState _currentConnectionState =
-      ConvexConnectionState.connecting;
+  ConvexConnectionState _currentConnectionState;
   bool _disposed = false;
 
   @override

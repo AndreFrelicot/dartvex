@@ -4,7 +4,10 @@ import 'package:dartvex_flutter/dartvex_flutter.dart';
 import 'package:dartvex_local/dartvex_local.dart';
 
 class LocalConvexRuntimeClient implements ConvexRuntimeClient {
-  LocalConvexRuntimeClient(this._client, {this.disposeClient = false}) {
+  LocalConvexRuntimeClient(this._client, {this.disposeClient = false})
+    : _currentConnectionState = _mapConnectionState(
+        _client.currentConnectionState,
+      ) {
     _connectionStateSubscription = _client.connectionState.listen((state) {
       _currentConnectionState = _mapConnectionState(state);
     });
@@ -14,8 +17,7 @@ class LocalConvexRuntimeClient implements ConvexRuntimeClient {
   final bool disposeClient;
   late final StreamSubscription<LocalConnectionState>
   _connectionStateSubscription;
-  ConvexConnectionState _currentConnectionState =
-      ConvexConnectionState.connecting;
+  ConvexConnectionState _currentConnectionState;
   bool _disposed = false;
 
   @override
