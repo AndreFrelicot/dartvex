@@ -122,10 +122,7 @@ Future<void> main(List<String> args) async {
         exit(2);
       }
 
-      final failures = await _runDryRuns(
-        repoRoot: repoRoot,
-        packages: publishOrder,
-      );
+      final failures = await _runDryRuns(packages: publishOrder);
       if (failures.isNotEmpty) {
         stderr.writeln('\nDry-run failures: ${failures.join(', ')}');
         exit(1);
@@ -820,11 +817,9 @@ void _printPlan({
   }
 }
 
-Future<List<String>> _runDryRuns({
-  required String repoRoot,
-  required List<PackageInfo> packages,
-}) async {
+Future<List<String>> _runDryRuns({required List<PackageInfo> packages}) async {
   final failures = <String>[];
+  final packageByName = {for (final package in packages) package.name: package};
   for (final package in packages) {
     stdout.writeln(
       '\n==> ${package.name} ${package.version} (${package.publishTool.name})',
@@ -847,6 +842,11 @@ Future<List<String>> _runDryRuns({
 
     try {
       await _copyDirectoryForPublish(package.directory, tempPackage);
+      await _writeInternalDependencyOverrides(
+        tempPackage: tempPackage,
+        package: package,
+        packageByName: packageByName,
+      );
       final getResult = await Process.start(
         executable,
         getArgs,
@@ -876,6 +876,33 @@ Future<List<String>> _runDryRuns({
   }
   return failures;
 }
+
+Future<void> _writeInternalDependencyOverrides({
+  required Directory tempPackage,
+  required PackageInfo package,
+  required Map<String, PackageInfo> packageByName,
+}) async {
+  final internalDependencies =
+      package.internalDependencies.where(packageByName.containsKey).toList()
+        ..sort();
+  if (internalDependencies.isEmpty) {
+    return;
+  }
+
+  final buffer = StringBuffer('dependency_overrides:\n');
+  for (final dependencyName in internalDependencies) {
+    final dependency = packageByName[dependencyName]!;
+    buffer
+      ..writeln('  $dependencyName:')
+      ..writeln("    path: '${_yamlSingleQuoted(dependency.directory.path)}'");
+  }
+
+  await File(
+    _joinPath(tempPackage.path, 'pubspec_overrides.yaml'),
+  ).writeAsString(buffer.toString());
+}
+
+String _yamlSingleQuoted(String value) => value.replaceAll("'", "''");
 
 const Set<String> _publishCopyExcludedNames = <String>{
   '.dart_tool',
