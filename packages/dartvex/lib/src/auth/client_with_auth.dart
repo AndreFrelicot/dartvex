@@ -91,7 +91,9 @@ class ConvexClientWithAuth<TUser>
     if (disposeClient) {
       _client.dispose();
     }
-    unawaited(_authStateController.close());
+    scheduleMicrotask(() {
+      unawaited(_authStateController.close());
+    });
   }
 
   @override

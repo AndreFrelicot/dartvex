@@ -147,10 +147,12 @@ class BaseClient {
   }
 
   void setAuth({required String tokenType, String? token}) {
+    _resultCacheByToken.clear();
     _outgoing.add(_localState.setAuth(tokenType: tokenType, value: token));
   }
 
   void clearAuth() {
+    _resultCacheByToken.clear();
     _outgoing.add(_localState.setAuth(tokenType: 'None'));
   }
 

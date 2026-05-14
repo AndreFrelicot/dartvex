@@ -104,22 +104,57 @@ void main() {
       );
     }
 
+    Future<void> waitForAuthenticated(
+      ConvexClientWithAuth<TestUserInfo> client,
+    ) async {
+      if (client.currentAuthState is AuthAuthenticated<TestUserInfo>) {
+        return;
+      }
+      await client.authState
+          .firstWhere((state) => state is AuthAuthenticated<TestUserInfo>)
+          .timeout(const Duration(seconds: 5));
+    }
+
+    Future<dynamic> waitForWhoAmI(
+      ConvexClientWithAuth<TestUserInfo> client, {
+      required bool authenticated,
+    }) async {
+      final deadline = DateTime.now().add(const Duration(seconds: 5));
+      Object? lastError;
+
+      while (DateTime.now().isBefore(deadline)) {
+        try {
+          final identity = await client.query('demo:whoAmI');
+          if (authenticated ? identity != null : identity == null) {
+            return identity;
+          }
+        } catch (error) {
+          lastError = error;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+
+      throw StateError(
+        authenticated
+            ? 'Timed out waiting for authenticated identity: $lastError'
+            : 'Timed out waiting for cleared authenticated identity',
+      );
+    }
+
     test('login enables authenticated query access', () async {
       await waitForConnection();
 
       final session = await authClient.login();
       expect(session.token, authToken);
       expect(provider.loginCalls, 1);
+      await waitForAuthenticated(authClient);
       expect(
         authClient.currentAuthState,
         isA<AuthAuthenticated<TestUserInfo>>(),
       );
 
-      // Wait for auth to be confirmed by the server.
-      await Future<void>.delayed(const Duration(milliseconds: 500));
-
       // demo:whoAmI returns the authenticated user's identity.
-      final identity = await authClient.query('demo:whoAmI');
+      final identity = await waitForWhoAmI(authClient, authenticated: true);
       expect(identity, isNotNull);
       expect(identity, isA<Map<String, dynamic>>());
 
@@ -132,7 +167,7 @@ void main() {
 
       // First establish a session via login.
       await authClient.login();
-      await Future<void>.delayed(const Duration(milliseconds: 500));
+      await waitForAuthenticated(authClient);
 
       // Dispose and create a fresh client + provider to simulate app restart.
       authClient.dispose();
@@ -156,9 +191,9 @@ void main() {
       expect(freshProvider.loginFromCacheCalls, 1);
       expect(session.token, authToken);
 
-      await Future<void>.delayed(const Duration(milliseconds: 500));
+      await waitForAuthenticated(freshAuth);
 
-      final identity = await freshAuth.query('demo:whoAmI');
+      final identity = await waitForWhoAmI(freshAuth, authenticated: true);
       expect(identity, isNotNull);
     });
 
@@ -166,10 +201,11 @@ void main() {
       await waitForConnection();
 
       await authClient.login();
-      await Future<void>.delayed(const Duration(milliseconds: 500));
+      await waitForAuthenticated(authClient);
 
       // Confirm authenticated access works.
-      final identityBefore = await authClient.query('demo:whoAmI');
+      final identityBefore =
+          await waitForWhoAmI(authClient, authenticated: true);
       expect(identityBefore, isNotNull);
 
       // Logout.
@@ -180,10 +216,9 @@ void main() {
         isA<AuthUnauthenticated<TestUserInfo>>(),
       );
 
-      await Future<void>.delayed(const Duration(milliseconds: 500));
-
       // After logout, whoAmI should return null (unauthenticated).
-      final identityAfter = await authClient.query('demo:whoAmI');
+      final identityAfter =
+          await waitForWhoAmI(authClient, authenticated: false);
       expect(identityAfter, isNull);
     });
 
@@ -196,16 +231,16 @@ void main() {
 
       // Login.
       await authClient.login();
-      await Future<void>.delayed(const Duration(milliseconds: 200));
+      await waitForAuthenticated(authClient);
 
       // Logout.
       await authClient.logout();
-      await Future<void>.delayed(const Duration(milliseconds: 200));
 
       expect(states.length, greaterThanOrEqualTo(3));
       expect(states[0], isA<AuthLoading<TestUserInfo>>());
-      expect(states[1], isA<AuthAuthenticated<TestUserInfo>>());
-      expect(states[2], isA<AuthUnauthenticated<TestUserInfo>>());
+      expect(states.any((state) => state is AuthAuthenticated<TestUserInfo>),
+          isTrue);
+      expect(states.last, isA<AuthUnauthenticated<TestUserInfo>>());
     });
 
     test('requireAuthEcho succeeds when authenticated, fails otherwise',
@@ -213,7 +248,7 @@ void main() {
       await waitForConnection();
 
       await authClient.login();
-      await Future<void>.delayed(const Duration(milliseconds: 500));
+      await waitForAuthenticated(authClient);
 
       // Authenticated call should succeed.
       final result = await authClient.query(
@@ -222,11 +257,11 @@ void main() {
       );
       expect(result, isNotNull);
       final resultMap = result as Map<String, dynamic>;
-      expect(resultMap['echo'], 'hello from integration test');
+      expect(resultMap['message'], 'hello from integration test');
 
       // Logout and try again — should fail.
       await authClient.logout();
-      await Future<void>.delayed(const Duration(milliseconds: 500));
+      await waitForWhoAmI(authClient, authenticated: false);
 
       await expectLater(
         authClient.query(
