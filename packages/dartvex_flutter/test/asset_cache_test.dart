@@ -48,6 +48,24 @@ void main() {
       expect(fakeCacheManager.getSingleFileCalls, isEmpty);
     });
 
+    test('prefetch can force-refresh an existing cache key', () async {
+      fakeCacheManager.putInCache('cache-789');
+
+      final file = await cache.prefetch(
+        'cache-789',
+        'https://example.com/refreshed.png',
+        force: true,
+      );
+
+      expect(file, isNotNull);
+      expect(fakeCacheManager.removedKeys, contains('cache-789'));
+      expect(fakeCacheManager.getSingleFileCalls, hasLength(1));
+      expect(
+        fakeCacheManager.getSingleFileCalls.single.url,
+        'https://example.com/refreshed.png',
+      );
+    });
+
     test('get returns cached file', () async {
       fakeCacheManager.putInCache('cache-abc');
 

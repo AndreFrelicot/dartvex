@@ -33,11 +33,18 @@ class ConvexAssetCache {
   ///
   /// [cacheKey] is a stable identifier for the asset (e.g., Convex storageId,
   /// S3 key, Cloudflare R2 path, or any custom identifier). If the asset is
-  /// already cached, this is a no-op.
-  Future<File> prefetch(String cacheKey, String url) async {
+  /// already cached, this is a no-op unless [force] is `true`.
+  Future<File> prefetch(
+    String cacheKey,
+    String url, {
+    bool force = false,
+  }) async {
     final existing = await _cacheManager.getFileFromCache(cacheKey);
-    if (existing != null) {
+    if (existing != null && !force) {
       return existing.file;
+    }
+    if (existing != null) {
+      await _cacheManager.removeFile(cacheKey);
     }
     return _cacheManager.getSingleFile(url, key: cacheKey);
   }

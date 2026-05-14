@@ -83,6 +83,7 @@ class _ConvexImageState extends State<ConvexImage> {
   bool _loading = true;
   ConvexDownloadProgress? _progress;
   String? _loadedStorageId;
+  String? _loadedGetUrlAction;
   int _requestGeneration = 0;
 
   @override
@@ -101,10 +102,13 @@ class _ConvexImageState extends State<ConvexImage> {
   }
 
   void _loadIfNeeded() {
-    if (_loadedStorageId == widget.storageId && _bytes != null) {
+    if (_loadedStorageId == widget.storageId &&
+        _loadedGetUrlAction == widget.getUrlAction &&
+        _bytes != null) {
       return;
     }
     _loadedStorageId = widget.storageId;
+    _loadedGetUrlAction = widget.getUrlAction;
     _fetchAndDownload(++_requestGeneration);
   }
 

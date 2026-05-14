@@ -65,6 +65,7 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
   Object? _error;
   bool _loading = true;
   String? _loadedStorageId;
+  String? _loadedGetUrlAction;
   int _requestGeneration = 0;
 
   ConvexAssetCache get _cache => widget.cache ?? ConvexAssetCache.shared;
@@ -85,14 +86,23 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
   }
 
   void _loadIfNeeded() {
-    if (_loadedStorageId == widget.storageId && _file != null) {
+    final loadedGetUrlAction = _loadedGetUrlAction;
+    if (_loadedStorageId == widget.storageId &&
+        loadedGetUrlAction == widget.getUrlAction &&
+        _file != null) {
       return;
     }
+    final shouldBypassCache =
+        loadedGetUrlAction != null && loadedGetUrlAction != widget.getUrlAction;
     _loadedStorageId = widget.storageId;
-    _fetchAndCache(++_requestGeneration);
+    _loadedGetUrlAction = widget.getUrlAction;
+    _fetchAndCache(++_requestGeneration, bypassCache: shouldBypassCache);
   }
 
-  Future<void> _fetchAndCache(int generation) async {
+  Future<void> _fetchAndCache(
+    int generation, {
+    bool bypassCache = false,
+  }) async {
     final storageId = widget.storageId;
     final getUrlAction = widget.getUrlAction;
     setState(() {
@@ -103,14 +113,16 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
 
     try {
       final client = widget.client ?? ConvexProvider.of(context);
-      final cached = await _cache.get(storageId);
-      if (cached != null) {
-        if (!_isCurrentRequest(generation, storageId, getUrlAction)) return;
-        setState(() {
-          _file = cached;
-          _loading = false;
-        });
-        return;
+      if (!bypassCache) {
+        final cached = await _cache.get(storageId);
+        if (cached != null) {
+          if (!_isCurrentRequest(generation, storageId, getUrlAction)) return;
+          setState(() {
+            _file = cached;
+            _loading = false;
+          });
+          return;
+        }
       }
 
       final url = await client.query(
@@ -124,7 +136,11 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
         throw StateError('No URL returned for storageId $storageId');
       }
 
-      final file = await _cache.prefetch(storageId, urlStr);
+      final file = await _cache.prefetch(
+        storageId,
+        urlStr,
+        force: bypassCache,
+      );
       if (!_isCurrentRequest(generation, storageId, getUrlAction)) return;
       setState(() {
         _file = file;
