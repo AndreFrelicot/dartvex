@@ -177,7 +177,6 @@ jobs:
   publish-dry-run:
     name: Publish Dry Run
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
     strategy:
       matrix:
         include:
