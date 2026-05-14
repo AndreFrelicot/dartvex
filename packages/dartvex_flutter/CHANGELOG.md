@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Requires `dartvex` 0.1.5 so web consumers do not resolve the older
+  JavaScript-incompatible value codec.
 - Closes file-download HTTP clients and rejects non-success responses instead
   of returning error bodies as image bytes.
 - Ignores stale async image/cache loads after widget inputs change.

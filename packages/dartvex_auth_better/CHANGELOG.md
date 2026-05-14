@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Requires `dartvex` 0.1.5 so web consumers do not resolve the older
+  JavaScript-incompatible value codec.
 - Removes diagnostic prints that could expose Better Auth URLs, headers,
   cookies, request bodies, or tokens.
 
