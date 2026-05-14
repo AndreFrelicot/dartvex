@@ -7,6 +7,8 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'test_helpers/fake_runtime_client.dart';
+
 void main() {
   group('ConvexAssetCache', () {
     late FakeCacheManager fakeCacheManager;
@@ -278,6 +280,84 @@ void main() {
 
       expect(find.text('/cache/img-b'), findsOneWidget);
       expect(find.text('/cache/img-a'), findsNothing);
+    });
+  });
+
+  group('ConvexImage', () {
+    testWidgets('resolves storage URLs with actions when requested',
+        (tester) async {
+      final client = FakeRuntimeClient(
+        initialConnectionState: ConvexConnectionState.connected,
+      );
+      client.onAction = (name, args) async => '';
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: ConvexImage(
+            storageId: 'img-1',
+            getUrlAction: 'files:getUrl',
+            useAction: true,
+            client: client,
+            placeholder: const Text('loading'),
+            errorWidget: const Text('error'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(client.actionCalls, hasLength(1));
+      expect(client.actionCalls.single.name, 'files:getUrl');
+      expect(client.actionCalls.single.args, const <String, dynamic>{
+        'storageId': 'img-1',
+      });
+      expect(client.queryCalls, isEmpty);
+      expect(find.text('error'), findsOneWidget);
+    });
+  });
+
+  group('ConvexCachedImage', () {
+    late FakeCacheManager fakeCacheManager;
+    late ConvexAssetCache cache;
+
+    setUp(() {
+      fakeCacheManager = FakeCacheManager();
+      cache = ConvexAssetCache.custom(fakeCacheManager);
+    });
+
+    testWidgets('resolves cache-miss URLs with actions when requested',
+        (tester) async {
+      final client = FakeRuntimeClient(
+        initialConnectionState: ConvexConnectionState.connected,
+      );
+      client.onAction = (name, args) async => 'https://example.com/img.png';
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: ConvexCachedImage(
+            storageId: 'img-1',
+            getUrlAction: 'files:getUrl',
+            useAction: true,
+            cache: cache,
+            client: client,
+            placeholder: const Text('loading'),
+            builder: (context, image) => const Text('loaded'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(client.actionCalls, hasLength(1));
+      expect(client.actionCalls.single.name, 'files:getUrl');
+      expect(client.actionCalls.single.args, const <String, dynamic>{
+        'storageId': 'img-1',
+      });
+      expect(client.queryCalls, isEmpty);
+      expect(fakeCacheManager.getSingleFileCalls, hasLength(1));
+      expect(fakeCacheManager.getSingleFileCalls.single.url,
+          'https://example.com/img.png');
+      expect(find.text('loaded'), findsOneWidget);
     });
   });
 }

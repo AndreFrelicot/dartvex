@@ -128,11 +128,15 @@ ConvexMutation<String>(
 ConvexCachedImage(
   storageId: message.imageStorageId,
   getUrlAction: 'files:getUrl',
+  useAction: true,
   width: 160,
   height: 160,
   fit: BoxFit.cover,
 )
 ```
+
+`ConvexImage` and `ConvexCachedImage` resolve storage URLs with a Convex query
+by default. Set `useAction: true` when the resolver is implemented as an action.
 
 ## Pagination
 

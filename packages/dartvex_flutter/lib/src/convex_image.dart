@@ -10,11 +10,13 @@ import 'runtime_client.dart';
 ///
 /// Fetches the download URL by calling [getUrlAction] with the given
 /// [storageId], then downloads the image with optional progress tracking.
+/// The URL resolver is called as a query unless [useAction] is true.
 ///
 /// ```dart
 /// ConvexImage(
 ///   storageId: document.avatarId,
 ///   getUrlAction: 'files:getUrl',
+///   useAction: true,
 ///   placeholder: const CircularProgressIndicator(),
 ///   onProgress: (progress) => print('${(progress * 100).toInt()}%'),
 /// )
@@ -31,6 +33,7 @@ class ConvexImage extends StatefulWidget {
     this.builder,
     this.progressBuilder,
     this.onProgress,
+    this.useAction = false,
     this.fit,
     this.width,
     this.height,
@@ -42,6 +45,9 @@ class ConvexImage extends StatefulWidget {
   /// The Convex query or action name that returns a download URL
   /// for a given storageId (e.g. `'files:getUrl'`).
   final String getUrlAction;
+
+  /// Whether [getUrlAction] should be invoked as an action instead of a query.
+  final bool useAction;
 
   /// Optional runtime client override. If omitted, uses [ConvexProvider.of].
   final ConvexRuntimeClient? client;
@@ -84,6 +90,7 @@ class _ConvexImageState extends State<ConvexImage> {
   ConvexDownloadProgress? _progress;
   String? _loadedStorageId;
   String? _loadedGetUrlAction;
+  bool? _loadedUseAction;
   int _requestGeneration = 0;
 
   @override
@@ -96,7 +103,8 @@ class _ConvexImageState extends State<ConvexImage> {
   void didUpdateWidget(covariant ConvexImage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.storageId != widget.storageId ||
-        oldWidget.getUrlAction != widget.getUrlAction) {
+        oldWidget.getUrlAction != widget.getUrlAction ||
+        oldWidget.useAction != widget.useAction) {
       _loadIfNeeded();
     }
   }
@@ -104,17 +112,20 @@ class _ConvexImageState extends State<ConvexImage> {
   void _loadIfNeeded() {
     if (_loadedStorageId == widget.storageId &&
         _loadedGetUrlAction == widget.getUrlAction &&
+        _loadedUseAction == widget.useAction &&
         _bytes != null) {
       return;
     }
     _loadedStorageId = widget.storageId;
     _loadedGetUrlAction = widget.getUrlAction;
+    _loadedUseAction = widget.useAction;
     _fetchAndDownload(++_requestGeneration);
   }
 
   Future<void> _fetchAndDownload(int generation) async {
     final storageId = widget.storageId;
     final getUrlAction = widget.getUrlAction;
+    final useAction = widget.useAction;
     setState(() {
       _loading = true;
       _error = null;
@@ -125,11 +136,13 @@ class _ConvexImageState extends State<ConvexImage> {
     try {
       // Step 1: resolve the download URL from Convex
       final client = widget.client ?? ConvexProvider.of(context);
-      final url = await client.query(
-        getUrlAction,
-        <String, dynamic>{'storageId': storageId},
-      );
-      if (!_isCurrentRequest(generation, storageId, getUrlAction)) return;
+      final args = <String, dynamic>{'storageId': storageId};
+      final url = useAction
+          ? await client.action(getUrlAction, args)
+          : await client.query(getUrlAction, args);
+      if (!_isCurrentRequest(generation, storageId, getUrlAction, useAction)) {
+        return;
+      }
 
       final urlStr = url as String?;
       if (urlStr == null || urlStr.isEmpty) {
@@ -140,19 +153,30 @@ class _ConvexImageState extends State<ConvexImage> {
       final bytes = await ConvexFileDownloader.download(
         urlStr,
         onProgress: (p) {
-          if (!_isCurrentRequest(generation, storageId, getUrlAction)) return;
+          if (!_isCurrentRequest(
+            generation,
+            storageId,
+            getUrlAction,
+            useAction,
+          )) {
+            return;
+          }
           setState(() => _progress = p);
           widget.onProgress?.call(p);
         },
       );
 
-      if (!_isCurrentRequest(generation, storageId, getUrlAction)) return;
+      if (!_isCurrentRequest(generation, storageId, getUrlAction, useAction)) {
+        return;
+      }
       setState(() {
         _bytes = bytes;
         _loading = false;
       });
     } catch (error) {
-      if (!_isCurrentRequest(generation, storageId, getUrlAction)) return;
+      if (!_isCurrentRequest(generation, storageId, getUrlAction, useAction)) {
+        return;
+      }
       setState(() {
         _error = error;
         _loading = false;
@@ -164,11 +188,13 @@ class _ConvexImageState extends State<ConvexImage> {
     int generation,
     String storageId,
     String getUrlAction,
+    bool useAction,
   ) {
     return mounted &&
         generation == _requestGeneration &&
         widget.storageId == storageId &&
-        widget.getUrlAction == getUrlAction;
+        widget.getUrlAction == getUrlAction &&
+        widget.useAction == useAction;
   }
 
   @override

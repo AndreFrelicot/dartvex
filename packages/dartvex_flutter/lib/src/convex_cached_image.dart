@@ -9,7 +9,8 @@ import 'runtime_client.dart';
 /// Widget that displays an image from Convex storage using a disk cache.
 ///
 /// Unlike [ConvexImage], this widget persists assets to disk via
-/// [ConvexAssetCache] using the stable [storageId] as cache key.
+/// [ConvexAssetCache] using the stable [storageId] as cache key. The URL
+/// resolver is called as a query unless [useAction] is true.
 class ConvexCachedImage extends StatefulWidget {
   /// Creates a [ConvexCachedImage].
   const ConvexCachedImage({
@@ -21,6 +22,7 @@ class ConvexCachedImage extends StatefulWidget {
     this.placeholder,
     this.errorWidget,
     this.builder,
+    this.useAction = false,
     this.fit,
     this.width,
     this.height,
@@ -31,6 +33,9 @@ class ConvexCachedImage extends StatefulWidget {
 
   /// Convex query or action that resolves the signed download URL.
   final String getUrlAction;
+
+  /// Whether [getUrlAction] should be invoked as an action instead of a query.
+  final bool useAction;
 
   /// Optional cache override. Defaults to [ConvexAssetCache.shared].
   final ConvexAssetCache? cache;
@@ -66,6 +71,7 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
   bool _loading = true;
   String? _loadedStorageId;
   String? _loadedGetUrlAction;
+  bool? _loadedUseAction;
   int _requestGeneration = 0;
 
   ConvexAssetCache get _cache => widget.cache ?? ConvexAssetCache.shared;
@@ -80,22 +86,27 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
   void didUpdateWidget(covariant ConvexCachedImage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.storageId != widget.storageId ||
-        oldWidget.getUrlAction != widget.getUrlAction) {
+        oldWidget.getUrlAction != widget.getUrlAction ||
+        oldWidget.useAction != widget.useAction) {
       _loadIfNeeded();
     }
   }
 
   void _loadIfNeeded() {
     final loadedGetUrlAction = _loadedGetUrlAction;
+    final loadedUseAction = _loadedUseAction;
     if (_loadedStorageId == widget.storageId &&
         loadedGetUrlAction == widget.getUrlAction &&
+        loadedUseAction == widget.useAction &&
         _file != null) {
       return;
     }
-    final shouldBypassCache =
-        loadedGetUrlAction != null && loadedGetUrlAction != widget.getUrlAction;
+    final shouldBypassCache = loadedGetUrlAction != null &&
+        (loadedGetUrlAction != widget.getUrlAction ||
+            loadedUseAction != widget.useAction);
     _loadedStorageId = widget.storageId;
     _loadedGetUrlAction = widget.getUrlAction;
+    _loadedUseAction = widget.useAction;
     _fetchAndCache(++_requestGeneration, bypassCache: shouldBypassCache);
   }
 
@@ -105,6 +116,7 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
   }) async {
     final storageId = widget.storageId;
     final getUrlAction = widget.getUrlAction;
+    final useAction = widget.useAction;
     setState(() {
       _loading = true;
       _error = null;
@@ -116,7 +128,14 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
       if (!bypassCache) {
         final cached = await _cache.get(storageId);
         if (cached != null) {
-          if (!_isCurrentRequest(generation, storageId, getUrlAction)) return;
+          if (!_isCurrentRequest(
+            generation,
+            storageId,
+            getUrlAction,
+            useAction,
+          )) {
+            return;
+          }
           setState(() {
             _file = cached;
             _loading = false;
@@ -125,11 +144,13 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
         }
       }
 
-      final url = await client.query(
-        getUrlAction,
-        <String, dynamic>{'storageId': storageId},
-      );
-      if (!_isCurrentRequest(generation, storageId, getUrlAction)) return;
+      final args = <String, dynamic>{'storageId': storageId};
+      final url = useAction
+          ? await client.action(getUrlAction, args)
+          : await client.query(getUrlAction, args);
+      if (!_isCurrentRequest(generation, storageId, getUrlAction, useAction)) {
+        return;
+      }
 
       final urlStr = url as String?;
       if (urlStr == null || urlStr.isEmpty) {
@@ -141,13 +162,17 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
         urlStr,
         force: bypassCache,
       );
-      if (!_isCurrentRequest(generation, storageId, getUrlAction)) return;
+      if (!_isCurrentRequest(generation, storageId, getUrlAction, useAction)) {
+        return;
+      }
       setState(() {
         _file = file;
         _loading = false;
       });
     } catch (error) {
-      if (!_isCurrentRequest(generation, storageId, getUrlAction)) return;
+      if (!_isCurrentRequest(generation, storageId, getUrlAction, useAction)) {
+        return;
+      }
       setState(() {
         _error = error;
         _loading = false;
@@ -159,11 +184,13 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
     int generation,
     String storageId,
     String getUrlAction,
+    bool useAction,
   ) {
     return mounted &&
         generation == _requestGeneration &&
         widget.storageId == storageId &&
-        widget.getUrlAction == getUrlAction;
+        widget.getUrlAction == getUrlAction &&
+        widget.useAction == useAction;
   }
 
   @override
