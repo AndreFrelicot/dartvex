@@ -639,6 +639,11 @@ class ConvexLocalClient {
   }
 
   /// Executes a mutation immediately or queues it for offline replay.
+  ///
+  /// Queued mutations are replayed at least once. If a connection fails after
+  /// the backend commits a mutation but before the client observes the result,
+  /// replay may call the mutation again. Design queued Convex mutations to be
+  /// idempotent when the operation can have external side effects.
   Future<LocalMutationResult> mutate(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
@@ -1002,8 +1007,8 @@ class ConvexLocalClient {
           _pendingMutationsController.add(currentPendingMutations);
           // Fire-and-forget: the widget tree subscriptions already receive
           // live Transition updates, so blocking the replay loop for a cache
-          // refresh is unnecessary (and the underlying query() can hang due
-          // to a broadcast-stream race in ConvexClient).
+          // refresh is unnecessary; the widget tree subscriptions already get
+          // live updates through the normal Transition flow.
           unawaited(_refreshTargetsFromMutation(mutation));
           _replayRetryCount = 0;
         } on ConvexException catch (error) {
@@ -1087,14 +1092,18 @@ class ConvexLocalClient {
     _pendingMutations = await _mutationQueue.loadAll();
     _rebuildPendingWriteCounts();
     _pendingMutationsController.add(currentPendingMutations);
-    onConflict?.call(
-      LocalMutationConflict(
-        mutationName: mutation.mutationName,
-        args: mutation.args,
-        error: error,
-        queuedAt: mutation.createdAt,
-      ),
-    );
+    try {
+      onConflict?.call(
+        LocalMutationConflict(
+          mutationName: mutation.mutationName,
+          args: mutation.args,
+          error: error,
+          queuedAt: mutation.createdAt,
+        ),
+      );
+    } catch (callbackError, stackTrace) {
+      _log('replay:on-conflict-error', '$callbackError\n$stackTrace');
+    }
     await _refreshTargetsFromMutation(mutation);
   }
 
@@ -1276,8 +1285,11 @@ class ConvexLocalClient {
   static dynamic _remapIds(dynamic value, Map<String, String> idMap) {
     if (idMap.isEmpty) return value;
     if (value is String) return idMap[value] ?? value;
-    if (value is Map<String, dynamic>) {
-      return {for (final e in value.entries) e.key: _remapIds(e.value, idMap)};
+    if (value is Map) {
+      return <String, dynamic>{
+        for (final entry in value.entries)
+          entry.key.toString(): _remapIds(entry.value, idMap),
+      };
     }
     if (value is List) return value.map((i) => _remapIds(i, idMap)).toList();
     return value;

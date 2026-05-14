@@ -332,6 +332,27 @@ void main() {
       expect(remoteClient.mutationCalls, hasLength(2));
     });
 
+    test('onConflict exceptions do not stop replay cleanup', () async {
+      remoteClient.queryResults['messages:listPublic'] = <dynamic>[];
+      await localClient.query('messages:listPublic');
+      await localClient.setNetworkMode(LocalNetworkMode.offline);
+
+      await localClient.mutate(
+        'messages:sendPublic',
+        <String, dynamic>{'author': 'A', 'text': 'WillFail'},
+      );
+
+      localClient.onConflict = (_) => throw StateError('callback failed');
+      remoteClient.mutationResults['messages:sendPublic'] = <Object?>[
+        const ConvexException('Validation failed', retryable: false),
+      ];
+
+      await localClient.setNetworkMode(LocalNetworkMode.auto);
+      await pumpEventQueue();
+
+      expect(localClient.currentPendingMutations, isEmpty);
+    });
+
     test('multiple queued mutations preserve insertion order', () async {
       remoteClient.queryResults['messages:listPublic'] = <dynamic>[];
       await localClient.query('messages:listPublic');

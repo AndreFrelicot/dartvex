@@ -26,6 +26,9 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
   as fallback when the remote is unreachable or slow.
 - **Offline mutation queue** — mutations issued while offline are queued and
   replayed in order when connectivity resumes.
+- **At-least-once replay** — queued mutations can be retried after ambiguous
+  network failures, so server mutations should be idempotent when they trigger
+  external side effects.
 - **Optimistic updates** — app-defined `LocalMutationHandler` patches are
   applied to the cache immediately, before the mutation reaches the server.
 - **Deterministic network mode** — `setNetworkMode(offline)` forces the
