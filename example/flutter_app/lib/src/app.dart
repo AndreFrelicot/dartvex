@@ -56,6 +56,12 @@ class _ConvexFlutterDemoAppState extends State<ConvexFlutterDemoApp> {
       DemoReconnectController();
   final ValueNotifier<TransitionMetrics?> _latencyNotifier =
       ValueNotifier<TransitionMetrics?>(null);
+  final TextEditingController _betterAuthNameController =
+      TextEditingController();
+  final TextEditingController _betterAuthEmailController =
+      TextEditingController();
+  final TextEditingController _betterAuthPasswordController =
+      TextEditingController();
 
   ConvexBetterAuthProvider? _betterAuthProvider;
   ConvexClientWithAuth<BetterAuthSession>? _betterAuthClient;
@@ -114,6 +120,9 @@ class _ConvexFlutterDemoAppState extends State<ConvexFlutterDemoApp> {
     _disposeClient();
     _demoAuthProvider.dispose();
     _latencyNotifier.dispose();
+    _betterAuthNameController.dispose();
+    _betterAuthEmailController.dispose();
+    _betterAuthPasswordController.dispose();
     super.dispose();
   }
 
@@ -337,6 +346,9 @@ class _ConvexFlutterDemoAppState extends State<ConvexFlutterDemoApp> {
       authStatus: _authStatus,
       localAvailabilityError: _localAvailabilityError,
       authMode: _authMode,
+      betterAuthNameController: _betterAuthNameController,
+      betterAuthEmailController: _betterAuthEmailController,
+      betterAuthPasswordController: _betterAuthPasswordController,
       selectedTabIndex: _selectedTabIndex,
       onTabChanged: (index) => setState(() => _selectedTabIndex = index),
       onLogin: _login,
@@ -388,6 +400,9 @@ class DemoHomePage extends StatefulWidget {
     required this.authStatus,
     required this.localAvailabilityError,
     required this.authMode,
+    required this.betterAuthNameController,
+    required this.betterAuthEmailController,
+    required this.betterAuthPasswordController,
     required this.selectedTabIndex,
     required this.onTabChanged,
     required this.onLogin,
@@ -409,6 +424,9 @@ class DemoHomePage extends StatefulWidget {
   final String? authStatus;
   final String? localAvailabilityError;
   final AuthMode authMode;
+  final TextEditingController betterAuthNameController;
+  final TextEditingController betterAuthEmailController;
+  final TextEditingController betterAuthPasswordController;
   final int selectedTabIndex;
   final ValueChanged<int> onTabChanged;
   final Future<void> Function() onLogin;
@@ -460,11 +478,13 @@ class _DemoHomePageState extends State<DemoHomePage> {
       _ChatsScreen(
         api: widget.api,
         deploymentUrl: widget.deploymentUrl,
+        authMode: widget.authMode,
         latencyNotifier: widget.latencyNotifier,
       ),
       _TasksScreen(
         api: widget.api,
         deploymentUrl: widget.deploymentUrl,
+        authMode: widget.authMode,
         latencyNotifier: widget.latencyNotifier,
       ),
       _SessionScreen(
@@ -476,6 +496,9 @@ class _DemoHomePageState extends State<DemoHomePage> {
         deploymentUrl: widget.deploymentUrl,
         authStatus: widget.authStatus,
         authMode: widget.authMode,
+        betterAuthNameController: widget.betterAuthNameController,
+        betterAuthEmailController: widget.betterAuthEmailController,
+        betterAuthPasswordController: widget.betterAuthPasswordController,
         onLogin: widget.onLogin,
         onLoginFromCache: widget.onLoginFromCache,
         onLogout: widget.onLogout,
@@ -487,10 +510,14 @@ class _DemoHomePageState extends State<DemoHomePage> {
         localClient: widget.localClient,
         localRuntime: widget.localRuntime,
         deploymentUrl: widget.deploymentUrl,
+        authMode: widget.authMode,
         availabilityError: widget.localAvailabilityError,
         latencyNotifier: widget.latencyNotifier,
       ),
-      _AboutScreen(latencyNotifier: widget.latencyNotifier),
+      _AboutScreen(
+        authMode: widget.authMode,
+        latencyNotifier: widget.latencyNotifier,
+      ),
     ];
 
     return LayoutBuilder(
@@ -526,6 +553,7 @@ class _DemoHomePageState extends State<DemoHomePage> {
                             destinations: _destinations,
                             selectedIndex: _selectedIndex,
                             deploymentUrl: widget.deploymentUrl,
+                            authMode: widget.authMode,
                             latencyNotifier: widget.latencyNotifier,
                             onSelected: (index) {
                               _selectedIndex = index;
@@ -554,11 +582,13 @@ class _ChatsScreen extends StatelessWidget {
   const _ChatsScreen({
     required this.api,
     required this.deploymentUrl,
+    required this.authMode,
     required this.latencyNotifier,
   });
 
   final ConvexApi? api;
   final String deploymentUrl;
+  final AuthMode authMode;
   final ValueNotifier<TransitionMetrics?> latencyNotifier;
 
   @override
@@ -571,6 +601,7 @@ class _ChatsScreen extends StatelessWidget {
             appBar: _DemoAppBar(
               title: 'Chats',
               subtitle: _deploymentSubtitle(deploymentUrl),
+              authMode: authMode,
               latencyNotifier: latencyNotifier,
             ),
             body: SingleChildScrollView(
@@ -593,6 +624,7 @@ class _ChatsScreen extends StatelessWidget {
             appBar: _DemoAppBar(
               title: 'Chats',
               subtitle: _deploymentSubtitle(deploymentUrl),
+              authMode: authMode,
               latencyNotifier: latencyNotifier,
               bottom: const TabBar(
                 tabs: <Widget>[
@@ -624,11 +656,13 @@ class _TasksScreen extends StatelessWidget {
   const _TasksScreen({
     required this.api,
     required this.deploymentUrl,
+    required this.authMode,
     required this.latencyNotifier,
   });
 
   final ConvexApi? api;
   final String deploymentUrl;
+  final AuthMode authMode;
   final ValueNotifier<TransitionMetrics?> latencyNotifier;
 
   @override
@@ -637,6 +671,7 @@ class _TasksScreen extends StatelessWidget {
       appBar: _DemoAppBar(
         title: 'Tasks',
         subtitle: _deploymentSubtitle(deploymentUrl),
+        authMode: authMode,
         latencyNotifier: latencyNotifier,
       ),
       body: SingleChildScrollView(
@@ -657,6 +692,9 @@ class _SessionScreen extends StatelessWidget {
     required this.deploymentUrl,
     required this.authStatus,
     required this.authMode,
+    required this.betterAuthNameController,
+    required this.betterAuthEmailController,
+    required this.betterAuthPasswordController,
     required this.onLogin,
     required this.onLoginFromCache,
     required this.onLogout,
@@ -673,6 +711,9 @@ class _SessionScreen extends StatelessWidget {
   final String deploymentUrl;
   final String? authStatus;
   final AuthMode authMode;
+  final TextEditingController betterAuthNameController;
+  final TextEditingController betterAuthEmailController;
+  final TextEditingController betterAuthPasswordController;
   final Future<void> Function() onLogin;
   final Future<void> Function() onLoginFromCache;
   final Future<void> Function() onLogout;
@@ -687,6 +728,9 @@ class _SessionScreen extends StatelessWidget {
         return BetterAuthPanel(
           provider: provider,
           authClient: betterAuthClient,
+          nameController: betterAuthNameController,
+          emailController: betterAuthEmailController,
+          passwordController: betterAuthPasswordController,
         );
       }
       return const BetterAuthSetupPanel();
@@ -715,6 +759,7 @@ class _SessionScreen extends StatelessWidget {
       appBar: _DemoAppBar(
         title: 'Auth',
         subtitle: _deploymentSubtitle(deploymentUrl),
+        authMode: authMode,
         latencyNotifier: latencyNotifier,
       ),
       body: LayoutBuilder(
@@ -755,6 +800,7 @@ class _LocalScreen extends StatelessWidget {
     required this.localClient,
     required this.localRuntime,
     required this.deploymentUrl,
+    required this.authMode,
     required this.availabilityError,
     required this.latencyNotifier,
   });
@@ -762,6 +808,7 @@ class _LocalScreen extends StatelessWidget {
   final ConvexLocalClient? localClient;
   final LocalConvexRuntimeClient? localRuntime;
   final String deploymentUrl;
+  final AuthMode authMode;
   final String? availabilityError;
   final ValueNotifier<TransitionMetrics?> latencyNotifier;
 
@@ -771,6 +818,7 @@ class _LocalScreen extends StatelessWidget {
       appBar: _DemoAppBar(
         title: 'Local',
         subtitle: _deploymentSubtitle(deploymentUrl),
+        authMode: authMode,
         latencyNotifier: latencyNotifier,
       ),
       body: SingleChildScrollView(
@@ -787,11 +835,12 @@ class _LocalScreen extends StatelessWidget {
 }
 
 class _AboutScreen extends StatelessWidget {
-  const _AboutScreen({required this.latencyNotifier});
+  const _AboutScreen({required this.authMode, required this.latencyNotifier});
 
   static const String _website = 'https://andrefrelicot.dev';
   static const String _github = 'https://github.com/AndreFrelicot/dartvex/';
 
+  final AuthMode authMode;
   final ValueNotifier<TransitionMetrics?> latencyNotifier;
 
   @override
@@ -801,6 +850,7 @@ class _AboutScreen extends StatelessWidget {
       appBar: _DemoAppBar(
         title: 'About',
         subtitle: 'Dartvex Flutter SDK',
+        authMode: authMode,
         latencyNotifier: latencyNotifier,
       ),
       body: SingleChildScrollView(
@@ -964,12 +1014,14 @@ class _DemoAppBar extends StatelessWidget implements PreferredSizeWidget {
     required this.title,
     required this.subtitle,
     this.bottom,
+    this.authMode,
     this.latencyNotifier,
   });
 
   final String title;
   final String subtitle;
   final PreferredSizeWidget? bottom;
+  final AuthMode? authMode;
   final ValueNotifier<TransitionMetrics?>? latencyNotifier;
 
   static const double _toolbarHeight = 72;
@@ -1030,8 +1082,17 @@ class _DemoAppBar extends StatelessWidget implements PreferredSizeWidget {
       actions: <Widget>[
         Padding(
           padding: const EdgeInsets.only(right: 16),
-          child: Center(
-            child: _ConnectionChip(latencyNotifier: latencyNotifier),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 260),
+            child: Center(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: _ConnectionChip(
+                  authMode: authMode,
+                  latencyNotifier: latencyNotifier,
+                ),
+              ),
+            ),
           ),
         ),
       ],
@@ -1041,8 +1102,9 @@ class _DemoAppBar extends StatelessWidget implements PreferredSizeWidget {
 }
 
 class _ConnectionChip extends StatelessWidget {
-  const _ConnectionChip({this.latencyNotifier});
+  const _ConnectionChip({this.authMode, this.latencyNotifier});
 
+  final AuthMode? authMode;
   final ValueNotifier<TransitionMetrics?>? latencyNotifier;
 
   @override
@@ -1083,7 +1145,9 @@ class _ConnectionChip extends StatelessWidget {
                 Icon(Icons.circle, size: 10, color: color),
                 const SizedBox(width: 8),
                 Text(
-                  label,
+                  authMode == null
+                      ? label
+                      : '$label • ${_authMechanismLabel(authMode!)}',
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
                     color: color,
                     fontWeight: FontWeight.w700,
@@ -1121,6 +1185,7 @@ class _DesktopNavigation extends StatelessWidget {
     required this.destinations,
     required this.selectedIndex,
     required this.deploymentUrl,
+    required this.authMode,
     required this.onSelected,
     this.latencyNotifier,
   });
@@ -1128,6 +1193,7 @@ class _DesktopNavigation extends StatelessWidget {
   final List<_DemoDestination> destinations;
   final int selectedIndex;
   final String deploymentUrl;
+  final AuthMode authMode;
   final ValueChanged<int> onSelected;
   final ValueNotifier<TransitionMetrics?>? latencyNotifier;
 
@@ -1210,12 +1276,22 @@ class _DesktopNavigation extends StatelessWidget {
               const SizedBox(height: 8),
             ],
             const Spacer(),
-            _ConnectionChip(latencyNotifier: latencyNotifier),
+            _ConnectionChip(
+              authMode: authMode,
+              latencyNotifier: latencyNotifier,
+            ),
           ],
         ),
       ),
     );
   }
+}
+
+String _authMechanismLabel(AuthMode mode) {
+  return switch (mode) {
+    AuthMode.demo => 'Demo JWT',
+    AuthMode.betterAuth => 'Better Auth',
+  };
 }
 
 class _RailDestinationTile extends StatelessWidget {

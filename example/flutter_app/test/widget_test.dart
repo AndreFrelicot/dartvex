@@ -21,6 +21,7 @@ void main() {
     expect(find.text('Chats'), findsWidgets);
     expect(find.text('Tasks'), findsWidgets);
     expect(find.text('Public Realtime Feed'), findsOneWidget);
-    expect(find.text('Disconnected'), findsWidgets);
+    expect(find.textContaining('Disconnected'), findsWidgets);
+    expect(find.textContaining('Demo JWT'), findsWidgets);
   });
 }

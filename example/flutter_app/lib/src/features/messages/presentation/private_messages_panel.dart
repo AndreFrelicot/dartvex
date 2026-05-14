@@ -76,10 +76,10 @@ class _PrivateMessagesPanelState extends State<PrivateMessagesPanel> {
       eyebrow: 'PRIVATE THREAD',
       title: 'Secure Realtime Feed',
       subtitle:
-          'Same Convex subscription model, but scoped to the authenticated '
-          'viewer and guarded by JWT auth.',
+          'Same Convex subscription model, scoped to the viewer authenticated '
+          'by the active Auth mode shown in the connection chip.',
       trailing: const ThreadPill(
-        label: 'JWT required',
+        label: 'Auth required',
         backgroundColor: Color(0x1AB6C4FF),
         foregroundColor: ConciergeColors.secondary,
         icon: Icons.lock_outline_rounded,
@@ -188,14 +188,18 @@ class _PrivateMessagesPanelState extends State<PrivateMessagesPanel> {
                 ),
                 const SizedBox(height: 14),
                 ResponsiveActionFooter(
-                  message: 'Protected by Convex auth context.',
+                  message:
+                      'Protected by the current Convex auth context from the Auth tab.',
                   actions: <Widget>[
-                    FilledButton.tonalIcon(
+                    FilledButton.icon(
                       onPressed: widget.api == null || _isSending
                           ? null
                           : _send,
                       style: FilledButton.styleFrom(
-                        foregroundColor: ConciergeColors.secondary,
+                        backgroundColor: ConciergeColors.cyan,
+                        foregroundColor: ConciergeColors.surfaceLowest,
+                        disabledBackgroundColor: ConciergeColors.surface,
+                        disabledForegroundColor: ConciergeColors.textMuted,
                       ),
                       icon: Icon(
                         _isSending ? Icons.hourglass_top : Icons.lock_open,

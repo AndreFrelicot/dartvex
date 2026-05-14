@@ -13,10 +13,16 @@ class BetterAuthPanel extends StatefulWidget {
     super.key,
     required this.provider,
     required this.authClient,
+    required this.nameController,
+    required this.emailController,
+    required this.passwordController,
   });
 
   final ConvexBetterAuthProvider provider;
   final ConvexClientWithAuth<BetterAuthSession>? authClient;
+  final TextEditingController nameController;
+  final TextEditingController emailController;
+  final TextEditingController passwordController;
 
   @override
   State<BetterAuthPanel> createState() => _BetterAuthPanelState();
@@ -24,23 +30,12 @@ class BetterAuthPanel extends StatefulWidget {
 
 class _BetterAuthPanelState extends State<BetterAuthPanel>
     with AutomaticKeepAliveClientMixin {
-  final _nameController = TextEditingController();
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
   bool _isSignUp = true;
   bool _isLoading = false;
   String? _error;
 
   @override
   bool get wantKeepAlive => true;
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _emailController.dispose();
-    _passwordController.dispose();
-    super.dispose();
-  }
 
   Future<void> _submit() async {
     final authClient = widget.authClient;
@@ -52,22 +47,17 @@ class _BetterAuthPanelState extends State<BetterAuthPanel>
     });
 
     try {
-      widget.provider.email = _emailController.text.trim();
-      widget.provider.password = _passwordController.text;
+      widget.provider.email = widget.emailController.text.trim();
+      widget.provider.password = widget.passwordController.text;
       if (_isSignUp) {
         // Register via HTTP, then authenticate the Convex WebSocket.
         await widget.provider.client.signUp(
-          name: _nameController.text.trim(),
-          email: _emailController.text.trim(),
-          password: _passwordController.text,
+          name: widget.nameController.text.trim(),
+          email: widget.emailController.text.trim(),
+          password: widget.passwordController.text,
         );
       }
       await authClient.login();
-      if (mounted) {
-        _nameController.clear();
-        _emailController.clear();
-        _passwordController.clear();
-      }
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -133,9 +123,9 @@ class _BetterAuthPanelState extends State<BetterAuthPanel>
                 onLogout: _logout,
               ),
             _ => _AuthForm(
-              nameController: _nameController,
-              emailController: _emailController,
-              passwordController: _passwordController,
+              nameController: widget.nameController,
+              emailController: widget.emailController,
+              passwordController: widget.passwordController,
               isSignUp: _isSignUp,
               isLoading: _isLoading,
               error: _error,
