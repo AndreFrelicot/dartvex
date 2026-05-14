@@ -654,7 +654,8 @@ class ConvexLocalClient {
   ]) async {
     _assertNotDisposed();
     final normalizedArgs = Map<String, dynamic>.from(args);
-    if (_networkMode == LocalNetworkMode.auto) {
+    if (_networkMode == LocalNetworkMode.auto &&
+        _lastRemoteConnectionState == LocalRemoteConnectionState.connected) {
       _log('mutate', '$name — mode=auto, trying remote first');
       try {
         final value = await _remoteClient.mutate(name, normalizedArgs);
@@ -676,6 +677,8 @@ class ConvexLocalClient {
         }
         _log('mutate', '$name — remote unavailable, falling through to queue');
       }
+    } else if (_networkMode == LocalNetworkMode.auto) {
+      _log('mutate', '$name — remote not connected, queueing immediately');
     }
 
     _log('mutate', '$name — queueing (mode=$_networkMode)');
@@ -948,11 +951,13 @@ class ConvexLocalClient {
     if (_disposed ||
         _networkMode == LocalNetworkMode.offline ||
         _isSyncing ||
+        _lastRemoteConnectionState != LocalRemoteConnectionState.connected ||
         _pendingMutations.isEmpty) {
       _log(
           'replay:skip',
           'disposed=$_disposed mode=$_networkMode '
-              'syncing=$_isSyncing pending=${_pendingMutations.length}');
+              'syncing=$_isSyncing remote=$_lastRemoteConnectionState '
+              'pending=${_pendingMutations.length}');
       _updateConnectionState();
       return;
     }

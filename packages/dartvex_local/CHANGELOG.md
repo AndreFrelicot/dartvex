@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Queues auto-mode mutations immediately while the remote client is
+  disconnected, and waits for a connected remote before replaying queued
+  mutations.
 - Uses the Convex value codec for local query keys and storage payloads so
   `BigInt`, bytes, and special floating-point values round-trip correctly.
 - Queues retryable auto-mode mutations when the remote client is unavailable.

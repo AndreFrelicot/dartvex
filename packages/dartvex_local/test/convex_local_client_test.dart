@@ -213,13 +213,8 @@ void main() {
       expect(localClient.currentPendingMutations, hasLength(1));
     });
 
-    test('queues auto-mode mutations on disconnected non-Convex failures',
-        () async {
-      remoteClient
-        ..setConnectionState(LocalRemoteConnectionState.disconnected)
-        ..mutationResults['messages:sendPublic'] = <Object?>[
-          StateError('socket closed'),
-        ];
+    test('queues auto-mode mutations immediately while disconnected', () async {
+      remoteClient.setConnectionState(LocalRemoteConnectionState.disconnected);
 
       final result = await localClient.mutate(
         'messages:sendPublic',
@@ -227,6 +222,7 @@ void main() {
       );
 
       expect(result, isA<LocalMutationQueued>());
+      expect(remoteClient.mutationCalls, isEmpty);
       expect(localClient.currentPendingMutations, hasLength(1));
     });
 
@@ -280,6 +276,34 @@ void main() {
       expect(localClient.currentPendingMutations, isEmpty);
       final refreshed = await localClient.query('messages:listPublic');
       expect((refreshed as List<dynamic>).length, 2);
+    });
+
+    test('does not replay queued mutations until remote connects', () async {
+      await localClient.setNetworkMode(LocalNetworkMode.offline);
+      await localClient.mutate(
+        'messages:sendPublic',
+        <String, dynamic>{'author': 'A', 'text': 'Deferred'},
+      );
+
+      remoteClient
+        ..setConnectionState(LocalRemoteConnectionState.disconnected)
+        ..mutationResults['messages:sendPublic'] = <Object?>[
+          'server-id-1',
+        ];
+
+      await localClient.setNetworkMode(LocalNetworkMode.auto);
+      await pumpEventQueue();
+
+      expect(remoteClient.mutationCalls, isEmpty);
+      expect(localClient.currentPendingMutations, hasLength(1));
+
+      remoteClient.setConnectionState(LocalRemoteConnectionState.connected);
+      await localClient.pendingMutations
+          .firstWhere((list) => list.isEmpty)
+          .timeout(const Duration(seconds: 2));
+
+      expect(remoteClient.mutationCalls, hasLength(1));
+      expect(localClient.currentPendingMutations, isEmpty);
     });
 
     test('refresh timeout cancels one-shot remote subscription', () async {
