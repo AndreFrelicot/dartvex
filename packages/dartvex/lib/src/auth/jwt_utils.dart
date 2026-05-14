@@ -1,6 +1,11 @@
 import 'dart:convert';
 
 /// Decodes the payload section of a JWT into a JSON object.
+///
+/// This does not validate the JWT signature. Signature validation is performed
+/// by the Convex backend on authenticated requests; this helper is only used
+/// to read non-security-sensitive claims such as `exp` and `iat` for refresh
+/// scheduling.
 Map<String, dynamic> decodeJwtPayload(String token) {
   final parts = token.split('.');
   if (parts.length < 2) {
