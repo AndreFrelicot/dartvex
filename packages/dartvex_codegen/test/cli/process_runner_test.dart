@@ -27,6 +27,27 @@ void main() {
       expect(decoded['url'], 'https://test.convex.cloud');
     });
 
+    test('skips non-function-spec JSON objects', () {
+      const input =
+          '{"level":"warn","message":"using cached deployment"}\n{"url":"https://test.convex.cloud","functions":[]}';
+      final result = extractFunctionSpecJson(input);
+      final decoded = jsonDecode(result) as Map<String, dynamic>;
+      expect(decoded['url'], 'https://test.convex.cloud');
+      expect(decoded['functions'], isEmpty);
+    });
+
+    test('throws clear error when JSON objects are not function specs', () {
+      const input = '{"level":"warn","message":"no spec here"}';
+      expect(
+        () => extractFunctionSpecJson(input),
+        throwsA(isA<ProcessRunnerException>().having(
+          (e) => e.message,
+          'message',
+          contains('Convex function spec'),
+        )),
+      );
+    });
+
     test('throws clear error when no JSON present', () {
       expect(
         () => extractFunctionSpecJson('no json here'),

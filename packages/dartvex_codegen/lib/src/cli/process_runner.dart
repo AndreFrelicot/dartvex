@@ -103,7 +103,7 @@ class SystemProcessRunner implements ProcessRunner {
   }
 }
 
-/// Extracts the first balanced JSON object from Convex CLI stdout.
+/// Extracts the first balanced Convex function spec JSON object from stdout.
 String extractFunctionSpecJson(String stdoutText) {
   if (stdoutText.isEmpty) {
     throw ProcessRunnerException('convex function-spec produced no output.');
@@ -118,6 +118,7 @@ String extractFunctionSpecJson(String stdoutText) {
   }
 
   Object? lastError;
+  var foundJsonObject = false;
   while (searchStart != -1) {
     var depth = 0;
     var inString = false;
@@ -146,9 +147,16 @@ String extractFunctionSpecJson(String stdoutText) {
           try {
             final decoded = jsonDecode(candidate);
             if (decoded is Map<String, dynamic>) {
-              return candidate;
+              foundJsonObject = true;
+              if (_looksLikeFunctionSpec(decoded)) {
+                return candidate;
+              }
+              lastError =
+                  'JSON object is missing string "url" and list "functions" '
+                  'fields';
+            } else {
+              lastError = 'JSON value is ${decoded.runtimeType}, not an object';
             }
-            lastError = 'JSON value is ${decoded.runtimeType}, not an object';
           } catch (error) {
             lastError = error;
           }
@@ -163,9 +171,16 @@ String extractFunctionSpecJson(String stdoutText) {
   }
 
   throw ProcessRunnerException(
-    lastError == null
-        ? 'convex function-spec did not emit a complete JSON object.'
-        : 'convex function-spec output contains invalid JSON: $lastError',
+    foundJsonObject
+        ? 'convex function-spec did not emit a Convex function spec JSON '
+            'object.'
+        : lastError == null
+            ? 'convex function-spec did not emit a complete JSON object.'
+            : 'convex function-spec output contains invalid JSON: $lastError',
     stdout: stdoutText,
   );
+}
+
+bool _looksLikeFunctionSpec(Map<String, dynamic> object) {
+  return object['url'] is String && object['functions'] is List<dynamic>;
 }
