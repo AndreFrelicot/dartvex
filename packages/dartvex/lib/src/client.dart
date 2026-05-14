@@ -131,7 +131,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     String deploymentUrl, {
     ConvexClientConfig? config,
     TransitionMetricsCallback? onTransitionMetrics,
-  })  : _deploymentUrl = deploymentUrl,
+  })  : _deploymentUrl = _normalizeDeploymentUrl(deploymentUrl),
         _config = _normalizeConfig(config ?? const ConvexClientConfig()),
         _baseClient = BaseClient(),
         _connectionStateController =
@@ -192,6 +192,23 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   bool _refreshAuthOnNextConnect = false;
   bool _disposed = false;
 
+  static String _normalizeDeploymentUrl(String deploymentUrl) {
+    final uri = Uri.tryParse(deploymentUrl);
+    final scheme = uri?.scheme;
+    if (uri == null ||
+        scheme == null ||
+        scheme.isEmpty ||
+        uri.host.isEmpty ||
+        !const <String>{'http', 'https', 'ws', 'wss'}.contains(scheme)) {
+      throw ArgumentError.value(
+        deploymentUrl,
+        'deploymentUrl',
+        'must be an absolute Convex URL with http, https, ws, or wss scheme',
+      );
+    }
+    return uri.toString();
+  }
+
   static ConvexClientConfig _normalizeConfig(ConvexClientConfig config) {
     final reconnectBackoff =
         List<Duration>.unmodifiable(config.reconnectBackoff);
@@ -217,6 +234,8 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       authTokenType: config.authTokenType,
       inactivityTimeout: config.inactivityTimeout,
       queryTimeout: config.queryTimeout,
+      mutationTimeout: config.mutationTimeout,
+      actionTimeout: config.actionTimeout,
       reconnectBackoff: reconnectBackoff,
       connectImmediately: config.connectImmediately,
       adapterFactory: config.adapterFactory,
@@ -336,18 +355,29 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       data: _requestData(name, args),
     );
     final registration = _baseClient.subscribe(name, args);
-    final controller = StreamController<QueryResult>.broadcast(sync: true);
-    _subscriptionControllers[registration.subscriberId] = controller;
-
     final current = _baseClient.currentResultForQuery(registration.queryId) ??
         _baseClient.cachedResultForQuery(name, args);
-    if (current != null) {
-      scheduleMicrotask(() {
-        if (!controller.isClosed) {
-          controller.add(_toPublicQueryResult(current));
+    var emittedInitialResult = false;
+    late final StreamController<QueryResult> controller;
+    controller = StreamController<QueryResult>.broadcast(
+      sync: true,
+      onListen: () {
+        if (emittedInitialResult) {
+          return;
         }
-      });
-    }
+        emittedInitialResult = true;
+        final initial = current;
+        if (initial == null) {
+          return;
+        }
+        scheduleMicrotask(() {
+          if (!controller.isClosed) {
+            controller.add(_toPublicQueryResult(initial));
+          }
+        });
+      },
+    );
+    _subscriptionControllers[registration.subscriberId] = controller;
 
     unawaited(_flushOutgoing());
 
@@ -387,7 +417,11 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       data: _requestData(name, args),
     );
     try {
-      final future = _baseClient.mutate(name, args);
+      final future = _withOptionalTimeout(
+        _baseClient.mutate(name, args),
+        _config.mutationTimeout,
+        'Mutation "$name"',
+      );
       await _flushOutgoing();
       final result = await future;
       _log(
@@ -431,7 +465,11 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       data: _requestData(name, args),
     );
     try {
-      final future = _baseClient.action(name, args);
+      final future = _withOptionalTimeout(
+        _baseClient.action(name, args),
+        _config.actionTimeout,
+        'Action "$name"',
+      );
       await _flushOutgoing();
       final result = await future;
       _log(
@@ -453,6 +491,23 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       );
       rethrow;
     }
+  }
+
+  Future<dynamic> _withOptionalTimeout(
+    Future<dynamic> future,
+    Duration? timeout,
+    String operation,
+  ) {
+    if (timeout == null) {
+      return future;
+    }
+    return future.timeout(
+      timeout,
+      onTimeout: () => throw TimeoutException(
+        '$operation timed out after ${timeout.inMilliseconds}ms',
+        timeout,
+      ),
+    );
   }
 
   /// Applies a fixed auth token to the client.

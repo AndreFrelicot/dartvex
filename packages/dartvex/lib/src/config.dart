@@ -13,6 +13,8 @@ class ConvexClientConfig {
     this.authTokenType = 'User',
     this.inactivityTimeout = const Duration(seconds: 30),
     this.queryTimeout,
+    this.mutationTimeout,
+    this.actionTimeout,
     this.reconnectBackoff = const <Duration>[
       Duration(seconds: 1),
       Duration(seconds: 2),
@@ -42,6 +44,21 @@ class ConvexClientConfig {
   /// Optional maximum wait for [ConvexClient.query] before cancelling the
   /// temporary subscription and completing with a [TimeoutException].
   final Duration? queryTimeout;
+
+  /// Optional maximum wait for [ConvexClient.mutate] before completing the
+  /// returned future with a [TimeoutException].
+  ///
+  /// A timed-out mutation may still complete on the backend if it was already
+  /// sent. Use idempotent mutation design for operations with external side
+  /// effects.
+  final Duration? mutationTimeout;
+
+  /// Optional maximum wait for [ConvexClient.action] before completing the
+  /// returned future with a [TimeoutException].
+  ///
+  /// A timed-out action may still complete on the backend if it was already
+  /// sent.
+  final Duration? actionTimeout;
 
   /// Backoff schedule used for reconnect attempts.
   ///

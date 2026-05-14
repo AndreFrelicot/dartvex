@@ -53,6 +53,42 @@ void main() {
       );
     });
 
+    test('rejects deployment URLs without an absolute supported scheme', () {
+      expect(
+        () => ConvexClient(
+          'demo.convex.cloud',
+          config: const ConvexClientConfig(connectImmediately: false),
+        ),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.name,
+            'name',
+            'deploymentUrl',
+          ),
+        ),
+      );
+    });
+
+    test('preserves ws scheme when building WebSocket URL', () async {
+      final adapter = MockWebSocketAdapter();
+      final client = ConvexClient(
+        'ws://demo.convex.cloud',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          connectImmediately: false,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+
+      final subscription = client.subscribe('messages:list');
+      await settle();
+
+      expect(adapter.connectedUrls.single, startsWith('ws://'));
+
+      subscription.cancel();
+      client.dispose();
+    });
+
     test('lazy config does not connect in constructor', () async {
       final adapter = MockWebSocketAdapter();
       final client = ConvexClient(
@@ -233,6 +269,53 @@ void main() {
       client.dispose();
     });
 
+    test('cached subscription result waits for listener attachment', () async {
+      final adapter = MockWebSocketAdapter();
+      final client = ConvexClient(
+        'https://demo.convex.cloud',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+      await settle();
+
+      final firstSubscription = client.subscribe('messages:list');
+      final firstFuture = firstSubscription.stream.first;
+      await settle();
+      final querySet = adapter.decodedSentMessages
+          .where((message) => message['type'] == 'ModifyQuerySet')
+          .last;
+      final queryId = (((querySet['modifications'] as List<dynamic>).single
+          as Map<String, dynamic>)['queryId']) as int;
+      adapter.pushServerMessage(
+        Transition(
+          startVersion: const StateVersion.initial(),
+          endVersion: StateVersion(querySet: 1, identity: 0, ts: encodeTs(1)),
+          modifications: <StateModification>[
+            QueryUpdated(queryId: queryId, value: 'cached'),
+          ],
+        ).toJson(),
+      );
+      expect(await firstFuture, isA<QuerySuccess>());
+      firstSubscription.cancel();
+      await settle();
+
+      final cachedSubscription = client.subscribe('messages:list');
+      await Future<void>.delayed(Duration.zero);
+
+      final cachedResult = await cachedSubscription.stream.first.timeout(
+        const Duration(seconds: 1),
+      );
+      expect(
+        cachedResult,
+        isA<QuerySuccess>().having((result) => result.value, 'value', 'cached'),
+      );
+
+      cachedSubscription.cancel();
+      client.dispose();
+    });
+
     test('subscribe receives query errors with data and log lines', () async {
       final adapter = MockWebSocketAdapter();
       final client = ConvexClient(
@@ -322,6 +405,52 @@ void main() {
             'Remove';
       }).toList(growable: false);
       expect(removeMessages, hasLength(1));
+
+      client.dispose();
+    });
+
+    test('mutation timeout completes caller future', () async {
+      final adapter = MockWebSocketAdapter();
+      final client = ConvexClient(
+        'https://demo.convex.cloud',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          reconnectBackoff: const <Duration>[Duration.zero],
+          mutationTimeout: const Duration(milliseconds: 1),
+        ),
+      );
+      await settle();
+
+      await expectLater(
+        client.mutate(
+          'messages:send',
+          const <String, dynamic>{'body': 'hello'},
+        ),
+        throwsA(isA<TimeoutException>()),
+      );
+
+      client.dispose();
+    });
+
+    test('action timeout completes caller future', () async {
+      final adapter = MockWebSocketAdapter();
+      final client = ConvexClient(
+        'https://demo.convex.cloud',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          reconnectBackoff: const <Duration>[Duration.zero],
+          actionTimeout: const Duration(milliseconds: 1),
+        ),
+      );
+      await settle();
+
+      await expectLater(
+        client.action(
+          'messages:notify',
+          const <String, dynamic>{'body': 'hello'},
+        ),
+        throwsA(isA<TimeoutException>()),
+      );
 
       client.dispose();
     });
