@@ -50,8 +50,10 @@ void main() {
       final querySet = socket.decodedSentMessages
           .where((message) => message['type'] == 'ModifyQuerySet')
           .last;
-      final queryId = (((querySet['modifications'] as List<dynamic>).single
-          as Map<String, dynamic>)['queryId']) as int;
+      final queryId =
+          (((querySet['modifications'] as List<dynamic>).single
+                  as Map<String, dynamic>)['queryId'])
+              as int;
 
       socket.pushServerMessage(
         Transition(
@@ -76,15 +78,12 @@ void main() {
             'error',
             isA<convex.ConvexException>()
                 .having((error) => error.message, 'message', 'not found')
-                .having(
-              (error) => error.data,
-              'data',
-              const <String, dynamic>{'code': 'missing'},
-            ).having(
-              (error) => error.logLines,
-              'logLines',
-              const <String>['server log'],
-            ),
+                .having((error) => error.data, 'data', const <String, dynamic>{
+                  'code': 'missing',
+                })
+                .having((error) => error.logLines, 'logLines', const <String>[
+                  'server log',
+                ]),
           ),
         ),
       );

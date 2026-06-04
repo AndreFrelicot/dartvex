@@ -8,8 +8,8 @@ class MutationQueue {
   const MutationQueue({
     required QueueStorage storage,
     required ValueCodec codec,
-  })  : _storage = storage,
-        _codec = codec;
+  }) : _storage = storage,
+       _codec = codec;
 
   final QueueStorage _storage;
   final ValueCodec _codec;
@@ -24,8 +24,9 @@ class MutationQueue {
     final stored = await _storage.enqueue(
       mutationName: mutationName,
       argsJson: _codec.encode(args),
-      optimisticJson:
-          optimisticData == null ? null : _codec.encode(optimisticData),
+      optimisticJson: optimisticData == null
+          ? null
+          : _codec.encode(optimisticData),
       createdAtMillis: createdAt.millisecondsSinceEpoch,
     );
     return _toPendingMutation(stored);
@@ -43,11 +44,7 @@ class MutationQueue {
     PendingMutationStatus status, {
     String? errorMessage,
   }) {
-    return _storage.markStatus(
-      id,
-      status.wireName,
-      errorMessage: errorMessage,
-    );
+    return _storage.markStatus(id, status.wireName, errorMessage: errorMessage);
   }
 
   /// Removes the pending mutation with [id].

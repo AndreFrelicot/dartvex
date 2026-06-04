@@ -50,11 +50,7 @@ abstract class QueueStorage {
   Future<List<StoredPendingMutation>> loadAll();
 
   /// Updates the replay [status] for the mutation with [id].
-  Future<void> markStatus(
-    int id,
-    String status, {
-    String? errorMessage,
-  });
+  Future<void> markStatus(int id, String status, {String? errorMessage});
 
   /// Removes the queued mutation with [id].
   Future<void> remove(int id);

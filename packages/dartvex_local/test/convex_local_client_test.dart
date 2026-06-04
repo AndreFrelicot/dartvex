@@ -80,8 +80,10 @@ void main() {
       await localClient.query('tasks:list');
 
       // Set a non-retryable error.
-      remoteClient.queryErrors['tasks:list'] =
-          const ConvexException('Validation failed', retryable: false);
+      remoteClient.queryErrors['tasks:list'] = const ConvexException(
+        'Validation failed',
+        retryable: false,
+      );
 
       await expectLater(
         localClient.query('tasks:list'),
@@ -124,9 +126,11 @@ void main() {
       await QueryCache(
         storage: cacheStore,
         codec: const JsonValueCodec(),
-      ).write(name: 'tasks:list', args: const <String, dynamic>{}, value: [
-        'stale',
-      ]);
+      ).write(
+        name: 'tasks:list',
+        args: const <String, dynamic>{},
+        value: ['stale'],
+      );
       final readGate = Completer<void>();
       final delayedCache = DelayedReadCacheStorage(
         cacheStore,
@@ -135,8 +139,8 @@ void main() {
       remoteClient = FakeRemoteClient();
       remoteClient.subscriptionStreams['tasks:list'] =
           Stream<LocalRemoteQueryEvent>.value(
-        const LocalRemoteQuerySuccess(<dynamic>['fresh']),
-      );
+            const LocalRemoteQuerySuccess(<dynamic>['fresh']),
+          );
       localClient = await ConvexLocalClient.openWithRemote(
         remoteClient: remoteClient,
         config: LocalClientConfig(
@@ -175,10 +179,7 @@ void main() {
 
       expect(events, hasLength(1));
       expect(events.first, isA<LocalQueryError>());
-      expect(
-        (events.first as LocalQueryError).source,
-        LocalQuerySource.cache,
-      );
+      expect((events.first as LocalQueryError).source, LocalQuerySource.cache);
 
       await listener.cancel();
       sub.cancel();
@@ -188,30 +189,32 @@ void main() {
     // Queueing and replay behavior
     // ---------------------------------------------------------------
 
-    test('queues offline mutations and applies optimistic cache updates',
-        () async {
-      remoteClient.queryResults['messages:listPublic'] = <dynamic>[
-        <String, dynamic>{
-          '_id': 'message-1',
-          '_creationTime': 1,
-          'author': 'Andre',
-          'text': 'Existing',
-        },
-      ];
-      await localClient.query('messages:listPublic');
+    test(
+      'queues offline mutations and applies optimistic cache updates',
+      () async {
+        remoteClient.queryResults['messages:listPublic'] = <dynamic>[
+          <String, dynamic>{
+            '_id': 'message-1',
+            '_creationTime': 1,
+            'author': 'Andre',
+            'text': 'Existing',
+          },
+        ];
+        await localClient.query('messages:listPublic');
 
-      await localClient.setNetworkMode(LocalNetworkMode.offline);
+        await localClient.setNetworkMode(LocalNetworkMode.offline);
 
-      final result = await localClient.mutate(
-        'messages:sendPublic',
-        <String, dynamic>{'author': 'Local', 'text': 'Queued'},
-      );
+        final result = await localClient.mutate(
+          'messages:sendPublic',
+          <String, dynamic>{'author': 'Local', 'text': 'Queued'},
+        );
 
-      expect(result, isA<LocalMutationQueued>());
-      final cached = await localClient.query('messages:listPublic');
-      expect((cached as List<dynamic>).last['text'], 'Queued');
-      expect(localClient.currentPendingMutations, hasLength(1));
-    });
+        expect(result, isA<LocalMutationQueued>());
+        final cached = await localClient.query('messages:listPublic');
+        expect((cached as List<dynamic>).last['text'], 'Queued');
+        expect(localClient.currentPendingMutations, hasLength(1));
+      },
+    );
 
     test('queues auto-mode mutations immediately while disconnected', () async {
       remoteClient.setConnectionState(LocalRemoteConnectionState.disconnected);
@@ -238,14 +241,14 @@ void main() {
       await localClient.query('messages:listPublic');
       await localClient.setNetworkMode(LocalNetworkMode.offline);
 
-      await localClient.mutate(
-        'messages:sendPublic',
-        <String, dynamic>{'author': 'A', 'text': 'First'},
-      );
-      await localClient.mutate(
-        'messages:sendPublic',
-        <String, dynamic>{'author': 'B', 'text': 'Second'},
-      );
+      await localClient.mutate('messages:sendPublic', <String, dynamic>{
+        'author': 'A',
+        'text': 'First',
+      });
+      await localClient.mutate('messages:sendPublic', <String, dynamic>{
+        'author': 'B',
+        'text': 'Second',
+      });
 
       remoteClient.mutationResults['messages:sendPublic'] = <Object?>[
         'server-id-1',
@@ -280,16 +283,14 @@ void main() {
 
     test('does not replay queued mutations until remote connects', () async {
       await localClient.setNetworkMode(LocalNetworkMode.offline);
-      await localClient.mutate(
-        'messages:sendPublic',
-        <String, dynamic>{'author': 'A', 'text': 'Deferred'},
-      );
+      await localClient.mutate('messages:sendPublic', <String, dynamic>{
+        'author': 'A',
+        'text': 'Deferred',
+      });
 
       remoteClient
         ..setConnectionState(LocalRemoteConnectionState.disconnected)
-        ..mutationResults['messages:sendPublic'] = <Object?>[
-          'server-id-1',
-        ];
+        ..mutationResults['messages:sendPublic'] = <Object?>['server-id-1'];
 
       await localClient.setNetworkMode(LocalNetworkMode.auto);
       await pumpEventQueue();
@@ -325,10 +326,10 @@ void main() {
       remoteClient.queryResults['messages:listPublic'] = <dynamic>[];
       await localClient.query('messages:listPublic');
       await localClient.setNetworkMode(LocalNetworkMode.offline);
-      await localClient.mutate(
-        'messages:sendPublic',
-        <String, dynamic>{'author': 'A', 'text': 'queued'},
-      );
+      await localClient.mutate('messages:sendPublic', <String, dynamic>{
+        'author': 'A',
+        'text': 'queued',
+      });
 
       final refreshStream = StreamController<LocalRemoteQueryEvent>.broadcast();
       remoteClient.subscriptionStreams['messages:listPublic'] =
@@ -349,14 +350,14 @@ void main() {
       await localClient.query('messages:listPublic');
       await localClient.setNetworkMode(LocalNetworkMode.offline);
 
-      await localClient.mutate(
-        'messages:sendPublic',
-        <String, dynamic>{'author': 'A', 'text': 'First'},
-      );
-      await localClient.mutate(
-        'messages:sendPublic',
-        <String, dynamic>{'author': 'B', 'text': 'Second'},
-      );
+      await localClient.mutate('messages:sendPublic', <String, dynamic>{
+        'author': 'A',
+        'text': 'First',
+      });
+      await localClient.mutate('messages:sendPublic', <String, dynamic>{
+        'author': 'B',
+        'text': 'Second',
+      });
 
       // First mutation returns retryable error.
       remoteClient.mutationResults['messages:sendPublic'] = <Object?>[
@@ -377,10 +378,10 @@ void main() {
       await localClient.query('messages:listPublic');
       await localClient.setNetworkMode(LocalNetworkMode.offline);
 
-      await localClient.mutate(
-        'messages:sendPublic',
-        <String, dynamic>{'author': 'A', 'text': 'retry-test'},
-      );
+      await localClient.mutate('messages:sendPublic', <String, dynamic>{
+        'author': 'A',
+        'text': 'retry-test',
+      });
 
       // First attempt returns retryable error, second succeeds.
       remoteClient.mutationResults['messages:sendPublic'] = <Object?>[
@@ -409,48 +410,50 @@ void main() {
       expect(remoteClient.mutationCalls, hasLength(2));
     });
 
-    test('replay drops mutation and fires onConflict on non-retryable error',
-        () async {
-      remoteClient.queryResults['messages:listPublic'] = <dynamic>[];
-      await localClient.query('messages:listPublic');
-      await localClient.setNetworkMode(LocalNetworkMode.offline);
+    test(
+      'replay drops mutation and fires onConflict on non-retryable error',
+      () async {
+        remoteClient.queryResults['messages:listPublic'] = <dynamic>[];
+        await localClient.query('messages:listPublic');
+        await localClient.setNetworkMode(LocalNetworkMode.offline);
 
-      await localClient.mutate(
-        'messages:sendPublic',
-        <String, dynamic>{'author': 'A', 'text': 'WillFail'},
-      );
-      await localClient.mutate(
-        'messages:sendPublic',
-        <String, dynamic>{'author': 'B', 'text': 'ShouldStillReplay'},
-      );
+        await localClient.mutate('messages:sendPublic', <String, dynamic>{
+          'author': 'A',
+          'text': 'WillFail',
+        });
+        await localClient.mutate('messages:sendPublic', <String, dynamic>{
+          'author': 'B',
+          'text': 'ShouldStillReplay',
+        });
 
-      final conflicts = <LocalMutationConflict>[];
-      localClient.onConflict = conflicts.add;
+        final conflicts = <LocalMutationConflict>[];
+        localClient.onConflict = conflicts.add;
 
-      remoteClient.mutationResults['messages:sendPublic'] = <Object?>[
-        const ConvexException('Validation failed', retryable: false),
-        'server-id-2',
-      ];
+        remoteClient.mutationResults['messages:sendPublic'] = <Object?>[
+          const ConvexException('Validation failed', retryable: false),
+          'server-id-2',
+        ];
 
-      await localClient.setNetworkMode(LocalNetworkMode.auto);
-      await pumpEventQueue();
+        await localClient.setNetworkMode(LocalNetworkMode.auto);
+        await pumpEventQueue();
 
-      // First dropped, second replayed.
-      expect(conflicts, hasLength(1));
-      expect(conflicts.first.mutationName, 'messages:sendPublic');
-      expect(localClient.currentPendingMutations, isEmpty);
-      expect(remoteClient.mutationCalls, hasLength(2));
-    });
+        // First dropped, second replayed.
+        expect(conflicts, hasLength(1));
+        expect(conflicts.first.mutationName, 'messages:sendPublic');
+        expect(localClient.currentPendingMutations, isEmpty);
+        expect(remoteClient.mutationCalls, hasLength(2));
+      },
+    );
 
     test('onConflict exceptions do not stop replay cleanup', () async {
       remoteClient.queryResults['messages:listPublic'] = <dynamic>[];
       await localClient.query('messages:listPublic');
       await localClient.setNetworkMode(LocalNetworkMode.offline);
 
-      await localClient.mutate(
-        'messages:sendPublic',
-        <String, dynamic>{'author': 'A', 'text': 'WillFail'},
-      );
+      await localClient.mutate('messages:sendPublic', <String, dynamic>{
+        'author': 'A',
+        'text': 'WillFail',
+      });
 
       localClient.onConflict = (_) => throw StateError('callback failed');
       remoteClient.mutationResults['messages:sendPublic'] = <Object?>[
@@ -469,10 +472,10 @@ void main() {
       await localClient.setNetworkMode(LocalNetworkMode.offline);
 
       for (int i = 1; i <= 5; i++) {
-        await localClient.mutate(
-          'messages:sendPublic',
-          <String, dynamic>{'author': 'User', 'text': 'Message $i'},
-        );
+        await localClient.mutate('messages:sendPublic', <String, dynamic>{
+          'author': 'User',
+          'text': 'Message $i',
+        });
       }
 
       expect(localClient.currentPendingMutations, hasLength(5));
@@ -496,10 +499,7 @@ void main() {
 
       await localClient.setNetworkMode(LocalNetworkMode.offline);
       expect(localClient.currentNetworkMode, LocalNetworkMode.offline);
-      expect(
-        localClient.currentConnectionState,
-        LocalConnectionState.offline,
-      );
+      expect(localClient.currentConnectionState, LocalConnectionState.offline);
 
       await localClient.setNetworkMode(LocalNetworkMode.auto);
       expect(localClient.currentNetworkMode, LocalNetworkMode.auto);
@@ -512,8 +512,9 @@ void main() {
 
     test('repeated offline toggles do not leak or duplicate events', () async {
       final connectionStates = <LocalConnectionState>[];
-      final subscription =
-          localClient.connectionState.listen(connectionStates.add);
+      final subscription = localClient.connectionState.listen(
+        connectionStates.add,
+      );
 
       for (int i = 0; i < 5; i++) {
         await localClient.setNetworkMode(LocalNetworkMode.offline);
@@ -538,58 +539,57 @@ void main() {
       await subscription.cancel();
     });
 
-    test('connection state reflects remote disconnection in auto mode',
-        () async {
-      remoteClient.setConnectionState(
-        LocalRemoteConnectionState.disconnected,
-      );
-      await pumpEventQueue();
+    test(
+      'connection state reflects remote disconnection in auto mode',
+      () async {
+        remoteClient.setConnectionState(
+          LocalRemoteConnectionState.disconnected,
+        );
+        await pumpEventQueue();
 
-      expect(
-        localClient.currentConnectionState,
-        LocalConnectionState.offline,
-      );
+        expect(
+          localClient.currentConnectionState,
+          LocalConnectionState.offline,
+        );
 
-      remoteClient.setConnectionState(
-        LocalRemoteConnectionState.connected,
-      );
-      await pumpEventQueue();
+        remoteClient.setConnectionState(LocalRemoteConnectionState.connected);
+        await pumpEventQueue();
 
-      expect(
-        localClient.currentConnectionState,
-        LocalConnectionState.online,
-      );
-    });
+        expect(localClient.currentConnectionState, LocalConnectionState.online);
+      },
+    );
 
     // ---------------------------------------------------------------
     // Mutation handlers and patches
     // ---------------------------------------------------------------
 
-    test('mutation without handler still queues but creates no patches',
-        () async {
-      await localClient.setNetworkMode(LocalNetworkMode.offline);
+    test(
+      'mutation without handler still queues but creates no patches',
+      () async {
+        await localClient.setNetworkMode(LocalNetworkMode.offline);
 
-      final result = await localClient.mutate(
-        'unknown:mutation',
-        <String, dynamic>{'key': 'value'},
-      );
+        final result = await localClient.mutate(
+          'unknown:mutation',
+          <String, dynamic>{'key': 'value'},
+        );
 
-      expect(result, isA<LocalMutationQueued>());
-      expect(localClient.currentPendingMutations, hasLength(1));
-      expect(
-        localClient.currentPendingMutations.first.mutationName,
-        'unknown:mutation',
-      );
-    });
+        expect(result, isA<LocalMutationQueued>());
+        expect(localClient.currentPendingMutations, hasLength(1));
+        expect(
+          localClient.currentPendingMutations.first.mutationName,
+          'unknown:mutation',
+        );
+      },
+    );
 
     test('handler patch applies even when no cached query exists', () async {
       // No cache seeded — patch will get null as currentValue.
       await localClient.setNetworkMode(LocalNetworkMode.offline);
 
-      await localClient.mutate(
-        'messages:sendPublic',
-        <String, dynamic>{'author': 'User', 'text': 'First ever'},
-      );
+      await localClient.mutate('messages:sendPublic', <String, dynamic>{
+        'author': 'User',
+        'text': 'First ever',
+      });
 
       // The handler should handle null currentValue by creating a new list.
       final cached = await localClient.query('messages:listPublic');
@@ -608,10 +608,10 @@ void main() {
       events.clear();
 
       await localClient.setNetworkMode(LocalNetworkMode.offline);
-      await localClient.mutate(
-        'messages:sendPublic',
-        <String, dynamic>{'author': 'User', 'text': 'Pending'},
-      );
+      await localClient.mutate('messages:sendPublic', <String, dynamic>{
+        'author': 'User',
+        'text': 'Pending',
+      });
       await pumpEventQueue();
 
       final pendingEvent = events.whereType<LocalQuerySuccess>().lastOrNull;
@@ -650,17 +650,15 @@ void main() {
       await localClient.setNetworkMode(LocalNetworkMode.offline);
 
       // Create task offline — handler assigns local ID via operationId.
-      await localClient.mutate(
-        'tasks:create',
-        <String, dynamic>{'title': 'Buy milk'},
-      );
+      await localClient.mutate('tasks:create', <String, dynamic>{
+        'title': 'Buy milk',
+      });
       // Advance that task offline — uses the local operationId as taskId.
       final pending = localClient.currentPendingMutations;
       final createOpId = pending.first.optimisticData!['operationId'] as String;
-      await localClient.mutate(
-        'tasks:advance',
-        <String, dynamic>{'taskId': createOpId},
-      );
+      await localClient.mutate('tasks:advance', <String, dynamic>{
+        'taskId': createOpId,
+      });
 
       expect(localClient.currentPendingMutations, hasLength(2));
 
@@ -702,29 +700,27 @@ void main() {
       await localClient.setNetworkMode(LocalNetworkMode.offline);
 
       // Create two tasks offline.
-      await localClient.mutate(
-        'tasks:create',
-        <String, dynamic>{'title': 'Task A'},
-      );
-      final opIdA = localClient
-          .currentPendingMutations[0].optimisticData!['operationId'] as String;
+      await localClient.mutate('tasks:create', <String, dynamic>{
+        'title': 'Task A',
+      });
+      final opIdA =
+          localClient.currentPendingMutations[0].optimisticData!['operationId']
+              as String;
 
-      await localClient.mutate(
-        'tasks:create',
-        <String, dynamic>{'title': 'Task B'},
-      );
-      final opIdB = localClient
-          .currentPendingMutations[1].optimisticData!['operationId'] as String;
+      await localClient.mutate('tasks:create', <String, dynamic>{
+        'title': 'Task B',
+      });
+      final opIdB =
+          localClient.currentPendingMutations[1].optimisticData!['operationId']
+              as String;
 
       // Advance both using their local IDs.
-      await localClient.mutate(
-        'tasks:advance',
-        <String, dynamic>{'taskId': opIdA},
-      );
-      await localClient.mutate(
-        'tasks:advance',
-        <String, dynamic>{'taskId': opIdB},
-      );
+      await localClient.mutate('tasks:advance', <String, dynamic>{
+        'taskId': opIdA,
+      });
+      await localClient.mutate('tasks:advance', <String, dynamic>{
+        'taskId': opIdB,
+      });
 
       expect(localClient.currentPendingMutations, hasLength(4));
 
@@ -732,10 +728,7 @@ void main() {
         'server-A',
         'server-B',
       ];
-      remoteClient.mutationResults['tasks:advance'] = <Object?>[
-        'ok-A',
-        'ok-B',
-      ];
+      remoteClient.mutationResults['tasks:advance'] = <Object?>['ok-A', 'ok-B'];
 
       await localClient.setNetworkMode(LocalNetworkMode.auto);
       await pumpEventQueue();
@@ -753,10 +746,10 @@ void main() {
       await localClient.query('messages:listPublic');
       await localClient.setNetworkMode(LocalNetworkMode.offline);
 
-      await localClient.mutate(
-        'messages:sendPublic',
-        <String, dynamic>{'author': 'User', 'text': 'No local IDs here'},
-      );
+      await localClient.mutate('messages:sendPublic', <String, dynamic>{
+        'author': 'User',
+        'text': 'No local IDs here',
+      });
 
       remoteClient.mutationResults['messages:sendPublic'] = <Object?>[
         'msg-id-1',
@@ -795,16 +788,18 @@ void main() {
       await firstClient.query('tasks:list');
       await firstClient.setNetworkMode(LocalNetworkMode.offline);
 
-      await firstClient.mutate(
-        'tasks:create',
-        <String, dynamic>{'title': 'Crash test'},
-      );
-      final opId = firstClient.currentPendingMutations.first
-          .optimisticData!['operationId'] as String;
-      await firstClient.mutate(
-        'tasks:advance',
-        <String, dynamic>{'taskId': opId},
-      );
+      await firstClient.mutate('tasks:create', <String, dynamic>{
+        'title': 'Crash test',
+      });
+      final opId =
+          firstClient
+                  .currentPendingMutations
+                  .first
+                  .optimisticData!['operationId']
+              as String;
+      await firstClient.mutate('tasks:advance', <String, dynamic>{
+        'taskId': opId,
+      });
 
       // Simulate: create replays, but client crashes before advance.
       // Manually persist the remap as if the first mutation had replayed.
@@ -835,7 +830,9 @@ void main() {
       expect(localClient.currentPendingMutations, isEmpty);
       expect(remoteClient.mutationCalls, hasLength(1));
       expect(
-          remoteClient.mutationCalls.first.args['taskId'], 'server-crash-id');
+        remoteClient.mutationCalls.first.args['taskId'],
+        'server-crash-id',
+      );
     });
 
     test('clearQueue also clears remaps', () async {
@@ -879,21 +876,23 @@ void main() {
       );
     });
 
-    test('clearQueue removes pending mutations and updates subscribers',
-        () async {
-      remoteClient.queryResults['messages:listPublic'] = <dynamic>[];
-      await localClient.query('messages:listPublic');
-      await localClient.setNetworkMode(LocalNetworkMode.offline);
+    test(
+      'clearQueue removes pending mutations and updates subscribers',
+      () async {
+        remoteClient.queryResults['messages:listPublic'] = <dynamic>[];
+        await localClient.query('messages:listPublic');
+        await localClient.setNetworkMode(LocalNetworkMode.offline);
 
-      await localClient.mutate(
-        'messages:sendPublic',
-        <String, dynamic>{'author': 'User', 'text': 'Queued'},
-      );
-      expect(localClient.currentPendingMutations, hasLength(1));
+        await localClient.mutate('messages:sendPublic', <String, dynamic>{
+          'author': 'User',
+          'text': 'Queued',
+        });
+        expect(localClient.currentPendingMutations, hasLength(1));
 
-      await localClient.clearQueue();
-      expect(localClient.currentPendingMutations, isEmpty);
-    });
+        await localClient.clearQueue();
+        expect(localClient.currentPendingMutations, isEmpty);
+      },
+    );
 
     // ---------------------------------------------------------------
     // Dispose
@@ -904,14 +903,8 @@ void main() {
 
       expect(() => localClient.query('test:q'), throwsA(isA<StateError>()));
       expect(() => localClient.subscribe('test:q'), throwsA(isA<StateError>()));
-      expect(
-        () => localClient.mutate('test:m'),
-        throwsA(isA<StateError>()),
-      );
-      expect(
-        () => localClient.action('test:a'),
-        throwsA(isA<StateError>()),
-      );
+      expect(() => localClient.mutate('test:m'), throwsA(isA<StateError>()));
+      expect(() => localClient.action('test:a'), throwsA(isA<StateError>()));
     });
   });
 
@@ -920,13 +913,15 @@ void main() {
       final store = await SqliteLocalStore.openInMemory();
 
       // Write and read a cache entry.
-      await store.upsert(StoredCacheEntry(
-        key: 'test-key',
-        queryName: 'test:query',
-        argsJson: '{}',
-        valueJson: '"hello"',
-        updatedAtMillis: 1000,
-      ));
+      await store.upsert(
+        StoredCacheEntry(
+          key: 'test-key',
+          queryName: 'test:query',
+          argsJson: '{}',
+          valueJson: '"hello"',
+          updatedAtMillis: 1000,
+        ),
+      );
       final entry = await store.read('test-key');
       expect(entry, isNotNull);
       expect(entry!.valueJson, '"hello"');
@@ -959,10 +954,10 @@ void main() {
       final database = sqlite.sqlite3.open(path);
       addTearDown(database.close);
 
-      final version = (database
-              .select('PRAGMA user_version;')
-              .single['user_version'] as num)
-          .toInt();
+      final version =
+          (database.select('PRAGMA user_version;').single['user_version']
+                  as num)
+              .toInt();
       expect(version, 1);
     });
 
@@ -976,20 +971,24 @@ void main() {
     test('upsert overwrites existing entry', () async {
       final store = await SqliteLocalStore.openInMemory();
 
-      await store.upsert(StoredCacheEntry(
-        key: 'k',
-        queryName: 'q',
-        argsJson: '{}',
-        valueJson: '"v1"',
-        updatedAtMillis: 1000,
-      ));
-      await store.upsert(StoredCacheEntry(
-        key: 'k',
-        queryName: 'q',
-        argsJson: '{}',
-        valueJson: '"v2"',
-        updatedAtMillis: 2000,
-      ));
+      await store.upsert(
+        StoredCacheEntry(
+          key: 'k',
+          queryName: 'q',
+          argsJson: '{}',
+          valueJson: '"v1"',
+          updatedAtMillis: 1000,
+        ),
+      );
+      await store.upsert(
+        StoredCacheEntry(
+          key: 'k',
+          queryName: 'q',
+          argsJson: '{}',
+          valueJson: '"v2"',
+          updatedAtMillis: 2000,
+        ),
+      );
 
       final entry = await store.read('k');
       expect(entry!.valueJson, '"v2"');
@@ -1001,13 +1000,15 @@ void main() {
     test('clearCache and clearQueue are independent', () async {
       final store = await SqliteLocalStore.openInMemory();
 
-      await store.upsert(StoredCacheEntry(
-        key: 'k',
-        queryName: 'q',
-        argsJson: '{}',
-        valueJson: '"v"',
-        updatedAtMillis: 1000,
-      ));
+      await store.upsert(
+        StoredCacheEntry(
+          key: 'k',
+          queryName: 'q',
+          argsJson: '{}',
+          valueJson: '"v"',
+          updatedAtMillis: 1000,
+        ),
+      );
       await store.enqueue(
         mutationName: 'm',
         argsJson: '{}',
@@ -1057,30 +1058,32 @@ void main() {
       await store.close(); // Should not throw.
     });
 
-    test('mutation queue preserves insertion order via auto-increment',
-        () async {
-      final store = await SqliteLocalStore.openInMemory();
+    test(
+      'mutation queue preserves insertion order via auto-increment',
+      () async {
+        final store = await SqliteLocalStore.openInMemory();
 
-      for (int i = 1; i <= 5; i++) {
-        await store.enqueue(
-          mutationName: 'mutation-$i',
-          argsJson: '{}',
-          optimisticJson: null,
-          createdAtMillis: i * 1000,
-        );
-      }
+        for (int i = 1; i <= 5; i++) {
+          await store.enqueue(
+            mutationName: 'mutation-$i',
+            argsJson: '{}',
+            optimisticJson: null,
+            createdAtMillis: i * 1000,
+          );
+        }
 
-      final all = await store.loadAll();
-      expect(all, hasLength(5));
-      for (int i = 0; i < 5; i++) {
-        expect(all[i].mutationName, 'mutation-${i + 1}');
-      }
-      for (int i = 0; i < 4; i++) {
-        expect(all[i].id, lessThan(all[i + 1].id));
-      }
+        final all = await store.loadAll();
+        expect(all, hasLength(5));
+        for (int i = 0; i < 5; i++) {
+          expect(all[i].mutationName, 'mutation-${i + 1}');
+        }
+        for (int i = 0; i < 4; i++) {
+          expect(all[i].id, lessThan(all[i + 1].id));
+        }
 
-      await store.close();
-    });
+        await store.close();
+      },
+    );
   });
 
   group('JsonValueCodec', () {
@@ -1174,7 +1177,7 @@ class FakeRemoteClient implements LocalRemoteClient {
       <String, Stream<LocalRemoteQueryEvent>>{};
   final Map<String, int> subscriptionCancelCounts = <String, int>{};
   final StreamController<LocalRemoteConnectionState>
-      _connectionStateController =
+  _connectionStateController =
       StreamController<LocalRemoteConnectionState>.broadcast(sync: true);
   LocalRemoteConnectionState _currentConnectionState =
       LocalRemoteConnectionState.connected;
@@ -1243,15 +1246,19 @@ class FakeRemoteClient implements LocalRemoteClient {
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) {
-    final stream = subscriptionStreams[name] ??
+    final stream =
+        subscriptionStreams[name] ??
         Stream<LocalRemoteQueryEvent>.value(
           LocalRemoteQuerySuccess(queryResults[name]),
         );
     return FakeRemoteSubscription(
       stream,
       onCancel: () {
-        subscriptionCancelCounts.update(name, (count) => count + 1,
-            ifAbsent: () => 1);
+        subscriptionCancelCounts.update(
+          name,
+          (count) => count + 1,
+          ifAbsent: () => 1,
+        );
       },
     );
   }
@@ -1264,7 +1271,7 @@ class FakeRemoteClient implements LocalRemoteClient {
 
 class FakeRemoteSubscription implements LocalRemoteSubscription {
   FakeRemoteSubscription(this._stream, {void Function()? onCancel})
-      : _onCancel = onCancel;
+    : _onCancel = onCancel;
 
   final Stream<LocalRemoteQueryEvent> _stream;
   final void Function()? _onCancel;

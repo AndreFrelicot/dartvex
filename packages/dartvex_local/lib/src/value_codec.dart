@@ -23,14 +23,12 @@ class JsonValueCodec implements ValueCodec {
   const JsonValueCodec();
 
   @override
-
   /// Decodes a JSON payload into a Dart value.
   dynamic decode(String value) {
     return jsonToConvex(jsonDecode(value));
   }
 
   @override
-
   /// Decodes a JSON object payload into a mutable map.
   Map<String, dynamic> decodeMap(String value) {
     final decoded = jsonToConvex(jsonDecode(value));
@@ -44,7 +42,6 @@ class JsonValueCodec implements ValueCodec {
   }
 
   @override
-
   /// Encodes a value after canonicalizing JSON map ordering.
   String encode(dynamic value) {
     return jsonEncode(convexToJson(value));

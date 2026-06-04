@@ -21,7 +21,6 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
   }
 
   @override
-
   /// Throws because SQLite storage is unavailable on this platform.
   Future<void> clearCache() {
     throw UnsupportedError(
@@ -30,7 +29,6 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
   }
 
   @override
-
   /// Throws because SQLite storage is unavailable on this platform.
   Future<void> clearQueue() {
     throw UnsupportedError(
@@ -39,12 +37,10 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
   }
 
   @override
-
   /// No-op close for the unsupported-platform stub.
   Future<void> close() async {}
 
   @override
-
   /// Throws because SQLite storage is unavailable on this platform.
   Future<StoredPendingMutation> enqueue({
     required String mutationName,
@@ -58,7 +54,6 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
   }
 
   @override
-
   /// Throws because SQLite storage is unavailable on this platform.
   Future<List<StoredPendingMutation>> loadAll() {
     throw UnsupportedError(
@@ -67,20 +62,14 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
   }
 
   @override
-
   /// Throws because SQLite storage is unavailable on this platform.
-  Future<void> markStatus(
-    int id,
-    String status, {
-    String? errorMessage,
-  }) {
+  Future<void> markStatus(int id, String status, {String? errorMessage}) {
     throw UnsupportedError(
       'SqliteLocalStore is not available on this platform',
     );
   }
 
   @override
-
   /// Throws because SQLite storage is unavailable on this platform.
   Future<StoredCacheEntry?> read(String key) {
     throw UnsupportedError(
@@ -89,7 +78,6 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
   }
 
   @override
-
   /// Throws because SQLite storage is unavailable on this platform.
   Future<void> upsert(StoredCacheEntry entry) {
     throw UnsupportedError(
@@ -98,7 +86,6 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
   }
 
   @override
-
   /// Throws because SQLite storage is unavailable on this platform.
   Future<void> remove(int id) {
     throw UnsupportedError(
@@ -107,7 +94,6 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
   }
 
   @override
-
   /// Throws because SQLite storage is unavailable on this platform.
   Future<void> updateArgs(int id, String argsJson) {
     throw UnsupportedError(
@@ -116,7 +102,6 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
   }
 
   @override
-
   /// Throws because SQLite storage is unavailable on this platform.
   Future<void> saveIdRemap(String localId, String serverId) {
     throw UnsupportedError(
@@ -125,7 +110,6 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
   }
 
   @override
-
   /// Throws because SQLite storage is unavailable on this platform.
   Future<Map<String, String>> loadIdRemaps() {
     throw UnsupportedError(
@@ -134,7 +118,6 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
   }
 
   @override
-
   /// Throws because SQLite storage is unavailable on this platform.
   Future<void> clearIdRemaps() {
     throw UnsupportedError(

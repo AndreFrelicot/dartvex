@@ -11,8 +11,8 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
     this._database, {
     required bool deleteOnClose,
     String? databasePath,
-  })  : _deleteOnClose = deleteOnClose,
-        _databasePath = databasePath {
+  }) : _deleteOnClose = deleteOnClose,
+       _databasePath = databasePath {
     _migrate();
   }
 
@@ -38,7 +38,6 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
   }
 
   @override
-
   /// Removes all cached query entries.
   Future<void> clearCache() async {
     final database = _assertOpen();
@@ -46,7 +45,6 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
   }
 
   @override
-
   /// Removes all queued mutations and ID remappings.
   Future<void> clearQueue() async {
     final database = _assertOpen();
@@ -55,7 +53,6 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
   }
 
   @override
-
   /// Closes the database handle.
   Future<void> close() async {
     if (_closed) {
@@ -81,7 +78,6 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
   }
 
   @override
-
   /// Enqueues a mutation in the persistent replay queue.
   Future<StoredPendingMutation> enqueue({
     required String mutationName,
@@ -102,41 +98,31 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
       ''',
       <Object?>[mutationName, argsJson, optimisticJson, createdAtMillis],
     );
-    final rows = database.select(
-      '''
+    final rows = database.select('''
       SELECT id, mutation_name, args_json, optimistic_json, created_at, status,
              error_message
       FROM mutation_queue
       WHERE id = last_insert_rowid();
-      ''',
-    );
+      ''');
     return _storedPendingMutationFromRow(rows.single);
   }
 
   @override
-
   /// Loads all queued mutations in insertion order.
   Future<List<StoredPendingMutation>> loadAll() async {
     final database = _assertOpen();
-    final rows = database.select(
-      '''
+    final rows = database.select('''
       SELECT id, mutation_name, args_json, optimistic_json, created_at, status,
              error_message
       FROM mutation_queue
       ORDER BY id ASC;
-      ''',
-    );
+      ''');
     return rows.map(_storedPendingMutationFromRow).toList(growable: false);
   }
 
   @override
-
   /// Updates the queue status for the mutation with [id].
-  Future<void> markStatus(
-    int id,
-    String status, {
-    String? errorMessage,
-  }) async {
+  Future<void> markStatus(int id, String status, {String? errorMessage}) async {
     final database = _assertOpen();
     database.execute(
       '''
@@ -150,7 +136,6 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
   }
 
   @override
-
   /// Reads a cached query entry by [key].
   Future<StoredCacheEntry?> read(String key) async {
     final database = _assertOpen();
@@ -176,7 +161,6 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
   }
 
   @override
-
   /// Removes the queued mutation with [id].
   Future<void> remove(int id) async {
     final database = _assertOpen();
@@ -184,7 +168,6 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
   }
 
   @override
-
   /// Replaces the encoded arguments for the mutation with [id].
   Future<void> updateArgs(int id, String argsJson) async {
     final database = _assertOpen();
@@ -195,7 +178,6 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
   }
 
   @override
-
   /// Persists a local document ID remap.
   Future<void> saveIdRemap(String localId, String serverId) async {
     final database = _assertOpen();
@@ -210,7 +192,6 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
   }
 
   @override
-
   /// Loads all persisted local-to-server ID remappings.
   Future<Map<String, String>> loadIdRemaps() async {
     final database = _assertOpen();
@@ -222,7 +203,6 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
   }
 
   @override
-
   /// Clears all stored ID remappings.
   Future<void> clearIdRemaps() async {
     final database = _assertOpen();
@@ -230,7 +210,6 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
   }
 
   @override
-
   /// Inserts or updates a cached query [entry].
   Future<void> upsert(StoredCacheEntry entry) async {
     final database = _assertOpen();
@@ -271,8 +250,7 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
     final currentVersion = (versionRow['user_version'] as num).toInt();
 
     if (currentVersion < 1) {
-      database.execute(
-        '''
+      database.execute('''
         CREATE TABLE IF NOT EXISTS query_cache (
           key TEXT PRIMARY KEY,
           query_name TEXT NOT NULL,
@@ -280,10 +258,8 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
           value_json TEXT NOT NULL,
           updated_at INTEGER NOT NULL
         );
-        ''',
-      );
-      database.execute(
-        '''
+        ''');
+      database.execute('''
         CREATE TABLE IF NOT EXISTS mutation_queue (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           mutation_name TEXT NOT NULL,
@@ -293,22 +269,20 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
           status TEXT NOT NULL DEFAULT 'pending',
           error_message TEXT
         );
-        ''',
-      );
-      database.execute(
-        '''
+        ''');
+      database.execute('''
         CREATE TABLE IF NOT EXISTS id_remap (
           local_id TEXT PRIMARY KEY,
           server_id TEXT NOT NULL
         );
-        ''',
-      );
+        ''');
       database.execute('PRAGMA user_version = 1;');
     }
   }
 
   StoredPendingMutation _storedPendingMutationFromRow(
-      Map<String, dynamic> row) {
+    Map<String, dynamic> row,
+  ) {
     return StoredPendingMutation(
       id: (row['id'] as num).toInt(),
       mutationName: row['mutation_name'] as String,

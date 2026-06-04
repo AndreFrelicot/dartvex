@@ -5,11 +5,9 @@ import 'cache_storage.dart';
 /// High-level helper for reading and writing cached query results.
 class QueryCache {
   /// Creates a query cache backed by [storage] and [codec].
-  const QueryCache({
-    required CacheStorage storage,
-    required ValueCodec codec,
-  })  : _storage = storage,
-        _codec = codec;
+  const QueryCache({required CacheStorage storage, required ValueCodec codec})
+    : _storage = storage,
+      _codec = codec;
 
   final CacheStorage _storage;
   final ValueCodec _codec;

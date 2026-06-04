@@ -55,9 +55,9 @@ enum PendingMutationStatus {
 extension PendingMutationStatusName on PendingMutationStatus {
   /// The persisted wire representation for this status.
   String get wireName => switch (this) {
-        PendingMutationStatus.pending => 'pending',
-        PendingMutationStatus.replaying => 'replaying',
-      };
+    PendingMutationStatus.pending => 'pending',
+    PendingMutationStatus.replaying => 'replaying',
+  };
 
   /// Parses a persisted wire [value] into a status.
   static PendingMutationStatus fromWireName(String value) {
@@ -150,10 +150,7 @@ abstract class LocalRemoteClient {
 /// Base class for events emitted by a [LocalSubscription].
 sealed class LocalQueryEvent {
   /// Creates a local query event.
-  const LocalQueryEvent({
-    required this.source,
-    required this.hasPendingWrites,
-  });
+  const LocalQueryEvent({required this.source, required this.hasPendingWrites});
 
   /// Where the value or error originated.
   final LocalQuerySource source;
@@ -194,8 +191,8 @@ class LocalSubscription {
   LocalSubscription({
     required Stream<LocalQueryEvent> stream,
     required Future<void> Function() onCancel,
-  })  : _stream = stream,
-        _onCancel = onCancel;
+  }) : _stream = stream,
+       _onCancel = onCancel;
 
   final Stream<LocalQueryEvent> _stream;
   final Future<void> Function() _onCancel;
@@ -325,8 +322,10 @@ class LocalMutationConflict {
 /// Canonical identifier for a query plus its arguments.
 class LocalQueryDescriptor {
   /// Creates a local query descriptor.
-  const LocalQueryDescriptor(this.name,
-      [this.args = const <String, dynamic>{}]);
+  const LocalQueryDescriptor(
+    this.name, [
+    this.args = const <String, dynamic>{},
+  ]);
 
   /// Canonical query name.
   final String name;
@@ -339,10 +338,7 @@ class LocalQueryDescriptor {
 
   /// Serializes this descriptor into JSON.
   Map<String, dynamic> toJson() {
-    return <String, dynamic>{
-      'name': name,
-      'args': canonicalizeJsonValue(args),
-    };
+    return <String, dynamic>{'name': name, 'args': canonicalizeJsonValue(args)};
   }
 
   /// Reconstructs a descriptor from serialized JSON.
@@ -375,10 +371,7 @@ class LocalMutationContext {
 /// Optimistic patch to apply to a cached query result.
 class LocalMutationPatch {
   /// Creates an optimistic cache patch.
-  const LocalMutationPatch({
-    required this.target,
-    required this.apply,
-  });
+  const LocalMutationPatch({required this.target, required this.apply});
 
   /// The query targeted by the patch.
   final LocalQueryDescriptor target;
@@ -452,9 +445,9 @@ class ConvexLocalClient {
     this._config,
     this._queryCache,
     this._mutationQueue,
-  )   : _networkMode = _config.initialNetworkMode,
-        _currentConnectionState = LocalConnectionState.online,
-        _lastRemoteConnectionState = _remoteClient.currentConnectionState;
+  ) : _networkMode = _config.initialNetworkMode,
+      _currentConnectionState = LocalConnectionState.online,
+      _lastRemoteConnectionState = _remoteClient.currentConnectionState;
 
   /// Opens a local client backed by a [ConvexClient].
   static Future<ConvexLocalClient> open({
@@ -514,7 +507,7 @@ class ConvexLocalClient {
   final Map<String, int> _pendingWritesByQueryKey = <String, int>{};
 
   late final StreamSubscription<LocalRemoteConnectionState>
-      _remoteConnectionSubscription;
+  _remoteConnectionSubscription;
 
   LocalNetworkMode _networkMode;
   LocalConnectionState _currentConnectionState;
@@ -614,8 +607,10 @@ class ConvexLocalClient {
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) {
     _assertNotDisposed();
-    final descriptor =
-        LocalQueryDescriptor(name, Map<String, dynamic>.from(args));
+    final descriptor = LocalQueryDescriptor(
+      name,
+      Map<String, dynamic>.from(args),
+    );
     final subscriptionId = _nextSubscriptionId++;
     final state = _LocalSubscriptionState(
       id: subscriptionId,
@@ -667,9 +662,10 @@ class ConvexLocalClient {
           return LocalMutationFailed(error);
         }
         _log(
-            'mutate',
-            '$name — retryable error, falling through to queue: '
-                '${error.message}');
+          'mutate',
+          '$name — retryable error, falling through to queue: '
+              '${error.message}',
+        );
       } catch (error) {
         if (!_shouldQueueRemoteFailure(error)) {
           _log('mutate', '$name — non-Convex error: $error');
@@ -703,9 +699,10 @@ class ConvexLocalClient {
     _updateConnectionState();
 
     _log(
-        'mutate',
-        '$name — queued as id=${pendingMutation.id} '
-            '(total pending=${_pendingMutations.length})');
+      'mutate',
+      '$name — queued as id=${pendingMutation.id} '
+          '(total pending=${_pendingMutations.length})',
+    );
     return LocalMutationQueued(
       queuePosition: _pendingMutations.length,
       pendingMutation: pendingMutation,
@@ -733,9 +730,10 @@ class ConvexLocalClient {
       return;
     }
     _log(
-        'mode',
-        '$_networkMode → $mode '
-            '(pending=${_pendingMutations.length})');
+      'mode',
+      '$_networkMode → $mode '
+          '(pending=${_pendingMutations.length})',
+    );
     _networkMode = mode;
     _networkModeController.add(mode);
     if (mode == LocalNetworkMode.offline) {
@@ -836,9 +834,10 @@ class ConvexLocalClient {
 
   void _handleRemoteConnectionState(LocalRemoteConnectionState state) {
     _log(
-        'remote-conn',
-        '$_lastRemoteConnectionState → $state '
-            '(mode=$_networkMode syncing=$_isSyncing)');
+      'remote-conn',
+      '$_lastRemoteConnectionState → $state '
+          '(mode=$_networkMode syncing=$_isSyncing)',
+    );
     _lastRemoteConnectionState = state;
     if (_networkMode == LocalNetworkMode.auto &&
         state == LocalRemoteConnectionState.connected) {
@@ -954,10 +953,11 @@ class ConvexLocalClient {
         _lastRemoteConnectionState != LocalRemoteConnectionState.connected ||
         _pendingMutations.isEmpty) {
       _log(
-          'replay:skip',
-          'disposed=$_disposed mode=$_networkMode '
-              'syncing=$_isSyncing remote=$_lastRemoteConnectionState '
-              'pending=${_pendingMutations.length}');
+        'replay:skip',
+        'disposed=$_disposed mode=$_networkMode '
+            'syncing=$_isSyncing remote=$_lastRemoteConnectionState '
+            'pending=${_pendingMutations.length}',
+      );
       _updateConnectionState();
       return;
     }
@@ -977,9 +977,10 @@ class ConvexLocalClient {
         iteration++;
         final mutation = _pendingMutations.first;
         _log(
-            'replay:mutation',
-            '[$iteration] id=${mutation.id} '
-                '${mutation.mutationName} — marking replaying');
+          'replay:mutation',
+          '[$iteration] id=${mutation.id} '
+              '${mutation.mutationName} — marking replaying',
+        );
         await _mutationQueue.markStatus(
           mutation.id,
           PendingMutationStatus.replaying,
@@ -1026,9 +1027,10 @@ class ConvexLocalClient {
           _replayRetryCount = 0;
         } on ConvexException catch (error) {
           _log(
-              'replay:convex-error',
-              '[$iteration] ${error.message} '
-                  '(retryable=${error.retryable})');
+            'replay:convex-error',
+            '[$iteration] ${error.message} '
+                '(retryable=${error.retryable})',
+          );
           if (error.retryable) {
             await _mutationQueue.markStatus(
               mutation.id,
@@ -1062,9 +1064,10 @@ class ConvexLocalClient {
         await _mutationQueue.clearIdRemaps();
       }
       _log(
-          'replay:end',
-          'loop finished — ${_pendingMutations.length} '
-              'remaining, hitRetryable=$hitRetryableError');
+        'replay:end',
+        'loop finished — ${_pendingMutations.length} '
+            'remaining, hitRetryable=$hitRetryableError',
+      );
     } finally {
       _isSyncing = false;
       _updateConnectionState();
@@ -1079,9 +1082,10 @@ class ConvexLocalClient {
     final delay = _replayRetryDelay(_replayRetryCount);
     _replayRetryCount++;
     _log(
-        'replay:retry',
-        'scheduling retry #$_replayRetryCount '
-            'in ${delay.inSeconds}s');
+      'replay:retry',
+      'scheduling retry #$_replayRetryCount '
+          'in ${delay.inSeconds}s',
+    );
     _replayRetryTimer = Timer(delay, () {
       _replayRetryTimer = null;
       if (!_disposed && _networkMode == LocalNetworkMode.auto) {
@@ -1126,10 +1130,11 @@ class ConvexLocalClient {
     }
     final targets = _targetsFromMutation(mutation).toList();
     _log(
-        'refresh:start',
-        '${mutation.mutationName} — '
-            '${targets.length} target(s): '
-            '${targets.map((t) => t.name).join(', ')}');
+      'refresh:start',
+      '${mutation.mutationName} — '
+          '${targets.length} target(s): '
+          '${targets.map((t) => t.name).join(', ')}',
+    );
     for (final target in targets) {
       try {
         _log('refresh:query', 'querying ${target.name}…');
@@ -1139,7 +1144,10 @@ class ConvexLocalClient {
         );
         _log('refresh:query-ok', '${target.name} returned');
         await _queryCache.write(
-            name: target.name, args: target.args, value: value);
+          name: target.name,
+          args: target.args,
+          value: value,
+        );
         _emitToQueryKey(
           target.key,
           LocalQuerySuccess(
@@ -1197,21 +1205,18 @@ class ConvexLocalClient {
         ),
       );
     });
-    eventSubscription = subscription.stream.listen(
-      (event) {
-        if (completer.isCompleted) {
-          return;
-        }
-        switch (event) {
-          case LocalRemoteQuerySuccess(:final value):
-            cleanup();
-            completer.complete(value);
-          case LocalRemoteQueryError(:final error):
-            completeError(error);
-        }
-      },
-      onError: completeError,
-    );
+    eventSubscription = subscription.stream.listen((event) {
+      if (completer.isCompleted) {
+        return;
+      }
+      switch (event) {
+        case LocalRemoteQuerySuccess(:final value):
+          cleanup();
+          completer.complete(value);
+        case LocalRemoteQueryError(:final error):
+          completeError(error);
+      }
+    }, onError: completeError);
 
     return completer.future;
   }
@@ -1275,13 +1280,15 @@ class ConvexLocalClient {
   ) {
     return <String, dynamic>{
       'operationId': context.operationId,
-      'targets':
-          patches.map((patch) => patch.target.toJson()).toList(growable: false),
+      'targets': patches
+          .map((patch) => patch.target.toJson())
+          .toList(growable: false),
     };
   }
 
   Iterable<LocalQueryDescriptor> _targetsFromMutation(
-      PendingMutation mutation) {
+    PendingMutation mutation,
+  ) {
     final optimisticData = mutation.optimisticData;
     if (optimisticData == null) {
       return const <LocalQueryDescriptor>[];
@@ -1292,8 +1299,10 @@ class ConvexLocalClient {
     }
     return targets
         .whereType<Map>()
-        .map((entry) =>
-            LocalQueryDescriptor.fromJson(entry.cast<String, dynamic>()))
+        .map(
+          (entry) =>
+              LocalQueryDescriptor.fromJson(entry.cast<String, dynamic>()),
+        )
         .toList(growable: false);
   }
 
@@ -1301,8 +1310,11 @@ class ConvexLocalClient {
     _pendingWritesByQueryKey.clear();
     for (final mutation in _pendingMutations) {
       for (final target in _targetsFromMutation(mutation)) {
-        _pendingWritesByQueryKey.update(target.key, (count) => count + 1,
-            ifAbsent: () => 1);
+        _pendingWritesByQueryKey.update(
+          target.key,
+          (count) => count + 1,
+          ifAbsent: () => 1,
+        );
       }
     }
   }
@@ -1337,12 +1349,13 @@ class ConvexLocalClient {
   void _updateConnectionState() {
     final nextState = switch (_networkMode) {
       LocalNetworkMode.offline => LocalConnectionState.offline,
-      LocalNetworkMode.auto => _isSyncing
-          ? LocalConnectionState.syncing
-          : _lastRemoteConnectionState ==
+      LocalNetworkMode.auto =>
+        _isSyncing
+            ? LocalConnectionState.syncing
+            : _lastRemoteConnectionState ==
                   LocalRemoteConnectionState.disconnected
-              ? LocalConnectionState.offline
-              : LocalConnectionState.online,
+            ? LocalConnectionState.offline
+            : LocalConnectionState.online,
     };
 
     if (_currentConnectionState != nextState) {
@@ -1403,8 +1416,9 @@ class ConvexLocalClient {
     await _networkModeController.close();
     await _pendingMutationsController.close();
 
-    final controllers =
-        _subscriptionStates.values.map((state) => state.controller);
+    final controllers = _subscriptionStates.values.map(
+      (state) => state.controller,
+    );
     for (final controller in controllers) {
       await controller.close();
     }

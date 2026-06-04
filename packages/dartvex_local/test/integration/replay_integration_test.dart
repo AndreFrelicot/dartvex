@@ -20,8 +20,8 @@ void main() {
   final deploymentUrl = Platform.environment['CONVEX_DEPLOYMENT_URL'];
   final skip = deploymentUrl == null
       ? 'Set CONVEX_DEPLOYMENT_URL to run replay integration tests. '
-          'The demo backend must be deployed with messages:sendPublic and '
-          'messages:listPublic available.'
+            'The demo backend must be deployed with messages:sendPublic and '
+            'messages:listPublic available.'
       : null;
 
   group('Local-first replay integration', skip: skip, () {
@@ -49,9 +49,7 @@ void main() {
         config: LocalClientConfig(
           cacheStorage: store,
           queueStorage: store,
-          mutationHandlers: const <LocalMutationHandler>[
-            _SendPublicHandler(),
-          ],
+          mutationHandlers: const <LocalMutationHandler>[_SendPublicHandler()],
         ),
       );
     });
@@ -68,10 +66,7 @@ void main() {
 
       // 2. Force offline.
       await localClient.setNetworkMode(LocalNetworkMode.offline);
-      expect(
-        localClient.currentConnectionState,
-        LocalConnectionState.offline,
-      );
+      expect(localClient.currentConnectionState, LocalConnectionState.offline);
 
       // 3. Queue a mutation while offline.
       final tag = 'replay-${DateTime.now().millisecondsSinceEpoch}';
@@ -101,9 +96,7 @@ void main() {
       // 6. Verify the mutation reached the server by querying directly.
       final after = await baseClient.query('messages:listPublic');
       final messages = after as List<dynamic>;
-      final found = messages.any(
-        (m) => m is Map && m['text'] == tag,
-      );
+      final found = messages.any((m) => m is Map && m['text'] == tag);
       expect(
         found,
         isTrue,
