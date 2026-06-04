@@ -105,6 +105,7 @@ class ConvexRemoteClientAdapter implements LocalRemoteClient {
       ConnectionState.connecting => LocalRemoteConnectionState.connecting,
       ConnectionState.reconnecting => LocalRemoteConnectionState.connecting,
       ConnectionState.disconnected => LocalRemoteConnectionState.disconnected,
+      ConnectionState.fatalError => LocalRemoteConnectionState.disconnected,
     };
   }
 }

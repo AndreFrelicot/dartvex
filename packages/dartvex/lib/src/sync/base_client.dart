@@ -41,6 +41,18 @@ class ReconnectRequiredEvent extends BaseClientEvent {
   final String reason;
 }
 
+/// Emitted when the server reports an unrecoverable [FatalError].
+///
+/// The connection must be terminated without reconnecting; [error] describes
+/// the failure so it can be surfaced to the caller.
+class FatalErrorEvent extends BaseClientEvent {
+  /// Creates a fatal-error event carrying the server-provided [error].
+  const FatalErrorEvent({required this.error});
+
+  /// Human-readable description of the unrecoverable server error.
+  final String error;
+}
+
 class BaseClientReceiveResult {
   const BaseClientReceiveResult({
     this.events = const <BaseClientEvent>[],
@@ -305,7 +317,7 @@ class BaseClient {
       case AuthError():
         events.add(AuthErrorEvent(error: message));
       case FatalError():
-        events.add(ReconnectRequiredEvent(reason: message.error));
+        events.add(FatalErrorEvent(error: message.error));
       case TransitionChunk():
         events.add(
           const ReconnectRequiredEvent(

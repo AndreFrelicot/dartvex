@@ -42,6 +42,7 @@ class ConvexConnectionIndicator extends StatelessWidget {
           case ConvexConnectionState.reconnecting:
             return connectingBuilder(context);
           case ConvexConnectionState.disconnected:
+          case ConvexConnectionState.fatalError:
             return disconnectedBuilder(context);
         }
       },

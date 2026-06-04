@@ -508,6 +508,54 @@ void main() {
       client.dispose();
     });
 
+    test('fatal error terminates the connection without reconnecting',
+        () async {
+      final adapter = MockWebSocketAdapter();
+      final client = ConvexClient(
+        'https://demo.convex.cloud',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+      final states = <ConnectionState>[];
+      final stateSubscription = client.connectionState.listen(states.add);
+      await settle();
+      expect(adapter.connectedUrls, hasLength(1));
+
+      final mutationFuture = client.mutate(
+        'messages:send',
+        const <String, dynamic>{'body': 'hello'},
+      );
+      final mutationExpectation = expectLater(
+        mutationFuture,
+        throwsA(
+          isA<ConvexException>().having(
+            (error) => error.message,
+            'message',
+            'deployment is broken',
+          ),
+        ),
+      );
+      await settle();
+
+      adapter.pushServerMessage(
+        const FatalError(error: 'deployment is broken').toJson(),
+      );
+      await mutationExpectation;
+      // Allow any (incorrectly) scheduled zero-delay reconnect to fire.
+      await settle();
+      await settle();
+
+      expect(client.currentConnectionState, ConnectionState.fatalError);
+      expect(states.last, ConnectionState.fatalError);
+      // No reconnect was attempted after the fatal error.
+      expect(adapter.connectedUrls, hasLength(1));
+
+      await stateSubscription.cancel();
+      client.dispose();
+    });
+
     test('mutation waits for transition before resolving', () async {
       final adapter = MockWebSocketAdapter();
       final client = ConvexClient(

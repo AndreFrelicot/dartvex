@@ -366,6 +366,13 @@ void main() {
       expect(result.events.single, isA<AuthErrorEvent>());
     });
 
+    test('fatal error produces fatal error event', () {
+      final client = BaseClient();
+      final result = client.receive(const FatalError(error: 'boom'));
+      expect(result.events.single, isA<FatalErrorEvent>());
+      expect((result.events.single as FatalErrorEvent).error, 'boom');
+    });
+
     test('same query deduplicates to one server subscription', () {
       final client = BaseClient();
       final first = client.subscribe('messages:list', const <String, dynamic>{

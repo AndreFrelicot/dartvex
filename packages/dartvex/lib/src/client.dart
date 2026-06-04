@@ -25,6 +25,10 @@ enum ConnectionState {
 
   /// The client is disconnected.
   disconnected,
+
+  /// The connection ended on an unrecoverable server error and will not
+  /// reconnect.
+  fatalError,
 }
 
 /// Base class for query subscription results.
@@ -718,6 +722,15 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
           );
         case ReconnectRequiredEvent():
           await _wsManager.reconnectNow(event.reason);
+        case FatalErrorEvent():
+          _log(
+            DartvexLogLevel.error,
+            'Fatal server error; terminating connection',
+            data: <String, Object?>{'error': event.error},
+          );
+          await _wsManager.terminate();
+          _baseClient.failPendingRequests(event.error);
+          _emitConnectionState(ConnectionState.fatalError);
       }
     }
     return result.outgoing;

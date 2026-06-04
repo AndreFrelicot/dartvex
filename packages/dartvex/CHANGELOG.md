@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   when every query, auth update, and request issued before a reconnect has been
   confirmed by the server. This is package-internal groundwork for upcoming
   backoff-reset and auth-gating work and is not part of the public API.
+- `ConnectionState.fatalError`, a terminal connection state entered when the
+  server reports an unrecoverable error.
 
 ### Changed
 
@@ -33,6 +35,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   auth update, and request that predated the reconnect, instead of on every
   Transition or response. A server that repeatedly drops the connection before
   the client proves itself now keeps backing off instead of hammering it.
+- An unrecoverable server `FatalError` now terminates the connection — pending
+  requests fail, the connection state becomes `fatalError`, and no reconnect is
+  attempted — instead of triggering a reconnect that could loop indefinitely.
 
 ## [0.1.5] - 2026-05-13
 

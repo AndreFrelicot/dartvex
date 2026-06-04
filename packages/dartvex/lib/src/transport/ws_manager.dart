@@ -290,8 +290,27 @@ class WebSocketManager {
 
   /// Disposes timers, subscriptions, and the underlying socket.
   Future<void> dispose() async {
+    await _shutdown(DartvexLogLevel.debug, 'Disposing WebSocket manager');
+  }
+
+  /// Permanently closes the socket and prevents any future reconnect.
+  ///
+  /// Used when the server reports an unrecoverable `FatalError`: unlike a normal
+  /// disconnect, no reconnect is scheduled. Reuses the same guard as [dispose],
+  /// so the close it triggers cannot reschedule a connection.
+  Future<void> terminate() async {
+    if (_disposed) {
+      return;
+    }
+    await _shutdown(
+      DartvexLogLevel.warn,
+      'Terminating WebSocket manager; no reconnect will be scheduled',
+    );
+  }
+
+  Future<void> _shutdown(DartvexLogLevel level, String message) async {
     _disposed = true;
-    _log(DartvexLogLevel.debug, 'Disposing WebSocket manager');
+    _log(level, message);
     _reconnectTimer?.cancel();
     _inactivityTimer?.cancel();
     _chunkBuffer = null;
