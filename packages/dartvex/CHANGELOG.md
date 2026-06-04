@@ -66,6 +66,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `reconnectBackoff` now defaults to empty, selecting the exponential backoff
   model. Provide an explicit non-negative schedule to keep fixed delays.
+- `Connect.clientTs` and transition transit metrics now read from a monotonic
+  clock (a one-time wall-clock anchor plus a monotonic `Stopwatch`) instead of
+  `DateTime.now()`, so elapsed-time and server clock-skew estimates stay stable
+  even when the device wall clock is corrected.
 
 ### Fixed
 

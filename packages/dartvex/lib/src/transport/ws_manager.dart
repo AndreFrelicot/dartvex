@@ -5,6 +5,7 @@ import 'dart:math';
 import '../logging.dart';
 import '../protocol/messages.dart';
 import 'package:uuid/uuid.dart';
+import 'monotonic_clock.dart';
 import 'ws_interface.dart';
 
 /// Builds the initial messages to send once the socket connects.
@@ -109,11 +110,13 @@ class WebSocketManager {
     this.maxBackoff = const Duration(seconds: 16),
     this.backoffJitter = 0.5,
     Random? random,
+    MonotonicClock? clock,
     this.onMessagesSent,
     this.onTransitionMetrics,
     this.logLevel = DartvexLogLevel.off,
     this.logger,
-  }) : _random = random ?? Random();
+  })  : _random = random ?? Random(),
+        _clock = clock ?? MonotonicClock();
 
   /// WebSocket adapter used for network I/O.
   final WebSocketAdapter adapter;
@@ -175,6 +178,10 @@ class WebSocketManager {
   final double backoffJitter;
 
   final Random _random;
+
+  /// Monotonic clock backing `Connect.clientTs` and transition transit metrics,
+  /// so they remain meaningful even if the device wall clock is corrected.
+  final MonotonicClock _clock;
 
   /// Optional callback that receives transition performance metrics.
   final TransitionMetricsCallback? onTransitionMetrics;
@@ -419,7 +426,7 @@ class WebSocketManager {
           connectionCount: _connectionCount,
           lastCloseReason: _lastCloseReason,
           maxObservedTimestamp: maxObservedTimestamp(),
-          clientTs: DateTime.now().millisecondsSinceEpoch,
+          clientTs: _clock.nowMillis,
         ).toJson(),
       ),
     );
@@ -652,7 +659,7 @@ class WebSocketManager {
       return;
     }
 
-    final nowMs = DateTime.now().millisecondsSinceEpoch.toDouble();
+    final nowMs = _clock.nowMillis.toDouble();
     final transitTimeMs =
         nowMs - transition.clientClockSkew! - transition.serverTs! / 1e6;
     if (transitTimeMs <= 0) {
