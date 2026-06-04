@@ -33,8 +33,13 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 - Auth framework with pluggable `AuthProvider<T>` abstraction
 - One-shot query via `queryOnce<T>()` for non-reactive reads
 - File storage helpers via `ConvexStorage` (upload/download)
-- Reconnection with exponential backoff, full query set rebuild, and safe
+- Reconnection with bounded handshake, jittered exponential backoff,
+  connectivity-triggered immediate reconnect, full query set rebuild, and safe
   replay of queued mutations
+- Optimistic updates with automatic rollback when the mutation settles or fails
+- Reactive, gapless pagination via `paginatedQuery`
+- Rich connection status (inflight counts, retries, `hasEverConnected`) plus an
+  auth-refreshing signal for "authenticating…" indicators
 - Native and browser WebSocket adapters (conditional import)
 - Structured opt-in logging for transport, auth, and storage diagnostics
 
@@ -52,7 +57,7 @@ The web adapter is selected automatically via conditional import.
 
 ```yaml
 dependencies:
-  dartvex: ^0.1.5
+  dartvex: ^0.2.0
 ```
 
 ## Usage
@@ -250,6 +255,98 @@ To reconnect the instant the device regains connectivity instead of waiting out
 the backoff, supply a `connectivitySignal`. Flutter apps can use
 `ConnectivityPlusSignal` from `dartvex_flutter`.
 
+## Optimistic Updates
+
+Pass an `OptimisticUpdate` as the third argument to `mutate` to overlay query
+results the instant the mutation is sent. The overlay is replayed whenever fresh
+server data arrives while the mutation is pending, and is rolled back
+automatically when the mutation completes (replaced by the authoritative result,
+without flicker) or fails:
+
+```dart
+await client.mutate(
+  'messages:send',
+  {'channel': 'general', 'body': 'Hello'},
+  (store) {
+    final existing = store.getQuery('messages:list', {'channel': 'general'});
+    final messages = existing is List ? List<dynamic>.from(existing) : <dynamic>[];
+    messages.add({'_id': 'optimistic', 'body': 'Hello'});
+    store.setQuery('messages:list', {'channel': 'general'}, messages);
+  },
+);
+```
+
+The update must be pure (it can be replayed multiple times). Read current values
+with `store.getQuery(name, args)` / `store.getAllQueries(name)` and overlay new
+ones with `store.setQuery(name, args, value)` — pass `null` to remove a query.
+
+## Reactive Pagination
+
+`paginatedQuery` drives a Convex paginated query (one taking `paginationOpts`)
+as a growing, reactive list. Loaded pages update live and stay gapless across
+reconnects via query journals:
+
+```dart
+final page = client.paginatedQuery(
+  'messages:paginate',
+  {'channel': 'general'},
+  pageSize: 20,
+);
+
+page.stream.listen((result) {
+  print('${result.results.length} items, status: ${result.status}');
+});
+
+if (!page.isDone) {
+  page.loadMore();
+}
+
+// Release every page subscription when done.
+page.cancel();
+```
+
+`ConvexPaginationStatus` reports `loadingFirstPage`, `loadingMore`,
+`canLoadMore`, `exhausted`, or `error`.
+
+## Connection Status
+
+`currentConnectionStatus` and the value-deduplicated `connectionStatus` stream
+expose a rich `ConnectionStatus` snapshot — useful for loading and retry
+indicators. The coarse `ConnectionState` enum and `connectionState` stream
+remain available as a derived convenience:
+
+```dart
+client.connectionStatus.listen((status) {
+  print('connected: ${status.isConnected}');     // socket up AND fully synced
+  print('loading:   ${status.isLoading}');        // not yet re-synced
+  print('inflight:  ${status.inflightMutations} mutations, '
+      '${status.inflightActions} actions');
+  print('retries:   ${status.connectionRetries}');
+});
+```
+
+`ConnectionStatus` also carries `isWebSocketConnected`, `hasEverConnected`,
+`connectionCount`, `timeOfOldestInflightRequest`, `hasInflightRequests`, and the
+derived coarse `state`.
+
+## Auth Refreshing
+
+When auth is recovered after a server rejection, the socket briefly stops while a
+fresh token is fetched. `isAuthRefreshing` and the `authRefreshing` stream report
+this so you can show an "authenticating…" indicator instead of surfacing the
+transient disconnect:
+
+```dart
+client.authRefreshing.listen((isRefreshing) {
+  if (isRefreshing) showAuthenticatingBanner();
+  else hideAuthenticatingBanner();
+});
+```
+
+Flutter apps can use `ConvexAuthRefreshingBuilder` and
+`ConvexConnectionStatusBuilder` from
+[`dartvex_flutter`](https://pub.dev/packages/dartvex_flutter).
+
 ## API Overview
 
 ### Core
@@ -260,6 +357,9 @@ the backoff, supply a `connectivitySignal`. Flutter apps can use
 | `ConvexClientConfig` | Configuration (deployment URL, client ID) |
 | `ConvexSubscription` | Reactive subscription handle with stream |
 | `QueryResult` | Base type for `QuerySuccess` / `QueryError` |
+| `ConnectionStatus` | Rich connection snapshot — inflight counts, retries, sync |
+| `ConvexPaginatedQuery` | Reactive, gapless paginated query handle |
+| `OptimisticLocalStore` | Overlay store passed to optimistic updates |
 | `ConvexStorage` | File upload and URL generation |
 
 ### Auth
