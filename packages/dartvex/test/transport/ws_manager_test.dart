@@ -415,6 +415,41 @@ void main() {
       );
     });
 
+    test('reconnectImmediatelyIfWaiting shortcuts the backoff wait', () async {
+      final adapter = MockWebSocketAdapter();
+      final manager = WebSocketManager(
+        adapter: adapter,
+        deploymentUrl: 'https://demo.convex.cloud',
+        apiVersion: '0.1.0',
+        onConnected: () => const <ClientMessage>[],
+        onMessage: (_) => const <ClientMessage>[],
+        onDisconnected: (_) async {},
+        onConnectionStateChanged: (_, __) {},
+        maxObservedTimestamp: () => null,
+        reconnectBackoff: const <Duration>[Duration(hours: 1)],
+        inactivityTimeout: const Duration(seconds: 30),
+      );
+
+      await manager.start();
+      // No-op while connected.
+      manager.reconnectImmediatelyIfWaiting();
+      expect(adapter.connectedUrls, hasLength(1));
+
+      adapter.disconnect();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      // Now parked on a 1h backoff timer; a connectivity restore shortcuts it.
+      manager.reconnectImmediatelyIfWaiting();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(adapter.connectedUrls, hasLength(2));
+      final connectMessages = adapter.decodedSentMessages
+          .where((message) => message['type'] == 'Connect')
+          .toList(growable: false);
+      expect(connectMessages, hasLength(2));
+
+      await manager.dispose();
+    });
+
     test('reports metrics for direct transitions with timing fields', () async {
       final adapter = MockWebSocketAdapter();
       final metrics = <TransitionMetrics>[];

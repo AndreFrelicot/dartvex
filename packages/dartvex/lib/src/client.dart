@@ -172,6 +172,9 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
         }
       },
     );
+    _connectivitySubscription = _config.connectivitySignal?.onRestored.listen(
+      (_) => _wsManager.reconnectImmediatelyIfWaiting(),
+    );
     if (_config.connectImmediately) {
       _currentConnectionState = ConnectionState.connecting;
     }
@@ -187,6 +190,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   final BaseClient _baseClient;
   late final WebSocketManager _wsManager;
   late final AuthManager _authManager;
+  StreamSubscription<void>? _connectivitySubscription;
   final StreamController<ConnectionState> _connectionStateController;
   final StreamController<bool> _authStateController;
   final Map<int, StreamController<QueryResult>> _subscriptionControllers;
@@ -249,6 +253,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       backoffJitter: config.backoffJitter,
       connectImmediately: config.connectImmediately,
       adapterFactory: config.adapterFactory,
+      connectivitySignal: config.connectivitySignal,
       logLevel: config.logLevel,
       logger: config.logger,
     );
@@ -640,6 +645,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       await _connectionStateController.close();
       await _authStateController.close();
       await _authManager.stopRefreshing();
+      await _connectivitySubscription?.cancel();
       await _wsManager.dispose();
     });
     return _closeFuture!;

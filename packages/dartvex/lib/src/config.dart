@@ -1,4 +1,5 @@
 import 'logging.dart';
+import 'transport/connectivity.dart';
 import 'transport/ws_interface.dart';
 
 /// Factory for creating a platform-specific [WebSocketAdapter].
@@ -22,6 +23,7 @@ class ConvexClientConfig {
     this.backoffJitter = 0.5,
     this.connectImmediately = true,
     this.adapterFactory,
+    this.connectivitySignal,
     this.logLevel = DartvexLogLevel.off,
     this.logger,
   });
@@ -96,6 +98,13 @@ class ConvexClientConfig {
 
   /// Optional override for the platform WebSocket adapter.
   final WebSocketAdapterFactory? adapterFactory;
+
+  /// Optional signal used to reconnect immediately when the device regains
+  /// network connectivity, cancelling any in-progress reconnect backoff.
+  ///
+  /// Leave `null` (the default) to rely solely on backoff. Flutter apps can
+  /// supply a `connectivity_plus`-backed implementation from `dartvex_flutter`.
+  final ConnectivitySignal? connectivitySignal;
 
   /// Minimum log level emitted by Dartvex internals.
   final DartvexLogLevel logLevel;

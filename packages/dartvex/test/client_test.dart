@@ -1048,5 +1048,44 @@ void main() {
       expect(await future, isA<QuerySuccess>());
       client.dispose();
     });
+
+    test('reconnects immediately when connectivity is restored', () async {
+      final adapter = MockWebSocketAdapter();
+      final signal = _FakeConnectivitySignal();
+      final client = ConvexClient(
+        'https://demo.convex.cloud',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          connectivitySignal: signal,
+          reconnectBackoff: const <Duration>[Duration(hours: 1)],
+        ),
+      );
+
+      final subscription = client.subscribe('messages:list');
+      await settle();
+      expect(adapter.connectedUrls, hasLength(1));
+
+      adapter.disconnect();
+      await settle();
+
+      signal.restore();
+      await settle();
+      expect(adapter.connectedUrls, hasLength(2));
+
+      subscription.cancel();
+      client.dispose();
+      signal.dispose();
+    });
   });
+}
+
+class _FakeConnectivitySignal implements ConnectivitySignal {
+  final StreamController<void> _controller = StreamController<void>.broadcast();
+
+  @override
+  Stream<void> get onRestored => _controller.stream;
+
+  void restore() => _controller.add(null);
+
+  void dispose() => _controller.close();
 }

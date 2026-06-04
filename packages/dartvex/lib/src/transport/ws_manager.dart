@@ -254,6 +254,27 @@ class WebSocketManager {
     _scheduleReconnect(immediate: true);
   }
 
+  /// Cancels any pending reconnect backoff and reconnects immediately, but only
+  /// while the manager is waiting to reconnect (disconnected with a scheduled
+  /// retry).
+  ///
+  /// No-op when connected, mid-connect, or disposed. Used to react to a restored
+  /// network connection without resetting the backoff progression.
+  void reconnectImmediatelyIfWaiting() {
+    if (_disposed || _connecting || adapter.isConnected) {
+      return;
+    }
+    final timer = _reconnectTimer;
+    if (timer == null || !timer.isActive) {
+      return;
+    }
+    _log(
+      DartvexLogLevel.info,
+      'Reconnecting immediately after connectivity restore',
+    );
+    _scheduleReconnect(immediate: true);
+  }
+
   /// Disposes timers, subscriptions, and the underlying socket.
   Future<void> dispose() async {
     _disposed = true;
