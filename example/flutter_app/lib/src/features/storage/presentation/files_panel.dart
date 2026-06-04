@@ -8,6 +8,7 @@ import 'package:flutter/services.dart' show rootBundle;
 
 import '../../shared/presentation/concierge_design.dart';
 import '../../shared/presentation/section_card.dart';
+import 'files_image_chrome.dart';
 import 'files_image_support.dart';
 
 // Raw (untyped) backend function names. The demo widgets take these directly —
@@ -52,9 +53,11 @@ const List<_SampleAsset> _samples = <_SampleAsset>[
 ///
 /// Upload goes through [ConvexStorage] (sign URL → POST bytes → record the
 /// `storageId`), the gallery is a live `files:list` subscription, and each image
-/// is rendered with the `dartvex_flutter` image stack over the shared
-/// `ConvexAssetCache`. Gated on a configured [ConvexClient]; a notice shows when
-/// `CONVEX_DEMO_URL` is unset.
+/// is rendered with platform-appropriate storage UI. Native builds showcase the
+/// `dartvex_flutter` cache/offline image stack over the shared
+/// `ConvexAssetCache`; web builds use signed URLs with [Image.network] and omit
+/// disk-cache controls. Gated on a configured [ConvexClient]; a notice shows
+/// when `CONVEX_DEMO_URL` is unset.
 class FilesPanel extends StatefulWidget {
   /// Creates a [FilesPanel] driven by [client].
   const FilesPanel({super.key, required this.client});
@@ -197,7 +200,7 @@ class _FilesPanelState extends State<FilesPanel> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
                   _buildListCard(snapshot, images),
-                  if (images.isNotEmpty) ...<Widget>[
+                  if (images.isNotEmpty && filesDiskCacheSupported) ...<Widget>[
                     const SizedBox(height: 20),
                     _buildVariantsCard(images.first),
                   ],
@@ -255,10 +258,13 @@ class _FilesPanelState extends State<FilesPanel> {
     return SectionCard(
       eyebrow: 'REACTIVE GALLERY',
       title: 'Stored images',
-      subtitle:
-          'A live subscription to files:list. Uploads and clears appear '
-          'instantly; each tile is a ConvexCachedImage, disk-cached by its '
-          'stable storageId.',
+      subtitle: filesDiskCacheSupported
+          ? 'A live subscription to files:list. Uploads and clears appear '
+                'instantly; each tile is a ConvexCachedImage, disk-cached by its '
+                'stable storageId.'
+          : 'A live subscription to files:list. Uploads and clears appear '
+                'instantly; web renders signed storage URLs with Image.network. '
+                'Disk cache and offline fallback are native-only.',
       trailing: TextButton.icon(
         onPressed: (_busy || images.isEmpty) ? null : _clearAll,
         icon: const Icon(Icons.delete_sweep_outlined, size: 18),
@@ -304,21 +310,103 @@ class _FilesPanelState extends State<FilesPanel> {
                   if (_storageIdOf(image) case final String storageId)
                     _imageTile(
                       caption: (image['caption'] as String?) ?? '',
+                      storageId: storageId,
                       size: _gridTile,
-                      image: buildCachedStorageImage(
-                        storageId: storageId,
-                        getUrlAction: _getImageUrl,
-                        size: _gridTile,
-                      ),
+                      image: filesDiskCacheSupported
+                          ? buildCachedStorageImage(
+                              storageId: storageId,
+                              getUrlAction: _getImageUrl,
+                              size: _gridTile,
+                            )
+                          : _buildWebStoragePreview(storageId, _gridTile),
                     ),
               ],
             ),
           const SizedBox(height: 14),
-          const _WatchHint(
-            'This gallery is a reactive query — no manual refresh. Cached '
-            'images survive scrolls, restarts, and (on native) offline.',
+          _WatchHint(
+            filesDiskCacheSupported
+                ? 'This gallery is a reactive query — no manual refresh. '
+                      'Cached images survive scrolls, restarts, and offline.'
+                : 'This gallery is a reactive query — no manual refresh. Web '
+                      'uses signed URLs only; run a native build to demo disk '
+                      'cache and offline fallback.',
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildWebStoragePreview(String storageId, double size) {
+    return ConvexQuery<String?>(
+      query: _getImageUrl,
+      args: <String, dynamic>{'storageId': storageId},
+      decode: (value) => value as String?,
+      builder: (context, snapshot) {
+        final url = snapshot.data;
+        if (snapshot.isLoading && url == null) {
+          return FilesImageFrame(size: size, child: const FilesImageLoading());
+        }
+        if (snapshot.hasError || url == null || url.isEmpty) {
+          return FilesImageFrame(size: size, child: const FilesImageError());
+        }
+        return FilesImageFrame(
+          size: size,
+          child: Image.network(
+            url,
+            width: size,
+            height: size,
+            fit: BoxFit.cover,
+            loadingBuilder: (context, child, loadingProgress) {
+              if (loadingProgress == null) {
+                return child;
+              }
+              final expected = loadingProgress.expectedTotalBytes;
+              final progress = expected == null || expected == 0
+                  ? -1.0
+                  : loadingProgress.cumulativeBytesLoaded / expected;
+              return FilesImageProgress(progress);
+            },
+            errorBuilder: (context, error, stackTrace) {
+              return const FilesImageError();
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  void _openImagePreview({required String storageId, required String caption}) {
+    unawaited(
+      showGeneralDialog<void>(
+        context: context,
+        barrierDismissible: true,
+        barrierLabel: MaterialLocalizations.of(
+          context,
+        ).modalBarrierDismissLabel,
+        barrierColor: ConciergeColors.surfaceLowest.withValues(alpha: 0.94),
+        transitionDuration: const Duration(milliseconds: 160),
+        pageBuilder: (context, animation, secondaryAnimation) {
+          return _FullscreenImagePreview(
+            caption: caption,
+            getUrlAction: _getImageUrl,
+            heroTag: _imageHeroTag(storageId),
+            storageId: storageId,
+          );
+        },
+        transitionBuilder: (context, animation, secondaryAnimation, child) {
+          final curved = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+            reverseCurve: Curves.easeInCubic,
+          );
+          return FadeTransition(
+            opacity: curved,
+            child: ScaleTransition(
+              scale: Tween<double>(begin: 0.985, end: 1).animate(curved),
+              child: child,
+            ),
+          );
+        },
       ),
     );
   }
@@ -430,27 +518,49 @@ class _FilesPanelState extends State<FilesPanel> {
 
   Widget _imageTile({
     required String caption,
+    required String storageId,
     required double size,
     required Widget image,
   }) {
+    final label = caption.trim().isEmpty ? 'Stored image' : caption.trim();
     return SizedBox(
       width: size,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          image,
-          const SizedBox(height: 6),
-          Text(
-            caption,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: ConciergeColors.textDim,
-              fontSize: 11.5,
+      child: Tooltip(
+        message: label,
+        child: Semantics(
+          button: true,
+          label: label,
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(14),
+              hoverColor: ConciergeColors.cyan.withValues(alpha: 0.08),
+              splashColor: ConciergeColors.cyan.withValues(alpha: 0.16),
+              onTap: () =>
+                  _openImagePreview(storageId: storageId, caption: caption),
+              child: Padding(
+                padding: const EdgeInsets.all(2),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Hero(tag: _imageHeroTag(storageId), child: image),
+                    const SizedBox(height: 6),
+                    Text(
+                      caption,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: ConciergeColors.textDim,
+                        fontSize: 11.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -508,6 +618,204 @@ class _FilesPanelState extends State<FilesPanel> {
       return '${(bytes / 1024).toStringAsFixed(1)} KB';
     }
     return '${(bytes / (1024 * 1024)).toStringAsFixed(2)} MB';
+  }
+
+  static String _imageHeroTag(String storageId) => 'stored-image-$storageId';
+}
+
+class _FullscreenImagePreview extends StatelessWidget {
+  const _FullscreenImagePreview({
+    required this.caption,
+    required this.getUrlAction,
+    required this.heroTag,
+    required this.storageId,
+  });
+
+  final String caption;
+  final String getUrlAction;
+  final Object heroTag;
+  final String storageId;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = caption.trim().isEmpty ? 'Stored image' : caption.trim();
+    return Material(
+      color: Colors.transparent,
+      child: SafeArea(
+        child: Stack(
+          children: <Widget>[
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => Navigator.of(context).maybePop(),
+              ),
+            ),
+            Positioned.fill(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(18, 70, 18, 88),
+                child: Center(
+                  child: Hero(
+                    tag: heroTag,
+                    child: _FullscreenImageSurface(
+                      getUrlAction: getUrlAction,
+                      storageId: storageId,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 12,
+              left: 12,
+              right: 12,
+              child: _FullscreenImageToolbar(title: title),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FullscreenImageSurface extends StatelessWidget {
+  const _FullscreenImageSurface({
+    required this.getUrlAction,
+    required this.storageId,
+  });
+
+  final String getUrlAction;
+  final String storageId;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxWidth = constraints.maxWidth;
+        final maxHeight = constraints.maxHeight;
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: ColoredBox(
+            color: ConciergeColors.surfaceLowest,
+            child: InteractiveViewer(
+              minScale: 1,
+              maxScale: 4,
+              child: SizedBox(
+                width: maxWidth,
+                height: maxHeight,
+                child: _ResolvedStorageImage(
+                  fit: BoxFit.contain,
+                  getUrlAction: getUrlAction,
+                  height: maxHeight,
+                  storageId: storageId,
+                  width: maxWidth,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _ResolvedStorageImage extends StatelessWidget {
+  const _ResolvedStorageImage({
+    required this.fit,
+    required this.getUrlAction,
+    required this.height,
+    required this.storageId,
+    required this.width,
+  });
+
+  final BoxFit fit;
+  final String getUrlAction;
+  final double height;
+  final String storageId;
+  final double width;
+
+  @override
+  Widget build(BuildContext context) {
+    return ConvexQuery<String?>(
+      query: getUrlAction,
+      args: <String, dynamic>{'storageId': storageId},
+      decode: (value) => value as String?,
+      builder: (context, snapshot) {
+        final url = snapshot.data;
+        if (snapshot.isLoading && url == null) {
+          return const Center(child: FilesImageLoading());
+        }
+        if (snapshot.hasError || url == null || url.isEmpty) {
+          return const Center(child: FilesImageError());
+        }
+        return Image.network(
+          url,
+          width: width,
+          height: height,
+          fit: fit,
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) {
+              return child;
+            }
+            final expected = loadingProgress.expectedTotalBytes;
+            final progress = expected == null || expected == 0
+                ? -1.0
+                : loadingProgress.cumulativeBytesLoaded / expected;
+            return Center(child: FilesImageProgress(progress));
+          },
+          errorBuilder: (context, error, stackTrace) {
+            return const Center(child: FilesImageError());
+          },
+        );
+      },
+    );
+  }
+}
+
+class _FullscreenImageToolbar extends StatelessWidget {
+  const _FullscreenImageToolbar({required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: ConciergeColors.surfaceLow.withValues(alpha: 0.82),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: ConciergeColors.cyan.withValues(alpha: 0.18),
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: ConciergeColors.text,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        IconButton.filled(
+          tooltip: 'Close preview',
+          onPressed: () => Navigator.of(context).maybePop(),
+          style: IconButton.styleFrom(
+            backgroundColor: ConciergeColors.surfaceLow.withValues(alpha: 0.9),
+            foregroundColor: ConciergeColors.text,
+          ),
+          icon: const Icon(Icons.close_rounded),
+        ),
+      ],
+    );
   }
 }
 
