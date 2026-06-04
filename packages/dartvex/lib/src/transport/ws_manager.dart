@@ -27,6 +27,10 @@ typedef ConnectionStateHandler = void Function(
 /// Returns the maximum timestamp observed by the client.
 typedef TimestampGetter = String? Function();
 
+/// Returns whether the client has re-synced every query, auth update, and
+/// request that predated the most recent reconnect.
+typedef SyncedStateGetter = bool Function();
+
 /// Performance metrics for a received Transition message.
 class TransitionMetrics {
   /// Creates transition performance metrics.
@@ -88,6 +92,7 @@ class WebSocketManager {
     required this.onDisconnected,
     required this.onConnectionStateChanged,
     required this.maxObservedTimestamp,
+    required this.hasSyncedPastLastReconnect,
     required this.reconnectBackoff,
     required this.inactivityTimeout,
     this.connectTimeout = const Duration(seconds: 10),
@@ -127,6 +132,14 @@ class WebSocketManager {
 
   /// Getter for the highest timestamp observed so far.
   final TimestampGetter maxObservedTimestamp;
+
+  /// Reports whether the client has fully re-synced since the last reconnect.
+  ///
+  /// Consulted after each handled server message to decide whether the
+  /// reconnect backoff may be reset. Mirrors the official client, which resets
+  /// its retry counter based on this signal rather than on the message type, so
+  /// a server that flaps before the client catches up keeps backing off.
+  final SyncedStateGetter hasSyncedPastLastReconnect;
 
   /// Backoff schedule used for reconnects.
   final List<Duration> reconnectBackoff;
@@ -420,8 +433,13 @@ class WebSocketManager {
         }
       }
       final outgoing = await onMessage(message);
+      // Reset the reconnect backoff only once the client has caught up on all
+      // work that predated the last reconnect, rather than on every Transition
+      // or response. This mirrors the official client and prevents a flapping
+      // server from resetting the backoff before the connection proves itself.
+      final syncedPastLastReconnect = hasSyncedPastLastReconnect();
       await sendMessages(outgoing);
-      if (_shouldResetReconnectBackoff(message)) {
+      if (syncedPastLastReconnect) {
         _reconnectIndex = 0;
       }
     } catch (error, stackTrace) {
@@ -442,12 +460,6 @@ class WebSocketManager {
         _scheduleReconnect(immediate: true);
       }
     }
-  }
-
-  bool _shouldResetReconnectBackoff(ServerMessage message) {
-    return message is Transition ||
-        message is MutationResponse ||
-        message is ActionResponse;
   }
 
   _AssembledTransition? _appendTransitionChunk(TransitionChunk chunk) {

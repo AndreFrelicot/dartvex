@@ -27,6 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `reconnectBackoff` now defaults to empty, selecting the exponential backoff
   model. Provide an explicit non-negative schedule to keep fixed delays.
 
+### Fixed
+
+- Reconnect backoff now resets only after the client has re-synced every query,
+  auth update, and request that predated the reconnect, instead of on every
+  Transition or response. A server that repeatedly drops the connection before
+  the client proves itself now keeps backing off instead of hammering it.
+
 ## [0.1.5] - 2026-05-13
 
 ### Fixed

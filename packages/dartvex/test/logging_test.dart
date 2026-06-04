@@ -62,6 +62,7 @@ void main() {
         onDisconnected: (_) async {},
         onConnectionStateChanged: (_, __) {},
         maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => false,
         reconnectBackoff: const <Duration>[Duration.zero],
         inactivityTimeout: const Duration(seconds: 30),
         logLevel: DartvexLogLevel.warn,

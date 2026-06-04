@@ -153,6 +153,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       onMessagesSent: _baseClient.markMessagesSent,
       onConnectionStateChanged: _handleConnectionStateChange,
       maxObservedTimestamp: () => _baseClient.maxObservedTimestamp,
+      hasSyncedPastLastReconnect: () => _baseClient.hasSyncedPastLastReconnect,
       reconnectBackoff: _config.reconnectBackoff,
       inactivityTimeout: _config.inactivityTimeout,
       connectTimeout: _config.connectTimeout,

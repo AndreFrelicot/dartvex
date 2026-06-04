@@ -25,6 +25,7 @@ void main() {
         onDisconnected: (_) async {},
         onConnectionStateChanged: (_, __) {},
         maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => false,
         reconnectBackoff: const <Duration>[Duration.zero],
         inactivityTimeout: const Duration(seconds: 30),
       );
@@ -48,6 +49,7 @@ void main() {
         onDisconnected: (_) async {},
         onConnectionStateChanged: (_, __) {},
         maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => false,
         reconnectBackoff: const <Duration>[Duration.zero],
         inactivityTimeout: const Duration(seconds: 30),
       );
@@ -83,6 +85,7 @@ void main() {
         onMessagesSent: sentCallbacks.add,
         onConnectionStateChanged: (_, __) {},
         maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => false,
         reconnectBackoff: const <Duration>[Duration.zero],
         inactivityTimeout: const Duration(seconds: 30),
       );
@@ -127,6 +130,7 @@ void main() {
         onDisconnected: (_) async {},
         onConnectionStateChanged: (_, __) {},
         maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => false,
         reconnectBackoff: const <Duration>[Duration.zero],
         inactivityTimeout: const Duration(seconds: 30),
       );
@@ -162,6 +166,7 @@ void main() {
         onDisconnected: (_) async {},
         onConnectionStateChanged: (_, __) {},
         maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => false,
         reconnectBackoff: const <Duration>[Duration.zero],
         inactivityTimeout: const Duration(seconds: 30),
         logLevel: DartvexLogLevel.info,
@@ -207,6 +212,7 @@ void main() {
         onDisconnected: (_) async {},
         onConnectionStateChanged: (_, __) {},
         maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => false,
         reconnectBackoff: const <Duration>[Duration.zero],
         inactivityTimeout: const Duration(seconds: 30),
       );
@@ -243,6 +249,7 @@ void main() {
         },
         onConnectionStateChanged: (_, __) {},
         maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => false,
         reconnectBackoff: const <Duration>[Duration.zero],
         inactivityTimeout: const Duration(seconds: 30),
       );
@@ -280,6 +287,7 @@ void main() {
         },
         onConnectionStateChanged: (_, __) {},
         maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => false,
         reconnectBackoff: const <Duration>[Duration.zero],
         inactivityTimeout: const Duration(seconds: 30),
       );
@@ -317,6 +325,7 @@ void main() {
         },
         onConnectionStateChanged: (_, __) {},
         maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => false,
         reconnectBackoff: const <Duration>[Duration(hours: 1)],
         inactivityTimeout: const Duration(seconds: 30),
       );
@@ -355,6 +364,7 @@ void main() {
         },
         onConnectionStateChanged: (_, __) {},
         maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => false,
         reconnectBackoff: const <Duration>[Duration.zero],
         inactivityTimeout: const Duration(seconds: 30),
         connectTimeout: const Duration(milliseconds: 50),
@@ -387,6 +397,7 @@ void main() {
           onDisconnected: (_) async {},
           onConnectionStateChanged: (_, __) {},
           maxObservedTimestamp: () => null,
+          hasSyncedPastLastReconnect: () => false,
           reconnectBackoff: const <Duration>[],
           inactivityTimeout: const Duration(seconds: 30),
           initialBackoff: const Duration(seconds: 1),
@@ -426,6 +437,7 @@ void main() {
         onDisconnected: (_) async {},
         onConnectionStateChanged: (_, __) {},
         maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => false,
         reconnectBackoff: const <Duration>[Duration(hours: 1)],
         inactivityTimeout: const Duration(seconds: 30),
       );
@@ -462,6 +474,7 @@ void main() {
         onDisconnected: (_) async {},
         onConnectionStateChanged: (_, __) {},
         maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => false,
         reconnectBackoff: const <Duration>[Duration.zero],
         inactivityTimeout: const Duration(seconds: 30),
         onTransitionMetrics: metrics.add,
@@ -507,6 +520,7 @@ void main() {
         onDisconnected: (_) async {},
         onConnectionStateChanged: (_, __) {},
         maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => false,
         reconnectBackoff: const <Duration>[Duration.zero],
         inactivityTimeout: const Duration(seconds: 30),
         onTransitionMetrics: metrics.add,
@@ -569,6 +583,7 @@ void main() {
         },
         onConnectionStateChanged: (_, __) {},
         maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => false,
         reconnectBackoff: const <Duration>[Duration.zero],
         inactivityTimeout: const Duration(seconds: 30),
       );
@@ -612,6 +627,7 @@ void main() {
         onDisconnected: (_) async {},
         onConnectionStateChanged: (_, __) {},
         maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => false,
         reconnectBackoff: const <Duration>[
           Duration(milliseconds: 10),
           Duration(milliseconds: 20),
@@ -632,6 +648,68 @@ void main() {
           .where((event) => event.message == 'Reconnect scheduled')
           .toList(growable: false);
       expect(schedules.last.data?['delayMs'], 20);
+
+      await manager.dispose();
+    });
+
+    test('reconnect backoff resets only after syncing past the last reconnect',
+        () async {
+      final adapter = MockWebSocketAdapter();
+      final events = <DartvexLogEvent>[];
+      var synced = false;
+      final manager = WebSocketManager(
+        adapter: adapter,
+        deploymentUrl: 'https://demo.convex.cloud',
+        apiVersion: '0.1.0',
+        onConnected: () => const <ClientMessage>[],
+        onMessage: (_) => const <ClientMessage>[],
+        onDisconnected: (_) async {},
+        onConnectionStateChanged: (_, __) {},
+        maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => synced,
+        reconnectBackoff: const <Duration>[
+          Duration(milliseconds: 10),
+          Duration(milliseconds: 20),
+          Duration(milliseconds: 40),
+        ],
+        inactivityTimeout: const Duration(seconds: 30),
+        logLevel: DartvexLogLevel.info,
+        logger: events.add,
+      );
+
+      List<int> scheduledDelays() => events
+          .where((event) => event.message == 'Reconnect scheduled')
+          .map((event) => event.data!['delayMs'] as int)
+          .toList(growable: false);
+
+      Future<void> deliverMessage() async {
+        adapter.pushServerMessage(
+          const ActionResponse(requestId: 0, success: true, result: 'ok')
+              .toJson(),
+        );
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      await manager.start();
+
+      // Flap before re-syncing: a delivered message must not reset the backoff,
+      // so the schedule keeps climbing (10ms then 20ms).
+      adapter.disconnect();
+      await Future<void>.delayed(const Duration(milliseconds: 15));
+      await deliverMessage();
+      adapter.disconnect();
+      await Future<void>.delayed(const Duration(milliseconds: 25));
+
+      expect(scheduledDelays(), <int>[10, 20]);
+
+      // Once the client reports it has re-synced, the next handled message
+      // resets the backoff, so the following disconnect schedules from 10ms.
+      synced = true;
+      await deliverMessage();
+      adapter.disconnect();
+      await Future<void>.delayed(const Duration(milliseconds: 15));
+
+      expect(scheduledDelays(), <int>[10, 20, 10]);
 
       await manager.dispose();
     });
