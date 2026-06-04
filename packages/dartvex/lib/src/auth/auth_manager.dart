@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:meta/meta.dart';
+
 import '../config.dart';
 import '../logging.dart';
 import '../protocol/messages.dart';
@@ -48,6 +50,14 @@ class AuthManager {
   bool _awaitingConfirmation = false;
 
   static const int _maxTokenConfirmationAttempts = 3;
+
+  /// Upper bound on the refresh delay, mirroring the official client's 20-day
+  /// cap (`setTimeout` uses a 32-bit integer and overflows beyond ~24 days).
+  static const int _maximumRefreshDelayMs = 20 * 24 * 60 * 60 * 1000;
+
+  /// Minimum token lifetime (`exp - iat`) required to schedule a refresh. A
+  /// token that lives this briefly is treated as not worth refreshing.
+  static const int _minimumTokenValiditySeconds = 2;
 
   /// Sets a fixed auth [token] without a refresh callback.
   Future<void> setAuth(String? token) async {
@@ -228,12 +238,60 @@ class AuthManager {
     _cancelRefreshTimer();
   }
 
+  /// Computes when to proactively refresh a token, immune to device clock skew.
+  ///
+  /// When the token carries an `iat` claim the delay is derived from the
+  /// token's own lifetime (`exp - iat`) minus [leewaySeconds] — the wall clock
+  /// is never consulted, so a skewed device clock cannot mis-schedule the
+  /// refresh. The result is capped at the official 20-day maximum, clamped to
+  /// zero (refresh immediately) when the leeway meets or exceeds the lifetime,
+  /// and `null` (do not schedule) for tokens that live `<= 2s`.
+  ///
+  /// When `iat` is absent the lifetime is unknown, so the computation falls
+  /// back to the wall clock (`exp - now - leewaySeconds`); this is the only
+  /// clock-dependent path and is used solely for tokens that omit `iat`.
+  /// [now] overrides the wall clock for testing.
+  @visibleForTesting
+  static Duration? computeRefreshDelay({
+    required int? iat,
+    required int exp,
+    required int leewaySeconds,
+    DateTime? now,
+  }) {
+    if (iat != null) {
+      final tokenValiditySeconds = exp - iat;
+      if (tokenValiditySeconds <= _minimumTokenValiditySeconds) {
+        return null;
+      }
+      var delayMs = (tokenValiditySeconds - leewaySeconds) * 1000;
+      if (delayMs < 0) {
+        delayMs = 0;
+      }
+      if (delayMs > _maximumRefreshDelayMs) {
+        delayMs = _maximumRefreshDelayMs;
+      }
+      return Duration(milliseconds: delayMs);
+    }
+    final nowSeconds = (now ?? DateTime.now()).millisecondsSinceEpoch ~/ 1000;
+    var delaySeconds = exp - nowSeconds - leewaySeconds;
+    if (delaySeconds < 0) {
+      delaySeconds = 0;
+    }
+    var delayMs = delaySeconds * 1000;
+    if (delayMs > _maximumRefreshDelayMs) {
+      delayMs = _maximumRefreshDelayMs;
+    }
+    return Duration(milliseconds: delayMs);
+  }
+
   void _scheduleRefresh(String token) {
     _cancelRefreshTimer();
     final generation = _authGeneration;
     int? exp;
+    int? iat;
     try {
       exp = jwtExp(token);
+      iat = jwtIat(token);
     } on FormatException {
       _log(
         DartvexLogLevel.warn,
@@ -248,11 +306,19 @@ class AuthManager {
       );
       return;
     }
-    final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-    final secondsUntilRefresh = exp - nowSeconds - 60;
-    final refreshDelay = Duration(
-      seconds: secondsUntilRefresh > 0 ? secondsUntilRefresh : 0,
+    final refreshDelay = computeRefreshDelay(
+      iat: iat,
+      exp: exp,
+      leewaySeconds: config.refreshTokenLeewaySeconds,
     );
+    if (refreshDelay == null) {
+      _log(
+        DartvexLogLevel.warn,
+        'Skipping auth refresh scheduling because the token does not live '
+        'long enough to refresh',
+      );
+      return;
+    }
     _log(
       DartvexLogLevel.debug,
       'Auth refresh scheduled',

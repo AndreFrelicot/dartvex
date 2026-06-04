@@ -23,8 +23,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   backoff-reset and auth-gating work and is not part of the public API.
 - `ConnectionState.fatalError`, a terminal connection state entered when the
   server reports an unrecoverable error.
+- `ConvexClientConfig.refreshTokenLeewaySeconds` (default `2`) controls how
+  early a token is proactively refreshed before it expires.
 
 ### Changed
+
+- Auth token refresh is now scheduled from the token's own lifetime
+  (`exp - iat`) minus `refreshTokenLeewaySeconds`, instead of from the device
+  wall clock (`exp - now - 60`). Refresh timing is now immune to device clock
+  skew; tokens without an `iat` claim fall back to the wall clock, and the
+  delay is capped at 20 days.
 
 - `reconnectBackoff` now defaults to empty, selecting the exponential backoff
   model. Provide an explicit non-negative schedule to keep fixed delays.

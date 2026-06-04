@@ -247,6 +247,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       clientId: config.clientId,
       apiVersion: config.apiVersion,
       authTokenType: config.authTokenType,
+      refreshTokenLeewaySeconds: config.refreshTokenLeewaySeconds,
       inactivityTimeout: config.inactivityTimeout,
       connectTimeout: config.connectTimeout,
       queryTimeout: config.queryTimeout,

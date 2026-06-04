@@ -14,7 +14,12 @@ void main() {
       final forceRefreshCalls = <bool>[];
       final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
       final manager = AuthManager(
-        config: const ConvexClientConfig(connectImmediately: false),
+        // Leeway wider than the cached token's lifetime forces an immediate
+        // refetch under the exp-iat schedule, so the test stays fast.
+        config: const ConvexClientConfig(
+          connectImmediately: false,
+          refreshTokenLeewaySeconds: 7200,
+        ),
         sendAuth: (token) async {
           sentTokens.add(token);
         },
@@ -46,7 +51,12 @@ void main() {
       final forceRefreshCalls = <bool>[];
       await runZonedGuarded(() async {
         final manager = AuthManager(
-          config: const ConvexClientConfig(connectImmediately: false),
+          // Leeway wider than the cached token's 30s lifetime forces an
+          // immediate scheduled refetch, which is the path under test.
+          config: const ConvexClientConfig(
+            connectImmediately: false,
+            refreshTokenLeewaySeconds: 60,
+          ),
           sendAuth: (_) async {},
           emitAuthState: (_) {},
         );
@@ -152,6 +162,76 @@ void main() {
 
       expect(fetchCount, 1);
       expect(sentTokens, <String?>['token']);
+    });
+  });
+
+  group('AuthManager.computeRefreshDelay', () {
+    test('derives the delay from token lifetime, not the wall clock', () {
+      // Two tokens with the same lifetime but wildly different absolute
+      // timestamps must schedule identically: the wall clock is never read.
+      final near = AuthManager.computeRefreshDelay(
+        iat: 1000,
+        exp: 2000,
+        leewaySeconds: 2,
+      );
+      final far = AuthManager.computeRefreshDelay(
+        iat: 5000000000,
+        exp: 5000001000,
+        leewaySeconds: 2,
+      );
+      expect(near, const Duration(milliseconds: 998000));
+      expect(near, far);
+    });
+
+    test('refreshes immediately when leeway exceeds the token lifetime', () {
+      final delay = AuthManager.computeRefreshDelay(
+        iat: 0,
+        exp: 5,
+        leewaySeconds: 10,
+      );
+      expect(delay, Duration.zero);
+    });
+
+    test('returns null for tokens too short-lived to refresh', () {
+      expect(
+        AuthManager.computeRefreshDelay(iat: 0, exp: 2, leewaySeconds: 2),
+        isNull,
+      );
+      expect(
+        AuthManager.computeRefreshDelay(iat: 100, exp: 101, leewaySeconds: 2),
+        isNull,
+      );
+    });
+
+    test('caps the delay at the 20-day maximum', () {
+      final delay = AuthManager.computeRefreshDelay(
+        iat: 0,
+        exp: 1000000000,
+        leewaySeconds: 2,
+      );
+      expect(delay, const Duration(days: 20));
+    });
+
+    test('falls back to the wall clock when iat is absent', () {
+      final now = DateTime.fromMillisecondsSinceEpoch(1000000 * 1000);
+      final delay = AuthManager.computeRefreshDelay(
+        iat: null,
+        exp: 1000100,
+        leewaySeconds: 2,
+        now: now,
+      );
+      expect(delay, const Duration(milliseconds: 98000));
+    });
+
+    test('wall-clock fallback clamps to zero for an expiring token', () {
+      final now = DateTime.fromMillisecondsSinceEpoch(1000000 * 1000);
+      final delay = AuthManager.computeRefreshDelay(
+        iat: null,
+        exp: 999999,
+        leewaySeconds: 2,
+        now: now,
+      );
+      expect(delay, Duration.zero);
     });
   });
 }
