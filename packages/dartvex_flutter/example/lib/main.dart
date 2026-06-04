@@ -49,8 +49,18 @@ class _ExampleAppState extends State<ExampleApp> {
   }
 }
 
-class ExampleHomePage extends StatelessWidget {
+class ExampleHomePage extends StatefulWidget {
   const ExampleHomePage({super.key});
+
+  @override
+  State<ExampleHomePage> createState() => _ExampleHomePageState();
+}
+
+class _ExampleHomePageState extends State<ExampleHomePage> {
+  // The message currently being sent, shared between the mutation args and the
+  // optimistic update (the OptimisticUpdate typedef carries no args of its own).
+  String _composedText = '';
+  bool _failNextSend = false;
 
   @override
   Widget build(BuildContext context) {
@@ -152,18 +162,45 @@ class ExampleHomePage extends StatelessWidget {
                   },
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
+              // Toggle to make the next send fail, demonstrating that the
+              // optimistic message is rolled back when the mutation fails.
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Fail next send (demo rollback)'),
+                value: _failNextSend,
+                onChanged: (value) {
+                  setState(() => _failNextSend = value);
+                  final client = ConvexProvider.of(context);
+                  if (client is DemoRuntimeClient) {
+                    client.failNextMutation = value;
+                  }
+                },
+              ),
               ConvexMutation<String>(
                 mutation: 'messages:send',
+                // Appends the pending message to messages:list instantly; the
+                // overlay is rolled back automatically if the send fails.
+                optimisticUpdate: (store) {
+                  final current =
+                      (store.getQuery('messages:list') as List<dynamic>?)
+                          ?.cast<String>() ??
+                      const <String>[];
+                  store.setQuery(
+                    'messages:list',
+                    const <String, dynamic>{},
+                    <String>[_composedText, ...current],
+                  );
+                },
                 builder: (context, mutate, snapshot) {
                   return FilledButton(
                     onPressed: snapshot.isLoading
                         ? null
                         : () {
-                            mutate(<String, dynamic>{
-                              'text':
-                                  'Message sent at ${DateTime.now().toIso8601String()}',
-                            });
+                            _composedText =
+                                'Message sent at '
+                                '${DateTime.now().toIso8601String()}';
+                            mutate(<String, dynamic>{'text': _composedText});
                           },
                     child: Text(
                       snapshot.isLoading ? 'Sending...' : 'Send a demo message',
@@ -252,6 +289,10 @@ class DemoRuntimeClient implements ConvexRuntimeClient {
   bool _currentAuthRefreshing = false;
   bool _disposed = false;
 
+  /// When `true`, the next [mutate] call fails after showing its optimistic
+  /// update, so the example can demonstrate rollback.
+  bool failNextMutation = false;
+
   @override
   Stream<ConvexConnectionState> get connectionState =>
       _connectionController.stream;
@@ -315,17 +356,67 @@ class DemoRuntimeClient implements ConvexRuntimeClient {
   Future<dynamic> mutate(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
+    OptimisticUpdate? optimisticUpdate,
   ]) async {
-    await Future<void>.delayed(const Duration(milliseconds: 300));
-    final text = args['text'] as String? ?? 'Untitled message';
-    _messages = <String>[text, ..._messages];
-    for (final subscription in _subscriptions) {
-      subscription.emit(
-        List<String>.from(_messages),
-        source: ConvexQuerySource.remote,
+    // A real ConvexClient overlays the optimistic update internally; this
+    // in-memory demo runs it against a snapshot of the current results to show
+    // the pending message instantly, then commits or rolls back.
+    final committed = List<String>.from(_messages);
+    if (optimisticUpdate != null) {
+      final store = _DemoOptimisticStore(<String, Object?>{
+        'messages:list': List<String>.from(_messages),
+      });
+      optimisticUpdate(store);
+      final optimistic =
+          (store.getQuery('messages:list') as List<dynamic>?)?.cast<String>() ??
+          committed;
+      _emitToAll(
+        optimistic,
+        source: ConvexQuerySource.cache,
+        hasPendingWrites: true,
       );
     }
+
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+    if (_disposed) {
+      return null;
+    }
+
+    if (failNextMutation) {
+      failNextMutation = false;
+      // Roll back to the authoritative server state and fail the mutation.
+      _emitToAll(
+        committed,
+        source: ConvexQuerySource.remote,
+        hasPendingWrites: false,
+      );
+      throw StateError(
+        'Simulated send failure — optimistic message rolled back',
+      );
+    }
+
+    final text = args['text'] as String? ?? 'Untitled message';
+    _messages = <String>[text, ...committed];
+    _emitToAll(
+      List<String>.from(_messages),
+      source: ConvexQuerySource.remote,
+      hasPendingWrites: false,
+    );
     return text;
+  }
+
+  void _emitToAll(
+    List<String> value, {
+    required ConvexQuerySource source,
+    required bool hasPendingWrites,
+  }) {
+    for (final subscription in _subscriptions) {
+      subscription.emit(
+        value,
+        source: source,
+        hasPendingWrites: hasPendingWrites,
+      );
+    }
   }
 
   @override
@@ -381,10 +472,52 @@ class DemoRuntimeSubscription implements ConvexRuntimeSubscription {
   void emit(
     dynamic value, {
     ConvexQuerySource source = ConvexQuerySource.remote,
+    bool hasPendingWrites = false,
   }) {
     if (isCanceled) {
       return;
     }
-    _controller.add(ConvexRuntimeQuerySuccess(value, source: source));
+    _controller.add(
+      ConvexRuntimeQuerySuccess(
+        value,
+        source: source,
+        hasPendingWrites: hasPendingWrites,
+      ),
+    );
+  }
+}
+
+/// A minimal in-memory [OptimisticLocalStore] for the demo runtime client.
+///
+/// A real [ConvexClient] applies optimistic updates against its live query
+/// cache; this stand-in just holds the one query the example renders so the
+/// update can be run and read back.
+class _DemoOptimisticStore implements OptimisticLocalStore {
+  _DemoOptimisticStore(this._values);
+
+  final Map<String, Object?> _values;
+
+  @override
+  dynamic getQuery(
+    String name, [
+    Map<String, dynamic> args = const <String, dynamic>{},
+  ]) {
+    return _values[name];
+  }
+
+  @override
+  List<OptimisticQueryEntry> getAllQueries(String name) {
+    final value = _values[name];
+    if (value == null) {
+      return const <OptimisticQueryEntry>[];
+    }
+    return <OptimisticQueryEntry>[
+      OptimisticQueryEntry(args: const <String, dynamic>{}, value: value),
+    ];
+  }
+
+  @override
+  void setQuery(String name, Map<String, dynamic> args, Object? value) {
+    _values[name] = value;
   }
 }
