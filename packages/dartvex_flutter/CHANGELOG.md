@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `PaginatedQueryBuilder` is now backed by the core reactive pagination engine:
+  loaded pages update live as their data changes and stay gapless at page
+  boundaries, instead of being one-shot reads. The widget API
+  (`query`/`builder`/`fromJson`/`args`/`pageSize`/`client`) and `PaginationStatus`
+  are unchanged. `ConvexRuntimeClient` gains `paginatedQuery(...)` returning a
+  `ConvexRuntimePaginatedQuery`, and `ConvexPaginatedResult` /
+  `ConvexPaginationStatus` are re-exported from `dartvex`.
 - `ConvexMutation.optimisticUpdate` applies an optimistic update while the
   mutation is in flight, overlaying query results instantly and rolling back
   when it completes or fails. `ConvexRuntimeClient.mutate` now accepts an

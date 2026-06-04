@@ -12,6 +12,8 @@ class FakeRuntimeClient implements ConvexRuntimeClient {
   final List<FakeSubscriptionCall> subscribeCalls = <FakeSubscriptionCall>[];
   final List<FakeRequestCall> mutateCalls = <FakeRequestCall>[];
   final List<FakeRequestCall> actionCalls = <FakeRequestCall>[];
+  final List<FakePaginatedQueryCall> paginatedQueryCalls =
+      <FakePaginatedQueryCall>[];
   final StreamController<ConvexConnectionState> _connectionController =
       StreamController<ConvexConnectionState>.broadcast(sync: true);
   final StreamController<bool> _authRefreshingController =
@@ -72,6 +74,9 @@ class FakeRuntimeClient implements ConvexRuntimeClient {
     disposed = true;
     for (final call in subscribeCalls) {
       call.subscription.cancel();
+    }
+    for (final call in paginatedQueryCalls) {
+      call.query.cancel();
     }
     unawaited(_connectionController.close());
     unawaited(_authRefreshingController.close());
@@ -138,6 +143,28 @@ class FakeRuntimeClient implements ConvexRuntimeClient {
     );
     return subscription;
   }
+
+  @override
+  ConvexRuntimePaginatedQuery paginatedQuery(
+    String name,
+    Map<String, dynamic> args, {
+    int pageSize = 20,
+  }) {
+    final query = FakeRuntimePaginatedQuery(
+      name,
+      Map<String, dynamic>.from(args),
+      pageSize,
+    );
+    paginatedQueryCalls.add(
+      FakePaginatedQueryCall(
+        name,
+        Map<String, dynamic>.from(args),
+        pageSize,
+        query,
+      ),
+    );
+    return query;
+  }
 }
 
 class FakeRequestCall {
@@ -154,6 +181,83 @@ class FakeSubscriptionCall extends FakeRequestCall {
   const FakeSubscriptionCall(super.name, super.args, this.subscription);
 
   final FakeRuntimeSubscription subscription;
+}
+
+class FakePaginatedQueryCall {
+  const FakePaginatedQueryCall(
+    this.name,
+    this.args,
+    this.pageSize,
+    this.query,
+  );
+
+  final String name;
+  final Map<String, dynamic> args;
+  final int pageSize;
+  final FakeRuntimePaginatedQuery query;
+}
+
+class FakeRuntimePaginatedQuery implements ConvexRuntimePaginatedQuery {
+  FakeRuntimePaginatedQuery(this.name, this.args, this.pageSize);
+
+  final String name;
+  final Map<String, dynamic> args;
+  final int pageSize;
+  final StreamController<ConvexPaginatedResult> _controller =
+      StreamController<ConvexPaginatedResult>.broadcast(sync: true);
+  ConvexPaginatedResult _current = const ConvexPaginatedResult(
+    results: <dynamic>[],
+    status: ConvexPaginationStatus.loadingFirstPage,
+    isDone: false,
+  );
+  int loadMoreCount = 0;
+  int? lastLoadMoreNumItems;
+  bool isCanceled = false;
+
+  @override
+  Stream<ConvexPaginatedResult> get stream => _controller.stream;
+
+  @override
+  ConvexPaginatedResult get current => _current;
+
+  @override
+  bool loadMore([int? numItems]) {
+    loadMoreCount += 1;
+    lastLoadMoreNumItems = numItems;
+    return true;
+  }
+
+  @override
+  void cancel() {
+    if (isCanceled) {
+      return;
+    }
+    isCanceled = true;
+    unawaited(_controller.close());
+  }
+
+  void emit(ConvexPaginatedResult result) {
+    _current = result;
+    if (!_controller.isClosed) {
+      _controller.add(result);
+    }
+  }
+
+  void emitPage(
+    List<dynamic> results, {
+    required ConvexPaginationStatus status,
+    bool isDone = false,
+    Object? error,
+  }) {
+    emit(
+      ConvexPaginatedResult(
+        results: results,
+        status: status,
+        isDone: isDone,
+        error: error,
+      ),
+    );
+  }
 }
 
 class FakeRuntimeSubscription implements ConvexRuntimeSubscription {

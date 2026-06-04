@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:collection/collection.dart';
+import 'package:dartvex/dartvex.dart' as convex;
 import 'package:flutter/widgets.dart';
 
 import 'provider.dart';
@@ -32,10 +35,12 @@ typedef PaginatedQueryWidgetBuilder<T> = Widget Function(
 
 /// Widget that manages cursor-based pagination with Convex.
 ///
-/// Convex paginated queries accept `paginationOpts` with `numItems` and
-/// `cursor`, and return `{ page, continueCursor, isDone }`.
-/// Pages are fetched with one-shot queries when the widget loads or when
-/// `loadMore` is called; existing pages are not live subscriptions.
+/// Backed by the core reactive pagination engine (`ConvexClient.paginatedQuery`)
+/// via [ConvexRuntimeClient.paginatedQuery]: each page is a live query
+/// subscription, so loaded pages update reactively as their data changes and
+/// stay gapless at page boundaries. `loadMore` extends the list using the last
+/// page's cursor; changing [query], [args], [pageSize], [fromJson], or [client]
+/// resets the query.
 ///
 /// ```dart
 /// PaginatedQueryBuilder<Message>(
@@ -88,102 +93,107 @@ class PaginatedQueryBuilder<T> extends StatefulWidget {
 }
 
 class _PaginatedQueryBuilderState<T> extends State<PaginatedQueryBuilder<T>> {
-  final List<T> _items = <T>[];
-  String? _cursor;
-  bool _isDone = false;
-  bool _isLoadingPage = false;
-  PaginationStatus _status = PaginationStatus.loading;
-  int _loadGeneration = 0;
-
   static const DeepCollectionEquality _deepEquality = DeepCollectionEquality();
 
+  ConvexRuntimeClient? _client;
+  ConvexRuntimePaginatedQuery? _query;
+  StreamSubscription<convex.ConvexPaginatedResult>? _subscription;
+
+  List<T> _items = const <Never>[];
+  PaginationStatus _status = PaginationStatus.loading;
+
   @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadPage();
-    });
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final client = widget.client ?? ConvexProvider.of(context);
+    if (_client != client || _query == null) {
+      _client = client;
+      _start();
+    }
   }
 
   @override
   void didUpdateWidget(covariant PaginatedQueryBuilder<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
+    final client = widget.client ?? ConvexProvider.of(context);
     if (oldWidget.query != widget.query ||
         oldWidget.pageSize != widget.pageSize ||
-        oldWidget.client != widget.client ||
         oldWidget.fromJson != widget.fromJson ||
+        _client != client ||
         !_deepEquality.equals(oldWidget.args, widget.args)) {
-      _reset();
-      _loadPage();
+      _client = client;
+      _start();
     }
   }
 
-  void _reset() {
-    _items.clear();
-    _cursor = null;
-    _isDone = false;
-    _isLoadingPage = false;
-    _status = PaginationStatus.loading;
-    _loadGeneration += 1;
+  void _start() {
+    _subscription?.cancel();
+    _query?.cancel();
+    final query = _client!.paginatedQuery(
+      widget.query,
+      <String, dynamic>{...?widget.args},
+      pageSize: widget.pageSize,
+    );
+    _query = query;
+    // Seed synchronously from the current snapshot (a build is already pending
+    // from this lifecycle callback), then update reactively from the stream.
+    final initial = query.current;
+    _items = _mapItems(initial);
+    _status = _mapStatus(initial.status);
+    _subscription = query.stream.listen(_apply);
   }
 
-  Future<void> _loadPage() async {
-    if (_isLoadingPage || !mounted) return;
-    final generation = _loadGeneration;
-    _isLoadingPage = true;
-
+  void _apply(convex.ConvexPaginatedResult result) {
+    if (!mounted) {
+      return;
+    }
     setState(() {
-      _status = _items.isEmpty
-          ? PaginationStatus.loading
-          : PaginationStatus.loadingMore;
+      _items = _mapItems(result);
+      _status = _mapStatus(result.status);
     });
+  }
 
-    try {
-      final client = widget.client ?? ConvexProvider.of(context);
-      final result = await client.query(widget.query, <String, dynamic>{
-        ...?widget.args,
-        'paginationOpts': <String, dynamic>{
-          'numItems': widget.pageSize,
-          'cursor': _cursor,
-        },
-      }) as Map<String, dynamic>;
+  List<T> _mapItems(convex.ConvexPaginatedResult result) {
+    return result.results
+        .map((item) => widget.fromJson(item as Map<String, dynamic>))
+        .toList(growable: false);
+  }
 
-      if (!mounted || generation != _loadGeneration) return;
-
-      final page = (result['page'] as List<dynamic>)
-          .cast<Map<String, dynamic>>()
-          .map(widget.fromJson)
-          .toList();
-      _isDone = result['isDone'] as bool? ?? true;
-      if (!_isDone) {
-        _cursor = result['continueCursor'] as String?;
-      }
-
-      setState(() {
-        _items.addAll(page);
-        _status = _isDone ? PaginationStatus.allLoaded : PaginationStatus.idle;
-      });
-    } catch (_) {
-      if (!mounted || generation != _loadGeneration) return;
-      setState(() {
-        _status = PaginationStatus.error;
-      });
-    } finally {
-      if (generation == _loadGeneration) {
-        _isLoadingPage = false;
-      }
+  static PaginationStatus _mapStatus(convex.ConvexPaginationStatus status) {
+    switch (status) {
+      case convex.ConvexPaginationStatus.loadingFirstPage:
+        return PaginationStatus.loading;
+      case convex.ConvexPaginationStatus.loadingMore:
+        return PaginationStatus.loadingMore;
+      case convex.ConvexPaginationStatus.canLoadMore:
+        return PaginationStatus.idle;
+      case convex.ConvexPaginationStatus.exhausted:
+        return PaginationStatus.allLoaded;
+      case convex.ConvexPaginationStatus.error:
+        return PaginationStatus.error;
     }
   }
 
   void _loadMore() {
-    if (_status == PaginationStatus.idle && !_isDone) {
-      _loadPage();
-    }
+    // The core engine ignores the call while a page is loading or once the
+    // query is exhausted, so this is always safe to invoke.
+    _query?.loadMore();
+  }
+
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    _query?.cancel();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return widget.builder(
-        context, List<T>.unmodifiable(_items), _loadMore, _status);
+      context,
+      List<T>.unmodifiable(_items),
+      _loadMore,
+      _status,
+    );
   }
 }

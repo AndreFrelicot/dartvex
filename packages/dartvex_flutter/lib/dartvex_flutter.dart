@@ -1,10 +1,15 @@
 /// Flutter widgets and runtime adapters for building reactive Convex UIs.
 library;
 
-// Re-exported from the core package so optimistic updates can be written with a
-// single `dartvex_flutter` import.
+// Re-exported from the core package so optimistic updates and paginated query
+// results can be used with a single `dartvex_flutter` import.
 export 'package:dartvex/dartvex.dart'
-    show OptimisticLocalStore, OptimisticQueryEntry, OptimisticUpdate;
+    show
+        ConvexPaginatedResult,
+        ConvexPaginationStatus,
+        OptimisticLocalStore,
+        OptimisticQueryEntry,
+        OptimisticUpdate;
 
 export 'src/action_builder.dart' show ConvexAction, ConvexActionBuilder;
 export 'src/asset_cache.dart' show ConvexAssetCache, ConvexAssetCacheMetrics;
@@ -35,6 +40,7 @@ export 'src/runtime_client.dart'
         ConvexClientRuntime,
         ConvexConnectionState,
         ConvexRuntimeClient,
+        ConvexRuntimePaginatedQuery,
         ConvexRuntimeQueryError,
         ConvexRuntimeQueryEvent,
         ConvexRuntimeQuerySuccess,
@@ -47,4 +53,4 @@ export 'src/snapshot.dart'
         ConvexRequestExecutor,
         ConvexRequestSnapshot;
 export 'src/testing/fake_convex_client.dart'
-    show FakeConvexClient, FakeConvexSubscription;
+    show FakeConvexClient, FakeConvexPaginatedQuery, FakeConvexSubscription;

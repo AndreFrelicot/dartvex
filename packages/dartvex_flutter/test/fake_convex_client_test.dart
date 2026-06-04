@@ -154,5 +154,34 @@ void main() {
       expect(snapshot.hasData, isTrue);
       expect(snapshot.data, 'hello from fake');
     });
+
+    test('paginatedQuery emits results and records loadMore', () async {
+      final client = FakeConvexClient();
+      final query = client.paginatedQuery(
+        'messages:list',
+        const <String, dynamic>{},
+        pageSize: 2,
+      );
+
+      expect(query.current.status, ConvexPaginationStatus.loadingFirstPage);
+
+      final results = <ConvexPaginatedResult>[];
+      query.stream.listen(results.add);
+
+      client.emitPaginated(
+        'messages:list',
+        results: <dynamic>['a', 'b'],
+        status: ConvexPaginationStatus.canLoadMore,
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(query.current.results, <dynamic>['a', 'b']);
+      expect(results.single.status, ConvexPaginationStatus.canLoadMore);
+
+      expect(query.loadMore(), isTrue);
+      expect((query as FakeConvexPaginatedQuery).loadMoreCount, 1);
+
+      client.dispose();
+    });
   });
 }

@@ -24,6 +24,17 @@ abstract class ConvexRuntimeClient {
     Map<String, dynamic> args = const {},
   ]);
 
+  /// Subscribes to a live, reactive paginated query.
+  ///
+  /// Returns a handle whose stream emits the gapless concatenation of every
+  /// loaded page; call [ConvexRuntimePaginatedQuery.loadMore] to fetch the next
+  /// page. See `ConvexClient.paginatedQuery`.
+  ConvexRuntimePaginatedQuery paginatedQuery(
+    String name,
+    Map<String, dynamic> args, {
+    int pageSize = 20,
+  });
+
   /// Executes a mutation, optionally with an [optimisticUpdate] that overlays
   /// query results locally until the mutation completes. See
   /// `ConvexClient.mutate`.
@@ -64,6 +75,28 @@ abstract class ConvexRuntimeSubscription {
   Stream<ConvexRuntimeQueryEvent> get stream;
 
   /// Cancels the subscription.
+  void cancel();
+}
+
+/// Handle for a live, reactive paginated query consumed by Flutter widgets.
+///
+/// Mirrors the core `ConvexPaginatedQuery`: [stream] emits an aggregated
+/// [convex.ConvexPaginatedResult] on every change, [current] is the latest
+/// snapshot, and [loadMore] fetches the next page.
+abstract class ConvexRuntimePaginatedQuery {
+  /// Reactive stream of aggregated page results.
+  Stream<convex.ConvexPaginatedResult> get stream;
+
+  /// The latest aggregated snapshot, available synchronously.
+  convex.ConvexPaginatedResult get current;
+
+  /// Loads the next page, returning whether loading was actually started.
+  ///
+  /// [numItems] overrides the page size for the new page. See
+  /// `ConvexPaginatedQuery.loadMore`.
+  bool loadMore([int? numItems]);
+
+  /// Cancels the query and releases its page subscriptions.
   void cancel();
 }
 
@@ -226,6 +259,39 @@ class ConvexClientRuntime implements ConvexRuntimeClient {
   ]) {
     return _ConvexClientRuntimeSubscription(_client.subscribe(name, args));
   }
+
+  @override
+
+  /// Subscribes to a paginated query through the wrapped client.
+  ConvexRuntimePaginatedQuery paginatedQuery(
+    String name,
+    Map<String, dynamic> args, {
+    int pageSize = 20,
+  }) {
+    return _ConvexClientRuntimePaginatedQuery(
+      _client.paginatedQuery(name, args, pageSize: pageSize),
+    );
+  }
+}
+
+/// Adapts a core [convex.ConvexPaginatedQuery] to [ConvexRuntimePaginatedQuery].
+class _ConvexClientRuntimePaginatedQuery
+    implements ConvexRuntimePaginatedQuery {
+  _ConvexClientRuntimePaginatedQuery(this._query);
+
+  final convex.ConvexPaginatedQuery _query;
+
+  @override
+  Stream<convex.ConvexPaginatedResult> get stream => _query.stream;
+
+  @override
+  convex.ConvexPaginatedResult get current => _query.current;
+
+  @override
+  bool loadMore([int? numItems]) => _query.loadMore(numItems);
+
+  @override
+  void cancel() => _query.cancel();
 }
 
 class _ConvexClientRuntimeSubscription implements ConvexRuntimeSubscription {

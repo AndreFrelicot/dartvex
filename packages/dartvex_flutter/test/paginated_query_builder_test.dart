@@ -34,10 +34,13 @@ void main() {
     );
   }
 
-  testWidgets('starts in loading state', (tester) async {
-    final client = FakeRuntimeClient(
-      initialConnectionState: ConvexConnectionState.connected,
-    );
+  FakeRuntimeClient connectedClient() => FakeRuntimeClient(
+        initialConnectionState: ConvexConnectionState.connected,
+      );
+
+  testWidgets('starts in loading state and opens one paginated query',
+      (tester) async {
+    final client = connectedClient();
     PaginationStatus? capturedStatus;
 
     await tester.pumpWidget(
@@ -48,23 +51,13 @@ void main() {
     );
 
     expect(capturedStatus, PaginationStatus.loading);
+    expect(client.paginatedQueryCalls, hasLength(1));
+    expect(client.paginatedQueryCalls.single.name, 'items:list');
+    expect(client.paginatedQueryCalls.single.pageSize, 2);
   });
 
-  testWidgets('loads first page on init', (tester) async {
-    final client = FakeRuntimeClient(
-      initialConnectionState: ConvexConnectionState.connected,
-    );
-    client.onQuery = (name, args) async {
-      return <String, dynamic>{
-        'page': <dynamic>[
-          {'id': '1', 'name': 'Item 1'},
-          {'id': '2', 'name': 'Item 2'},
-        ],
-        'continueCursor': 'cursor1',
-        'isDone': false,
-      };
-    };
-
+  testWidgets('renders the first page reactively', (tester) async {
+    final client = connectedClient();
     List<Map<String, dynamic>>? capturedItems;
     PaginationStatus? capturedStatus;
 
@@ -77,37 +70,23 @@ void main() {
         },
       ),
     );
-    await tester.pumpAndSettle();
+
+    client.paginatedQueryCalls.single.query.emitPage(
+      <dynamic>[
+        <String, dynamic>{'id': '1'},
+        <String, dynamic>{'id': '2'},
+      ],
+      status: ConvexPaginationStatus.canLoadMore,
+    );
+    await tester.pump();
 
     expect(capturedItems, hasLength(2));
     expect(capturedStatus, PaginationStatus.idle);
   });
 
-  testWidgets('loadMore loads next page', (tester) async {
-    final client = FakeRuntimeClient(
-      initialConnectionState: ConvexConnectionState.connected,
-    );
-    var callCount = 0;
-    client.onQuery = (name, args) async {
-      callCount++;
-      if (callCount == 1) {
-        return <String, dynamic>{
-          'page': <dynamic>[
-            {'id': '1'},
-          ],
-          'continueCursor': 'c1',
-          'isDone': false,
-        };
-      }
-      return <String, dynamic>{
-        'page': <dynamic>[
-          {'id': '2'},
-        ],
-        'continueCursor': 'c2',
-        'isDone': true,
-      };
-    };
-
+  testWidgets('loadMore requests the next page and updates reactively',
+      (tester) async {
+    final client = connectedClient();
     List<Map<String, dynamic>>? capturedItems;
     PaginationStatus? capturedStatus;
 
@@ -120,34 +99,39 @@ void main() {
         },
       ),
     );
-    await tester.pumpAndSettle();
 
+    final query = client.paginatedQueryCalls.single.query;
+    query.emitPage(
+      <dynamic>[
+        <String, dynamic>{'id': '1'},
+      ],
+      status: ConvexPaginationStatus.canLoadMore,
+    );
+    await tester.pump();
     expect(capturedItems, hasLength(1));
     expect(capturedStatus, PaginationStatus.idle);
 
-    // Tap to trigger loadMore
     await tester.tap(find.byType(GestureDetector));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    expect(query.loadMoreCount, 1);
 
+    // The engine would append the next page; emit the aggregated result.
+    query.emitPage(
+      <dynamic>[
+        <String, dynamic>{'id': '1'},
+        <String, dynamic>{'id': '2'},
+      ],
+      status: ConvexPaginationStatus.exhausted,
+      isDone: true,
+    );
+    await tester.pump();
     expect(capturedItems, hasLength(2));
     expect(capturedStatus, PaginationStatus.allLoaded);
   });
 
-  testWidgets('shows allLoaded when isDone is true on first page',
+  testWidgets('shows allLoaded when the first page is exhausted',
       (tester) async {
-    final client = FakeRuntimeClient(
-      initialConnectionState: ConvexConnectionState.connected,
-    );
-    client.onQuery = (name, args) async {
-      return <String, dynamic>{
-        'page': <dynamic>[
-          {'id': '1'},
-        ],
-        'continueCursor': null,
-        'isDone': true,
-      };
-    };
-
+    final client = connectedClient();
     PaginationStatus? capturedStatus;
 
     await tester.pumpWidget(
@@ -156,19 +140,21 @@ void main() {
         onBuild: (_, status) => capturedStatus = status,
       ),
     );
-    await tester.pumpAndSettle();
+
+    client.paginatedQueryCalls.single.query.emitPage(
+      <dynamic>[
+        <String, dynamic>{'id': '1'},
+      ],
+      status: ConvexPaginationStatus.exhausted,
+      isDone: true,
+    );
+    await tester.pump();
 
     expect(capturedStatus, PaginationStatus.allLoaded);
   });
 
-  testWidgets('handles errors', (tester) async {
-    final client = FakeRuntimeClient(
-      initialConnectionState: ConvexConnectionState.connected,
-    );
-    client.onQuery = (name, args) async {
-      throw StateError('query failed');
-    };
-
+  testWidgets('maps the error status', (tester) async {
+    final client = connectedClient();
     PaginationStatus? capturedStatus;
 
     await tester.pumpWidget(
@@ -177,8 +163,85 @@ void main() {
         onBuild: (_, status) => capturedStatus = status,
       ),
     );
-    await tester.pumpAndSettle();
+
+    client.paginatedQueryCalls.single.query.emitPage(
+      <dynamic>[],
+      status: ConvexPaginationStatus.error,
+      error: StateError('boom'),
+    );
+    await tester.pump();
 
     expect(capturedStatus, PaginationStatus.error);
+  });
+
+  testWidgets('updates a loaded page reactively without duplicates',
+      (tester) async {
+    final client = connectedClient();
+    List<Map<String, dynamic>>? capturedItems;
+
+    await tester.pumpWidget(
+      buildPaginated(
+        client: client,
+        onBuild: (items, _) => capturedItems = items,
+      ),
+    );
+
+    final query = client.paginatedQueryCalls.single.query;
+    query.emitPage(
+      <dynamic>[
+        <String, dynamic>{'id': 'a'},
+        <String, dynamic>{'id': 'b'},
+      ],
+      status: ConvexPaginationStatus.canLoadMore,
+    );
+    await tester.pump();
+    expect(
+      capturedItems!.map((item) => item['id']).toList(),
+      <String>['a', 'b'],
+    );
+
+    // An insert into an already-loaded page flows through reactively.
+    query.emitPage(
+      <dynamic>[
+        <String, dynamic>{'id': 'a'},
+        <String, dynamic>{'id': 'x'},
+        <String, dynamic>{'id': 'b'},
+      ],
+      status: ConvexPaginationStatus.canLoadMore,
+    );
+    await tester.pump();
+    expect(
+      capturedItems!.map((item) => item['id']).toList(),
+      <String>['a', 'x', 'b'],
+    );
+  });
+
+  testWidgets('resets the query when args change', (tester) async {
+    final client = connectedClient();
+
+    await tester.pumpWidget(
+      buildPaginated(
+        client: client,
+        args: const <String, dynamic>{'channel': 'a'},
+        onBuild: (_, __) {},
+      ),
+    );
+    expect(client.paginatedQueryCalls, hasLength(1));
+    final firstQuery = client.paginatedQueryCalls.first.query;
+
+    await tester.pumpWidget(
+      buildPaginated(
+        client: client,
+        args: const <String, dynamic>{'channel': 'b'},
+        onBuild: (_, __) {},
+      ),
+    );
+
+    expect(client.paginatedQueryCalls, hasLength(2));
+    expect(firstQuery.isCanceled, isTrue);
+    expect(
+      client.paginatedQueryCalls.last.args,
+      const <String, dynamic>{'channel': 'b'},
+    );
   });
 }

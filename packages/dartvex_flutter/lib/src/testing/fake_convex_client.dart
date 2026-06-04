@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:dartvex/dartvex.dart' show OptimisticUpdate;
+import 'package:dartvex/dartvex.dart'
+    show ConvexPaginatedResult, ConvexPaginationStatus, OptimisticUpdate;
 
 import '../runtime_client.dart';
 
@@ -33,6 +34,8 @@ class FakeConvexClient implements ConvexRuntimeClient {
   final Map<String, StreamController<ConvexRuntimeQueryEvent>>
       _subscriptionControllers =
       <String, StreamController<ConvexRuntimeQueryEvent>>{};
+  final Map<String, FakeConvexPaginatedQuery> _paginatedQueries =
+      <String, FakeConvexPaginatedQuery>{};
 
   final StreamController<ConvexConnectionState> _connectionController =
       StreamController<ConvexConnectionState>.broadcast(sync: true);
@@ -92,6 +95,18 @@ class FakeConvexClient implements ConvexRuntimeClient {
   void emitSubscriptionError(String name, Object error) {
     _subscriptionControllers[name]?.add(
       ConvexRuntimeQueryError(error),
+    );
+  }
+
+  /// Emit an aggregated paginated result to the named paginated query.
+  void emitPaginated(
+    String name, {
+    required List<dynamic> results,
+    ConvexPaginationStatus status = ConvexPaginationStatus.canLoadMore,
+    bool isDone = false,
+  }) {
+    _paginatedQueries[name]?.emit(
+      ConvexPaginatedResult(results: results, status: status, isDone: isDone),
     );
   }
 
@@ -165,6 +180,17 @@ class FakeConvexClient implements ConvexRuntimeClient {
   }
 
   @override
+  ConvexRuntimePaginatedQuery paginatedQuery(
+    String name,
+    Map<String, dynamic> args, {
+    int pageSize = 20,
+  }) {
+    final query = FakeConvexPaginatedQuery(name: name, pageSize: pageSize);
+    _paginatedQueries[name] = query;
+    return query;
+  }
+
+  @override
   Future<dynamic> mutate(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
@@ -202,8 +228,67 @@ class FakeConvexClient implements ConvexRuntimeClient {
     for (final controller in _subscriptionControllers.values) {
       unawaited(controller.close());
     }
+    for (final query in _paginatedQueries.values) {
+      query.cancel();
+    }
     unawaited(_connectionController.close());
     unawaited(_authRefreshingController.close());
+  }
+}
+
+/// A fake paginated query returned by [FakeConvexClient.paginatedQuery].
+///
+/// Drive it from a test with [FakeConvexClient.emitPaginated]; it records how
+/// many times [loadMore] was called via [loadMoreCount].
+class FakeConvexPaginatedQuery implements ConvexRuntimePaginatedQuery {
+  /// Creates a fake paginated query for [name] with the given [pageSize].
+  FakeConvexPaginatedQuery({required this.name, required this.pageSize});
+
+  /// The query name this paginated query is for.
+  final String name;
+
+  /// The configured page size.
+  final int pageSize;
+
+  final StreamController<ConvexPaginatedResult> _controller =
+      StreamController<ConvexPaginatedResult>.broadcast(sync: true);
+  ConvexPaginatedResult _current = const ConvexPaginatedResult(
+    results: <dynamic>[],
+    status: ConvexPaginationStatus.loadingFirstPage,
+    isDone: false,
+  );
+
+  /// The number of times [loadMore] has been called.
+  int loadMoreCount = 0;
+
+  /// Whether this query has been canceled.
+  bool isCanceled = false;
+
+  @override
+  Stream<ConvexPaginatedResult> get stream => _controller.stream;
+
+  @override
+  ConvexPaginatedResult get current => _current;
+
+  @override
+  bool loadMore([int? numItems]) {
+    loadMoreCount += 1;
+    return true;
+  }
+
+  @override
+  void cancel() {
+    if (isCanceled) return;
+    isCanceled = true;
+    unawaited(_controller.close());
+  }
+
+  /// Pushes an aggregated [result] to listeners and updates [current].
+  void emit(ConvexPaginatedResult result) {
+    _current = result;
+    if (!_controller.isClosed) {
+      _controller.add(result);
+    }
   }
 }
 
