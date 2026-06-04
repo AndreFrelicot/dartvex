@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:dartvex_flutter/dartvex_flutter.dart';
 import 'package:flutter/material.dart';
 
+import 'concierge_theme.dart';
+
 void main() {
   runApp(const ExampleApp());
 }
@@ -36,13 +38,8 @@ class _ExampleAppState extends State<ExampleApp> {
       client: _client,
       child: MaterialApp(
         title: 'dartvex_flutter example',
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: const Color(0xFF0B7285),
-            brightness: Brightness.light,
-          ),
-          scaffoldBackgroundColor: const Color(0xFFF7F4EC),
-        ),
+        debugShowCheckedModeBanner: false,
+        theme: buildConciergeTheme(),
         home: const ExampleHomePage(),
       ),
     );
@@ -66,17 +63,17 @@ class _ExampleHomePageState extends State<ExampleHomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('dartvex_flutter'),
         backgroundColor: Colors.transparent,
-      ),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: <Color>[Color(0xFFF7F4EC), Color(0xFFE5F4F1)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
+        titleSpacing: 16,
+        title: const Row(
+          children: <Widget>[
+            DartvexLogoMark(size: 30),
+            SizedBox(width: 12),
+            Text('dartvex_flutter'),
+          ],
         ),
+      ),
+      body: ConciergeBackground(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(20),
           child: Column(
@@ -91,8 +88,11 @@ class _ExampleHomePageState extends State<ExampleHomePage> {
                   children: <Widget>[
                     DecoratedBox(
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.82),
+                        color: ConciergeColors.surfaceHigh,
                         borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: ConciergeColors.outline.withValues(alpha: 0.6),
+                        ),
                       ),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
@@ -152,8 +152,13 @@ class _ExampleHomePageState extends State<ExampleHomePage> {
                       itemBuilder: (context, index) {
                         return DecoratedBox(
                           decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.84),
-                            borderRadius: BorderRadius.circular(20),
+                            color: ConciergeColors.surface,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: ConciergeColors.cyan.withValues(
+                                alpha: 0.14,
+                              ),
+                            ),
                           ),
                           child: Padding(
                             padding: const EdgeInsets.all(16),
@@ -343,8 +348,11 @@ class AuthRefreshingBadge extends StatelessWidget {
         }
         return DecoratedBox(
           decoration: BoxDecoration(
-            color: const Color(0xFFFFF3CD),
+            color: ConciergeColors.warning.withValues(alpha: 0.16),
             borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: ConciergeColors.warning.withValues(alpha: 0.5),
+            ),
           ),
           child: const Padding(
             padding: EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -354,10 +362,19 @@ class AuthRefreshingBadge extends StatelessWidget {
                 SizedBox(
                   width: 14,
                   height: 14,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: ConciergeColors.warning,
+                  ),
                 ),
                 SizedBox(width: 8),
-                Text('Authenticating…'),
+                Text(
+                  'Authenticating…',
+                  style: TextStyle(
+                    color: ConciergeColors.warning,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ],
             ),
           ),
@@ -377,8 +394,11 @@ class RealtimeInternalsPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.white.withValues(alpha: 0.82),
-      borderRadius: BorderRadius.circular(16),
+      color: ConciergeColors.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: ConciergeColors.cyan.withValues(alpha: 0.14)),
+      ),
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
@@ -454,7 +474,7 @@ class _InternalsRow extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: <Widget>[
-          Text(label, style: const TextStyle(color: Color(0xFF55636B))),
+          Text(label, style: const TextStyle(color: ConciergeColors.textDim)),
           Flexible(
             child: Text(
               value,
