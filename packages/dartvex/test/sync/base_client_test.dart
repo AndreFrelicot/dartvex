@@ -548,5 +548,30 @@ void main() {
       expect(client.localState.hasSyncedPastLastReconnect(), isTrue);
       expect(client.hasSyncedPastLastReconnect, isFalse);
     });
+
+    test('pause buffers work and resume replays it before queued mutations',
+        () {
+      final client = BaseClient();
+      client.pause();
+      expect(client.isPaused, isTrue);
+
+      // A subscribe and auth set while paused emit nothing immediately; only a
+      // mutation queued while paused sits in the outgoing buffer.
+      client.subscribe('messages:list', const <String, dynamic>{});
+      client.setAuth(tokenType: 'User', token: 'tok');
+      client.mutate('messages:send', const <String, dynamic>{'body': 'hi'});
+      final queuedWhilePaused = client.drainOutgoing();
+      expect(queuedWhilePaused, hasLength(1));
+      expect(queuedWhilePaused.single, isA<Mutation>());
+
+      // Re-queue the mutation the assertion above drained, then resume.
+      client.mutate('messages:send', const <String, dynamic>{'body': 'hi'});
+      final resumeMessages = client.resume();
+      expect(client.isPaused, isFalse);
+      // Resume order: coalesced query-set, then auth, then the queued mutation.
+      expect(resumeMessages[0], isA<ModifyQuerySet>());
+      expect(resumeMessages[1], isA<Authenticate>());
+      expect(resumeMessages[2], isA<Mutation>());
+    });
   });
 }

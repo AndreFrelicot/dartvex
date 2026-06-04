@@ -26,11 +26,25 @@ typedef AuthTokenFetcher = Future<String?> Function(
 /// Coordinates auth token updates and refresh scheduling for [ConvexClient].
 class AuthManager {
   /// Creates an auth manager.
+  ///
+  /// The optional socket callbacks let the manager gate the transport so
+  /// queries and mutations cannot race ahead of a pending auth: [pauseSocket]/
+  /// [resumeSocket] bracket the initial token fetch, and [stopSocket]/
+  /// [restartSocket] bracket a reauth so a fresh token is replayed on a clean
+  /// connection. When omitted (e.g. in unit tests), token updates are simply
+  /// sent without gating.
   AuthManager({
     required this.config,
     required this.sendAuth,
     required this.emitAuthState,
-  });
+    Future<void> Function()? pauseSocket,
+    Future<void> Function()? resumeSocket,
+    Future<void> Function()? stopSocket,
+    Future<void> Function()? restartSocket,
+  })  : _pauseSocket = pauseSocket,
+        _resumeSocket = resumeSocket,
+        _stopSocket = stopSocket,
+        _restartSocket = restartSocket;
 
   /// Client configuration used for logging and token metadata.
   final ConvexClientConfig config;
@@ -40,6 +54,11 @@ class AuthManager {
 
   /// Callback that publishes public auth state changes.
   final AuthStateEmitter emitAuthState;
+
+  final Future<void> Function()? _pauseSocket;
+  final Future<void> Function()? _resumeSocket;
+  final Future<void> Function()? _stopSocket;
+  final Future<void> Function()? _restartSocket;
 
   AuthTokenFetcher? _fetchToken;
   void Function(bool)? _onAuthChange;
@@ -88,8 +107,12 @@ class AuthManager {
     final generation = ++_authGeneration;
     _fetchToken = fetchToken;
     _onAuthChange = onAuthChange;
+    // Pause the socket so queries/mutations cannot be sent ahead of the initial
+    // token while it is being fetched; resume once the token has been applied.
+    await _invokePauseSocket();
     final token = await fetchToken(forceRefresh: false);
     if (!_isCurrentFlow(generation, fetchToken)) {
+      // A newer auth flow superseded this one; it now owns the socket gating.
       return _StaleAuthHandle();
     }
     _currentToken = token;
@@ -99,6 +122,7 @@ class AuthManager {
     if (token == null) {
       _emit(false);
     }
+    await _invokeResumeSocket();
     return _RefreshAuthHandle(this);
   }
 
@@ -214,17 +238,22 @@ class AuthManager {
     }
 
     final generation = _authGeneration;
+    // Stop the socket so in-flight messages cannot retry with the stale token,
+    // fetch a fresh one, then restart so it is replayed on a clean connection.
+    await _invokeStopSocket();
     final freshToken = await fetchToken(forceRefresh: true);
-    if (!_isCurrentFlow(generation, fetchToken)) {
-      return;
+    if (_isCurrentFlow(generation, fetchToken)) {
+      _currentToken = freshToken;
+      _awaitingConfirmation = freshToken != null;
+      await sendAuth(freshToken);
+      if (freshToken == null) {
+        _log(DartvexLogLevel.warn, 'Forced auth refresh returned no token');
+        _emit(false);
+      }
     }
-    _currentToken = freshToken;
-    _awaitingConfirmation = freshToken != null;
-    await sendAuth(freshToken);
-    if (freshToken == null) {
-      _log(DartvexLogLevel.warn, 'Forced auth refresh returned no token');
-      _emit(false);
-    }
+    // Always restart, even on a superseded flow, so the socket is never left
+    // stopped; the restart replays whatever auth local state currently holds.
+    await _invokeRestartSocket();
   }
 
   /// Stops any active refresh flow without changing the current token.
@@ -362,6 +391,34 @@ class AuthManager {
 
   bool _isCurrentFlow(int generation, AuthTokenFetcher fetchToken) {
     return generation == _authGeneration && identical(fetchToken, _fetchToken);
+  }
+
+  Future<void> _invokePauseSocket() async {
+    final pause = _pauseSocket;
+    if (pause != null) {
+      await pause();
+    }
+  }
+
+  Future<void> _invokeResumeSocket() async {
+    final resume = _resumeSocket;
+    if (resume != null) {
+      await resume();
+    }
+  }
+
+  Future<void> _invokeStopSocket() async {
+    final stop = _stopSocket;
+    if (stop != null) {
+      await stop();
+    }
+  }
+
+  Future<void> _invokeRestartSocket() async {
+    final restart = _restartSocket;
+    if (restart != null) {
+      await restart();
+    }
   }
 
   void _emit(bool isAuthenticated) {

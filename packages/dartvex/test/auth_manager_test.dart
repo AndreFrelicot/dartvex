@@ -234,6 +234,107 @@ void main() {
       expect(delay, Duration.zero);
     });
   });
+
+  group('AuthManager socket gating', () {
+    AuthManager managerRecording(
+      List<String> events, {
+      required AuthTokenFetcher fetchToken,
+    }) {
+      return AuthManager(
+        config: const ConvexClientConfig(connectImmediately: false),
+        sendAuth: (token) async => events.add('sendAuth:${token ?? 'null'}'),
+        emitAuthState: (_) {},
+        pauseSocket: () async => events.add('pause'),
+        resumeSocket: () async => events.add('resume'),
+        stopSocket: () async => events.add('stop'),
+        restartSocket: () async => events.add('restart'),
+      );
+    }
+
+    test('setAuthWithRefresh pauses around the initial token fetch', () async {
+      final events = <String>[];
+      final manager = managerRecording(
+        events,
+        fetchToken: ({required bool forceRefresh}) async => 'token-abc',
+      );
+
+      await manager.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) async {
+          events.add('fetch:$forceRefresh');
+          return 'token-abc';
+        },
+      );
+      await manager.stopRefreshing();
+
+      expect(
+        events,
+        <String>['pause', 'fetch:false', 'sendAuth:token-abc', 'resume'],
+      );
+    });
+
+    test('reauth stops, fetches, authenticates, then restarts', () async {
+      final events = <String>[];
+      final manager = managerRecording(
+        events,
+        fetchToken: ({required bool forceRefresh}) async => 'unused',
+      );
+
+      await manager.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) async {
+          events.add('fetch:$forceRefresh');
+          return forceRefresh ? 'fresh-token' : 'cached-token';
+        },
+      );
+      // Confirm the cached token so the manager is no longer awaiting it.
+      manager.handleAuthConfirmed();
+      events.clear();
+
+      await manager.handleAuthError(
+        const AuthError(
+          error: 'token expired',
+          baseVersion: 0,
+          authUpdateAttempted: true,
+        ),
+        currentAuthVersion: 1,
+      );
+      await manager.stopRefreshing();
+
+      expect(
+        events,
+        <String>['stop', 'fetch:true', 'sendAuth:fresh-token', 'restart'],
+      );
+    });
+
+    test('reauth still restarts the socket when the token cannot be refreshed',
+        () async {
+      final events = <String>[];
+      final manager = managerRecording(
+        events,
+        fetchToken: ({required bool forceRefresh}) async => 'unused',
+      );
+
+      await manager.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) async {
+          return forceRefresh ? null : 'cached-token';
+        },
+      );
+      manager.handleAuthConfirmed();
+      events.clear();
+
+      await manager.handleAuthError(
+        const AuthError(
+          error: 'token expired',
+          baseVersion: 0,
+          authUpdateAttempted: true,
+        ),
+        currentAuthVersion: 1,
+      );
+      await manager.stopRefreshing();
+
+      // The socket is never left stopped, even when the refresh yields no token.
+      expect(events, <String>['stop', 'sendAuth:null', 'restart']);
+    });
+  });
 }
 
 String _jwt({

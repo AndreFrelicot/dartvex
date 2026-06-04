@@ -58,6 +58,10 @@ class LocalSyncState {
   final Set<int> _outstandingQueriesOlderThanRestart = <int>{};
   bool _outstandingAuthOlderThanRestart = false;
 
+  bool _paused = false;
+  final Map<int, QuerySetOperation> _pendingQuerySetModifications =
+      <int, QuerySetOperation>{};
+
   final Map<String, QuerySubscriptionState> _queriesByToken =
       <String, QuerySubscriptionState>{};
   final Map<int, String> _queryTokenByQueryId = <int, String>{};
@@ -66,6 +70,13 @@ class LocalSyncState {
   AuthState? get authState => _authState;
 
   bool get hasAuth => _authState != null;
+
+  /// Whether the sync state is currently paused while auth is being resolved.
+  ///
+  /// While paused, query-set modifications are buffered instead of being
+  /// emitted, and auth updates do not advance the identity version. They are
+  /// replayed together by [resume]. See [pause].
+  bool get isPaused => _paused;
 
   /// Whether every query and auth update that predates the most recent
   /// reconnect has been confirmed by the server.
@@ -121,6 +132,23 @@ class LocalSyncState {
     _queryTokenByQueryId[queryId] = token;
     _queryTokenBySubscriberId[subscriberId] = token;
 
+    final add = Add(
+      queryId: queryId,
+      udfPath: canonicalPath,
+      args: <dynamic>[Map<String, dynamic>.from(args)],
+      journal: journal,
+    );
+
+    if (_paused) {
+      // Buffer the modification and leave the query-set version untouched; it is
+      // emitted as a single coalesced ModifyQuerySet by [resume].
+      _pendingQuerySetModifications[queryId] = add;
+      return SubscriptionRegistration(
+        subscriberId: subscriberId,
+        queryId: queryId,
+      );
+    }
+
     final baseVersion = querySetVersion;
     querySetVersion += 1;
     return SubscriptionRegistration(
@@ -129,14 +157,7 @@ class LocalSyncState {
       message: ModifyQuerySet(
         baseVersion: baseVersion,
         newVersion: querySetVersion,
-        modifications: <QuerySetOperation>[
-          Add(
-            queryId: queryId,
-            udfPath: canonicalPath,
-            args: <dynamic>[Map<String, dynamic>.from(args)],
-            journal: journal,
-          ),
-        ],
+        modifications: <QuerySetOperation>[add],
       ),
     );
   }
@@ -159,6 +180,17 @@ class LocalSyncState {
     // Unsubscribing a query that was outstanding since the last reconnect
     // resolves it: we no longer expect a result for it.
     _outstandingQueriesOlderThanRestart.remove(state.queryId);
+
+    if (_paused) {
+      // If this query's Add was buffered this pause cycle and never sent, drop
+      // it; otherwise buffer a Remove. Either way nothing goes out until resume.
+      if (_pendingQuerySetModifications.remove(state.queryId) == null) {
+        _pendingQuerySetModifications[state.queryId] =
+            Remove(queryId: state.queryId);
+      }
+      return null;
+    }
+
     final baseVersion = querySetVersion;
     querySetVersion += 1;
     return ModifyQuerySet(
@@ -175,12 +207,58 @@ class LocalSyncState {
       markAuthCompletion();
     }
     final baseVersion = authVersion;
-    authVersion += 1;
+    // While paused the auth is captured but not yet on the wire, so the identity
+    // version is only advanced when [resume] actually emits the Authenticate.
+    if (!_paused) {
+      authVersion += 1;
+    }
     return Authenticate(
       tokenType: tokenType,
       baseVersion: baseVersion,
       value: value,
     );
+  }
+
+  /// Pauses query-set and auth emission while auth is being resolved.
+  ///
+  /// New subscriptions buffer their modifications and auth updates hold the
+  /// identity version steady until [resume] replays everything at once. Mirrors
+  /// the official client's pause sub-state. See [isPaused].
+  void pause() {
+    _paused = true;
+  }
+
+  /// Replays everything buffered while paused and clears the paused state.
+  ///
+  /// Returns the coalesced query-set modification (if any subscriptions changed
+  /// while paused) and an [Authenticate] re-affirming the current auth (if any),
+  /// each advancing its version. Both are `null` when there is nothing to send.
+  /// Mirrors the official client's `resume`.
+  (ModifyQuerySet?, Authenticate?) resume() {
+    if (!_paused) {
+      return (null, null);
+    }
+    ModifyQuerySet? querySet;
+    if (_pendingQuerySetModifications.isNotEmpty) {
+      final baseVersion = querySetVersion;
+      querySetVersion += 1;
+      querySet = ModifyQuerySet(
+        baseVersion: baseVersion,
+        newVersion: querySetVersion,
+        modifications:
+            _pendingQuerySetModifications.values.toList(growable: false),
+      );
+    }
+    Authenticate? authenticate;
+    final auth = _authState;
+    if (auth != null) {
+      final baseVersion = authVersion;
+      authVersion += 1;
+      authenticate = auth.toAuthenticate(baseVersion);
+    }
+    _paused = false;
+    _pendingQuerySetModifications.clear();
+    return (querySet, authenticate);
   }
 
   void restoreAuth({required String tokenType, String? value}) {
@@ -270,6 +348,10 @@ class LocalSyncState {
   /// likewise recorded as outstanding, so [hasSyncedPastLastReconnect] stays
   /// `false` until the connection has fully re-synced.
   List<ClientMessage> prepareReconnect(Set<int> oldRemoteQueryResults) {
+    // A restart supersedes any pause: the full query set (and auth) is rebuilt
+    // from scratch below, so the buffered modifications are discarded.
+    _paused = false;
+    _pendingQuerySetModifications.clear();
     querySetVersion = 0;
     authVersion = 0;
     _outstandingQueriesOlderThanRestart.clear();

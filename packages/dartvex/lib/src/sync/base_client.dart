@@ -180,12 +180,47 @@ class BaseClient {
 
   void setAuth({required String tokenType, String? token}) {
     _resultCacheByToken.clear();
-    _outgoing.add(_localState.setAuth(tokenType: tokenType, value: token));
+    final message = _localState.setAuth(tokenType: tokenType, value: token);
+    // While paused the auth is captured in local state and replayed by [resume];
+    // queuing it here would let it leak out before the socket resumes.
+    if (!_localState.isPaused) {
+      _outgoing.add(message);
+    }
   }
 
   void clearAuth() {
     _resultCacheByToken.clear();
-    _outgoing.add(_localState.setAuth(tokenType: 'None'));
+    final message = _localState.setAuth(tokenType: 'None');
+    if (!_localState.isPaused) {
+      _outgoing.add(message);
+    }
+  }
+
+  /// Whether query-set and auth emission is currently paused. See [pause].
+  bool get isPaused => _localState.isPaused;
+
+  /// Pauses query-set and auth emission while auth is being resolved.
+  ///
+  /// New subscriptions and auth updates are buffered in [localState] instead of
+  /// being enqueued for sending, and are replayed together by [resume].
+  void pause() {
+    _localState.pause();
+  }
+
+  /// Replays everything buffered while paused, returning the messages to send.
+  ///
+  /// The resume query-set delta and re-affirmed auth are queued ahead of any
+  /// request enqueued while paused, then the full outgoing queue is drained.
+  List<ClientMessage> resume() {
+    final (querySet, authenticate) = _localState.resume();
+    final resumeMessages = <ClientMessage>[
+      if (querySet != null) querySet,
+      if (authenticate != null) authenticate,
+    ];
+    if (resumeMessages.isNotEmpty) {
+      requeueOutgoing(resumeMessages);
+    }
+    return drainOutgoing(assumeSent: false);
   }
 
   void restoreAuth({required String tokenType, String? token}) {

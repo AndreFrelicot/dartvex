@@ -28,6 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Auth updates now gate the socket so requests can no longer be sent with
+  absent or stale auth: the initial token fetch pauses the socket (buffering
+  query-set changes and mutations, replayed together once the token is applied),
+  and a reauth triggered by an `AuthError` stops the socket, fetches a fresh
+  token, and restarts so it is replayed on a clean connection. Mirrors the
+  official client's pause/resume and stop/restart auth gating.
 - Auth token refresh is now scheduled from the token's own lifetime
   (`exp - iat`) minus `refreshTokenLeewaySeconds`, instead of from the device
   wall clock (`exp - now - 60`). Refresh timing is now immune to device clock

@@ -150,6 +150,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       deploymentUrl: _deploymentUrl,
       apiVersion: _config.apiVersion,
       onConnected: _handleConnected,
+      onResume: _baseClient.resume,
       onMessage: _handleServerMessage,
       onDisconnected: (reason) async {
         _baseClient.handleDisconnect(reason);
@@ -176,6 +177,19 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
           _authStateController.add(isAuthenticated);
         }
       },
+      pauseSocket: () async {
+        _wsManager.pause();
+        _baseClient.pause();
+      },
+      resumeSocket: _resumeSocketForAuth,
+      stopSocket: () async {
+        // The reauth fetches a fresh token itself, so the reconnect it triggers
+        // must not also run a redundant reconnect-time auth refresh.
+        _refreshAuthOnNextConnect = false;
+        _skipNextReconnectAuthRefresh = true;
+        await _wsManager.stop();
+      },
+      restartSocket: () => _wsManager.restart(),
     );
     _connectivitySubscription = _config.connectivitySignal?.onRestored.listen(
       (_) => _wsManager.reconnectImmediatelyIfWaiting(),
@@ -203,6 +217,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   Future<void>? _startFuture;
   Future<void>? _closeFuture;
   bool _refreshAuthOnNextConnect = false;
+  bool _skipNextReconnectAuthRefresh = false;
   bool _disposed = false;
 
   static String _normalizeDeploymentUrl(String deploymentUrl) {
@@ -679,8 +694,11 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   }
 
   Future<List<ClientMessage>> _handleConnected() async {
-    if (_refreshAuthOnNextConnect) {
-      _refreshAuthOnNextConnect = false;
+    final refreshAuth =
+        _refreshAuthOnNextConnect && !_skipNextReconnectAuthRefresh;
+    _refreshAuthOnNextConnect = false;
+    _skipNextReconnectAuthRefresh = false;
+    if (refreshAuth) {
       await _authManager.refreshAuthForReconnect();
       final token = _authManager.currentToken;
       if (token == null) {
@@ -690,6 +708,19 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       }
     }
     return _baseClient.prepareReconnect();
+  }
+
+  Future<void> _resumeSocketForAuth() async {
+    await _wsManager.resume();
+    // Safety net: if the socket was never actually paused (e.g. it had already
+    // disconnected before the fetch finished), unpause and flush local state so
+    // it cannot get stuck buffering.
+    if (_baseClient.isPaused) {
+      final messages = _baseClient.resume();
+      if (messages.isNotEmpty) {
+        await _wsManager.sendMessages(messages);
+      }
+    }
   }
 
   Future<List<ClientMessage>> _handleServerMessage(

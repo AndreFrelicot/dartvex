@@ -157,4 +157,79 @@ void main() {
       expect(state.hasSyncedPastLastReconnect(), isTrue);
     });
   });
+
+  group('LocalSyncState pause/resume', () {
+    test('subscriptions are buffered while paused and replayed on resume', () {
+      final state = LocalSyncState();
+      state.pause();
+      expect(state.isPaused, isTrue);
+
+      final registration =
+          state.subscribe('messages:list', const <String, dynamic>{});
+      // Nothing is emitted while paused, and the query-set version is untouched.
+      expect(registration.message, isNull);
+      expect(state.querySetVersion, 0);
+
+      final (querySet, authenticate) = state.resume();
+      expect(state.isPaused, isFalse);
+      expect(authenticate, isNull);
+      expect(querySet, isNotNull);
+      expect(querySet!.baseVersion, 0);
+      expect(querySet.newVersion, 1);
+      final modification = querySet.modifications.single;
+      expect(modification, isA<Add>());
+      expect((modification as Add).queryId, registration.queryId);
+    });
+
+    test('auth set while paused defers the identity version until resume', () {
+      final state = LocalSyncState();
+      state.pause();
+      state.setAuth(tokenType: 'User', value: 'tok');
+      // Identity version does not advance until the auth is actually emitted.
+      expect(state.authVersion, 0);
+
+      final (querySet, authenticate) = state.resume();
+      expect(querySet, isNull);
+      expect(authenticate, isNotNull);
+      expect(authenticate!.tokenType, 'User');
+      expect(authenticate.value, 'tok');
+      expect(authenticate.baseVersion, 0);
+      expect(state.authVersion, 1);
+    });
+
+    test('unsubscribing while paused cancels a buffered subscription', () {
+      final state = LocalSyncState();
+      state.pause();
+      final registration =
+          state.subscribe('messages:list', const <String, dynamic>{});
+      state.unsubscribe(registration.subscriberId);
+
+      final (querySet, authenticate) = state.resume();
+      // The buffered Add was cancelled by the unsubscribe, so nothing is sent.
+      expect(querySet, isNull);
+      expect(authenticate, isNull);
+    });
+
+    test('resume re-affirms existing auth with no buffered queries', () {
+      final state = LocalSyncState();
+      state.setAuth(tokenType: 'User', value: 'tok'); // authVersion -> 1
+      state.pause();
+
+      final (querySet, authenticate) = state.resume();
+      expect(querySet, isNull);
+      expect(authenticate, isNotNull);
+      expect(authenticate!.baseVersion, 1);
+      expect(state.authVersion, 2);
+    });
+
+    test('prepareReconnect clears a pending pause', () {
+      final state = LocalSyncState();
+      state.pause();
+      state.subscribe('messages:list', const <String, dynamic>{});
+      state.prepareReconnect(const <int>{});
+      expect(state.isPaused, isFalse);
+      // A subsequent resume is a no-op.
+      expect(state.resume(), equals((null, null)));
+    });
+  });
 }

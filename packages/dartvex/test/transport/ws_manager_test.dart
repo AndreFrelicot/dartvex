@@ -724,6 +724,126 @@ void main() {
       expect(metrics.toString(), contains('150ms'));
       expect(metrics.toString(), contains('5.0MB'));
     });
+
+    test('a socket opened while paused defers its handshake until resume',
+        () async {
+      final adapter = MockWebSocketAdapter();
+      var connectedCalls = 0;
+      final stateChanges = <String>[];
+      final manager = WebSocketManager(
+        adapter: adapter,
+        deploymentUrl: 'https://demo.convex.cloud',
+        apiVersion: '0.1.0',
+        onConnected: () {
+          connectedCalls += 1;
+          return const <ClientMessage>[];
+        },
+        onResume: () => const <ClientMessage>[],
+        onMessage: (_) => const <ClientMessage>[],
+        onDisconnected: (_) async {},
+        onConnectionStateChanged: (connected, reconnecting) =>
+            stateChanges.add('c=$connected,r=$reconnecting'),
+        maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => false,
+        reconnectBackoff: const <Duration>[Duration.zero],
+        inactivityTimeout: const Duration(seconds: 30),
+      );
+
+      manager.pause();
+      await manager.start();
+
+      // Connected but paused: no Connect sent, no "connected" state.
+      expect(adapter.sentMessages, isEmpty);
+      expect(connectedCalls, 0);
+      expect(stateChanges, <String>['c=false,r=true']);
+
+      await manager.resume();
+
+      expect(adapter.decodedSentMessages.first['type'], 'Connect');
+      expect(connectedCalls, 1);
+      expect(stateChanges, <String>['c=false,r=true', 'c=true,r=false']);
+
+      await manager.dispose();
+    });
+
+    test('pause buffers sends and resume flushes buffered messages', () async {
+      final adapter = MockWebSocketAdapter();
+      const buffered = <ClientMessage>[
+        Authenticate(tokenType: 'User', baseVersion: 0, value: 'tok'),
+      ];
+      final manager = WebSocketManager(
+        adapter: adapter,
+        deploymentUrl: 'https://demo.convex.cloud',
+        apiVersion: '0.1.0',
+        onConnected: () => const <ClientMessage>[],
+        onResume: () => buffered,
+        onMessage: (_) => const <ClientMessage>[],
+        onDisconnected: (_) async {},
+        onConnectionStateChanged: (_, __) {},
+        maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => false,
+        reconnectBackoff: const <Duration>[Duration.zero],
+        inactivityTimeout: const Duration(seconds: 30),
+      );
+
+      await manager.start();
+      final sentBeforePause = adapter.sentMessages.length;
+
+      manager.pause();
+      final blocked = await manager.sendMessages(const <ClientMessage>[
+        Mutation(
+          requestId: 1,
+          udfPath: 'messages:send',
+          args: <dynamic>[<String, dynamic>{}],
+        ),
+      ]);
+      expect(blocked, isEmpty);
+      expect(adapter.sentMessages.length, sentBeforePause);
+
+      await manager.resume();
+      expect(adapter.decodedSentMessages.last['type'], 'Authenticate');
+
+      await manager.dispose();
+    });
+
+    test('stop closes without reconnecting and restart re-establishes it',
+        () async {
+      final adapter = MockWebSocketAdapter();
+      var connectedCalls = 0;
+      final manager = WebSocketManager(
+        adapter: adapter,
+        deploymentUrl: 'https://demo.convex.cloud',
+        apiVersion: '0.1.0',
+        onConnected: () {
+          connectedCalls += 1;
+          return const <ClientMessage>[];
+        },
+        onMessage: (_) => const <ClientMessage>[],
+        onDisconnected: (_) async {},
+        onConnectionStateChanged: (_, __) {},
+        maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => false,
+        reconnectBackoff: const <Duration>[Duration.zero],
+        inactivityTimeout: const Duration(seconds: 30),
+      );
+
+      await manager.start();
+      expect(connectedCalls, 1);
+      expect(adapter.isConnected, isTrue);
+
+      await manager.stop();
+      expect(adapter.isConnected, isFalse);
+      // A scheduled reconnect (backoff 0) would fire here if stop misbehaved.
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(connectedCalls, 1);
+      expect(adapter.isConnected, isFalse);
+
+      await manager.restart();
+      expect(adapter.isConnected, isTrue);
+      expect(connectedCalls, 2);
+
+      await manager.dispose();
+    });
   });
 }
 

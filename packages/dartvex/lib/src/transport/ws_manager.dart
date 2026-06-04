@@ -80,6 +80,14 @@ const Map<String, int> _serverDisconnectBackoffMs = <String, int>{
   'TooManyWritesInTimePeriod': 3000,
 };
 
+/// Pause sub-state of an open or connecting socket.
+///
+/// Mirrors the official client's `Socket.paused` field: [no] flushes normally,
+/// [yes] buffers sends until [WebSocketManager.resume], and [uninitialized]
+/// marks a socket that opened while paused so its handshake is deferred to
+/// resume rather than run on connect.
+enum _SocketPauseState { no, yes, uninitialized }
+
 /// Manages the WebSocket lifecycle, reconnects, and message dispatch.
 class WebSocketManager {
   /// Creates a WebSocket manager.
@@ -95,6 +103,7 @@ class WebSocketManager {
     required this.hasSyncedPastLastReconnect,
     required this.reconnectBackoff,
     required this.inactivityTimeout,
+    this.onResume,
     this.connectTimeout = const Duration(seconds: 10),
     this.initialBackoff = const Duration(seconds: 1),
     this.maxBackoff = const Duration(seconds: 16),
@@ -117,6 +126,10 @@ class WebSocketManager {
 
   /// Callback invoked after a successful connection.
   final ConnectedMessageBuilder onConnected;
+
+  /// Callback invoked when the socket resumes after a [pause], returning the
+  /// messages buffered while paused so they can be flushed in order.
+  final ConnectedMessageBuilder? onResume;
 
   /// Callback invoked for each decoded server message.
   final ServerMessageHandler onMessage;
@@ -183,6 +196,8 @@ class WebSocketManager {
   bool _disposed = false;
   bool _connecting = false;
   bool _closeHandled = false;
+  bool _stopped = false;
+  _SocketPauseState _pauseState = _SocketPauseState.no;
   int _connectionCount = 0;
   int _reconnectIndex = 0;
   String _lastCloseReason = 'InitialConnect';
@@ -202,7 +217,7 @@ class WebSocketManager {
   ///
   /// Returns the prefix of [messages] that was handed to the adapter.
   Future<List<ClientMessage>> sendMessages(List<ClientMessage> messages) async {
-    if (!adapter.isConnected) {
+    if (!adapter.isConnected || _pauseState != _SocketPauseState.no) {
       return const <ClientMessage>[];
     }
     final sentMessages = <ClientMessage>[];
@@ -342,7 +357,8 @@ class WebSocketManager {
     onConnectionStateChanged(false, true);
     try {
       await adapter.connect(_buildWebSocketUrl()).timeout(connectTimeout);
-      if (_disposed) {
+      if (_disposed || _stopped) {
+        _connecting = false;
         await adapter.close();
         return;
       }
@@ -351,19 +367,17 @@ class WebSocketManager {
       _reconnectTimer?.cancel();
       _resetInactivityTimer();
       _log(DartvexLogLevel.info, 'WebSocket connected');
-      adapter.send(
-        jsonEncode(
-          Connect(
-            sessionId: _sessionId,
-            connectionCount: _connectionCount,
-            lastCloseReason: _lastCloseReason,
-            maxObservedTimestamp: maxObservedTimestamp(),
-            clientTs: DateTime.now().millisecondsSinceEpoch,
-          ).toJson(),
-        ),
-      );
-      final reconnectMessages = await onConnected();
-      await sendMessages(reconnectMessages);
+      if (_pauseState == _SocketPauseState.yes) {
+        // The socket opened while paused: defer the Connect handshake and
+        // subscription replay to resume() so they cannot race a pending auth.
+        _pauseState = _SocketPauseState.uninitialized;
+        _log(
+          DartvexLogLevel.debug,
+          'WebSocket connected while paused; deferring handshake until resume',
+        );
+        return;
+      }
+      await _sendInitialMessages();
       if (!adapter.isConnected) {
         return;
       }
@@ -393,6 +407,105 @@ class WebSocketManager {
         ),
       );
     }
+  }
+
+  /// Sends the post-connect handshake: the [Connect] message followed by the
+  /// session-restoring messages built by [onConnected].
+  Future<void> _sendInitialMessages() async {
+    adapter.send(
+      jsonEncode(
+        Connect(
+          sessionId: _sessionId,
+          connectionCount: _connectionCount,
+          lastCloseReason: _lastCloseReason,
+          maxObservedTimestamp: maxObservedTimestamp(),
+          clientTs: DateTime.now().millisecondsSinceEpoch,
+        ).toJson(),
+      ),
+    );
+    final reconnectMessages = await onConnected();
+    await sendMessages(reconnectMessages);
+  }
+
+  /// Pauses the socket so [sendMessages] buffers instead of sending.
+  ///
+  /// Used while auth is resolved on the initial token fetch so queries and
+  /// mutations cannot race ahead of a pending auth. A socket that opens while
+  /// paused defers its handshake until [resume]. No-op once disposed.
+  void pause() {
+    if (_disposed || _pauseState != _SocketPauseState.no) {
+      return;
+    }
+    _pauseState = _SocketPauseState.yes;
+    _log(DartvexLogLevel.debug, 'WebSocket paused for auth');
+  }
+
+  /// Resumes a previously [pause]d socket.
+  ///
+  /// If the socket opened while paused, the deferred handshake runs now;
+  /// otherwise the messages buffered by [onResume] are flushed in order. No-op
+  /// if not paused or disposed.
+  Future<void> resume() async {
+    if (_disposed) {
+      return;
+    }
+    switch (_pauseState) {
+      case _SocketPauseState.no:
+        return;
+      case _SocketPauseState.uninitialized:
+        _pauseState = _SocketPauseState.no;
+        _log(
+            DartvexLogLevel.debug,
+            'Resuming WebSocket; running deferred '
+            'handshake');
+        await _sendInitialMessages();
+        if (adapter.isConnected) {
+          onConnectionStateChanged(true, false);
+        }
+      case _SocketPauseState.yes:
+        _pauseState = _SocketPauseState.no;
+        _log(
+            DartvexLogLevel.debug,
+            'Resuming WebSocket; flushing buffered '
+            'messages');
+        if (onResume != null) {
+          final messages = await onResume!();
+          await sendMessages(messages);
+        }
+    }
+  }
+
+  /// Closes the socket without scheduling a reconnect.
+  ///
+  /// Used during a reauth so in-flight messages do not retry with stale auth;
+  /// the connection is re-established by [restart] (which replays the session
+  /// with the refreshed token). No-op once disposed.
+  Future<void> stop() async {
+    if (_disposed) {
+      return;
+    }
+    _log(DartvexLogLevel.debug, 'Stopping WebSocket for reauth');
+    _stopped = true;
+    _pauseState = _SocketPauseState.no;
+    _connecting = false;
+    _reconnectTimer?.cancel();
+    _inactivityTimer?.cancel();
+    _chunkBuffer = null;
+    if (adapter.isConnected) {
+      // The close that follows is deliberate; _handleClosed sees _stopped and
+      // skips its reconnect bookkeeping. restart() rebuilds the session.
+      await adapter.close();
+    }
+  }
+
+  /// Re-establishes the connection after [stop]. No-op unless stopped.
+  Future<void> restart() async {
+    if (_disposed || !_stopped) {
+      return;
+    }
+    _log(DartvexLogLevel.debug, 'Restarting WebSocket after reauth');
+    _stopped = false;
+    await _connect();
   }
 
   String _buildWebSocketUrl() {
@@ -577,7 +690,9 @@ class WebSocketManager {
   }
 
   Future<void> _handleClosed(WebSocketCloseEvent event) async {
-    if (_disposed || _closeHandled) {
+    if (_disposed || _closeHandled || _stopped) {
+      // A stop() close is deliberate: restart() will rebuild the session, so we
+      // must not run the disconnect bookkeeping or schedule a reconnect here.
       return;
     }
     _closeHandled = true;
