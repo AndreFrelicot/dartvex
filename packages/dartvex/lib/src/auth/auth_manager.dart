@@ -41,10 +41,12 @@ class AuthManager {
     Future<void> Function()? resumeSocket,
     Future<void> Function()? stopSocket,
     Future<void> Function()? restartSocket,
+    void Function(bool isRefreshing)? onRefreshingChange,
   })  : _pauseSocket = pauseSocket,
         _resumeSocket = resumeSocket,
         _stopSocket = stopSocket,
-        _restartSocket = restartSocket;
+        _restartSocket = restartSocket,
+        _onRefreshingChange = onRefreshingChange;
 
   /// Client configuration used for logging and token metadata.
   final ConvexClientConfig config;
@@ -59,6 +61,9 @@ class AuthManager {
   final Future<void> Function()? _resumeSocket;
   final Future<void> Function()? _stopSocket;
   final Future<void> Function()? _restartSocket;
+  final void Function(bool isRefreshing)? _onRefreshingChange;
+
+  bool _isRefreshing = false;
 
   AuthTokenFetcher? _fetchToken;
   void Function(bool)? _onAuthChange;
@@ -85,6 +90,7 @@ class AuthManager {
       token == null ? 'Auth cleared via setAuth' : 'Auth token set',
     );
     _cancelRefreshTimer();
+    _setRefreshing(false);
     _authGeneration += 1;
     _fetchToken = null;
     _onAuthChange = null;
@@ -130,6 +136,7 @@ class AuthManager {
   Future<void> clearAuth() async {
     _log(DartvexLogLevel.info, 'Auth cleared');
     _cancelRefreshTimer();
+    _setRefreshing(false);
     _authGeneration += 1;
     _fetchToken = null;
     _onAuthChange = null;
@@ -164,6 +171,14 @@ class AuthManager {
   /// The most recently applied auth token, if any.
   String? get currentToken => _currentToken;
 
+  /// Whether the manager is actively recovering auth after a server rejection.
+  ///
+  /// `true` from the moment a reauth begins (the socket is stopped while a fresh
+  /// token is fetched) until that fresh token is confirmed by a server
+  /// transition. Surfaced as a stream by `ConvexClient.authRefreshing`. Mirrors
+  /// the semantics of the official client's `onRefreshChange`/`AuthRefreshing`.
+  bool get isRefreshing => _isRefreshing;
+
   /// Updates the current auth token and reschedules refresh if needed.
   Future<void> updateToken(String token) async {
     _log(DartvexLogLevel.info, 'Auth token updated');
@@ -184,6 +199,8 @@ class AuthManager {
     );
     _awaitingConfirmation = false;
     _tokenConfirmationAttempts = 0;
+    // A confirming transition completes any in-progress reauth refresh.
+    _setRefreshing(false);
     _emit(isAuthenticated);
     if (isAuthenticated && _fetchToken != null) {
       _scheduleRefresh(_currentToken!);
@@ -220,6 +237,7 @@ class AuthManager {
       _currentToken = null;
       _awaitingConfirmation = false;
       _tokenConfirmationAttempts = 0;
+      _setRefreshing(false);
       _emit(false);
       await sendAuth(null);
       return;
@@ -229,6 +247,7 @@ class AuthManager {
       _log(DartvexLogLevel.error, 'Auth confirmation retries exhausted');
       _currentToken = null;
       _awaitingConfirmation = false;
+      _setRefreshing(false);
       _emit(false);
       await sendAuth(null);
       return;
@@ -240,6 +259,7 @@ class AuthManager {
     final generation = _authGeneration;
     // Stop the socket so in-flight messages cannot retry with the stale token,
     // fetch a fresh one, then restart so it is replayed on a clean connection.
+    _setRefreshing(true);
     await _invokeStopSocket();
     final freshToken = await fetchToken(forceRefresh: true);
     if (_isCurrentFlow(generation, fetchToken)) {
@@ -248,6 +268,8 @@ class AuthManager {
       await sendAuth(freshToken);
       if (freshToken == null) {
         _log(DartvexLogLevel.warn, 'Forced auth refresh returned no token');
+        // The refresh could not produce a token; the reauth is over.
+        _setRefreshing(false);
         _emit(false);
       }
     }
@@ -265,6 +287,7 @@ class AuthManager {
     _awaitingConfirmation = false;
     _tokenConfirmationAttempts = 0;
     _cancelRefreshTimer();
+    _setRefreshing(false);
   }
 
   /// Computes when to proactively refresh a token, immune to device clock skew.
@@ -424,6 +447,14 @@ class AuthManager {
   void _emit(bool isAuthenticated) {
     emitAuthState(isAuthenticated);
     _onAuthChange?.call(isAuthenticated);
+  }
+
+  void _setRefreshing(bool value) {
+    if (_isRefreshing == value) {
+      return;
+    }
+    _isRefreshing = value;
+    _onRefreshingChange?.call(value);
   }
 
   void _cancelRefreshTimer() {

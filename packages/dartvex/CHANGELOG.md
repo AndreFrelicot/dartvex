@@ -25,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   server reports an unrecoverable error.
 - `ConvexClientConfig.refreshTokenLeewaySeconds` (default `2`) controls how
   early a token is proactively refreshed before it expires.
+- `ConvexClient.authRefreshing` (a `Stream<bool>`) and `isAuthRefreshing`
+  report when the client is recovering auth after a server rejection — `true`
+  while the socket is stopped and a fresh token is fetched, `false` once it is
+  confirmed. Use it to show an "authenticating…" indicator without surfacing the
+  brief disconnect. Mirrors the official client's `AuthRefreshing` signal.
 
 ### Changed
 

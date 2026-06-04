@@ -143,6 +143,8 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
           sync: true,
         ),
         _authStateController = StreamController<bool>.broadcast(sync: true),
+        _authRefreshingController =
+            StreamController<bool>.broadcast(sync: true),
         _subscriptionControllers = <int, StreamController<QueryResult>>{} {
     _wsManager = WebSocketManager(
       adapter: _config.adapterFactory?.call(_config.clientId) ??
@@ -190,6 +192,12 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
         await _wsManager.stop();
       },
       restartSocket: () => _wsManager.restart(),
+      onRefreshingChange: (isRefreshing) {
+        _currentAuthRefreshing = isRefreshing;
+        if (!_authRefreshingController.isClosed) {
+          _authRefreshingController.add(isRefreshing);
+        }
+      },
     );
     _connectivitySubscription = _config.connectivitySignal?.onRestored.listen(
       (_) => _wsManager.reconnectImmediatelyIfWaiting(),
@@ -199,6 +207,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     }
     _connectionStateController.add(_currentConnectionState);
     _authStateController.add(false);
+    _authRefreshingController.add(false);
     if (_config.connectImmediately) {
       unawaited(_ensureStarted());
     }
@@ -212,8 +221,10 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   StreamSubscription<void>? _connectivitySubscription;
   final StreamController<ConnectionState> _connectionStateController;
   final StreamController<bool> _authStateController;
+  final StreamController<bool> _authRefreshingController;
   final Map<int, StreamController<QueryResult>> _subscriptionControllers;
   ConnectionState _currentConnectionState = ConnectionState.disconnected;
+  bool _currentAuthRefreshing = false;
   Future<void>? _startFuture;
   Future<void>? _closeFuture;
   bool _refreshAuthOnNextConnect = false;
@@ -289,6 +300,21 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
 
   /// Broadcasts whether the backend currently considers the client authenticated.
   Stream<bool> get authState => _authStateController.stream;
+
+  /// Broadcasts whether the client is currently refreshing auth after a
+  /// rejection.
+  ///
+  /// Emits `true` when a server `AuthError` triggers a reauth — the socket is
+  /// stopped while a fresh token is fetched — and `false` once that fresh token
+  /// is confirmed (or the reauth gives up). Use it to show an "authenticating…"
+  /// indicator without surfacing the brief disconnect. The current value is
+  /// [isAuthRefreshing]. Mirrors the official client's `AuthRefreshing` signal.
+  Stream<bool> get authRefreshing => _authRefreshingController.stream;
+
+  /// Whether the client is currently refreshing auth after a rejection.
+  ///
+  /// The latest value emitted on [authRefreshing].
+  bool get isAuthRefreshing => _currentAuthRefreshing;
 
   @override
 
@@ -665,6 +691,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       }
       await _connectionStateController.close();
       await _authStateController.close();
+      await _authRefreshingController.close();
       await _authManager.stopRefreshing();
       await _connectivitySubscription?.cancel();
       await _wsManager.dispose();

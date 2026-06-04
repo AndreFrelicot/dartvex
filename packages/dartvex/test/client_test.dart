@@ -865,6 +865,60 @@ void main() {
       client.dispose();
     });
 
+    test('authRefreshing toggles true during reauth and false once confirmed',
+        () async {
+      final adapter = MockWebSocketAdapter();
+      final client = ConvexClient(
+        'https://demo.convex.cloud',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+      await settle();
+
+      final refreshing = <bool>[];
+      final subscription = client.authRefreshing.listen(refreshing.add);
+
+      var fetchCount = 0;
+      await client.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) async {
+          fetchCount += 1;
+          return 'token-$fetchCount';
+        },
+      );
+      await settle();
+      expect(client.isAuthRefreshing, isFalse);
+
+      // The server rejects the token, triggering a reauth (stop, refetch,
+      // restart) that surfaces as refreshing.
+      adapter.pushServerMessage(
+        const AuthError(
+          error: 'expired',
+          baseVersion: 0,
+          authUpdateAttempted: true,
+        ).toJson(),
+      );
+      await settle();
+      expect(client.isAuthRefreshing, isTrue);
+      expect(refreshing, contains(true));
+
+      // An identity-advancing transition confirms the fresh token.
+      adapter.pushServerMessage(
+        Transition(
+          startVersion: const StateVersion.initial(),
+          endVersion: StateVersion(querySet: 0, identity: 1, ts: encodeTs(1)),
+          modifications: const <StateModification>[],
+        ).toJson(),
+      );
+      await settle();
+      expect(client.isAuthRefreshing, isFalse);
+      expect(refreshing.last, isFalse);
+
+      await subscription.cancel();
+      client.dispose();
+    });
+
     test('stale auth error is ignored after newer auth update', () async {
       final adapter = MockWebSocketAdapter();
       final client = ConvexClient(

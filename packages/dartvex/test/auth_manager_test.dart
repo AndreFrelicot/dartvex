@@ -335,6 +335,78 @@ void main() {
       expect(events, <String>['stop', 'sendAuth:null', 'restart']);
     });
   });
+
+  group('AuthManager isRefreshing', () {
+    test('toggles true during reauth and false once confirmed', () async {
+      final refreshing = <bool>[];
+      final manager = AuthManager(
+        config: const ConvexClientConfig(connectImmediately: false),
+        sendAuth: (_) async {},
+        emitAuthState: (_) {},
+        stopSocket: () async {},
+        restartSocket: () async {},
+        onRefreshingChange: refreshing.add,
+      );
+
+      await manager.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) async =>
+            forceRefresh ? 'fresh' : 'cached',
+      );
+      manager.handleAuthConfirmed();
+      // The initial token fetch is not a "refresh".
+      expect(manager.isRefreshing, isFalse);
+      expect(refreshing, isEmpty);
+
+      await manager.handleAuthError(
+        const AuthError(
+          error: 'expired',
+          baseVersion: 0,
+          authUpdateAttempted: true,
+        ),
+        currentAuthVersion: 1,
+      );
+      expect(manager.isRefreshing, isTrue);
+      expect(refreshing, <bool>[true]);
+
+      // A confirming transition for the fresh token ends the refresh.
+      manager.handleAuthConfirmed();
+      expect(manager.isRefreshing, isFalse);
+      expect(refreshing, <bool>[true, false]);
+
+      await manager.stopRefreshing();
+    });
+
+    test('returns to false when a reauth cannot fetch a token', () async {
+      final refreshing = <bool>[];
+      final manager = AuthManager(
+        config: const ConvexClientConfig(connectImmediately: false),
+        sendAuth: (_) async {},
+        emitAuthState: (_) {},
+        stopSocket: () async {},
+        restartSocket: () async {},
+        onRefreshingChange: refreshing.add,
+      );
+
+      await manager.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) async =>
+            forceRefresh ? null : 'cached',
+      );
+      manager.handleAuthConfirmed();
+
+      await manager.handleAuthError(
+        const AuthError(
+          error: 'expired',
+          baseVersion: 0,
+          authUpdateAttempted: true,
+        ),
+        currentAuthVersion: 1,
+      );
+
+      expect(refreshing, <bool>[true, false]);
+      expect(manager.isRefreshing, isFalse);
+      await manager.stopRefreshing();
+    });
+  });
 }
 
 String _jwt({
