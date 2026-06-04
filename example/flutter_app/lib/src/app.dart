@@ -79,6 +79,9 @@ class _ConvexFlutterDemoAppState extends State<ConvexFlutterDemoApp> {
 
   AuthMode _authMode = AuthMode.demo;
   ConvexClient? _client;
+  // The config backing [_client], threaded to the Sync tab's config readout so
+  // it shows the values the live client actually uses (not the raw defaults).
+  ConvexClientConfig? _activeConfig;
   ConvexClientWithAuth<DemoUserSession>? _authClient;
   ConvexClientRuntime? _runtime;
   ConvexApi? _api;
@@ -286,14 +289,19 @@ class _ConvexFlutterDemoAppState extends State<ConvexFlutterDemoApp> {
     final generation = ++_bootstrapGeneration;
     _disposeClient();
 
+    // Single source of truth for the demo's client tunables, so the Sync tab's
+    // config readout reflects exactly what the live client uses.
+    final config = ConvexClientConfig(
+      adapterFactory: _reconnectController.createAdapter,
+      connectivitySignal: ConnectivityPlusSignal(),
+      logLevel: DartvexLogLevel.debug,
+      logger: _appendLog,
+    );
+    _activeConfig = config;
+
     final client = ConvexClient(
       url,
-      config: ConvexClientConfig(
-        adapterFactory: _reconnectController.createAdapter,
-        connectivitySignal: ConnectivityPlusSignal(),
-        logLevel: DartvexLogLevel.debug,
-        logger: _appendLog,
-      ),
+      config: config,
       onTransitionMetrics: (metrics) {
         _latencyNotifier.value = metrics;
       },
@@ -405,6 +413,7 @@ class _ConvexFlutterDemoAppState extends State<ConvexFlutterDemoApp> {
       onAuthModeChanged: _switchAuthMode,
       latencyNotifier: _latencyNotifier,
       logsNotifier: _logsNotifier,
+      clientConfig: _activeConfig,
     );
   }
 
@@ -460,6 +469,7 @@ class DemoHomePage extends StatefulWidget {
     required this.onAuthModeChanged,
     required this.latencyNotifier,
     required this.logsNotifier,
+    this.clientConfig,
   });
 
   final ConvexApi? api;
@@ -485,6 +495,9 @@ class DemoHomePage extends StatefulWidget {
   final ValueChanged<AuthMode> onAuthModeChanged;
   final ValueNotifier<TransitionMetrics?> latencyNotifier;
   final ValueNotifier<List<DartvexLogEvent>> logsNotifier;
+
+  /// The live client config, surfaced read-only by the Sync tab's config card.
+  final ConvexClientConfig? clientConfig;
 
   @override
   State<DemoHomePage> createState() => _DemoHomePageState();
@@ -544,6 +557,7 @@ class _DemoHomePageState extends State<DemoHomePage> {
         authProviderReady: _authProviderReady,
         latencyNotifier: widget.latencyNotifier,
         logsNotifier: widget.logsNotifier,
+        clientConfig: widget.clientConfig,
       ),
       _TasksScreen(
         api: widget.api,
@@ -662,6 +676,7 @@ class _ShowcaseScreen extends StatelessWidget {
     required this.authProviderReady,
     required this.latencyNotifier,
     required this.logsNotifier,
+    this.clientConfig,
   });
 
   final ConvexApi? api;
@@ -670,6 +685,7 @@ class _ShowcaseScreen extends StatelessWidget {
   final bool authProviderReady;
   final ValueNotifier<TransitionMetrics?> latencyNotifier;
   final ValueNotifier<List<DartvexLogEvent>> logsNotifier;
+  final ConvexClientConfig? clientConfig;
 
   @override
   Widget build(BuildContext context) {
@@ -681,7 +697,11 @@ class _ShowcaseScreen extends StatelessWidget {
         authProviderReady: authProviderReady,
         latencyNotifier: latencyNotifier,
       ),
-      body: ShowcasePanel(hasBackend: api != null, logsNotifier: logsNotifier),
+      body: ShowcasePanel(
+        hasBackend: api != null,
+        logsNotifier: logsNotifier,
+        clientConfig: clientConfig,
+      ),
     );
   }
 }

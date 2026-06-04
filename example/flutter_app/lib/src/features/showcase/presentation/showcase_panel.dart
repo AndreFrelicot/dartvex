@@ -1,15 +1,16 @@
-import 'package:dartvex/dartvex.dart' show DartvexLogEvent, DartvexLogLevel;
+import 'package:dartvex/dartvex.dart'
+    show ConvexClientConfig, DartvexLogEvent, DartvexLogLevel;
 import 'package:dartvex_flutter/dartvex_flutter.dart';
 import 'package:flutter/material.dart';
 
 import '../../shared/presentation/concierge_design.dart';
 import '../../shared/presentation/section_card.dart';
 
-/// The "Showcase" tab: five self-contained, live demos of the SDK capabilities
-/// added in the parity work — optimistic updates, reactive pagination, the rich
-/// connection status, the auth-refreshing signal, and the structured logging
-/// stream — all driven against the real Convex backend via the widgets in
-/// `dartvex_flutter`.
+/// The "Showcase" tab: six self-contained demos of the SDK capabilities added
+/// in the parity work — optimistic updates, reactive pagination, the rich
+/// connection status, a read-only reconnect/backoff config readout, the
+/// auth-refreshing signal, and the structured logging stream — all driven
+/// against the real Convex backend via the widgets in `dartvex_flutter`.
 class ShowcasePanel extends StatelessWidget {
   /// Creates a [ShowcasePanel]. [hasBackend] is `false` when `CONVEX_DEMO_URL`
   /// is unset, in which case a configuration notice is shown instead.
@@ -17,6 +18,7 @@ class ShowcasePanel extends StatelessWidget {
     super.key,
     required this.hasBackend,
     required this.logsNotifier,
+    this.clientConfig,
   });
 
   /// Whether a deployment URL is configured (the live client is available).
@@ -25,6 +27,11 @@ class ShowcasePanel extends StatelessWidget {
   /// Live, bounded ring buffer of structured SDK log events (newest first), fed
   /// by the [DartvexLogger] configured on the client in `app.dart`.
   final ValueNotifier<List<DartvexLogEvent>> logsNotifier;
+
+  /// The live client's config, surfaced read-only by the config readout card.
+  /// `null` only before the client has bootstrapped, at which point no cards
+  /// render (the [hasBackend] notice shows instead).
+  final ConvexClientConfig? clientConfig;
 
   @override
   Widget build(BuildContext context) {
@@ -46,6 +53,10 @@ class ShowcasePanel extends StatelessWidget {
           const _PaginationDemoCard(),
           const SizedBox(height: 20),
           const _ConnectionStatusDemoCard(),
+          const SizedBox(height: 20),
+          _ConfigReadoutCard(
+            config: clientConfig ?? const ConvexClientConfig(),
+          ),
           const SizedBox(height: 20),
           const _AuthRefreshingDemoCard(),
           const SizedBox(height: 20),
@@ -799,6 +810,71 @@ class _StatusRow extends StatelessWidget {
     );
   }
 }
+
+// ---------------------------------------------------------------------------
+// 3b. Reconnect / backoff config readout
+// ---------------------------------------------------------------------------
+
+/// A read-only readout of the live [ConvexClientConfig] backing reconnection,
+/// backoff, and auth refresh. The values are the SDK defaults except where this
+/// demo overrides them (the log level is raised to debug and a connectivity
+/// signal is wired in); the config is threaded down from `app.dart` so the card
+/// never drifts from the client that is actually running.
+class _ConfigReadoutCard extends StatelessWidget {
+  const _ConfigReadoutCard({required this.config});
+
+  final ConvexClientConfig config;
+
+  @override
+  Widget build(BuildContext context) {
+    final schedule = config.reconnectBackoff.isEmpty
+        ? 'exponential (jittered)'
+        : config.reconnectBackoff.map(_fmtDuration).join(', ');
+    return SectionCard(
+      eyebrow: 'RECONNECT & BACKOFF',
+      title: 'The tunables behind reconnects',
+      subtitle:
+          'The live values driving reconnection, backoff, and auth refresh. '
+          'All are SDK defaults except where this demo overrides them — the log '
+          'level is raised to debug and a connectivity signal is wired in.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          _StatusRow('Connect timeout', _fmtDuration(config.connectTimeout)),
+          _StatusRow(
+            'Inactivity timeout',
+            _fmtDuration(config.inactivityTimeout),
+          ),
+          _StatusRow('Initial backoff', _fmtDuration(config.initialBackoff)),
+          _StatusRow('Max backoff', _fmtDuration(config.maxBackoff)),
+          _StatusRow(
+            'Backoff jitter',
+            '±${(config.backoffJitter * 100).round()}%',
+          ),
+          _StatusRow('Reconnect schedule', schedule),
+          _StatusRow(
+            'Refresh-token leeway',
+            '${config.refreshTokenLeewaySeconds}s',
+          ),
+          _StatusRow('Log level', _logLevelLabel(config.logLevel)),
+          _StatusRow('Connectivity signal', config.connectivitySignal != null),
+          _StatusRow('Custom WS adapter', config.adapterFactory != null),
+          const SizedBox(height: 12),
+          const _WatchHint(
+            'On network restore the connectivity signal reconnects the client '
+            'immediately, cancelling any in-progress backoff (hard to trigger '
+            'in-app without toggling the OS network). This card is read-only.',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Formats a [Duration] as whole seconds when it divides evenly, else as
+/// milliseconds — enough for the config readout's small, round values.
+String _fmtDuration(Duration d) =>
+    d.inMilliseconds % 1000 == 0 ? '${d.inSeconds}s' : '${d.inMilliseconds}ms';
 
 // ---------------------------------------------------------------------------
 // 4. Auth refreshing
