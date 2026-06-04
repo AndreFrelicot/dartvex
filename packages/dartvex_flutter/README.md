@@ -28,12 +28,15 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 ## Features
 
 - `ConvexQuery` — reactive query widget with automatic subscription management
-- `ConvexMutation` / `ConvexAction` — request builder widgets
+- `ConvexMutation` / `ConvexAction` — request builder widgets, with optional
+  optimistic updates on `ConvexMutation`
 - `ConvexImage` — display images from Convex file storage
 - `ConvexCachedImage` — display Convex storage images with persistent disk caching
-- `PaginatedQueryBuilder` — cursor-based one-shot pagination with load-more
+- `PaginatedQueryBuilder` — cursor-based, reactive gapless pagination with load-more
 - `ConvexAuthProvider` / `ConvexAuthBuilder` — auth state widgets
-- `ConvexConnectionBuilder` / `ConvexConnectionIndicator` — connection status
+- `ConvexConnectionBuilder` / `ConvexConnectionIndicator` — coarse connection status
+- `ConvexConnectionStatusBuilder` — rich connection status (inflight, retries, loading)
+- `ConvexAuthRefreshingBuilder` — auth-refreshing indicator
 - `ConvexOfflineImage` / `ConvexAssetCache` — offline binary asset caching
 - `FakeConvexClient` — test helper for unit and widget tests
 - App lifecycle reconnect when a Flutter app resumes while disconnected
@@ -43,8 +46,8 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 
 ```yaml
 dependencies:
-  dartvex: ^0.1.5
-  dartvex_flutter: ^0.1.5
+  dartvex: ^0.2.0
+  dartvex_flutter: ^0.2.0
 ```
 
 ## Provider Setup
@@ -152,8 +155,10 @@ by default. Set `useAction: true` when the resolver is implemented as an action.
 
 ## Pagination
 
-`PaginatedQueryBuilder` uses one-shot page fetches. Use `ConvexQuery` directly
-when a live subscription is required for a non-paginated query result.
+`PaginatedQueryBuilder` is backed by the core reactive pagination engine: loaded
+pages update live as their data changes and stay gapless at page boundaries. Its
+public API (`query` / `builder` / `fromJson` / `args` / `pageSize` / `client`)
+and `PaginationStatus` are unchanged.
 
 ```dart
 PaginatedQueryBuilder<Message>(
@@ -184,17 +189,77 @@ await tester.pumpWidget(
 );
 ```
 
+## Optimistic Mutations
+
+Pass an `OptimisticUpdate` to `ConvexMutation` to overlay query results the
+instant the mutation is sent; it rolls back automatically when the mutation
+completes or fails:
+
+```dart
+ConvexMutation<String>(
+  mutation: 'messages:send',
+  optimisticUpdate: (store) {
+    final existing = store.getQuery('messages:list', const {'channel': 'general'});
+    final messages = existing is List ? List<dynamic>.from(existing) : <dynamic>[];
+    messages.add({'_id': 'optimistic', 'text': 'Hello'});
+    store.setQuery('messages:list', const {'channel': 'general'}, messages);
+  },
+  builder: (context, mutate, snapshot) {
+    return FilledButton(
+      onPressed: () => mutate({'channel': 'general', 'text': 'Hello'}),
+      child: const Text('Send'),
+    );
+  },
+)
+```
+
+## Connection Status
+
+`ConvexConnectionStatusBuilder` rebuilds on the rich `ConnectionStatus` (inflight
+counts, retries, `hasEverConnected`, loading). The coarse `ConvexConnectionBuilder`
+and `ConvexConnectionIndicator` are unchanged.
+
+```dart
+ConvexConnectionStatusBuilder(
+  builder: (context, status) {
+    if (status.isLoading) return const Text('Syncing…');
+    if (!status.isWebSocketConnected) {
+      return Text('Reconnecting (attempt ${status.connectionRetries})');
+    }
+    return Text('Online — ${status.inflightMutations} pending');
+  },
+)
+```
+
+## Auth Refreshing
+
+`ConvexAuthRefreshingBuilder` rebuilds with the client's auth-refreshing state
+(`true` while auth is being recovered after a server rejection), so you can show
+an indicator instead of surfacing the brief disconnect:
+
+```dart
+ConvexAuthRefreshingBuilder(
+  builder: (context, isRefreshing) {
+    return isRefreshing
+        ? const LinearProgressIndicator()
+        : const SizedBox.shrink();
+  },
+)
+```
+
 ## API Overview
 
 | Widget | Description |
 |--------|-------------|
 | `ConvexProvider` | Provides client to widget tree via InheritedWidget |
 | `ConvexQuery` | Reactive query with automatic re-rendering |
-| `ConvexMutation` | Mutation trigger with loading/error state |
+| `ConvexMutation` | Mutation trigger with loading/error state and optimistic updates |
 | `ConvexAction` | Action trigger with loading/error state |
-| `PaginatedQueryBuilder` | Cursor-based one-shot paginated query |
+| `PaginatedQueryBuilder` | Cursor-based reactive gapless paginated query |
 | `ConvexAuthBuilder` | Renders based on auth state |
-| `ConvexConnectionBuilder` | Renders based on connection state |
+| `ConvexAuthRefreshingBuilder` | Renders based on auth-refreshing state |
+| `ConvexConnectionBuilder` | Renders based on coarse connection state |
+| `ConvexConnectionStatusBuilder` | Renders based on rich connection status |
 | `ConvexImage` | Image from Convex storage |
 | `ConvexCachedImage` | Disk-cached image from Convex storage |
 | `ConvexOfflineImage` | Offline-capable image with caching |
