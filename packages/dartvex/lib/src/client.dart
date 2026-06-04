@@ -9,6 +9,7 @@ import 'logging.dart';
 import 'protocol/messages.dart';
 import 'sync/base_client.dart';
 import 'sync/optimistic_updates.dart';
+import 'sync/paginated_query.dart';
 import 'sync/remote_query_set.dart';
 import 'transport/ws_factory.dart';
 import 'transport/ws_manager.dart';
@@ -467,6 +468,39 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     );
   }
 
+  /// Subscribes to a live, reactive paginated query.
+  ///
+  /// Returns a [ConvexPaginatedQuery] that loads the first page immediately and
+  /// exposes the gapless concatenation of every loaded page as a reactive
+  /// stream, plus a [ConvexPaginatedQuery.status], [ConvexPaginatedQuery.isDone]
+  /// flag, and [ConvexPaginatedQuery.loadMore] to fetch the next page. [name]
+  /// must be a Convex paginated query (one that takes `paginationOpts` and
+  /// returns a `PaginationResult`); [args] are its arguments excluding
+  /// `paginationOpts`, and [pageSize] is the number of items per page.
+  ///
+  /// Each page is an ordinary subscription, so loaded pages update reactively
+  /// and stay gapless across reconnects via query journals. Cancel the returned
+  /// query when done to release every page subscription.
+  ConvexPaginatedQuery paginatedQuery(
+    String name,
+    Map<String, dynamic> args, {
+    int pageSize = 20,
+  }) {
+    _assertNotDisposed();
+    _log(
+      DartvexLogLevel.debug,
+      'Starting paginated query',
+      data: _requestData(name, args),
+    );
+    return ConvexPaginatedQuery(
+      subscribe: (pageName, pageArgs) =>
+          _PageSubscriptionAdapter(subscribe(pageName, pageArgs)),
+      name: name,
+      args: args,
+      pageSize: pageSize,
+    );
+  }
+
   @override
 
   /// Executes a mutation.
@@ -921,5 +955,35 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       stackTrace: stackTrace,
       data: data,
     );
+  }
+}
+
+/// Adapts a public [ConvexSubscription] to the sync layer's [PageSubscription]
+/// so [ConvexPaginatedQuery] can consume a page without depending on the
+/// public client types. Maps each [QueryResult] to its [StoredQueryResult].
+class _PageSubscriptionAdapter implements PageSubscription {
+  _PageSubscriptionAdapter(this._subscription)
+      : _results = _subscription.stream.map(_toStored);
+
+  final ConvexSubscription _subscription;
+  final Stream<StoredQueryResult> _results;
+
+  @override
+  Stream<StoredQueryResult> get results => _results;
+
+  @override
+  void cancel() => _subscription.cancel();
+
+  static StoredQueryResult _toStored(QueryResult result) {
+    switch (result) {
+      case QuerySuccess(:final value):
+        return StoredQuerySuccess(value: value, logLines: const <String>[]);
+      case QueryError(:final message, :final data, :final logLines):
+        return StoredQueryError(
+          message: message,
+          data: data,
+          logLines: logLines,
+        );
+    }
   }
 }

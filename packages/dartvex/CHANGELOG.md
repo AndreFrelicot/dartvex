@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Reactive pagination: `ConvexClient.paginatedQuery(name, args, {pageSize})`
+  returns a `ConvexPaginatedQuery` that loads the first page immediately and
+  exposes the gapless concatenation of every loaded page as a reactive stream,
+  with a `ConvexPaginationStatus`, an `isDone` flag, and `loadMore()`. Each page
+  is an ordinary query subscription, so loaded pages update reactively and stay
+  gapless across reconnects via the query journals; oversized pages are
+  transparently re-split. Mirrors the official client's paginated query engine.
 - Optimistic updates: pass an `OptimisticUpdate` to `ConvexClient.mutate` to
   locally overlay query results the instant a mutation is sent. The overlay is
   replayed whenever fresh server data arrives while the mutation is pending and

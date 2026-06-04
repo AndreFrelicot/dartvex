@@ -308,6 +308,124 @@ void main() {
       client.dispose();
     });
 
+    test('paginatedQuery sends paginationOpts and aggregates pages reactively',
+        () async {
+      final adapter = MockWebSocketAdapter();
+      final client = ConvexClient(
+        'https://demo.convex.cloud',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+      await settle();
+
+      final query = client.paginatedQuery(
+        'messages:list',
+        const <String, dynamic>{'channel': 'general'},
+        pageSize: 2,
+      );
+      addTearDown(query.cancel);
+      await settle();
+
+      // The first page subscribes with paginationOpts {numItems, cursor: null}.
+      Map<String, dynamic> lastAdd() {
+        final querySet = adapter.decodedSentMessages
+            .where((message) => message['type'] == 'ModifyQuerySet')
+            .last;
+        return (querySet['modifications'] as List<dynamic>).single
+            as Map<String, dynamic>;
+      }
+
+      final firstAdd = lastAdd();
+      final firstQueryId = firstAdd['queryId'] as int;
+      final firstArgs =
+          (firstAdd['args'] as List<dynamic>).single as Map<String, dynamic>;
+      expect(firstArgs['channel'], 'general');
+      expect(
+        firstArgs['paginationOpts'],
+        <String, dynamic>{'numItems': 2, 'cursor': null},
+      );
+
+      final version1 = StateVersion(querySet: 1, identity: 0, ts: encodeTs(1));
+      adapter.pushServerMessage(
+        Transition(
+          startVersion: const StateVersion.initial(),
+          endVersion: version1,
+          modifications: <StateModification>[
+            QueryUpdated(
+              queryId: firstQueryId,
+              value: const <String, dynamic>{
+                'page': <dynamic>['a', 'b'],
+                'continueCursor': 'cursor-1',
+                'isDone': false,
+              },
+            ),
+          ],
+        ).toJson(),
+      );
+      await settle();
+      expect(query.current.results, <dynamic>['a', 'b']);
+      expect(query.current.status, ConvexPaginationStatus.canLoadMore);
+
+      // loadMore chains the second page from the first page's continueCursor.
+      expect(query.loadMore(), isTrue);
+      await settle();
+      final secondAdd = lastAdd();
+      final secondQueryId = secondAdd['queryId'] as int;
+      final secondArgs =
+          (secondAdd['args'] as List<dynamic>).single as Map<String, dynamic>;
+      expect(
+        secondArgs['paginationOpts'],
+        <String, dynamic>{'numItems': 2, 'cursor': 'cursor-1'},
+      );
+
+      final version2 = StateVersion(querySet: 2, identity: 0, ts: encodeTs(2));
+      adapter.pushServerMessage(
+        Transition(
+          startVersion: version1,
+          endVersion: version2,
+          modifications: <StateModification>[
+            QueryUpdated(
+              queryId: secondQueryId,
+              value: const <String, dynamic>{
+                'page': <dynamic>['c', 'd'],
+                'continueCursor': 'cursor-2',
+                'isDone': true,
+              },
+            ),
+          ],
+        ).toJson(),
+      );
+      await settle();
+      expect(query.current.results, <dynamic>['a', 'b', 'c', 'd']);
+      expect(query.current.status, ConvexPaginationStatus.exhausted);
+      expect(query.isDone, isTrue);
+
+      // A reactive change to the FIRST page flows through with no gap/dupe.
+      adapter.pushServerMessage(
+        Transition(
+          startVersion: version2,
+          endVersion: StateVersion(querySet: 2, identity: 0, ts: encodeTs(3)),
+          modifications: <StateModification>[
+            QueryUpdated(
+              queryId: firstQueryId,
+              value: const <String, dynamic>{
+                'page': <dynamic>['a', 'a2', 'b'],
+                'continueCursor': 'cursor-1',
+                'isDone': false,
+              },
+            ),
+          ],
+        ).toJson(),
+      );
+      await settle();
+      expect(query.current.results, <dynamic>['a', 'a2', 'b', 'c', 'd']);
+      expect(query.current.status, ConvexPaginationStatus.exhausted);
+
+      client.dispose();
+    });
+
     test('mutate overlays an optimistic update and rolls back on failure',
         () async {
       final adapter = MockWebSocketAdapter();
