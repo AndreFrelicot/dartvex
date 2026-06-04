@@ -77,7 +77,7 @@ class _ExampleHomePageState extends State<ExampleHomePage> {
             end: Alignment.bottomRight,
           ),
         ),
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -129,8 +129,11 @@ class _ExampleHomePageState extends State<ExampleHomePage> {
                 'This example uses an in-memory runtime client to demonstrate '
                 'the widget API. Swap it with ConvexClientRuntime in a real app.',
               ),
-              const SizedBox(height: 24),
-              Expanded(
+              const SizedBox(height: 16),
+              const RealtimeInternalsPanel(),
+              const SizedBox(height: 16),
+              SizedBox(
+                height: 240,
                 child: ConvexQuery<List<String>>(
                   query: 'messages:list',
                   decode: (value) => List<String>.from(value as List<dynamic>),
@@ -217,6 +220,16 @@ class _ExampleHomePageState extends State<ExampleHomePage> {
                   }
                 },
                 child: const Text('Simulate auth refresh'),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton(
+                onPressed: () {
+                  final client = ConvexProvider.of(context);
+                  if (client is DemoRuntimeClient) {
+                    unawaited(client.simulateReconnect());
+                  }
+                },
+                child: const Text('Simulate reconnect'),
               ),
               const SizedBox(height: 12),
               OutlinedButton(
@@ -354,6 +367,107 @@ class AuthRefreshingBadge extends StatelessWidget {
   }
 }
 
+/// A collapsible "Realtime internals" panel surfacing the live connection and
+/// auth state, driven by [ConvexConnectionStatusBuilder] and
+/// [ConvexAuthRefreshingBuilder] (the WS4b rich connection status).
+class RealtimeInternalsPanel extends StatelessWidget {
+  /// Creates a [RealtimeInternalsPanel].
+  const RealtimeInternalsPanel({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white.withValues(alpha: 0.82),
+      borderRadius: BorderRadius.circular(16),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          title: const Text(
+            'Realtime internals',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
+          subtitle: const Text('Live connection + auth state'),
+          children: <Widget>[
+            ConvexConnectionStatusBuilder(
+              builder: (context, status) {
+                return Column(
+                  children: <Widget>[
+                    _InternalsRow('State', status.state.name),
+                    _InternalsRow(
+                      'WebSocket connected',
+                      '${status.isWebSocketConnected}',
+                    ),
+                    _InternalsRow('Synced', '${status.isConnected}'),
+                    _InternalsRow('Loading', '${status.isLoading}'),
+                    _InternalsRow(
+                      'Has ever connected',
+                      '${status.hasEverConnected}',
+                    ),
+                    _InternalsRow(
+                      'Connection count',
+                      '${status.connectionCount}',
+                    ),
+                    _InternalsRow(
+                      'Reconnect retries',
+                      '${status.connectionRetries}',
+                    ),
+                    _InternalsRow(
+                      'Inflight mutations',
+                      '${status.inflightMutations}',
+                    ),
+                    _InternalsRow(
+                      'Inflight actions',
+                      '${status.inflightActions}',
+                    ),
+                    _InternalsRow(
+                      'Oldest inflight',
+                      status.timeOfOldestInflightRequest?.toIso8601String() ??
+                          '—',
+                    ),
+                  ],
+                );
+              },
+            ),
+            ConvexAuthRefreshingBuilder(
+              builder: (context, isRefreshing) =>
+                  _InternalsRow('Auth refreshing', '$isRefreshing'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _InternalsRow extends StatelessWidget {
+  const _InternalsRow(this.label, this.value);
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: <Widget>[
+          Text(label, style: const TextStyle(color: Color(0xFF55636B))),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: const TextStyle(fontWeight: FontWeight.w500),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class DemoRuntimeClient implements ConvexRuntimeClient {
   DemoRuntimeClient()
     : _connectionController = StreamController<ConvexConnectionState>.broadcast(
@@ -383,6 +497,21 @@ class DemoRuntimeClient implements ConvexRuntimeClient {
       );
   ConvexConnectionState _currentConnectionState =
       ConvexConnectionState.connecting;
+  ConnectionStatus _currentConnectionStatus = ConnectionStatus.fromState(
+    ConvexConnectionState.connecting,
+  );
+  final StreamController<ConnectionStatus> _connectionStatusController =
+      StreamController<ConnectionStatus>.broadcast(sync: true);
+  // Simulated transport metrics so the "Realtime internals" panel has something
+  // to show; a real ConvexClient reports these for real.
+  int _connectionCount = 1;
+  int _connectionRetries = 0;
+  int _inflightMutations = 0;
+  // The demo never issues actions, so this stays zero; a real ConvexClient
+  // reports actual inflight actions here.
+  final int _inflightActions = 0;
+  bool _hasEverConnected = false;
+  DateTime? _oldestInflight;
   bool _currentAuthRefreshing = false;
   bool _disposed = false;
 
@@ -403,6 +532,13 @@ class DemoRuntimeClient implements ConvexRuntimeClient {
 
   @override
   ConvexConnectionState get currentConnectionState => _currentConnectionState;
+
+  @override
+  Stream<ConnectionStatus> get connectionStatus =>
+      _connectionStatusController.stream;
+
+  @override
+  ConnectionStatus get currentConnectionStatus => _currentConnectionStatus;
 
   @override
   Stream<bool> get authRefreshing => _authRefreshingController.stream;
@@ -434,12 +570,55 @@ class DemoRuntimeClient implements ConvexRuntimeClient {
       query.cancel();
     }
     unawaited(_connectionController.close());
+    unawaited(_connectionStatusController.close());
     unawaited(_authRefreshingController.close());
   }
 
   void emitConnectionState(ConvexConnectionState state) {
     _currentConnectionState = state;
+    if (state == ConvexConnectionState.connected) {
+      _hasEverConnected = true;
+    }
     _connectionController.add(state);
+    _publishStatus();
+  }
+
+  /// Rebuilds and broadcasts the rich [ConnectionStatus] from the demo's
+  /// simulated transport metrics.
+  void _publishStatus() {
+    final connected =
+        _currentConnectionState == ConvexConnectionState.connected;
+    final inflight = _inflightMutations + _inflightActions;
+    _currentConnectionStatus = ConnectionStatus(
+      state: _currentConnectionState,
+      isWebSocketConnected: connected,
+      isConnected: connected && inflight == 0,
+      hasEverConnected: _hasEverConnected,
+      connectionCount: _connectionCount,
+      connectionRetries: _connectionRetries,
+      inflightMutations: _inflightMutations,
+      inflightActions: _inflightActions,
+      timeOfOldestInflightRequest: inflight > 0 ? _oldestInflight : null,
+      hasSyncedPastLastReconnect: connected,
+    );
+    if (!_connectionStatusController.isClosed) {
+      _connectionStatusController.add(_currentConnectionStatus);
+    }
+  }
+
+  /// Simulates a reconnect cycle: the connection drops to reconnecting (the
+  /// retry counter ticks up), then re-establishes (the connection count grows),
+  /// the way a real reconnect would, so the internals panel updates live.
+  Future<void> simulateReconnect() async {
+    _connectionRetries += 1;
+    emitConnectionState(ConvexConnectionState.reconnecting);
+    await Future<void>.delayed(const Duration(milliseconds: 900));
+    if (_disposed) {
+      return;
+    }
+    _connectionRetries = 0;
+    _connectionCount += 1;
+    emitConnectionState(ConvexConnectionState.connected);
   }
 
   void emitAuthRefreshing(bool isRefreshing) {
@@ -465,51 +644,63 @@ class DemoRuntimeClient implements ConvexRuntimeClient {
     Map<String, dynamic> args = const <String, dynamic>{},
     OptimisticUpdate? optimisticUpdate,
   ]) async {
-    // A real ConvexClient overlays the optimistic update internally; this
-    // in-memory demo runs it against a snapshot of the current results to show
-    // the pending message instantly, then commits or rolls back.
-    final committed = List<String>.from(_messages);
-    if (optimisticUpdate != null) {
-      final store = _DemoOptimisticStore(<String, Object?>{
-        'messages:list': List<String>.from(_messages),
-      });
-      optimisticUpdate(store);
-      final optimistic =
-          (store.getQuery('messages:list') as List<dynamic>?)?.cast<String>() ??
-          committed;
-      _emitToAll(
-        optimistic,
-        source: ConvexQuerySource.cache,
-        hasPendingWrites: true,
-      );
-    }
+    _inflightMutations += 1;
+    _oldestInflight ??= DateTime.now();
+    _publishStatus();
+    try {
+      // A real ConvexClient overlays the optimistic update internally; this
+      // in-memory demo runs it against a snapshot of the current results to
+      // show the pending message instantly, then commits or rolls back.
+      final committed = List<String>.from(_messages);
+      if (optimisticUpdate != null) {
+        final store = _DemoOptimisticStore(<String, Object?>{
+          'messages:list': List<String>.from(_messages),
+        });
+        optimisticUpdate(store);
+        final optimistic =
+            (store.getQuery('messages:list') as List<dynamic>?)
+                ?.cast<String>() ??
+            committed;
+        _emitToAll(
+          optimistic,
+          source: ConvexQuerySource.cache,
+          hasPendingWrites: true,
+        );
+      }
 
-    await Future<void>.delayed(const Duration(milliseconds: 600));
-    if (_disposed) {
-      return null;
-    }
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      if (_disposed) {
+        return null;
+      }
 
-    if (failNextMutation) {
-      failNextMutation = false;
-      // Roll back to the authoritative server state and fail the mutation.
+      if (failNextMutation) {
+        failNextMutation = false;
+        // Roll back to the authoritative server state and fail the mutation.
+        _emitToAll(
+          committed,
+          source: ConvexQuerySource.remote,
+          hasPendingWrites: false,
+        );
+        throw StateError(
+          'Simulated send failure — optimistic message rolled back',
+        );
+      }
+
+      final text = args['text'] as String? ?? 'Untitled message';
+      _messages = <String>[text, ...committed];
       _emitToAll(
-        committed,
+        List<String>.from(_messages),
         source: ConvexQuerySource.remote,
         hasPendingWrites: false,
       );
-      throw StateError(
-        'Simulated send failure — optimistic message rolled back',
-      );
+      return text;
+    } finally {
+      _inflightMutations -= 1;
+      if (_inflightMutations == 0 && _inflightActions == 0) {
+        _oldestInflight = null;
+      }
+      _publishStatus();
     }
-
-    final text = args['text'] as String? ?? 'Untitled message';
-    _messages = <String>[text, ...committed];
-    _emitToAll(
-      List<String>.from(_messages),
-      source: ConvexQuerySource.remote,
-      hasPendingWrites: false,
-    );
-    return text;
   }
 
   void _emitToAll(
