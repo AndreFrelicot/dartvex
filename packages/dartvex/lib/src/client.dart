@@ -56,6 +56,30 @@ class ConnectionStatus {
     required this.hasSyncedPastLastReconnect,
   });
 
+  /// Derives a best-effort snapshot from a coarse [ConnectionState] alone.
+  ///
+  /// Use this when only the coarse state is available (for example a custom or
+  /// fake runtime client). Counts and inflight metrics default to zero; the
+  /// connected/synced flags follow [state], and [hasEverConnected] is `true`
+  /// only for the connected and reconnecting states.
+  factory ConnectionStatus.fromState(ConnectionState state) {
+    final isConnected = state == ConnectionState.connected;
+    final hasEverConnected =
+        isConnected || state == ConnectionState.reconnecting;
+    return ConnectionStatus(
+      state: state,
+      isWebSocketConnected: isConnected,
+      isConnected: isConnected,
+      hasEverConnected: hasEverConnected,
+      connectionCount: hasEverConnected ? 1 : 0,
+      connectionRetries: 0,
+      inflightMutations: 0,
+      inflightActions: 0,
+      timeOfOldestInflightRequest: null,
+      hasSyncedPastLastReconnect: isConnected,
+    );
+  }
+
   /// The coarse connection state, derived for convenience.
   final ConnectionState state;
 

@@ -1377,6 +1377,25 @@ void main() {
     });
 
     group('connection status', () {
+      test('fromState derives a coarse-only snapshot', () {
+        final connected = ConnectionStatus.fromState(ConnectionState.connected);
+        expect(connected.isConnected, isTrue);
+        expect(connected.isWebSocketConnected, isTrue);
+        expect(connected.hasEverConnected, isTrue);
+        expect(connected.isLoading, isFalse);
+
+        final reconnecting =
+            ConnectionStatus.fromState(ConnectionState.reconnecting);
+        expect(reconnecting.isConnected, isFalse);
+        expect(reconnecting.hasEverConnected, isTrue);
+        expect(reconnecting.isLoading, isTrue);
+
+        final disconnected =
+            ConnectionStatus.fromState(ConnectionState.disconnected);
+        expect(disconnected.hasEverConnected, isFalse);
+        expect(disconnected.isConnected, isFalse);
+      });
+
       test('starts disconnected with nothing in flight', () {
         final adapter = MockWebSocketAdapter();
         final client = ConvexClient(
