@@ -114,6 +114,20 @@ class BaseClient {
       _localState.hasSyncedPastLastReconnect() &&
       _requestManager.hasSyncedPastLastReconnect();
 
+  /// The number of mutations currently in flight. See [RequestManager].
+  int get inflightMutations => _requestManager.inflightMutations;
+
+  /// The number of actions currently in flight. See [RequestManager].
+  int get inflightActions => _requestManager.inflightActions;
+
+  /// Whether any mutation or action is currently in flight.
+  bool get hasInflightRequests => _requestManager.hasInflightRequests;
+
+  /// The time the oldest still-pending request was issued, or `null` when
+  /// nothing is in flight. See [RequestManager.timeOfOldestInflightRequest].
+  DateTime? get timeOfOldestInflightRequest =>
+      _requestManager.timeOfOldestInflightRequest();
+
   final Map<String, StoredQueryResult> _resultCacheByToken =
       <String, StoredQueryResult>{};
 

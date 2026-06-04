@@ -205,4 +205,93 @@ void main() {
       expect(dropped, <int>[0]);
     });
   });
+
+  group('RequestManager inflight metrics', () {
+    Mutation mutation(int requestId) => Mutation(
+          requestId: requestId,
+          udfPath: 'messages:send',
+          args: const <dynamic>[],
+        );
+    Action action(int requestId) => Action(
+          requestId: requestId,
+          udfPath: 'messages:notify',
+          args: const <dynamic>[],
+        );
+
+    test('starts with nothing in flight', () {
+      final manager = RequestManager();
+      expect(manager.inflightMutations, 0);
+      expect(manager.inflightActions, 0);
+      expect(manager.hasInflightRequests, isFalse);
+      expect(manager.timeOfOldestInflightRequest(), isNull);
+    });
+
+    test('counts tracked mutations and actions', () {
+      final manager = RequestManager();
+      final before = DateTime.now();
+      manager.trackMutation(mutation(0), sent: true);
+      manager.trackMutation(mutation(1), sent: true);
+      manager.trackAction(action(2), sent: true);
+      final after = DateTime.now();
+
+      expect(manager.inflightMutations, 2);
+      expect(manager.inflightActions, 1);
+      expect(manager.hasInflightRequests, isTrue);
+      final oldest = manager.timeOfOldestInflightRequest();
+      expect(oldest, isNotNull);
+      expect(oldest!.isBefore(before), isFalse);
+      expect(oldest.isAfter(after), isFalse);
+    });
+
+    test('resolving requests decrements the counts', () async {
+      final manager = RequestManager();
+      final mutationFuture = manager.trackMutation(mutation(0), sent: true);
+      final actionFuture = manager.trackAction(action(1), sent: true);
+      expect(manager.inflightMutations, 1);
+      expect(manager.inflightActions, 1);
+
+      manager.handleMutationResponse(
+        const MutationResponse(requestId: 0, success: true, result: 'ok'),
+      );
+      manager.handleActionResponse(
+        const ActionResponse(requestId: 1, success: true, result: 'done'),
+      );
+
+      expect(manager.inflightMutations, 0);
+      expect(manager.inflightActions, 0);
+      expect(manager.hasInflightRequests, isFalse);
+      expect(manager.timeOfOldestInflightRequest(), isNull);
+      expect(await mutationFuture, 'ok');
+      expect(await actionFuture, 'done');
+    });
+
+    test(
+        'a mutation awaiting its transition still counts but is excluded from '
+        'the oldest time', () {
+      final manager = RequestManager();
+      manager.trackMutation(mutation(0), sent: true);
+
+      // Parked for read-your-writes: completed on the server, awaiting the
+      // transition that carries its ts.
+      manager.handleMutationResponseWithAppliedTransition(
+        MutationResponse(
+          requestId: 0,
+          success: true,
+          result: 'ok',
+          ts: encodeTs(9),
+        ),
+        appliedTransitionTs: encodeTs(1),
+      );
+
+      // Still in flight by count, but no longer waiting on the network.
+      expect(manager.inflightMutations, 1);
+      expect(manager.hasInflightRequests, isTrue);
+      expect(manager.timeOfOldestInflightRequest(), isNull);
+
+      // A genuinely pending action becomes the oldest waiting request.
+      manager.trackAction(action(1), sent: true);
+      expect(manager.inflightActions, 1);
+      expect(manager.timeOfOldestInflightRequest(), isNotNull);
+    });
+  });
 }

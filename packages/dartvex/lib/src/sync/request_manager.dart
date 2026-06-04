@@ -15,11 +15,16 @@ class _PendingMutation {
     required this.message,
     required this.completer,
     required this.status,
+    required this.requestedAt,
   });
 
   final Mutation message;
   final Completer<dynamic> completer;
   _RequestStatus status;
+
+  /// When the mutation was first tracked, used by
+  /// [RequestManager.timeOfOldestInflightRequest].
+  final DateTime requestedAt;
   Object? result;
   List<String> logLines = const <String>[];
   String? serverTs;
@@ -30,11 +35,16 @@ class _PendingAction {
     required this.message,
     required this.completer,
     required this.status,
+    required this.requestedAt,
   });
 
   final Action message;
   final Completer<dynamic> completer;
   _RequestStatus status;
+
+  /// When the action was first tracked, used by
+  /// [RequestManager.timeOfOldestInflightRequest].
+  final DateTime requestedAt;
 }
 
 class RequestManager {
@@ -52,6 +62,7 @@ class RequestManager {
       message: message,
       completer: completer,
       status: sent ? _RequestStatus.requested : _RequestStatus.notSent,
+      requestedAt: DateTime.now(),
     );
     return completer.future;
   }
@@ -62,6 +73,7 @@ class RequestManager {
       message: message,
       completer: completer,
       status: sent ? _RequestStatus.requested : _RequestStatus.notSent,
+      requestedAt: DateTime.now(),
     );
     return completer.future;
   }
@@ -252,6 +264,45 @@ class RequestManager {
   /// Returns `true` when no request is still awaiting a server response (or
   /// read-your-writes transition) from before the last [prepareReconnect].
   bool hasSyncedPastLastReconnect() => _requestsOlderThanRestart.isEmpty;
+
+  /// The number of mutations currently in flight.
+  ///
+  /// Includes mutations that have completed on the server but are awaiting the
+  /// transition carrying their timestamp (read-your-writes), matching the
+  /// official client which keeps such mutations counted until fully resolved.
+  int get inflightMutations => _pendingMutations.length;
+
+  /// The number of actions currently in flight.
+  int get inflightActions => _pendingActions.length;
+
+  /// Whether any mutation or action is currently in flight.
+  bool get hasInflightRequests => hasPendingRequests;
+
+  /// The time the oldest still-pending request was first tracked, or `null`
+  /// when nothing is in flight.
+  ///
+  /// Mutations that have completed on the server and are only awaiting their
+  /// read-your-writes transition are excluded: they are no longer waiting on the
+  /// network even though they still count toward [inflightMutations]. Mirrors
+  /// the official client's `timeOfOldestInflightRequest`.
+  DateTime? timeOfOldestInflightRequest() {
+    DateTime? oldest;
+    for (final pending in _pendingMutations.values) {
+      if (pending.status ==
+          _RequestStatus.completedMutationAwaitingTransition) {
+        continue;
+      }
+      if (oldest == null || pending.requestedAt.isBefore(oldest)) {
+        oldest = pending.requestedAt;
+      }
+    }
+    for (final pending in _pendingActions.values) {
+      if (oldest == null || pending.requestedAt.isBefore(oldest)) {
+        oldest = pending.requestedAt;
+      }
+    }
+    return oldest;
+  }
 
   void failAll(String message) {
     final error = ConvexException(message);
