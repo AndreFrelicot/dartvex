@@ -98,6 +98,13 @@ class LocalSyncState {
     _outstandingAuthOlderThanRestart = false;
   }
 
+  /// Whether [version] is the current identity version or newer.
+  ///
+  /// Used to discard auth-bearing server messages that reflect an auth version
+  /// the client has already advanced past (a stale Transition or AuthError).
+  /// Mirrors the official client's `isCurrentOrNewerAuthVersion`.
+  bool isCurrentOrNewerAuthVersion(int version) => version >= authVersion;
+
   /// Returns the query token for an active queryId, or null if not found.
   String? tokenForQueryId(int queryId) => _queryTokenByQueryId[queryId];
 

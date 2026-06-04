@@ -232,4 +232,20 @@ void main() {
       expect(state.resume(), equals((null, null)));
     });
   });
+
+  group('LocalSyncState.isCurrentOrNewerAuthVersion', () {
+    test('accepts the current and newer versions and rejects older ones', () {
+      final state = LocalSyncState();
+      // Identity version starts at 0.
+      expect(state.isCurrentOrNewerAuthVersion(0), isTrue);
+      expect(state.isCurrentOrNewerAuthVersion(1), isTrue);
+
+      state.setAuth(tokenType: 'User', value: 'a'); // authVersion -> 1
+      state.setAuth(tokenType: 'User', value: 'b'); // authVersion -> 2
+      expect(state.isCurrentOrNewerAuthVersion(2), isTrue);
+      expect(state.isCurrentOrNewerAuthVersion(3), isTrue);
+      // A message reflecting the superseded version 1 is stale.
+      expect(state.isCurrentOrNewerAuthVersion(1), isFalse);
+    });
+  });
 }

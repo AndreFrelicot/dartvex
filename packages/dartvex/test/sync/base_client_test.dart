@@ -573,5 +573,40 @@ void main() {
       expect(resumeMessages[1], isA<Authenticate>());
       expect(resumeMessages[2], isA<Mutation>());
     });
+
+    test('a stale auth transition does not confirm auth', () {
+      final client = BaseClient();
+      client.setAuth(tokenType: 'User', token: 'a'); // authVersion -> 1
+      client.setAuth(tokenType: 'User', token: 'b'); // authVersion -> 2
+      client.drainOutgoing();
+
+      final result = client.receive(
+        Transition(
+          startVersion: const StateVersion.initial(),
+          endVersion: StateVersion(querySet: 0, identity: 1, ts: encodeTs(1)),
+          modifications: const <StateModification>[],
+        ),
+      );
+
+      // Identity advanced (0 -> 1) but the client already moved to auth version
+      // 2, so this transition is stale and must not confirm auth.
+      expect(result.events.whereType<AuthConfirmedEvent>(), isEmpty);
+    });
+
+    test('a current auth transition confirms auth', () {
+      final client = BaseClient();
+      client.setAuth(tokenType: 'User', token: 'a'); // authVersion -> 1
+      client.drainOutgoing();
+
+      final result = client.receive(
+        Transition(
+          startVersion: const StateVersion.initial(),
+          endVersion: StateVersion(querySet: 0, identity: 1, ts: encodeTs(1)),
+          modifications: const <StateModification>[],
+        ),
+      );
+
+      expect(result.events.whereType<AuthConfirmedEvent>(), isNotEmpty);
+    });
   });
 }

@@ -328,7 +328,14 @@ class BaseClient {
               );
             }
           }
-          if (message.endVersion.identity > message.startVersion.identity) {
+          // Treat the transition as an auth confirmation only when it advances
+          // the identity version and is not stale — i.e. the client has not
+          // already moved on to a newer auth version. Mirrors the official
+          // onTransition guard and prevents a superseded token from being
+          // reported as confirmed.
+          if (message.endVersion.identity > message.startVersion.identity &&
+              _localState
+                  .isCurrentOrNewerAuthVersion(message.endVersion.identity)) {
             _localState.markAuthCompletion();
             events.add(
               AuthConfirmedEvent(isAuthenticated: _localState.hasAuth),

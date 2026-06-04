@@ -228,6 +228,10 @@ class AuthManager {
       );
       return;
     }
+    // Versioned AuthErrors report the previous version (the server did not
+    // advance), hence the `+ 1`. This is the AuthError counterpart of
+    // LocalSyncState.isCurrentOrNewerAuthVersion (which guards the Transition
+    // path): ignore the error if the client already moved to a newer auth.
     if (error.baseVersion + 1 < currentAuthVersion) {
       _log(DartvexLogLevel.debug, 'Ignoring stale auth error');
       return;
