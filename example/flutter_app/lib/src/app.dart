@@ -23,6 +23,7 @@ import 'features/local_first/presentation/local_first_panel.dart';
 import 'features/messages/presentation/private_messages_panel.dart';
 import 'features/messages/presentation/public_messages_panel.dart';
 import 'features/shared/presentation/concierge_design.dart';
+import 'features/showcase/presentation/showcase_panel.dart';
 import 'features/tasks/presentation/tasks_board_panel.dart';
 
 void runDemoApp() {
@@ -452,6 +453,11 @@ class _DemoHomePageState extends State<DemoHomePage> {
       selectedIcon: Icons.chat_rounded,
     ),
     const _DemoDestination(
+      label: 'Showcase',
+      icon: Icons.auto_awesome_outlined,
+      selectedIcon: Icons.auto_awesome,
+    ),
+    const _DemoDestination(
       label: 'Tasks',
       icon: Icons.dashboard_outlined,
       selectedIcon: Icons.dashboard_rounded,
@@ -477,6 +483,13 @@ class _DemoHomePageState extends State<DemoHomePage> {
   Widget build(BuildContext context) {
     final screens = <Widget>[
       _ChatsScreen(
+        api: widget.api,
+        deploymentUrl: widget.deploymentUrl,
+        authMode: widget.authMode,
+        authProviderReady: _authProviderReady,
+        latencyNotifier: widget.latencyNotifier,
+      ),
+      _ShowcaseScreen(
         api: widget.api,
         deploymentUrl: widget.deploymentUrl,
         authMode: widget.authMode,
@@ -589,6 +602,36 @@ class _DemoHomePageState extends State<DemoHomePage> {
       AuthMode.demo => widget.authClient != null,
       AuthMode.betterAuth => widget.betterAuthClient != null,
     };
+  }
+}
+
+class _ShowcaseScreen extends StatelessWidget {
+  const _ShowcaseScreen({
+    required this.api,
+    required this.deploymentUrl,
+    required this.authMode,
+    required this.authProviderReady,
+    required this.latencyNotifier,
+  });
+
+  final ConvexApi? api;
+  final String deploymentUrl;
+  final AuthMode authMode;
+  final bool authProviderReady;
+  final ValueNotifier<TransitionMetrics?> latencyNotifier;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: _DemoAppBar(
+        title: 'Showcase',
+        subtitle: _deploymentSubtitle(deploymentUrl),
+        authMode: authMode,
+        authProviderReady: authProviderReady,
+        latencyNotifier: latencyNotifier,
+      ),
+      body: ShowcasePanel(hasBackend: api != null),
+    );
   }
 }
 
