@@ -33,6 +33,115 @@ enum ConnectionState {
   fatalError,
 }
 
+/// A rich, immutable snapshot of the client's connection to Convex.
+///
+/// Surfaces the live transport and request metrics behind a [ConvexClient],
+/// mirroring the official client's `connectionState()`. The coarse [state] enum
+/// remains available as a derived convenience; the extra fields drive loading,
+/// retry, and "authenticating" indicators. Read the current snapshot from
+/// [ConvexClient.currentConnectionStatus] and observe changes via
+/// [ConvexClient.connectionStatus].
+class ConnectionStatus {
+  /// Creates a connection status snapshot.
+  const ConnectionStatus({
+    required this.state,
+    required this.isWebSocketConnected,
+    required this.isConnected,
+    required this.hasEverConnected,
+    required this.connectionCount,
+    required this.connectionRetries,
+    required this.inflightMutations,
+    required this.inflightActions,
+    required this.timeOfOldestInflightRequest,
+    required this.hasSyncedPastLastReconnect,
+  });
+
+  /// The coarse connection state, derived for convenience.
+  final ConnectionState state;
+
+  /// Whether the underlying WebSocket is currently connected.
+  final bool isWebSocketConnected;
+
+  /// Whether the socket is connected and the client has caught up on all work
+  /// that predated the most recent reconnect (connected *and* synced).
+  final bool isConnected;
+
+  /// Whether the client has ever reached a connected state.
+  ///
+  /// Once `true` it stays `true`, distinguishing "never connected yet" from
+  /// "disconnected after a successful connection".
+  final bool hasEverConnected;
+
+  /// The number of times the client has reconnected to the backend.
+  ///
+  /// A high value signals trouble keeping a stable connection.
+  final int connectionCount;
+
+  /// The number of connection attempts since the last successful re-sync.
+  final int connectionRetries;
+
+  /// The number of mutations currently in flight.
+  final int inflightMutations;
+
+  /// The number of actions currently in flight.
+  final int inflightActions;
+
+  /// When the oldest still-pending request was issued, or `null` if none.
+  final DateTime? timeOfOldestInflightRequest;
+
+  /// Whether every query, auth update, and request that predated the most
+  /// recent reconnect has been confirmed by the server.
+  final bool hasSyncedPastLastReconnect;
+
+  /// Whether any mutation or action is currently in flight.
+  bool get hasInflightRequests => inflightMutations > 0 || inflightActions > 0;
+
+  /// Whether the client is still catching up after a (re)connect.
+  ///
+  /// `true` until [hasSyncedPastLastReconnect] becomes `true`; use it to show a
+  /// loading indicator while the first post-reconnect results arrive.
+  bool get isLoading => !hasSyncedPastLastReconnect;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ConnectionStatus &&
+      other.state == state &&
+      other.isWebSocketConnected == isWebSocketConnected &&
+      other.isConnected == isConnected &&
+      other.hasEverConnected == hasEverConnected &&
+      other.connectionCount == connectionCount &&
+      other.connectionRetries == connectionRetries &&
+      other.inflightMutations == inflightMutations &&
+      other.inflightActions == inflightActions &&
+      other.timeOfOldestInflightRequest == timeOfOldestInflightRequest &&
+      other.hasSyncedPastLastReconnect == hasSyncedPastLastReconnect;
+
+  @override
+  int get hashCode => Object.hash(
+        state,
+        isWebSocketConnected,
+        isConnected,
+        hasEverConnected,
+        connectionCount,
+        connectionRetries,
+        inflightMutations,
+        inflightActions,
+        timeOfOldestInflightRequest,
+        hasSyncedPastLastReconnect,
+      );
+
+  @override
+  String toString() => 'ConnectionStatus(state: ${state.name}, '
+      'isWebSocketConnected: $isWebSocketConnected, '
+      'isConnected: $isConnected, hasEverConnected: $hasEverConnected, '
+      'connectionCount: $connectionCount, '
+      'connectionRetries: $connectionRetries, '
+      'inflightMutations: $inflightMutations, '
+      'inflightActions: $inflightActions, '
+      'timeOfOldestInflightRequest: $timeOfOldestInflightRequest, '
+      'hasSyncedPastLastReconnect: $hasSyncedPastLastReconnect)';
+}
+
 /// Base class for query subscription results.
 sealed class QueryResult {
   /// Creates a query result.
@@ -147,6 +256,8 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
         _authStateController = StreamController<bool>.broadcast(sync: true),
         _authRefreshingController =
             StreamController<bool>.broadcast(sync: true),
+        _connectionStatusController =
+            StreamController<ConnectionStatus>.broadcast(sync: true),
         _subscriptionControllers = <int, StreamController<QueryResult>>{} {
     _wsManager = WebSocketManager(
       adapter: _config.adapterFactory?.call(_config.clientId) ??
@@ -158,6 +269,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       onMessage: _handleServerMessage,
       onDisconnected: (reason) async {
         _baseClient.handleDisconnect(reason);
+        _publishConnectionStatus();
       },
       onMessagesSent: _baseClient.markMessagesSent,
       onConnectionStateChanged: _handleConnectionStateChange,
@@ -224,8 +336,10 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   final StreamController<ConnectionState> _connectionStateController;
   final StreamController<bool> _authStateController;
   final StreamController<bool> _authRefreshingController;
+  final StreamController<ConnectionStatus> _connectionStatusController;
   final Map<int, StreamController<QueryResult>> _subscriptionControllers;
   ConnectionState _currentConnectionState = ConnectionState.disconnected;
+  ConnectionStatus? _lastPublishedStatus;
   bool _currentAuthRefreshing = false;
   Future<void>? _startFuture;
   Future<void>? _closeFuture;
@@ -299,6 +413,32 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
 
   /// Current connection state.
   ConnectionState get currentConnectionState => _currentConnectionState;
+
+  /// A rich snapshot of the current connection status.
+  ///
+  /// Combines the coarse [currentConnectionState] with transport and request
+  /// metrics (inflight counts, retries, sync progress). See [ConnectionStatus].
+  ConnectionStatus get currentConnectionStatus => ConnectionStatus(
+        state: _currentConnectionState,
+        isWebSocketConnected: _wsManager.isConnected,
+        isConnected:
+            _wsManager.isConnected && _baseClient.hasSyncedPastLastReconnect,
+        hasEverConnected: _wsManager.hasEverConnected,
+        connectionCount: _wsManager.connectionCount,
+        connectionRetries: _wsManager.connectionRetries,
+        inflightMutations: _baseClient.inflightMutations,
+        inflightActions: _baseClient.inflightActions,
+        timeOfOldestInflightRequest: _baseClient.timeOfOldestInflightRequest,
+        hasSyncedPastLastReconnect: _baseClient.hasSyncedPastLastReconnect,
+      );
+
+  /// Broadcasts a rich [ConnectionStatus] each time any field changes.
+  ///
+  /// Does not replay the latest value to new listeners; read
+  /// [currentConnectionStatus] for the current snapshot. Mirrors the official
+  /// client's `subscribeToConnectionState`.
+  Stream<ConnectionStatus> get connectionStatus =>
+      _connectionStatusController.stream;
 
   /// Broadcasts whether the backend currently considers the client authenticated.
   Stream<bool> get authState => _authStateController.stream;
@@ -529,6 +669,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
               optimisticUpdate, request.requestId),
         );
       }
+      _publishConnectionStatus();
       final future = _withOptionalTimeout(
         request.future,
         _config.mutationTimeout,
@@ -537,6 +678,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
           _dispatchOptimisticEvents(
             _baseClient.cancelMutation(request.requestId, error),
           );
+          _publishConnectionStatus();
         },
       );
       await _flushOutgoing();
@@ -583,12 +725,14 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     );
     try {
       final request = _baseClient.trackAction(name, args);
+      _publishConnectionStatus();
       final future = _withOptionalTimeout(
         request.future,
         _config.actionTimeout,
         'Action "$name"',
         onTimeout: (error) {
           _baseClient.cancelAction(request.requestId, error);
+          _publishConnectionStatus();
         },
       );
       await _flushOutgoing();
@@ -743,6 +887,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       await _connectionStateController.close();
       await _authStateController.close();
       await _authRefreshingController.close();
+      await _connectionStatusController.close();
       await _authManager.stopRefreshing();
       await _connectivitySubscription?.cancel();
       await _wsManager.dispose();
@@ -834,6 +979,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
           _emitConnectionState(ConnectionState.fatalError);
       }
     }
+    _publishConnectionStatus();
     return result.outgoing;
   }
 
@@ -897,6 +1043,25 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       data: <String, Object?>{'state': state.name},
     );
     _connectionStateController.add(state);
+    _publishConnectionStatus();
+  }
+
+  /// Emits a fresh [ConnectionStatus] on [connectionStatus] when it differs from
+  /// the last published snapshot.
+  ///
+  /// Deduplicated by value so it can be called liberally from the request and
+  /// connection lifecycle, mirroring the official client's
+  /// `markConnectionStateDirty`.
+  void _publishConnectionStatus() {
+    if (_connectionStatusController.isClosed) {
+      return;
+    }
+    final status = currentConnectionStatus;
+    if (status == _lastPublishedStatus) {
+      return;
+    }
+    _lastPublishedStatus = status;
+    _connectionStatusController.add(status);
   }
 
   Future<void> _flushOutgoing() async {

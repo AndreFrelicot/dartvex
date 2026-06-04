@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Rich connection status: `ConvexClient.currentConnectionStatus` and the
+  `connectionStatus` stream expose a `ConnectionStatus` snapshot
+  (`isWebSocketConnected`, `isConnected`, `hasEverConnected`, `connectionCount`,
+  `connectionRetries`, `inflightMutations`, `inflightActions`,
+  `timeOfOldestInflightRequest`, `hasSyncedPastLastReconnect`, plus derived
+  `hasInflightRequests` and `isLoading`). The coarse `ConnectionState` enum and
+  its `connectionState` stream are unchanged and remain available as a derived
+  convenience. Mirrors the official client's `connectionState()`.
 - Reactive pagination: `ConvexClient.paginatedQuery(name, args, {pageSize})`
   returns a `ConvexPaginatedQuery` that loads the first page immediately and
   exposes the gapless concatenation of every loaded page as a reactive stream,

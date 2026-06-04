@@ -10,6 +10,7 @@ export 'src/auth/client_with_auth.dart' show ConvexClientWithAuth;
 export 'src/client.dart'
     show
         ConnectionState,
+        ConnectionStatus,
         ConvexClient,
         ConvexFunctionCaller,
         ConvexSubscription,

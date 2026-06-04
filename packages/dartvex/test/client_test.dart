@@ -1375,6 +1375,181 @@ void main() {
       client.dispose();
       signal.dispose();
     });
+
+    group('connection status', () {
+      test('starts disconnected with nothing in flight', () {
+        final adapter = MockWebSocketAdapter();
+        final client = ConvexClient(
+          'https://demo.convex.cloud',
+          config: ConvexClientConfig(
+            adapterFactory: (_) => adapter,
+            connectImmediately: false,
+            reconnectBackoff: const <Duration>[Duration.zero],
+          ),
+        );
+
+        final status = client.currentConnectionStatus;
+        expect(status.state, ConnectionState.disconnected);
+        expect(status.isWebSocketConnected, isFalse);
+        expect(status.isConnected, isFalse);
+        expect(status.hasEverConnected, isFalse);
+        expect(status.connectionCount, 0);
+        expect(status.inflightMutations, 0);
+        expect(status.inflightActions, 0);
+        expect(status.hasInflightRequests, isFalse);
+        expect(status.timeOfOldestInflightRequest, isNull);
+
+        client.dispose();
+      });
+
+      test('is loading after connect until the first sync, then connected',
+          () async {
+        final adapter = MockWebSocketAdapter();
+        final client = ConvexClient(
+          'https://demo.convex.cloud',
+          config: ConvexClientConfig(
+            adapterFactory: (_) => adapter,
+            reconnectBackoff: const <Duration>[Duration.zero],
+          ),
+        );
+
+        final subscription = client.subscribe('messages:list');
+        subscription.stream.listen((_) {});
+        await settle();
+
+        var status = client.currentConnectionStatus;
+        expect(status.isWebSocketConnected, isTrue);
+        expect(status.hasEverConnected, isTrue);
+        expect(status.state, ConnectionState.connected);
+        expect(status.hasSyncedPastLastReconnect, isFalse);
+        expect(status.isLoading, isTrue);
+        expect(status.isConnected, isFalse);
+
+        final querySet = adapter.decodedSentMessages
+            .where((message) => message['type'] == 'ModifyQuerySet')
+            .last;
+        final queryId = (((querySet['modifications'] as List<dynamic>).single
+            as Map<String, dynamic>)['queryId']) as int;
+        adapter.pushServerMessage(
+          Transition(
+            startVersion: const StateVersion.initial(),
+            endVersion: StateVersion(querySet: 1, identity: 0, ts: encodeTs(1)),
+            modifications: <StateModification>[
+              QueryUpdated(queryId: queryId, value: const <String>['a']),
+            ],
+          ).toJson(),
+        );
+        await settle();
+
+        status = client.currentConnectionStatus;
+        expect(status.hasSyncedPastLastReconnect, isTrue);
+        expect(status.isLoading, isFalse);
+        expect(status.isConnected, isTrue);
+
+        subscription.cancel();
+        client.dispose();
+      });
+
+      test('reports inflight mutations and actions and emits on change',
+          () async {
+        final adapter = MockWebSocketAdapter();
+        final client = ConvexClient(
+          'https://demo.convex.cloud',
+          config: ConvexClientConfig(
+            adapterFactory: (_) => adapter,
+            reconnectBackoff: const <Duration>[Duration.zero],
+          ),
+        );
+        final statuses = <ConnectionStatus>[];
+        final statusSub = client.connectionStatus.listen(statuses.add);
+        await settle();
+
+        final mutationFuture = client.mutate(
+          'messages:send',
+          const <String, dynamic>{'body': 'x'},
+        );
+        final actionFuture = client.action(
+          'messages:notify',
+          const <String, dynamic>{'to': 'y'},
+        );
+        await settle();
+
+        var status = client.currentConnectionStatus;
+        expect(status.inflightMutations, 1);
+        expect(status.inflightActions, 1);
+        expect(status.hasInflightRequests, isTrue);
+        expect(status.timeOfOldestInflightRequest, isNotNull);
+        expect(
+          statuses.any(
+            (s) => s.inflightMutations == 1 && s.inflightActions == 1,
+          ),
+          isTrue,
+        );
+
+        final mutation = adapter.decodedSentMessages
+            .where((message) => message['type'] == 'Mutation')
+            .last;
+        final action = adapter.decodedSentMessages
+            .where((message) => message['type'] == 'Action')
+            .last;
+        adapter.pushServerMessage(
+          MutationResponse(
+            requestId: mutation['requestId'] as int,
+            success: true,
+            result: 'ok',
+          ).toJson(),
+        );
+        adapter.pushServerMessage(
+          ActionResponse(
+            requestId: action['requestId'] as int,
+            success: true,
+            result: 'done',
+          ).toJson(),
+        );
+        await settle();
+
+        expect(await mutationFuture, 'ok');
+        expect(await actionFuture, 'done');
+        status = client.currentConnectionStatus;
+        expect(status.inflightMutations, 0);
+        expect(status.inflightActions, 0);
+        expect(status.hasInflightRequests, isFalse);
+        expect(status.timeOfOldestInflightRequest, isNull);
+        expect(statuses.last.hasInflightRequests, isFalse);
+
+        await statusSub.cancel();
+        client.dispose();
+      });
+
+      test('connectionCount and connectionRetries climb while flapping',
+          () async {
+        final adapter = MockWebSocketAdapter();
+        final client = ConvexClient(
+          'https://demo.convex.cloud',
+          config: ConvexClientConfig(
+            adapterFactory: (_) => adapter,
+            reconnectBackoff: const <Duration>[],
+            initialBackoff: Duration.zero,
+            backoffJitter: 0,
+          ),
+        );
+        await settle();
+        expect(client.currentConnectionStatus.hasEverConnected, isTrue);
+        expect(client.currentConnectionStatus.connectionCount, 0);
+
+        adapter.disconnect();
+        await settle();
+        adapter.disconnect();
+        await settle();
+
+        final status = client.currentConnectionStatus;
+        expect(status.connectionCount, 2);
+        expect(status.connectionRetries, 2);
+        expect(status.hasEverConnected, isTrue);
+
+        client.dispose();
+      });
+    });
   });
 }
 
