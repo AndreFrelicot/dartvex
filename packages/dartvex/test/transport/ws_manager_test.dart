@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:dartvex/src/protocol/encoding.dart';
 import 'package:dartvex/src/logging.dart';
@@ -370,6 +371,48 @@ void main() {
       expect(connectMessages, hasLength(1));
 
       await manager.dispose();
+    });
+
+    test('exponential backoff applies jitter and reason classification',
+        () async {
+      Future<int> firstScheduledDelay({String? disconnectReason}) async {
+        final adapter = MockWebSocketAdapter();
+        final events = <DartvexLogEvent>[];
+        final manager = WebSocketManager(
+          adapter: adapter,
+          deploymentUrl: 'https://demo.convex.cloud',
+          apiVersion: '0.1.0',
+          onConnected: () => const <ClientMessage>[],
+          onMessage: (_) => const <ClientMessage>[],
+          onDisconnected: (_) async {},
+          onConnectionStateChanged: (_, __) {},
+          maxObservedTimestamp: () => null,
+          reconnectBackoff: const <Duration>[],
+          inactivityTimeout: const Duration(seconds: 30),
+          initialBackoff: const Duration(seconds: 1),
+          maxBackoff: const Duration(seconds: 16),
+          backoffJitter: 0.5,
+          random: Random(7),
+          logLevel: DartvexLogLevel.info,
+          logger: events.add,
+        );
+
+        await manager.start();
+        adapter.disconnect(reason: disconnectReason);
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        final scheduled =
+            events.lastWhere((event) => event.message == 'Reconnect scheduled');
+        await manager.dispose();
+        return scheduled.data!['delayMs'] as int;
+      }
+
+      // Unknown reason -> base 1000ms, retry 0 -> jittered within [500, 1500].
+      expect(await firstScheduledDelay(), inInclusiveRange(500, 1500));
+      // Overload reason -> base 3000ms, retry 0 -> jittered within [1500, 4500].
+      expect(
+        await firstScheduledDelay(disconnectReason: 'CommitterFullError'),
+        inInclusiveRange(1500, 4500),
+      );
     });
 
     test('reports metrics for direct transitions with timing fields', () async {

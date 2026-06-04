@@ -16,14 +16,10 @@ class ConvexClientConfig {
     this.queryTimeout,
     this.mutationTimeout,
     this.actionTimeout,
-    this.reconnectBackoff = const <Duration>[
-      Duration(seconds: 1),
-      Duration(seconds: 2),
-      Duration(seconds: 4),
-      Duration(seconds: 8),
-      Duration(seconds: 16),
-      Duration(seconds: 32),
-    ],
+    this.reconnectBackoff = const <Duration>[],
+    this.initialBackoff = const Duration(seconds: 1),
+    this.maxBackoff = const Duration(seconds: 16),
+    this.backoffJitter = 0.5,
     this.connectImmediately = true,
     this.adapterFactory,
     this.logLevel = DartvexLogLevel.off,
@@ -69,10 +65,28 @@ class ConvexClientConfig {
   /// sent.
   final Duration? actionTimeout;
 
-  /// Backoff schedule used for reconnect attempts.
+  /// Optional fixed backoff schedule used for reconnect attempts.
   ///
-  /// Must contain at least one non-negative duration.
+  /// When empty (the default), reconnects use an exponential backoff derived
+  /// from [initialBackoff], [maxBackoff], and [backoffJitter], with the initial
+  /// delay classified by the server's disconnect reason. Provide an explicit,
+  /// non-negative schedule to override that behavior with fixed delays.
   final List<Duration> reconnectBackoff;
+
+  /// Base delay for the exponential reconnect backoff.
+  ///
+  /// Used when [reconnectBackoff] is empty. Server overload disconnect reasons
+  /// can raise this initial value before exponential growth is applied.
+  final Duration initialBackoff;
+
+  /// Upper bound for the exponential reconnect backoff delay.
+  final Duration maxBackoff;
+
+  /// Jitter fraction applied to each exponential backoff delay, in `[0, 1]`.
+  ///
+  /// A value of `0.5` spreads delays across `±50%` of the computed value to
+  /// avoid reconnect stampedes (thundering herd).
+  final double backoffJitter;
 
   /// Whether the WebSocket connection starts when the client is constructed.
   ///

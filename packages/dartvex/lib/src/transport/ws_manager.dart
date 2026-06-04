@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import '../logging.dart';
 import '../protocol/messages.dart';
@@ -53,6 +54,28 @@ class TransitionMetrics {
 /// Callback type for transition performance monitoring.
 typedef TransitionMetricsCallback = void Function(TransitionMetrics metrics);
 
+/// Initial reconnect backoff in milliseconds, keyed by server disconnect
+/// reason prefix.
+///
+/// Mirrors the official Convex client's `serverDisconnectErrors` table so
+/// overload conditions back off more conservatively than unknown failures.
+const Map<String, int> _serverDisconnectBackoffMs = <String, int>{
+  'InternalServerError': 1000,
+  'SubscriptionsWorkerFullError': 3000,
+  'TooManyConcurrentRequests': 3000,
+  'CommitterFullError': 3000,
+  'AwsTooManyRequestsException': 3000,
+  'ExecuteFullError': 3000,
+  'SystemTimeoutError': 3000,
+  'ExpiredInQueue': 3000,
+  'VectorIndexesUnavailable': 1000,
+  'SearchIndexesUnavailable': 1000,
+  'TableSummariesUnavailable': 1000,
+  'VectorIndexTooLarge': 3000,
+  'SearchIndexTooLarge': 3000,
+  'TooManyWritesInTimePeriod': 3000,
+};
+
 /// Manages the WebSocket lifecycle, reconnects, and message dispatch.
 class WebSocketManager {
   /// Creates a WebSocket manager.
@@ -68,11 +91,15 @@ class WebSocketManager {
     required this.reconnectBackoff,
     required this.inactivityTimeout,
     this.connectTimeout = const Duration(seconds: 10),
+    this.initialBackoff = const Duration(seconds: 1),
+    this.maxBackoff = const Duration(seconds: 16),
+    this.backoffJitter = 0.5,
+    Random? random,
     this.onMessagesSent,
     this.onTransitionMetrics,
     this.logLevel = DartvexLogLevel.off,
     this.logger,
-  });
+  }) : _random = random ?? Random();
 
   /// WebSocket adapter used for network I/O.
   final WebSocketAdapter adapter;
@@ -110,6 +137,18 @@ class WebSocketManager {
   /// Maximum duration to wait for the socket handshake before abandoning the
   /// attempt and scheduling a reconnect.
   final Duration connectTimeout;
+
+  /// Base delay for the exponential reconnect backoff (when [reconnectBackoff]
+  /// is empty).
+  final Duration initialBackoff;
+
+  /// Upper bound for the exponential reconnect backoff delay.
+  final Duration maxBackoff;
+
+  /// Jitter fraction applied to each exponential backoff delay.
+  final double backoffJitter;
+
+  final Random _random;
 
   /// Optional callback that receives transition performance metrics.
   final TransitionMetricsCallback? onTransitionMetrics;
@@ -520,14 +559,7 @@ class WebSocketManager {
       return;
     }
     _reconnectTimer?.cancel();
-    final delay = immediate
-        ? Duration.zero
-        : reconnectBackoff[_reconnectIndex < reconnectBackoff.length
-            ? _reconnectIndex
-            : reconnectBackoff.length - 1];
-    if (_reconnectIndex < reconnectBackoff.length - 1) {
-      _reconnectIndex += 1;
-    }
+    final delay = _nextReconnectDelay(immediate: immediate);
     _log(
       DartvexLogLevel.info,
       'Reconnect scheduled',
@@ -540,6 +572,44 @@ class WebSocketManager {
     _reconnectTimer = Timer(delay, () {
       unawaited(_connect());
     });
+  }
+
+  /// Computes the next reconnect delay and advances the retry counter.
+  ///
+  /// A non-empty [reconnectBackoff] schedule is used verbatim (no jitter);
+  /// otherwise an exponential backoff with jitter is derived from
+  /// [initialBackoff], [maxBackoff], [backoffJitter], and the disconnect reason
+  /// classification.
+  Duration _nextReconnectDelay({required bool immediate}) {
+    if (immediate) {
+      return Duration.zero;
+    }
+    if (reconnectBackoff.isNotEmpty) {
+      final index = _reconnectIndex < reconnectBackoff.length
+          ? _reconnectIndex
+          : reconnectBackoff.length - 1;
+      if (_reconnectIndex < reconnectBackoff.length - 1) {
+        _reconnectIndex += 1;
+      }
+      return reconnectBackoff[index];
+    }
+    final baseMs = _classifiedInitialBackoffMs(_lastCloseReason).toDouble();
+    final exponentialMs = baseMs * pow(2, _reconnectIndex).toDouble();
+    final cappedMs = min(exponentialMs, maxBackoff.inMilliseconds.toDouble());
+    _reconnectIndex += 1;
+    final jitterSpan =
+        cappedMs * backoffJitter * (_random.nextDouble() * 2 - 1);
+    final delayMs = (cappedMs + jitterSpan).clamp(0.0, double.infinity);
+    return Duration(milliseconds: delayMs.round());
+  }
+
+  int _classifiedInitialBackoffMs(String reason) {
+    for (final entry in _serverDisconnectBackoffMs.entries) {
+      if (reason.startsWith(entry.key)) {
+        return entry.value;
+      }
+    }
+    return initialBackoff.inMilliseconds;
   }
 
   void _resetInactivityTimer() {

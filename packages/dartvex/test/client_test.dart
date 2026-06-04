@@ -15,7 +15,7 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 10));
     }
 
-    test('rejects empty reconnect backoff configuration', () {
+    test('accepts empty reconnect backoff (selects exponential mode)', () {
       expect(
         () => ConvexClient(
           'https://demo.convex.cloud',
@@ -24,13 +24,7 @@ void main() {
             reconnectBackoff: <Duration>[],
           ),
         ),
-        throwsA(
-          isA<ArgumentError>().having(
-            (error) => error.name,
-            'name',
-            'config.reconnectBackoff',
-          ),
-        ),
+        returnsNormally,
       );
     });
 

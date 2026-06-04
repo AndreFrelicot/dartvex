@@ -156,6 +156,9 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       reconnectBackoff: _config.reconnectBackoff,
       inactivityTimeout: _config.inactivityTimeout,
       connectTimeout: _config.connectTimeout,
+      initialBackoff: _config.initialBackoff,
+      maxBackoff: _config.maxBackoff,
+      backoffJitter: _config.backoffJitter,
       onTransitionMetrics: onTransitionMetrics,
       logLevel: _config.logLevel,
       logger: _config.logger,
@@ -220,13 +223,8 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   static ConvexClientConfig _normalizeConfig(ConvexClientConfig config) {
     final reconnectBackoff =
         List<Duration>.unmodifiable(config.reconnectBackoff);
-    if (reconnectBackoff.isEmpty) {
-      throw ArgumentError.value(
-        config.reconnectBackoff,
-        'config.reconnectBackoff',
-        'must contain at least one duration',
-      );
-    }
+    // An empty schedule selects the exponential backoff model; only the
+    // explicit-override case needs validation here.
     for (final duration in reconnectBackoff) {
       if (duration.isNegative) {
         throw ArgumentError.value(
@@ -246,6 +244,9 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       mutationTimeout: config.mutationTimeout,
       actionTimeout: config.actionTimeout,
       reconnectBackoff: reconnectBackoff,
+      initialBackoff: config.initialBackoff,
+      maxBackoff: config.maxBackoff,
+      backoffJitter: config.backoffJitter,
       connectImmediately: config.connectImmediately,
       adapterFactory: config.adapterFactory,
       logLevel: config.logLevel,
