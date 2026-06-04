@@ -24,6 +24,7 @@ import 'features/messages/presentation/private_messages_panel.dart';
 import 'features/messages/presentation/public_messages_panel.dart';
 import 'features/shared/presentation/concierge_design.dart';
 import 'features/showcase/presentation/showcase_panel.dart';
+import 'features/storage/presentation/files_panel.dart';
 import 'features/tasks/presentation/tasks_board_panel.dart';
 
 void runDemoApp() {
@@ -435,6 +436,7 @@ class _ConvexFlutterDemoAppState extends State<ConvexFlutterDemoApp> {
   Widget _buildHome() {
     return DemoHomePage(
       api: _api,
+      client: _client,
       authClient: _authClient,
       betterAuthProvider: _betterAuthProvider,
       betterAuthClient: _betterAuthClient,
@@ -494,6 +496,7 @@ class DemoHomePage extends StatefulWidget {
   const DemoHomePage({
     super.key,
     required this.api,
+    required this.client,
     required this.authClient,
     required this.betterAuthProvider,
     required this.betterAuthClient,
@@ -521,6 +524,10 @@ class DemoHomePage extends StatefulWidget {
   });
 
   final ConvexApi? api;
+
+  /// The raw client backing the Files tab's uploads (ConvexStorage needs a
+  /// ConvexFunctionCaller). `null` until a deployment URL is configured.
+  final ConvexClient? client;
   final ConvexClientWithAuth<DemoUserSession>? authClient;
   final ConvexBetterAuthProvider? betterAuthProvider;
   final ConvexClientWithAuth<BetterAuthSession>? betterAuthClient;
@@ -572,6 +579,11 @@ class _DemoHomePageState extends State<DemoHomePage> {
       selectedIcon: Icons.sync_rounded,
     ),
     const _DemoDestination(
+      label: 'Files',
+      icon: Icons.photo_library_outlined,
+      selectedIcon: Icons.photo_library_rounded,
+    ),
+    const _DemoDestination(
       label: 'Tasks',
       icon: Icons.dashboard_outlined,
       selectedIcon: Icons.dashboard_rounded,
@@ -612,6 +624,13 @@ class _DemoHomePageState extends State<DemoHomePage> {
         logsNotifier: widget.logsNotifier,
         clientConfig: widget.clientConfig,
         onSimulateExpiredToken: widget.onSimulateExpiredToken,
+      ),
+      _FilesScreen(
+        client: widget.client,
+        deploymentUrl: widget.deploymentUrl,
+        authMode: widget.authMode,
+        authProviderReady: _authProviderReady,
+        latencyNotifier: widget.latencyNotifier,
       ),
       _TasksScreen(
         api: widget.api,
@@ -759,6 +778,36 @@ class _ShowcaseScreen extends StatelessWidget {
         clientConfig: clientConfig,
         onSimulateExpiredToken: onSimulateExpiredToken,
       ),
+    );
+  }
+}
+
+class _FilesScreen extends StatelessWidget {
+  const _FilesScreen({
+    required this.client,
+    required this.deploymentUrl,
+    required this.authMode,
+    required this.authProviderReady,
+    required this.latencyNotifier,
+  });
+
+  final ConvexClient? client;
+  final String deploymentUrl;
+  final AuthMode authMode;
+  final bool authProviderReady;
+  final ValueNotifier<TransitionMetrics?> latencyNotifier;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: _DemoAppBar(
+        title: 'Files',
+        subtitle: _deploymentSubtitle(deploymentUrl),
+        authMode: authMode,
+        authProviderReady: authProviderReady,
+        latencyNotifier: latencyNotifier,
+      ),
+      body: FilesPanel(client: client),
     );
   }
 }
