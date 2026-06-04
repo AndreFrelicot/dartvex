@@ -453,9 +453,9 @@ class _DemoHomePageState extends State<DemoHomePage> {
       selectedIcon: Icons.chat_rounded,
     ),
     const _DemoDestination(
-      label: 'Showcase',
-      icon: Icons.auto_awesome_outlined,
-      selectedIcon: Icons.auto_awesome,
+      label: 'Sync',
+      icon: Icons.sync_outlined,
+      selectedIcon: Icons.sync_rounded,
     ),
     const _DemoDestination(
       label: 'Tasks',
@@ -624,7 +624,7 @@ class _ShowcaseScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: _DemoAppBar(
-        title: 'Showcase',
+        title: 'Sync',
         subtitle: _deploymentSubtitle(deploymentUrl),
         authMode: authMode,
         authProviderReady: authProviderReady,
