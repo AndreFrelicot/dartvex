@@ -26,6 +26,7 @@ environment:
 
 dependencies:
   collection: ^1.19.1
+  connectivity_plus: ^6.1.0
   dartvex: ^0.1.5
   flutter:
     sdk: flutter

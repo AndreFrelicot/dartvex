@@ -17,6 +17,7 @@ export 'src/connection_builder.dart'
     show ConvexConnectionBuilder, ConvexConnectionWidgetBuilder;
 export 'src/connection_indicator.dart'
     show ConvexConnectionIndicator, ConvexConnectionIndicatorBuilder;
+export 'src/connectivity.dart' show ConnectivityPlusSignal;
 export 'src/mutation_builder.dart' show ConvexMutation, ConvexMutationBuilder;
 export 'src/paginated_query_builder.dart'
     show PaginatedQueryBuilder, PaginatedQueryWidgetBuilder, PaginationStatus;
