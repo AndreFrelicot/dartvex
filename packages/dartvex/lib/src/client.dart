@@ -500,7 +500,9 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
         _config.mutationTimeout,
         'Mutation "$name"',
         onTimeout: (error) {
-          _baseClient.cancelMutation(request.requestId, error);
+          _dispatchOptimisticEvents(
+            _baseClient.cancelMutation(request.requestId, error),
+          );
         },
       );
       await _flushOutgoing();

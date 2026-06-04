@@ -765,6 +765,28 @@ void main() {
       await expectLater(request.future, throwsA(isA<ConvexException>()));
     });
 
+    test('rolls back the layer when its mutation is canceled', () async {
+      final (client, queryId) = seeded(<String>['a']);
+      final request = client.trackMutation(
+        'messages:send',
+        const <String, dynamic>{'body': 'b'},
+      );
+      client.drainOutgoing();
+      client.applyOptimisticUpdate(append('b'), request.requestId);
+      final expectation =
+          expectLater(request.future, throwsA(isA<TimeoutException>()));
+
+      // A timeout/cancel drops the layer even though no server response arrives.
+      final events = client.cancelMutation(
+        request.requestId,
+        TimeoutException('timed out'),
+      );
+      final event = events.whereType<QueryUpdateEvent>().single;
+      expect(event.queryId, queryId);
+      expect(listOf(event), <String>['a']);
+      await expectation;
+    });
+
     test('stacks concurrent layers and rolls each back independently',
         () async {
       final (client, _) = seeded(<String>['a']);

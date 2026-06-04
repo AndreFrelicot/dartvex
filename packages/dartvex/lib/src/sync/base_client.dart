@@ -184,9 +184,19 @@ class BaseClient {
     return trackAction(udfPath, args).future;
   }
 
-  void cancelMutation(int requestId, Object error) {
+  /// Cancels an in-flight mutation, rolling back its optimistic layer.
+  ///
+  /// Returns the query-update events for the rollback (empty when the mutation
+  /// had no optimistic update). The server may still have processed the
+  /// mutation, in which case a later transition re-applies its authoritative
+  /// result.
+  List<BaseClientEvent> cancelMutation(int requestId, Object error) {
     _removeOutgoingRequest(requestId, isMutation: true);
     _requestManager.cancelMutation(requestId, error);
+    if (!_optimistic.hasActiveUpdates) {
+      return const <BaseClientEvent>[];
+    }
+    return _emitOverlayChanges(<int>[requestId]);
   }
 
   void cancelAction(int requestId, Object error) {
