@@ -11,6 +11,9 @@
 //   CONVEX_DEPLOYMENT_URL=https://your.convex.cloud \
 //     dart test test/integration/value_integration_test.dart
 
+@Tags(['integration'])
+library;
+
 import 'dart:io';
 import 'dart:typed_data';
 

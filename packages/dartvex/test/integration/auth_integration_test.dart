@@ -14,6 +14,9 @@
 // functions demo:whoAmI (authenticated query) and demo:requireAuthEcho
 // (throws when unauthenticated).
 
+@Tags(['integration'])
+library;
+
 import 'dart:async';
 import 'dart:io';
 

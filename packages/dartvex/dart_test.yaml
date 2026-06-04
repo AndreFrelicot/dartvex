@@ -1,0 +1,18 @@
+# Test suite configuration.
+#
+# Tags group the parity test suites so they can be selected or excluded as a
+# unit:
+#
+#   dart test                   # everything — the full regression suite
+#   dart test -x integration    # skip live-deployment tests (CI default)
+#   dart test -t conformance     # only the protocol conformance suites
+#   dart test -t integration     # only the live-deployment tests
+#
+# See test/README.md for the map of workstreams to test files.
+tags:
+  conformance:
+    # Protocol conformance suites. The fake-transport suite runs anywhere; the
+    # live one self-skips unless CONVEX_DEPLOYMENT_URL is set.
+  integration:
+    # Tests that talk to a real Convex deployment. They self-skip without
+    # CONVEX_DEPLOYMENT_URL, so excluding this tag in CI is optional.
