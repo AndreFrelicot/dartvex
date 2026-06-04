@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Require `dartvex` `^0.2.0`.
+- Require Dart `^3.10.0` to align with the SQLite 3.x runtime dependency.
 
 ### Fixed
 
