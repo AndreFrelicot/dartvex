@@ -203,6 +203,20 @@ class _FixedRuntimeClient implements ConvexRuntimeClient {
   ConvexConnectionState get currentConnectionState => state;
 
   @override
+  Stream<ConnectionStatus> get connectionStatus =>
+      Stream<ConnectionStatus>.value(ConnectionStatus.fromState(state));
+
+  @override
+  ConnectionStatus get currentConnectionStatus =>
+      ConnectionStatus.fromState(state);
+
+  @override
+  Stream<bool> get authRefreshing => Stream<bool>.value(false);
+
+  @override
+  bool get currentAuthRefreshing => false;
+
+  @override
   Future<dynamic> action(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
@@ -212,9 +226,17 @@ class _FixedRuntimeClient implements ConvexRuntimeClient {
   void dispose() {}
 
   @override
+  ConvexRuntimePaginatedQuery paginatedQuery(
+    String name,
+    Map<String, dynamic> args, {
+    int pageSize = 20,
+  }) => throw UnimplementedError();
+
+  @override
   Future<dynamic> mutate(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
+    convex.OptimisticUpdate? optimisticUpdate,
   ]) async => throw UnimplementedError();
 
   @override

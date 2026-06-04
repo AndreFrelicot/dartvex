@@ -28,6 +28,32 @@ class LocalConvexRuntimeClient implements ConvexRuntimeClient {
   ConvexConnectionState get currentConnectionState => _currentConnectionState;
 
   @override
+  Stream<ConnectionStatus> get connectionStatus => _client.connectionState.map(
+    (state) => ConnectionStatus.fromState(_mapConnectionState(state)),
+  );
+
+  @override
+  ConnectionStatus get currentConnectionStatus =>
+      ConnectionStatus.fromState(_currentConnectionState);
+
+  @override
+  Stream<bool> get authRefreshing => Stream<bool>.value(false);
+
+  @override
+  bool get currentAuthRefreshing => false;
+
+  @override
+  ConvexRuntimePaginatedQuery paginatedQuery(
+    String name,
+    Map<String, dynamic> args, {
+    int pageSize = 20,
+  }) {
+    throw UnsupportedError(
+      'Paginated queries are not supported by the local runtime client.',
+    );
+  }
+
+  @override
   Future<dynamic> action(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
@@ -51,7 +77,10 @@ class LocalConvexRuntimeClient implements ConvexRuntimeClient {
   Future<dynamic> mutate(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
+    OptimisticUpdate? optimisticUpdate,
   ]) {
+    // The local runtime applies optimism via LocalMutationHandler patches, so
+    // the core optimisticUpdate overlay is intentionally not used here.
     return _client.mutate(name, args);
   }
 

@@ -20,12 +20,38 @@ class UnavailableRuntimeClient implements ConvexRuntimeClient {
       ConvexConnectionState.disconnected;
 
   @override
+  Stream<ConnectionStatus> get connectionStatus =>
+      Stream<ConnectionStatus>.value(
+        ConnectionStatus.fromState(ConvexConnectionState.disconnected),
+      );
+
+  @override
+  ConnectionStatus get currentConnectionStatus =>
+      ConnectionStatus.fromState(ConvexConnectionState.disconnected);
+
+  @override
+  Stream<bool> get authRefreshing => Stream<bool>.value(false);
+
+  @override
+  bool get currentAuthRefreshing => false;
+
+  @override
   void dispose() {}
+
+  @override
+  ConvexRuntimePaginatedQuery paginatedQuery(
+    String name,
+    Map<String, dynamic> args, {
+    int pageSize = 20,
+  }) {
+    throw _error();
+  }
 
   @override
   Future<dynamic> mutate(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
+    OptimisticUpdate? optimisticUpdate,
   ]) {
     return Future<dynamic>.error(_error());
   }

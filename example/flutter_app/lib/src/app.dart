@@ -1185,6 +1185,10 @@ class _HeaderStatusCluster extends StatelessWidget {
             'Realtime offline',
             ConciergeColors.warning,
           ),
+          ConvexConnectionState.fatalError => (
+            'Realtime unavailable',
+            ConciergeColors.warning,
+          ),
         };
 
         // Latency only makes sense while the realtime socket is connected.
