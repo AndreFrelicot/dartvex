@@ -69,6 +69,18 @@ class AppRoot extends StatelessWidget {
 }
 ```
 
+To reconnect immediately when the device regains connectivity, pass a
+`ConnectivityPlusSignal` into the client configuration:
+
+```dart
+final client = ConvexClient(
+  'https://your-deployment.convex.cloud',
+  config: ConvexClientConfig(
+    connectivitySignal: ConnectivityPlusSignal(),
+  ),
+);
+```
+
 ## Auth Widgets
 
 ```dart
