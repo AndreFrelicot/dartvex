@@ -6,7 +6,9 @@ class FakeRuntimeClient implements ConvexRuntimeClient {
   FakeRuntimeClient({
     ConvexConnectionState initialConnectionState =
         ConvexConnectionState.connecting,
-  }) : _currentConnectionState = initialConnectionState;
+  })  : _currentConnectionState = initialConnectionState,
+        _currentConnectionStatus =
+            ConnectionStatus.fromState(initialConnectionState);
 
   final List<FakeRequestCall> queryCalls = <FakeRequestCall>[];
   final List<FakeSubscriptionCall> subscribeCalls = <FakeSubscriptionCall>[];
@@ -16,6 +18,8 @@ class FakeRuntimeClient implements ConvexRuntimeClient {
       <FakePaginatedQueryCall>[];
   final StreamController<ConvexConnectionState> _connectionController =
       StreamController<ConvexConnectionState>.broadcast(sync: true);
+  final StreamController<ConnectionStatus> _connectionStatusController =
+      StreamController<ConnectionStatus>.broadcast(sync: true);
   final StreamController<bool> _authRefreshingController =
       StreamController<bool>.broadcast(sync: true);
   bool _currentAuthRefreshing = false;
@@ -25,6 +29,7 @@ class FakeRuntimeClient implements ConvexRuntimeClient {
   Future<dynamic> Function(String name, Map<String, dynamic> args)? onAction;
 
   ConvexConnectionState _currentConnectionState;
+  ConnectionStatus _currentConnectionStatus;
   bool disposed = false;
 
   @override
@@ -33,6 +38,13 @@ class FakeRuntimeClient implements ConvexRuntimeClient {
 
   @override
   ConvexConnectionState get currentConnectionState => _currentConnectionState;
+
+  @override
+  Stream<ConnectionStatus> get connectionStatus =>
+      _connectionStatusController.stream;
+
+  @override
+  ConnectionStatus get currentConnectionStatus => _currentConnectionStatus;
 
   @override
   Stream<bool> get authRefreshing => _authRefreshingController.stream;
@@ -79,12 +91,25 @@ class FakeRuntimeClient implements ConvexRuntimeClient {
       call.query.cancel();
     }
     unawaited(_connectionController.close());
+    unawaited(_connectionStatusController.close());
     unawaited(_authRefreshingController.close());
   }
 
   void emitConnectionState(ConvexConnectionState state) {
     _currentConnectionState = state;
     _connectionController.add(state);
+    _currentConnectionStatus = ConnectionStatus.fromState(state);
+    if (!_connectionStatusController.isClosed) {
+      _connectionStatusController.add(_currentConnectionStatus);
+    }
+  }
+
+  void emitConnectionStatus(ConnectionStatus status) {
+    _currentConnectionStatus = status;
+    _currentConnectionState = status.state;
+    if (!_connectionStatusController.isClosed) {
+      _connectionStatusController.add(status);
+    }
   }
 
   @override

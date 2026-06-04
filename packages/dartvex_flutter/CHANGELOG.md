@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Rich connection status: `ConvexRuntimeClient` gains `connectionStatus` (a
+  `Stream<ConnectionStatus>`) and `currentConnectionStatus`, and the new
+  `ConvexConnectionStatusBuilder` rebuilds on the detailed status (inflight
+  counts, retry count, loading, `hasEverConnected`). `ConnectionStatus` is
+  re-exported from `dartvex`. The coarse `ConvexConnectionBuilder` and
+  `ConvexConnectionIndicator` are unchanged.
 - `PaginatedQueryBuilder` is now backed by the core reactive pagination engine:
   loaded pages update live as their data changes and stay gapless at page
   boundaries, instead of being one-shot reads. The widget API

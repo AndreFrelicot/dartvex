@@ -53,6 +53,17 @@ abstract class ConvexRuntimeClient {
   /// The current connection state.
   ConvexConnectionState get currentConnectionState;
 
+  /// Broadcasts a rich connection status snapshot each time it changes.
+  ///
+  /// See `ConvexClient.connectionStatus`. Read [currentConnectionStatus] for the
+  /// current value.
+  Stream<convex.ConnectionStatus> get connectionStatus;
+
+  /// The current rich connection status snapshot.
+  ///
+  /// See `ConvexClient.currentConnectionStatus`.
+  convex.ConnectionStatus get currentConnectionStatus;
+
   /// Broadcasts whether the client is refreshing auth after a rejection.
   ///
   /// Emits `true` while a fresh token is fetched after a server `AuthError`
@@ -179,6 +190,18 @@ class ConvexClientRuntime implements ConvexRuntimeClient {
 
   /// The current connection state observed from the wrapped client.
   ConvexConnectionState get currentConnectionState => _currentConnectionState;
+
+  @override
+
+  /// Broadcasts rich connection status changes from the wrapped client.
+  Stream<convex.ConnectionStatus> get connectionStatus =>
+      _client.connectionStatus;
+
+  @override
+
+  /// The current rich connection status observed from the wrapped client.
+  convex.ConnectionStatus get currentConnectionStatus =>
+      _client.currentConnectionStatus;
 
   @override
 

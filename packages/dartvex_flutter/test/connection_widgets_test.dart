@@ -93,4 +93,46 @@ void main() {
     await tester.pump();
     expect(find.text('idle'), findsOneWidget);
   });
+
+  testWidgets('ConvexConnectionStatusBuilder renders rich status updates', (
+    tester,
+  ) async {
+    final client = FakeRuntimeClient(
+      initialConnectionState: ConvexConnectionState.connecting,
+    );
+
+    await tester.pumpWidget(
+      wrapWithProvider(
+        client: client,
+        child: ConvexConnectionStatusBuilder(
+          builder: (context, status) => Text(
+            'loading=${status.isLoading} '
+            'retries=${status.connectionRetries} '
+            'inflight=${status.inflightMutations}',
+          ),
+        ),
+      ),
+    );
+
+    // Derived from the coarse connecting state: loading, no retries/inflight.
+    expect(find.text('loading=true retries=0 inflight=0'), findsOneWidget);
+
+    client.emitConnectionStatus(
+      const ConnectionStatus(
+        state: ConvexConnectionState.reconnecting,
+        isWebSocketConnected: false,
+        isConnected: false,
+        hasEverConnected: true,
+        connectionCount: 2,
+        connectionRetries: 3,
+        inflightMutations: 1,
+        inflightActions: 0,
+        timeOfOldestInflightRequest: null,
+        hasSyncedPastLastReconnect: false,
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('loading=true retries=3 inflight=1'), findsOneWidget);
+  });
 }

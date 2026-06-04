@@ -1,7 +1,11 @@
 import 'dart:async';
 
 import 'package:dartvex/dartvex.dart'
-    show ConvexPaginatedResult, ConvexPaginationStatus, OptimisticUpdate;
+    show
+        ConnectionStatus,
+        ConvexPaginatedResult,
+        ConvexPaginationStatus,
+        OptimisticUpdate;
 
 import '../runtime_client.dart';
 
@@ -23,7 +27,9 @@ class FakeConvexClient implements ConvexRuntimeClient {
   FakeConvexClient({
     ConvexConnectionState initialConnectionState =
         ConvexConnectionState.connected,
-  }) : _currentConnectionState = initialConnectionState;
+  })  : _currentConnectionState = initialConnectionState,
+        _currentConnectionStatus =
+            ConnectionStatus.fromState(initialConnectionState);
 
   final Map<String, dynamic Function(Map<String, dynamic>)> _queryHandlers =
       <String, dynamic Function(Map<String, dynamic>)>{};
@@ -39,9 +45,12 @@ class FakeConvexClient implements ConvexRuntimeClient {
 
   final StreamController<ConvexConnectionState> _connectionController =
       StreamController<ConvexConnectionState>.broadcast(sync: true);
+  final StreamController<ConnectionStatus> _connectionStatusController =
+      StreamController<ConnectionStatus>.broadcast(sync: true);
   final StreamController<bool> _authRefreshingController =
       StreamController<bool>.broadcast(sync: true);
   ConvexConnectionState _currentConnectionState;
+  ConnectionStatus _currentConnectionStatus;
   bool _currentAuthRefreshing = false;
   bool _disposed = false;
 
@@ -111,9 +120,26 @@ class FakeConvexClient implements ConvexRuntimeClient {
   }
 
   /// Update the fake connection state.
+  ///
+  /// Also updates the rich [currentConnectionStatus] with a snapshot derived
+  /// from [state]; use [emitConnectionStatus] to drive the rich status with full
+  /// inflight/retry detail.
   void emitConnectionState(ConvexConnectionState state) {
     _currentConnectionState = state;
     _connectionController.add(state);
+    _currentConnectionStatus = ConnectionStatus.fromState(state);
+    if (!_connectionStatusController.isClosed) {
+      _connectionStatusController.add(_currentConnectionStatus);
+    }
+  }
+
+  /// Update the fake rich connection status, also syncing the coarse state.
+  void emitConnectionStatus(ConnectionStatus status) {
+    _currentConnectionStatus = status;
+    _currentConnectionState = status.state;
+    if (!_connectionStatusController.isClosed) {
+      _connectionStatusController.add(status);
+    }
   }
 
   /// Update the fake auth-refreshing state.
@@ -128,6 +154,13 @@ class FakeConvexClient implements ConvexRuntimeClient {
 
   @override
   ConvexConnectionState get currentConnectionState => _currentConnectionState;
+
+  @override
+  Stream<ConnectionStatus> get connectionStatus =>
+      _connectionStatusController.stream;
+
+  @override
+  ConnectionStatus get currentConnectionStatus => _currentConnectionStatus;
 
   @override
   Stream<bool> get authRefreshing => _authRefreshingController.stream;
@@ -232,6 +265,7 @@ class FakeConvexClient implements ConvexRuntimeClient {
       query.cancel();
     }
     unawaited(_connectionController.close());
+    unawaited(_connectionStatusController.close());
     unawaited(_authRefreshingController.close());
   }
 }

@@ -5,6 +5,7 @@ library;
 // results can be used with a single `dartvex_flutter` import.
 export 'package:dartvex/dartvex.dart'
     show
+        ConnectionStatus,
         ConvexPaginatedResult,
         ConvexPaginationStatus,
         OptimisticLocalStore,
@@ -26,7 +27,11 @@ export 'src/auth_provider.dart' show ConvexAuthProvider;
 export 'src/auth_refreshing_builder.dart'
     show ConvexAuthRefreshingBuilder, ConvexAuthRefreshingWidgetBuilder;
 export 'src/connection_builder.dart'
-    show ConvexConnectionBuilder, ConvexConnectionWidgetBuilder;
+    show
+        ConvexConnectionBuilder,
+        ConvexConnectionStatusBuilder,
+        ConvexConnectionStatusWidgetBuilder,
+        ConvexConnectionWidgetBuilder;
 export 'src/connection_indicator.dart'
     show ConvexConnectionIndicator, ConvexConnectionIndicatorBuilder;
 export 'src/connectivity.dart' show ConnectivityPlusSignal;
