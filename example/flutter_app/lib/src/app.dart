@@ -246,6 +246,7 @@ class _ConvexFlutterDemoAppState extends State<ConvexFlutterDemoApp> {
       url,
       config: ConvexClientConfig(
         adapterFactory: _reconnectController.createAdapter,
+        connectivitySignal: ConnectivityPlusSignal(),
       ),
       onTransitionMetrics: (metrics) {
         _latencyNotifier.value = metrics;
