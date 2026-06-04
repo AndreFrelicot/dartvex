@@ -17,7 +17,15 @@ Better Auth runs as a self-hosted Convex component — no external auth service 
    npx convex env set BETTER_AUTH_SECRET=$(openssl rand -base64 32)
    ```
 
-3. **Deploy** the backend:
+3. **Allow hosted web origins when needed**:
+
+   ```bash
+   npx convex env set BETTER_AUTH_TRUSTED_ORIGINS=https://your-web-demo.example
+   ```
+
+   Flutter web on `localhost` or `127.0.0.1` is accepted automatically.
+
+4. **Deploy** the backend:
 
    ```bash
    npx convex dev    # local development

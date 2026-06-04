@@ -8,12 +8,38 @@ import authConfig from "./auth.config";
 
 export const authComponent = createClient<DataModel>(components.betterAuth);
 
+const localDevOriginPattern =
+  /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/;
+
+function splitOrigins(value: string | undefined) {
+  return (value ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0);
+}
+
+function betterAuthTrustedOrigins(request?: Request) {
+  const requestOrigin = request?.headers.get("origin") ?? "";
+  const localOrigin = localDevOriginPattern.test(requestOrigin)
+    ? [requestOrigin]
+    : [];
+
+  return Array.from(
+    new Set([
+      process.env.CONVEX_SITE_URL,
+      process.env.CONVEX_URL,
+      ...splitOrigins(process.env.BETTER_AUTH_TRUSTED_ORIGINS),
+      ...localOrigin,
+    ])
+  ).filter((origin): origin is string => typeof origin === "string");
+}
+
 export const createAuth = (ctx: GenericCtx<DataModel>) => {
   return betterAuth({
     database: authComponent.adapter(ctx),
     secret: process.env.BETTER_AUTH_SECRET,
     baseURL: process.env.CONVEX_SITE_URL,
-    trustedOrigins: ["http://localhost:*", "http://127.0.0.1:*"],
+    trustedOrigins: betterAuthTrustedOrigins,
     emailAndPassword: {
       enabled: true,
     },
