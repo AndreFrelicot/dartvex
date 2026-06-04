@@ -441,103 +441,200 @@ class _PaginationDemoCardState extends State<_PaginationDemoCard> {
             ),
           ],
           const SizedBox(height: 14),
-          Container(
-            height: 300,
-            decoration: BoxDecoration(
-              color: ConciergeColors.surfaceLowest.withValues(alpha: 0.6),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: ConciergeColors.cyan.withValues(alpha: 0.12),
-              ),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: PaginatedQueryBuilder<Map<String, dynamic>>(
-              query: 'messages:paginatePublic',
-              pageSize: 10,
-              fromJson: (json) => json,
-              builder: (context, items, loadMore, status) {
-                if (status == PaginationStatus.loading) {
-                  return const Center(
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  );
-                }
-                if (status == PaginationStatus.error) {
-                  return const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Text(
-                        'Failed to load — is messages:paginatePublic deployed?',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: ConciergeColors.danger),
-                      ),
-                    ),
-                  );
-                }
-                if (items.isEmpty) {
-                  return const Center(
-                    child: Text(
-                      'Empty feed — tap "Seed demo feed".',
-                      style: TextStyle(color: ConciergeColors.textDim),
-                    ),
-                  );
-                }
-                return ListView.builder(
-                  padding: const EdgeInsets.all(12),
-                  itemCount: items.length + 1,
-                  itemBuilder: (context, index) {
-                    if (index < items.length) {
-                      final item = items[index];
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Row(
-                          children: <Widget>[
-                            Text(
-                              '${index + 1}'.padLeft(2, '0'),
-                              style: const TextStyle(
-                                color: ConciergeColors.textDim,
-                                fontFeatures: <FontFeature>[
-                                  FontFeature.tabularFigures(),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                '${item['author'] ?? '—'}: ${item['text'] ?? ''}',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
+          ConvexQuery<int>(
+            query: 'messages:countPublic',
+            decode: (value) => (value as num).toInt(),
+            builder: (context, countSnap) {
+              final total = countSnap.data ?? 0;
+              return Container(
+                height: 340,
+                decoration: BoxDecoration(
+                  color: ConciergeColors.surfaceLowest.withValues(alpha: 0.6),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: ConciergeColors.cyan.withValues(alpha: 0.12),
+                  ),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: PaginatedQueryBuilder<Map<String, dynamic>>(
+                  query: 'messages:paginatePublic',
+                  pageSize: 10,
+                  fromJson: (json) => json,
+                  builder: (context, items, loadMore, status) {
+                    if (status == PaginationStatus.loading) {
+                      return const Center(
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      );
+                    }
+                    if (status == PaginationStatus.error) {
+                      return const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Text(
+                            'Failed to load — is messages:paginatePublic deployed?',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: ConciergeColors.danger),
+                          ),
                         ),
                       );
                     }
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      child: Center(
-                        child: switch (status) {
-                          PaginationStatus.allLoaded => const Text(
-                            '— end of feed —',
-                            style: TextStyle(color: ConciergeColors.textDim),
+                    if (items.isEmpty) {
+                      return const Center(
+                        child: Text(
+                          'Empty feed — tap "Seed demo feed".',
+                          style: TextStyle(color: ConciergeColors.textDim),
+                        ),
+                      );
+                    }
+                    return Column(
+                      children: <Widget>[
+                        _PaginationProgress(
+                          loaded: items.length,
+                          total: total,
+                          exhausted: status == PaginationStatus.allLoaded,
+                        ),
+                        Expanded(
+                          child: ListView.builder(
+                            padding: const EdgeInsets.all(12),
+                            itemCount: items.length + 1,
+                            itemBuilder: (context, index) {
+                              if (index < items.length) {
+                                final item = items[index];
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 4,
+                                  ),
+                                  child: Row(
+                                    children: <Widget>[
+                                      Text(
+                                        '${index + 1}'.padLeft(2, '0'),
+                                        style: const TextStyle(
+                                          color: ConciergeColors.textDim,
+                                          fontFeatures: <FontFeature>[
+                                            FontFeature.tabularFigures(),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Text(
+                                          '${item['author'] ?? '—'}: ${item['text'] ?? ''}',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                child: Center(
+                                  child: switch (status) {
+                                    PaginationStatus.allLoaded => const Text(
+                                      '— end of feed —',
+                                      style: TextStyle(
+                                        color: ConciergeColors.textDim,
+                                      ),
+                                    ),
+                                    PaginationStatus.loadingMore =>
+                                      const CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    _ => OutlinedButton(
+                                      onPressed: loadMore,
+                                      child: const Text('Load more'),
+                                    ),
+                                  },
+                                ),
+                              );
+                            },
                           ),
-                          PaginationStatus.loadingMore =>
-                            const CircularProgressIndicator(strokeWidth: 2),
-                          _ => OutlinedButton(
-                            onPressed: loadMore,
-                            child: const Text('Load more'),
-                          ),
-                        },
-                      ),
+                        ),
+                      ],
                     );
                   },
-                );
-              },
-            ),
+                ),
+              );
+            },
           ),
           const SizedBox(height: 12),
           const _WatchHint(
-            'Post a message: it appears at the top of the already-loaded first '
-            'page instantly — proof the loaded pages are live, not a one-shot read.',
+            'Counted by items, not pages: Convex pages are reactive and can '
+            'grow/shrink as data changes, so there is no fixed "page X of Y". '
+            'Post a message — it appears atop the loaded list instantly and the '
+            '"of N" total ticks up live.',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Item-based progress for the cursor pagination. Convex pagination is
+/// cursor-based with reactive, variable-size pages, so a "page X of Y" is not
+/// meaningful; this shows the exact "N of TOTAL" items instead (TOTAL comes from
+/// the companion `messages:countPublic` query).
+class _PaginationProgress extends StatelessWidget {
+  const _PaginationProgress({
+    required this.loaded,
+    required this.total,
+    required this.exhausted,
+  });
+
+  final int loaded;
+  final int total;
+  final bool exhausted;
+
+  @override
+  Widget build(BuildContext context) {
+    final known = total > 0;
+    final shown = known ? (loaded > total ? total : loaded) : loaded;
+    final fraction = known ? (loaded / total).clamp(0.0, 1.0) : null;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: ConciergeColors.cyan.withValues(alpha: 0.12),
+          ),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: <Widget>[
+              Text(
+                known ? 'Showing $shown of $total' : 'Showing $loaded',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: ConciergeColors.text,
+                ),
+              ),
+              Text(
+                exhausted ? 'all loaded' : 'more available',
+                style: TextStyle(
+                  color: exhausted
+                      ? ConciergeColors.success
+                      : ConciergeColors.cyanSoft,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12.5,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: fraction,
+              minHeight: 6,
+              backgroundColor: ConciergeColors.surfaceHigh,
+            ),
           ),
         ],
       ),
