@@ -1165,24 +1165,24 @@ class _AboutScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 22),
                     _AboutInfoLine(
-                      icon: Icons.copyright_rounded,
+                      icon: const Icon(Icons.copyright_rounded),
                       label: 'Copyright © 2026 André Frélicot',
                     ),
                     const SizedBox(height: 10),
                     const _AboutInfoLine(
-                      icon: Icons.balance_rounded,
+                      icon: Icon(Icons.balance_rounded),
                       label: 'MIT License',
                     ),
                     const SizedBox(height: 10),
                     const _AboutInfoLine(
-                      icon: Icons.link_rounded,
-                      label: _website,
+                      icon: _GitHubMarkIcon(),
+                      label: _github,
                       selectable: true,
                     ),
                     const SizedBox(height: 10),
                     const _AboutInfoLine(
-                      icon: Icons.code_rounded,
-                      label: _github,
+                      icon: Icon(Icons.link_rounded),
+                      label: _website,
                       selectable: true,
                     ),
                   ],
@@ -1203,12 +1203,15 @@ class _AboutInfoLine extends StatelessWidget {
     this.selectable = false,
   });
 
-  final IconData icon;
+  final Widget icon;
   final String label;
   final bool selectable;
 
   @override
   Widget build(BuildContext context) {
+    final iconColor = selectable
+        ? ConciergeColors.cyanSoft
+        : ConciergeColors.textMuted;
     final textStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
       color: selectable ? ConciergeColors.cyanSoft : ConciergeColors.textMuted,
       fontWeight: FontWeight.w700,
@@ -1216,12 +1219,13 @@ class _AboutInfoLine extends StatelessWidget {
     final content = Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        Icon(
-          icon,
-          size: 18,
-          color: selectable
-              ? ConciergeColors.cyanSoft
-              : ConciergeColors.textMuted,
+        SizedBox(
+          width: 18,
+          height: 18,
+          child: IconTheme(
+            data: IconThemeData(size: 18, color: iconColor),
+            child: icon,
+          ),
         ),
         const SizedBox(width: 10),
         Flexible(
@@ -1255,6 +1259,75 @@ class _AboutInfoLine extends StatelessWidget {
       ),
     );
   }
+}
+
+class _GitHubMarkIcon extends StatelessWidget {
+  const _GitHubMarkIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    final iconTheme = IconTheme.of(context);
+    return CustomPaint(
+      size: Size.square(iconTheme.size ?? 18),
+      painter: _GitHubMarkPainter(iconTheme.color ?? ConciergeColors.cyanSoft),
+    );
+  }
+}
+
+class _GitHubMarkPainter extends CustomPainter {
+  const _GitHubMarkPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+    final path = Path()
+      ..moveTo(10.226, 17.284)
+      ..relativeCubicTo(-2.965, -0.36, -5.054, -2.493, -5.054, -5.256)
+      ..relativeCubicTo(0, -1.123, 0.404, -2.336, 1.078, -3.144)
+      ..relativeCubicTo(-0.292, -0.741, -0.247, -2.314, 0.09, -2.965)
+      ..relativeCubicTo(0.898, -0.112, 2.111, 0.36, 2.83, 1.01)
+      ..relativeCubicTo(0.853, -0.269, 1.752, -0.404, 2.853, -0.404)
+      ..relativeCubicTo(1.1, 0, 1.999, 0.135, 2.807, 0.382)
+      ..relativeCubicTo(0.696, -0.629, 1.932, -1.1, 2.83, -0.988)
+      ..relativeCubicTo(0.315, 0.606, 0.36, 2.179, 0.067, 2.942)
+      ..relativeCubicTo(0.72, 0.854, 1.101, 2, 1.101, 3.167)
+      ..relativeCubicTo(0, 2.763, -2.089, 4.852, -5.098, 5.234)
+      ..relativeCubicTo(0.763, 0.494, 1.28, 1.572, 1.28, 2.807)
+      ..relativeLineTo(0, 2.336)
+      ..relativeCubicTo(0, 0.674, 0.561, 1.056, 1.235, 0.786)
+      ..relativeCubicTo(4.066, -1.55, 7.255, -5.615, 7.255, -10.646)
+      ..cubicTo(23.5, 6.188, 18.334, 1, 11.978, 1)
+      ..cubicTo(5.62, 1, 0.5, 6.188, 0.5, 12.545)
+      ..relativeCubicTo(0, 4.986, 3.167, 9.12, 7.435, 10.669)
+      ..relativeCubicTo(0.606, 0.225, 1.19, -0.18, 1.19, -0.786)
+      ..lineTo(9.125, 20.63)
+      ..relativeArcToPoint(
+        const Offset(-1.078, 0.224),
+        radius: const Radius.elliptical(2.9, 2.9),
+        clockwise: true,
+      )
+      ..relativeCubicTo(-1.483, 0, -2.359, -0.808, -2.987, -2.313)
+      ..relativeCubicTo(-0.247, -0.607, -0.517, -0.966, -1.034, -1.033)
+      ..relativeCubicTo(-0.27, -0.023, -0.359, -0.135, -0.359, -0.27)
+      ..relativeCubicTo(0, -0.27, 0.45, -0.471, 0.898, -0.471)
+      ..relativeCubicTo(0.652, 0, 1.213, 0.404, 1.797, 1.235)
+      ..relativeCubicTo(0.45, 0.651, 0.921, 0.943, 1.483, 0.943)
+      ..relativeCubicTo(0.561, 0, 0.92, -0.202, 1.437, -0.719)
+      ..relativeCubicTo(0.382, -0.381, 0.674, -0.718, 0.944, -0.943);
+
+    canvas.save();
+    canvas.scale(size.width / 24, size.height / 24);
+    canvas.drawPath(path, paint);
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_GitHubMarkPainter oldDelegate) =>
+      color != oldDelegate.color;
 }
 
 Future<void> _openExternalUrl(String rawUrl) async {
