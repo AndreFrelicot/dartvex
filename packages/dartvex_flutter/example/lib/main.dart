@@ -74,23 +74,35 @@ class ExampleHomePage extends StatelessWidget {
             children: <Widget>[
               Align(
                 alignment: Alignment.centerLeft,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.82),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 8,
+                child: Wrap(
+                  spacing: 12,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: <Widget>[
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.82),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 8,
+                        ),
+                        child: ConvexConnectionIndicator(
+                          connectedBuilder: (context) =>
+                              const Text('Connected'),
+                          connectingBuilder: (context) =>
+                              const Text('Connecting'),
+                          disconnectedBuilder: (context) =>
+                              const Text('Disconnected'),
+                        ),
+                      ),
                     ),
-                    child: ConvexConnectionIndicator(
-                      connectedBuilder: (context) => const Text('Connected'),
-                      connectingBuilder: (context) => const Text('Connecting'),
-                      disconnectedBuilder: (context) =>
-                          const Text('Disconnected'),
-                    ),
-                  ),
+                    // Shown only while the client is recovering auth after a
+                    // rejection. Backed by ConvexClient.authRefreshing.
+                    const AuthRefreshingBadge(),
+                  ],
                 ),
               ),
               const SizedBox(height: 24),
@@ -159,10 +171,61 @@ class ExampleHomePage extends StatelessWidget {
                   );
                 },
               ),
+              const SizedBox(height: 12),
+              OutlinedButton(
+                onPressed: () {
+                  final client = ConvexProvider.of(context);
+                  if (client is DemoRuntimeClient) {
+                    unawaited(client.simulateAuthRefresh());
+                  }
+                },
+                child: const Text('Simulate auth refresh'),
+              ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+/// A chip shown only while the client is refreshing auth after a rejection.
+///
+/// Demonstrates [ConvexAuthRefreshingBuilder] driven by
+/// `ConvexClient.authRefreshing`.
+class AuthRefreshingBadge extends StatelessWidget {
+  /// Creates an [AuthRefreshingBadge].
+  const AuthRefreshingBadge({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ConvexAuthRefreshingBuilder(
+      builder: (context, isRefreshing) {
+        if (!isRefreshing) {
+          return const SizedBox.shrink();
+        }
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF3CD),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 8),
+                Text('Authenticating…'),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -179,11 +242,14 @@ class DemoRuntimeClient implements ConvexRuntimeClient {
   }
 
   final StreamController<ConvexConnectionState> _connectionController;
+  final StreamController<bool> _authRefreshingController =
+      StreamController<bool>.broadcast(sync: true);
   final List<DemoRuntimeSubscription> _subscriptions =
       <DemoRuntimeSubscription>[];
   late List<String> _messages;
   ConvexConnectionState _currentConnectionState =
       ConvexConnectionState.connecting;
+  bool _currentAuthRefreshing = false;
   bool _disposed = false;
 
   @override
@@ -192,6 +258,12 @@ class DemoRuntimeClient implements ConvexRuntimeClient {
 
   @override
   ConvexConnectionState get currentConnectionState => _currentConnectionState;
+
+  @override
+  Stream<bool> get authRefreshing => _authRefreshingController.stream;
+
+  @override
+  bool get currentAuthRefreshing => _currentAuthRefreshing;
 
   @override
   Future<dynamic> action(
@@ -214,11 +286,29 @@ class DemoRuntimeClient implements ConvexRuntimeClient {
       subscription.cancel();
     }
     unawaited(_connectionController.close());
+    unawaited(_authRefreshingController.close());
   }
 
   void emitConnectionState(ConvexConnectionState state) {
     _currentConnectionState = state;
     _connectionController.add(state);
+  }
+
+  void emitAuthRefreshing(bool isRefreshing) {
+    _currentAuthRefreshing = isRefreshing;
+    _authRefreshingController.add(isRefreshing);
+  }
+
+  /// Simulates the client recovering auth after a server rejection: it flips to
+  /// "refreshing" briefly, the way a real reauth (stop socket, refetch token,
+  /// restart) would, then settles back.
+  Future<void> simulateAuthRefresh() async {
+    emitAuthRefreshing(true);
+    await Future<void>.delayed(const Duration(milliseconds: 1200));
+    if (_disposed) {
+      return;
+    }
+    emitAuthRefreshing(false);
   }
 
   @override
