@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   while the socket is stopped and a fresh token is fetched, `false` once it is
   confirmed. Use it to show an "authenticating…" indicator without surfacing the
   brief disconnect. Mirrors the official client's `AuthRefreshing` signal.
+- Protocol-level support for `Admin` auth with optional user impersonation
+  (`LocalSyncState.setAdminAuth`), including replay across reconnects. This is
+  wire-completeness groundwork only — there is intentionally no client-facing
+  admin API, since shipping an admin key in an app is a security hazard.
 
 ### Changed
 

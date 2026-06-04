@@ -248,4 +248,47 @@ void main() {
       expect(state.isCurrentOrNewerAuthVersion(1), isFalse);
     });
   });
+
+  group('LocalSyncState.setAdminAuth', () {
+    const impersonating = <String, dynamic>{'subject': 'user_123'};
+
+    test('produces an Admin Authenticate carrying the impersonation', () {
+      final state = LocalSyncState();
+      final auth = state.setAdminAuth(
+        value: 'admin-key',
+        impersonating: impersonating,
+      );
+
+      expect(auth.tokenType, 'Admin');
+      expect(auth.value, 'admin-key');
+      expect(auth.impersonating, impersonating);
+      expect(auth.baseVersion, 0);
+      expect(state.authVersion, 1);
+      expect(state.hasAuth, isTrue);
+
+      // The wire form includes the impersonation attributes.
+      final json = auth.toJson();
+      expect(json['tokenType'], 'Admin');
+      expect(json['impersonating'], impersonating);
+    });
+
+    test('re-emits Admin auth with impersonation on reconnect', () {
+      final state = LocalSyncState();
+      state.setAdminAuth(value: 'admin-key', impersonating: impersonating);
+
+      final messages = state.prepareReconnect(const <int>{});
+      final authenticate = messages.whereType<Authenticate>().single;
+      expect(authenticate.tokenType, 'Admin');
+      expect(authenticate.value, 'admin-key');
+      expect(authenticate.impersonating, impersonating);
+    });
+
+    test('admin auth without impersonation omits the field on the wire', () {
+      final state = LocalSyncState();
+      final auth = state.setAdminAuth(value: 'admin-key');
+
+      expect(auth.impersonating, isNull);
+      expect(auth.toJson().containsKey('impersonating'), isFalse);
+    });
+  });
 }

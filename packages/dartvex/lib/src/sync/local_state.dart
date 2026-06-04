@@ -5,16 +5,24 @@ import '../protocol/messages.dart';
 import '../values/json_codec.dart';
 
 class AuthState {
-  const AuthState({required this.tokenType, required this.value});
+  const AuthState({
+    required this.tokenType,
+    required this.value,
+    this.impersonating,
+  });
 
   final String tokenType;
   final String? value;
+
+  /// Identity attributes an `Admin` token is impersonating, if any.
+  final Map<String, dynamic>? impersonating;
 
   Authenticate toAuthenticate(int baseVersion) {
     return Authenticate(
       tokenType: tokenType,
       baseVersion: baseVersion,
       value: value,
+      impersonating: impersonating,
     );
   }
 }
@@ -266,6 +274,35 @@ class LocalSyncState {
     _paused = false;
     _pendingQuerySetModifications.clear();
     return (querySet, authenticate);
+  }
+
+  /// Sets an `Admin` auth token, optionally impersonating a user identity, and
+  /// returns the resulting [Authenticate] message.
+  ///
+  /// Protocol-level support only: there is intentionally no client-facing admin
+  /// API, since shipping an admin/deploy key in an app is a security hazard. The
+  /// impersonation attributes survive a reconnect via [prepareReconnect]. While
+  /// paused, the identity version is held until [resume], as with [setAuth].
+  /// Mirrors the official client's `setAdminAuth`.
+  Authenticate setAdminAuth({
+    required String value,
+    Map<String, dynamic>? impersonating,
+  }) {
+    _authState = AuthState(
+      tokenType: 'Admin',
+      value: value,
+      impersonating: impersonating,
+    );
+    final baseVersion = authVersion;
+    if (!_paused) {
+      authVersion += 1;
+    }
+    return Authenticate(
+      tokenType: 'Admin',
+      baseVersion: baseVersion,
+      value: value,
+      impersonating: impersonating,
+    );
   }
 
   void restoreAuth({required String tokenType, String? value}) {
