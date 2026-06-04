@@ -42,6 +42,10 @@ class RequestManager {
       <int, _PendingMutation>{};
   final Map<int, _PendingAction> _pendingActions = <int, _PendingAction>{};
 
+  /// Request ids that were in flight when [prepareReconnect] was last called
+  /// and have not yet been resolved. Backs [hasSyncedPastLastReconnect].
+  final Set<int> _requestsOlderThanRestart = <int>{};
+
   Future<dynamic> trackMutation(Mutation message, {bool sent = false}) {
     final completer = Completer<dynamic>();
     _pendingMutations[message.requestId] = _PendingMutation(
@@ -64,6 +68,7 @@ class RequestManager {
 
   void cancelMutation(int requestId, Object error) {
     final pending = _pendingMutations.remove(requestId);
+    _requestsOlderThanRestart.remove(requestId);
     if (pending == null || pending.completer.isCompleted) {
       return;
     }
@@ -72,6 +77,7 @@ class RequestManager {
 
   void cancelAction(int requestId, Object error) {
     final pending = _pendingActions.remove(requestId);
+    _requestsOlderThanRestart.remove(requestId);
     if (pending == null || pending.completer.isCompleted) {
       return;
     }
@@ -126,6 +132,7 @@ class RequestManager {
         ),
       );
       _pendingMutations.remove(response.requestId);
+      _requestsOlderThanRestart.remove(response.requestId);
       return;
     }
 
@@ -135,6 +142,7 @@ class RequestManager {
     if (response.ts == null) {
       pending.completer.complete(response.result);
       _pendingMutations.remove(response.requestId);
+      _requestsOlderThanRestart.remove(response.requestId);
       return;
     }
 
@@ -143,11 +151,13 @@ class RequestManager {
         compareEncodedTs(response.ts!, appliedTransitionTs) <= 0) {
       pending.completer.complete(pending.result);
       _pendingMutations.remove(response.requestId);
+      _requestsOlderThanRestart.remove(response.requestId);
     }
   }
 
   void handleActionResponse(ActionResponse response) {
     final pending = _pendingActions.remove(response.requestId);
+    _requestsOlderThanRestart.remove(response.requestId);
     if (pending == null) {
       return;
     }
@@ -182,6 +192,7 @@ class RequestManager {
     });
     for (final requestId in completedIds) {
       _pendingMutations.remove(requestId);
+      _requestsOlderThanRestart.remove(requestId);
     }
   }
 
@@ -191,6 +202,13 @@ class RequestManager {
     );
   }
 
+  /// Re-queues the requests to replay on a fresh connection and records them as
+  /// outstanding since the restart.
+  ///
+  /// In-flight actions that were already sent are failed (they are not
+  /// idempotent); every replayed request — all mutations plus unsent actions —
+  /// is added to the set behind [hasSyncedPastLastReconnect] until its response
+  /// or read-your-writes transition resolves it.
   List<ClientMessage> prepareReconnect() {
     _failRequestedActions('Connection lost while action was in flight');
     final messagesByRequestId = <int, ClientMessage>{
@@ -200,6 +218,9 @@ class RequestManager {
         if (entry.value.status == _RequestStatus.notSent)
           entry.key: entry.value.message,
     };
+    _requestsOlderThanRestart
+      ..clear()
+      ..addAll(messagesByRequestId.keys);
     final requestIds = messagesByRequestId.keys.toList(growable: false)..sort();
     return <ClientMessage>[
       for (final requestId in requestIds) messagesByRequestId[requestId]!,
@@ -208,6 +229,13 @@ class RequestManager {
 
   bool get hasPendingRequests =>
       _pendingMutations.isNotEmpty || _pendingActions.isNotEmpty;
+
+  /// Whether every request that predates the most recent reconnect has been
+  /// resolved.
+  ///
+  /// Returns `true` when no request is still awaiting a server response (or
+  /// read-your-writes transition) from before the last [prepareReconnect].
+  bool hasSyncedPastLastReconnect() => _requestsOlderThanRestart.isEmpty;
 
   void failAll(String message) {
     final error = ConvexException(message);
@@ -223,6 +251,7 @@ class RequestManager {
     }
     _pendingMutations.clear();
     _pendingActions.clear();
+    _requestsOlderThanRestart.clear();
   }
 
   void _failRequestedActions(String message) {
@@ -241,6 +270,7 @@ class RequestManager {
     }
     for (final requestId in failedRequestIds) {
       _pendingActions.remove(requestId);
+      _requestsOlderThanRestart.remove(requestId);
     }
   }
 }

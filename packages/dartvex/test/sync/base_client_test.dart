@@ -423,4 +423,123 @@ void main() {
           (querySet.modifications.single as Add).queryId, registration.queryId);
     });
   });
+
+  group('BaseClient.hasSyncedPastLastReconnect', () {
+    test('a fresh client is synced', () {
+      expect(BaseClient().hasSyncedPastLastReconnect, isTrue);
+    });
+
+    test('unsynced after reconnect until queries and auth are confirmed', () {
+      final client = BaseClient();
+      client.subscribe('messages:list', const <String, dynamic>{
+        'channel': 'general',
+      });
+      client.setAuth(tokenType: 'User', token: 'token-123');
+      client.drainOutgoing();
+      expect(client.hasSyncedPastLastReconnect, isTrue);
+
+      // The query has no prior remote result and auth is re-sent, so both are
+      // outstanding after the restart.
+      final reconnect = client.prepareReconnect();
+      expect(client.hasSyncedPastLastReconnect, isFalse);
+
+      final querySet = reconnect.whereType<ModifyQuerySet>().single;
+      final queryId = (querySet.modifications.single as Add).queryId;
+
+      // Confirm the query (querySet 0 -> 1); auth still outstanding.
+      client.receive(
+        Transition(
+          startVersion: const StateVersion.initial(),
+          endVersion: StateVersion(querySet: 1, identity: 0, ts: encodeTs(1)),
+          modifications: <StateModification>[
+            QueryUpdated(
+              queryId: queryId,
+              value: const <String, dynamic>{'body': 'hi'},
+            ),
+          ],
+        ),
+      );
+      expect(client.hasSyncedPastLastReconnect, isFalse);
+
+      // Confirm auth via an identity-advancing transition (identity 0 -> 1).
+      client.receive(
+        Transition(
+          startVersion: StateVersion(querySet: 1, identity: 0, ts: encodeTs(1)),
+          endVersion: StateVersion(querySet: 1, identity: 1, ts: encodeTs(2)),
+          modifications: const <StateModification>[],
+        ),
+      );
+      expect(client.hasSyncedPastLastReconnect, isTrue);
+    });
+
+    test('unsynced after reconnect until in-flight requests resolve', () async {
+      final client = BaseClient();
+      final future = client.mutate('messages:send', const <String, dynamic>{
+        'body': 'hi',
+      });
+      client.drainOutgoing();
+      expect(client.hasSyncedPastLastReconnect, isTrue);
+
+      // The mutation is re-queued by the reconnect, so the request side is
+      // outstanding even though there are no queries or auth.
+      client.prepareReconnect();
+      expect(client.hasSyncedPastLastReconnect, isFalse);
+
+      client.receive(
+        MutationResponse(
+          requestId: 0,
+          success: true,
+          result: const <String, dynamic>{'ok': true},
+          ts: encodeTs(4),
+        ),
+      );
+      expect(client.hasSyncedPastLastReconnect, isFalse);
+
+      client.receive(
+        Transition(
+          startVersion: const StateVersion.initial(),
+          endVersion: StateVersion(querySet: 0, identity: 0, ts: encodeTs(4)),
+          modifications: const <StateModification>[],
+        ),
+      );
+      expect(client.hasSyncedPastLastReconnect, isTrue);
+      expect(await future, const <String, dynamic>{'ok': true});
+    });
+
+    test('both the query side and the request side must be synced', () {
+      final client = BaseClient();
+      client.subscribe('messages:list', const <String, dynamic>{
+        'channel': 'general',
+      });
+      unawaited(
+        client.mutate('messages:send', const <String, dynamic>{'body': 'hi'}),
+      );
+      client.drainOutgoing();
+
+      final reconnect = client.prepareReconnect();
+      expect(client.hasSyncedPastLastReconnect, isFalse);
+
+      final querySet = reconnect.whereType<ModifyQuerySet>().single;
+      final queryId = (querySet.modifications.single as Add).queryId;
+
+      // Confirm the query but leave the mutation pending.
+      client.receive(
+        Transition(
+          startVersion: const StateVersion.initial(),
+          endVersion: StateVersion(querySet: 1, identity: 0, ts: encodeTs(1)),
+          modifications: <StateModification>[
+            QueryUpdated(
+              queryId: queryId,
+              value: const <String, dynamic>{'body': 'hi'},
+            ),
+          ],
+        ),
+      );
+
+      // The local (query/auth) side is synced, but the combined flag stays
+      // false because a request is still in flight.
+      expect(client.localState.hasSyncedPastLastReconnect(), isTrue);
+      expect(client.hasSyncedPastLastReconnect, isFalse);
+    });
+  });
 }

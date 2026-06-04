@@ -80,6 +80,26 @@ class BaseClient {
 
   int get authVersion => _localState.authVersion;
 
+  /// Whether the client has fully re-synced after the most recent reconnect.
+  ///
+  /// Combines the local query/auth tracking with the request tracking: it is
+  /// `true` only once every query, auth update, and request that predated the
+  /// last [prepareReconnect] has been confirmed by the server.
+  ///
+  /// This is package-internal plumbing — it is intentionally not surfaced on
+  /// the public `ConvexClient` API (rich connection state is a later
+  /// workstream) — consumed by the reconnect and auth layers to decide when a
+  /// connection has proven itself.
+  ///
+  /// Note: the official Convex JS client combines these two signals with `||`,
+  /// reporting "synced" as soon as either side is clear, so a query-only client
+  /// appears synced before its first post-reconnect result. dartvex uses `&&`
+  /// so the flag reflects *all* outstanding work, matching the documented
+  /// intent of the signal.
+  bool get hasSyncedPastLastReconnect =>
+      _localState.hasSyncedPastLastReconnect() &&
+      _requestManager.hasSyncedPastLastReconnect();
+
   final Map<String, StoredQueryResult> _resultCacheByToken =
       <String, StoredQueryResult>{};
 
@@ -172,8 +192,12 @@ class BaseClient {
 
   List<ClientMessage> prepareReconnect() {
     _outgoing.clear();
+    // Capture which queries already have a remote result before we throw the
+    // remote query set away, so the local state only marks the queries that
+    // still need a fresh result as outstanding since this restart.
+    final oldRemoteQueryResults = _remoteQuerySet.resultQueryIds;
     _remoteQuerySet.reset();
-    _outgoing.addAll(_localState.prepareReconnect());
+    _outgoing.addAll(_localState.prepareReconnect(oldRemoteQueryResults));
     _outgoing.addAll(_requestManager.prepareReconnect());
     return drainOutgoing(assumeSent: false);
   }
@@ -242,21 +266,7 @@ class BaseClient {
         try {
           final deltas = _remoteQuerySet.applyTransition(message);
           _localState.observeTimestamp(message.endVersion.ts);
-          for (final modification in message.modifications) {
-            switch (modification) {
-              case QueryUpdated():
-                _localState.updateJournal(
-                  modification.queryId,
-                  modification.journal,
-                );
-              case QueryFailed():
-                _localState.updateJournal(
-                  modification.queryId,
-                  modification.journal,
-                );
-              case QueryRemoved():
-            }
-          }
+          _localState.transition(message);
           _requestManager.resolveMutationsUpTo(message.endVersion.ts);
           for (final delta in deltas) {
             if (delta.removed) {
@@ -272,6 +282,7 @@ class BaseClient {
             }
           }
           if (message.endVersion.identity > message.startVersion.identity) {
+            _localState.markAuthCompletion();
             events.add(
               AuthConfirmedEvent(isAuthenticated: _localState.hasAuth),
             );

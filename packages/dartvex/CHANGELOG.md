@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ConnectivitySignal` and `ConvexClientConfig.connectivitySignal` to reconnect
   immediately when the device regains network connectivity, cancelling any
   in-progress backoff.
+- Internal post-reconnect sync tracking (`hasSyncedPastLastReconnect`) across
+  the local sync state, request manager, and base client: the client now knows
+  when every query, auth update, and request issued before a reconnect has been
+  confirmed by the server. This is package-internal groundwork for upcoming
+  backoff-reset and auth-gating work and is not part of the public API.
 
 ### Changed
 

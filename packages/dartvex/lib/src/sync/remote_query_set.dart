@@ -44,6 +44,13 @@ class RemoteQuerySet {
 
   StoredQueryResult? resultFor(int queryId) => _results[queryId];
 
+  /// The set of query ids that currently hold a remote result.
+  ///
+  /// Captured before [reset] during a reconnect so the sync layer can tell
+  /// which re-issued queries already have data and which are still outstanding
+  /// (see `LocalSyncState.prepareReconnect`).
+  Set<int> get resultQueryIds => _results.keys.toSet();
+
   void reset() {
     _version = const StateVersion.initial();
     _results.clear();

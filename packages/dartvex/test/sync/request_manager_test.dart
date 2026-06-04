@@ -1,0 +1,138 @@
+import 'dart:async';
+
+import 'package:dartvex/src/exceptions.dart';
+import 'package:dartvex/src/protocol/encoding.dart';
+import 'package:dartvex/src/protocol/messages.dart';
+import 'package:dartvex/src/sync/request_manager.dart';
+import 'package:test/test.dart';
+
+void main() {
+  group('RequestManager.hasSyncedPastLastReconnect', () {
+    Mutation mutation(int requestId) => Mutation(
+          requestId: requestId,
+          udfPath: 'messages:send',
+          args: const <dynamic>[],
+        );
+    Action action(int requestId) => Action(
+          requestId: requestId,
+          udfPath: 'messages:notify',
+          args: const <dynamic>[],
+        );
+
+    test('starts synced with no requests', () {
+      final manager = RequestManager();
+      expect(manager.hasSyncedPastLastReconnect(), isTrue);
+    });
+
+    test('mutation: unsynced after restart until the transition catches up',
+        () async {
+      final manager = RequestManager();
+      final future = manager.trackMutation(mutation(0), sent: true);
+
+      // A response arrives but is held for read-your-writes. No restart yet.
+      manager.handleMutationResponse(
+        MutationResponse(
+          requestId: 0,
+          success: true,
+          result: 'ok',
+          ts: encodeTs(4),
+        ),
+      );
+      expect(manager.hasSyncedPastLastReconnect(), isTrue);
+
+      // Reconnect re-requests the still-pending mutation.
+      final replay = manager.prepareReconnect();
+      expect(replay.single, isA<Mutation>());
+      expect(manager.hasSyncedPastLastReconnect(), isFalse);
+
+      // A duplicate response does not resolve it on its own.
+      manager.handleMutationResponse(
+        MutationResponse(
+          requestId: 0,
+          success: true,
+          result: 'duplicate',
+          ts: encodeTs(4),
+        ),
+      );
+      expect(manager.hasSyncedPastLastReconnect(), isFalse);
+
+      // Transitioning past the mutation timestamp resolves it.
+      manager.resolveMutationsUpTo(encodeTs(5));
+      expect(manager.hasSyncedPastLastReconnect(), isTrue);
+      expect(await future, 'ok');
+    });
+
+    test('sent actions are dropped on restart; unsent actions stay outstanding',
+        () async {
+      final manager = RequestManager();
+      final sentFuture = manager.trackAction(action(0), sent: true);
+      final unsentFuture = manager.trackAction(action(1), sent: false);
+      final sentExpectation =
+          expectLater(sentFuture, throwsA(isA<ConvexException>()));
+
+      // Only the unsent action is replayed, and it is outstanding since the
+      // restart.
+      final replay = manager.prepareReconnect();
+      expect(replay.single, isA<Action>());
+      expect((replay.single as Action).requestId, 1);
+      expect(manager.hasSyncedPastLastReconnect(), isFalse);
+
+      await sentExpectation;
+
+      // Its response clears the outstanding entry.
+      manager.handleActionResponse(
+        const ActionResponse(requestId: 1, success: true, result: 'done'),
+      );
+      expect(manager.hasSyncedPastLastReconnect(), isTrue);
+      expect(await unsentFuture, 'done');
+    });
+
+    test('a failed mutation response clears the outstanding entry', () async {
+      final manager = RequestManager();
+      final future = manager.trackMutation(mutation(0), sent: true);
+      unawaited(future.catchError((Object _) => null));
+
+      manager.prepareReconnect();
+      expect(manager.hasSyncedPastLastReconnect(), isFalse);
+
+      manager.handleMutationResponse(
+        const MutationResponse(
+          requestId: 0,
+          success: false,
+          errorMessage: 'boom',
+        ),
+      );
+      expect(manager.hasSyncedPastLastReconnect(), isTrue);
+    });
+
+    test('cancelling a request clears the outstanding entry', () async {
+      final manager = RequestManager();
+      final future = manager.trackMutation(mutation(0), sent: true);
+      unawaited(future.catchError((Object _) => null));
+
+      manager.prepareReconnect();
+      expect(manager.hasSyncedPastLastReconnect(), isFalse);
+
+      manager.cancelMutation(0, TimeoutException('timed out'));
+      expect(manager.hasSyncedPastLastReconnect(), isTrue);
+    });
+
+    test('failAll clears the outstanding entries', () {
+      final manager = RequestManager();
+      final future = manager.trackMutation(mutation(0), sent: true);
+      unawaited(future.catchError((Object _) => null));
+
+      manager.prepareReconnect();
+      expect(manager.hasSyncedPastLastReconnect(), isFalse);
+
+      manager.failAll('ConvexClient has been disposed');
+      expect(manager.hasSyncedPastLastReconnect(), isTrue);
+    });
+
+    test('an actionless, mutationless restart stays synced', () {
+      final manager = RequestManager();
+      manager.prepareReconnect();
+      expect(manager.hasSyncedPastLastReconnect(), isTrue);
+    });
+  });
+}
