@@ -340,6 +340,38 @@ void main() {
       await manager.dispose();
     });
 
+    test('connect watchdog times out a hanging connect and retries', () async {
+      final adapter = _HangingThenConnectingAdapter();
+      final disconnectReasons = <String>[];
+      final manager = WebSocketManager(
+        adapter: adapter,
+        deploymentUrl: 'https://demo.convex.cloud',
+        apiVersion: '0.1.0',
+        onConnected: () => const <ClientMessage>[],
+        onMessage: (_) => const <ClientMessage>[],
+        onDisconnected: (reason) async {
+          disconnectReasons.add(reason);
+        },
+        onConnectionStateChanged: (_, __) {},
+        maxObservedTimestamp: () => null,
+        reconnectBackoff: const <Duration>[Duration.zero],
+        inactivityTimeout: const Duration(seconds: 30),
+        connectTimeout: const Duration(milliseconds: 50),
+      );
+
+      await manager.start();
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+
+      expect(adapter.connectAttempts, 2);
+      expect(disconnectReasons.single, startsWith('ConnectTimeout'));
+      final connectMessages = adapter.decodedSentMessages
+          .where((message) => message['type'] == 'Connect')
+          .toList(growable: false);
+      expect(connectMessages, hasLength(1));
+
+      await manager.dispose();
+    });
+
     test('reports metrics for direct transitions with timing fields', () async {
       final adapter = MockWebSocketAdapter();
       final metrics = <TransitionMetrics>[];
@@ -551,6 +583,65 @@ class _ThrowingSendAdapter extends MockWebSocketAdapter {
     }
     super.send(message);
   }
+}
+
+class _HangingThenConnectingAdapter implements WebSocketAdapter {
+  final StreamController<String> _messagesController =
+      StreamController<String>.broadcast();
+  final StreamController<WebSocketCloseEvent> _closeController =
+      StreamController<WebSocketCloseEvent>.broadcast(sync: true);
+  final Completer<void> _firstHang = Completer<void>();
+
+  final List<String> sentMessages = <String>[];
+  final List<String> connectedUrls = <String>[];
+  int connectAttempts = 0;
+  bool _connected = false;
+
+  @override
+  Future<void> connect(String url) async {
+    connectedUrls.add(url);
+    connectAttempts += 1;
+    if (connectAttempts == 1) {
+      // Never completes until close() aborts it, simulating a dead handshake.
+      await _firstHang.future;
+      return;
+    }
+    _connected = true;
+  }
+
+  @override
+  void send(String message) {
+    if (!_connected) {
+      throw StateError('Mock socket is disconnected');
+    }
+    sentMessages.add(message);
+  }
+
+  List<Map<String, dynamic>> get decodedSentMessages {
+    return sentMessages
+        .map((message) => jsonDecode(message) as Map<String, dynamic>)
+        .toList(growable: false);
+  }
+
+  @override
+  Stream<String> get messages => _messagesController.stream;
+
+  @override
+  Stream<WebSocketCloseEvent> get closeEvents => _closeController.stream;
+
+  @override
+  Future<void> close() async {
+    if (!_firstHang.isCompleted) {
+      _firstHang.complete();
+    }
+    if (_connected) {
+      _connected = false;
+      _closeController.add(const WebSocketCloseEvent());
+    }
+  }
+
+  @override
+  bool get isConnected => _connected;
 }
 
 class _FailingThenConnectingAdapter implements WebSocketAdapter {

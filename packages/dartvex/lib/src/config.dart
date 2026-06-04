@@ -12,6 +12,7 @@ class ConvexClientConfig {
     this.apiVersion = '0.1.0',
     this.authTokenType = 'User',
     this.inactivityTimeout = const Duration(seconds: 30),
+    this.connectTimeout = const Duration(seconds: 10),
     this.queryTimeout,
     this.mutationTimeout,
     this.actionTimeout,
@@ -40,6 +41,14 @@ class ConvexClientConfig {
 
   /// Maximum time to wait for server messages before reconnecting.
   final Duration inactivityTimeout;
+
+  /// Maximum time to wait for the WebSocket handshake to complete before
+  /// abandoning the attempt and scheduling a reconnect.
+  ///
+  /// Without this bound, a dead connection (for example after a network drop)
+  /// can hang on the platform's TCP connect timeout for tens of seconds,
+  /// blocking every reconnect attempt until the operating system gives up.
+  final Duration connectTimeout;
 
   /// Optional maximum wait for [ConvexClient.query] before cancelling the
   /// temporary subscription and completing with a `TimeoutException`.

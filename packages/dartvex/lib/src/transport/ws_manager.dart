@@ -67,6 +67,7 @@ class WebSocketManager {
     required this.maxObservedTimestamp,
     required this.reconnectBackoff,
     required this.inactivityTimeout,
+    this.connectTimeout = const Duration(seconds: 10),
     this.onMessagesSent,
     this.onTransitionMetrics,
     this.logLevel = DartvexLogLevel.off,
@@ -105,6 +106,10 @@ class WebSocketManager {
 
   /// Maximum idle duration before forcing a reconnect.
   final Duration inactivityTimeout;
+
+  /// Maximum duration to wait for the socket handshake before abandoning the
+  /// attempt and scheduling a reconnect.
+  final Duration connectTimeout;
 
   /// Optional callback that receives transition performance metrics.
   final TransitionMetricsCallback? onTransitionMetrics;
@@ -244,7 +249,7 @@ class WebSocketManager {
     );
     onConnectionStateChanged(false, true);
     try {
-      await adapter.connect(_buildWebSocketUrl());
+      await adapter.connect(_buildWebSocketUrl()).timeout(connectTimeout);
       if (_disposed) {
         await adapter.close();
         return;
@@ -273,12 +278,28 @@ class WebSocketManager {
       onConnectionStateChanged(true, false);
     } catch (error) {
       _connecting = false;
+      final timedOut = error is TimeoutException;
+      if (timedOut) {
+        // Abort the half-open connect so it cannot open in the background after
+        // we have already moved on to scheduling a reconnect.
+        try {
+          await adapter.close();
+        } catch (_) {
+          // Best effort; the socket is being discarded regardless.
+        }
+      }
       _log(
         DartvexLogLevel.error,
         'WebSocket connection failed',
         error: error,
       );
-      await _handleClosed(WebSocketCloseEvent(errorMessage: error.toString()));
+      await _handleClosed(
+        WebSocketCloseEvent(
+          errorMessage: timedOut
+              ? 'ConnectTimeout after ${connectTimeout.inMilliseconds}ms'
+              : error.toString(),
+        ),
+      );
     }
   }
 
