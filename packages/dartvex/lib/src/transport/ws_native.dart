@@ -18,14 +18,22 @@ class NativeWebSocketAdapter implements WebSocketAdapter {
       StreamController<WebSocketCloseEvent>.broadcast();
 
   WebSocket? _socket;
+  int _connectGeneration = 0;
 
   @override
   Future<void> connect(String url) async {
     await close();
+    final generation = ++_connectGeneration;
     final socket = await WebSocket.connect(
       url,
       headers: <String, dynamic>{'Convex-Client': clientId},
     );
+    if (generation != _connectGeneration) {
+      // A newer connect() or close() superseded this attempt (for example after
+      // a connect-timeout). Discard the late socket instead of leaking it.
+      unawaited(socket.close());
+      return;
+    }
     _socket = socket;
     var closeEventEmitted = false;
     void emitClose(WebSocketCloseEvent event) {
@@ -93,6 +101,7 @@ class NativeWebSocketAdapter implements WebSocketAdapter {
 
   @override
   Future<void> close() async {
+    _connectGeneration++;
     final socket = _socket;
     _socket = null;
     if (socket != null) {
