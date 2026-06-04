@@ -207,11 +207,32 @@ class WebSocketManager {
   _SocketPauseState _pauseState = _SocketPauseState.no;
   int _connectionCount = 0;
   int _reconnectIndex = 0;
+  bool _hasEverConnected = false;
   String _lastCloseReason = 'InitialConnect';
   String? _pendingCloseReason;
 
   /// Whether the socket adapter is currently connected.
   bool get isConnected => adapter.isConnected;
+
+  /// Whether the socket has ever reached the connected (ready) state.
+  ///
+  /// Once `true` it stays `true`, distinguishing "never connected yet" from
+  /// "disconnected after a successful connection". Mirrors the official
+  /// client's `hasEverConnected`.
+  bool get hasEverConnected => _hasEverConnected;
+
+  /// The number of times the socket has reconnected, as carried by [Connect].
+  ///
+  /// Incremented on each disconnect; a high value signals an unstable
+  /// connection.
+  int get connectionCount => _connectionCount;
+
+  /// The current reconnect-backoff retry index.
+  ///
+  /// Counts connect attempts since the last successful re-sync and is reset to
+  /// zero once the client has caught up (see [hasSyncedPastLastReconnect]).
+  /// Mirrors the official client's `connectionRetries`.
+  int get connectionRetries => _reconnectIndex;
 
   /// Starts the WebSocket lifecycle.
   Future<void> start() async {
@@ -264,6 +285,13 @@ class WebSocketManager {
       return;
     }
     onMessagesSent?.call(List<ClientMessage>.unmodifiable(messages));
+  }
+
+  /// Records that the socket reached the connected (ready) state and publishes
+  /// the connected transition. Sets [hasEverConnected] on the first success.
+  void _markConnected() {
+    _hasEverConnected = true;
+    onConnectionStateChanged(true, false);
   }
 
   /// Forces a reconnect using [reason] as the last close reason.
@@ -388,7 +416,7 @@ class WebSocketManager {
       if (!adapter.isConnected) {
         return;
       }
-      onConnectionStateChanged(true, false);
+      _markConnected();
     } catch (error) {
       _connecting = false;
       final timedOut = error is TimeoutException;
@@ -467,7 +495,7 @@ class WebSocketManager {
             'handshake');
         await _sendInitialMessages();
         if (adapter.isConnected) {
-          onConnectionStateChanged(true, false);
+          _markConnected();
         }
       case _SocketPauseState.yes:
         _pauseState = _SocketPauseState.no;

@@ -154,6 +154,82 @@ void main() {
       await manager.dispose();
     });
 
+    test('exposes hasEverConnected, connectionCount, and connectionRetries',
+        () async {
+      final adapter = MockWebSocketAdapter();
+      final manager = WebSocketManager(
+        adapter: adapter,
+        deploymentUrl: 'https://demo.convex.cloud',
+        apiVersion: '0.1.0',
+        onConnected: () => const <ClientMessage>[],
+        onMessage: (_) => const <ClientMessage>[],
+        onDisconnected: (_) async {},
+        onConnectionStateChanged: (_, __) {},
+        maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => false,
+        reconnectBackoff: const <Duration>[],
+        initialBackoff: Duration.zero,
+        backoffJitter: 0,
+        inactivityTimeout: const Duration(seconds: 30),
+      );
+
+      expect(manager.hasEverConnected, isFalse);
+      expect(manager.connectionCount, 0);
+      expect(manager.connectionRetries, 0);
+
+      await manager.start();
+      expect(manager.hasEverConnected, isTrue);
+      expect(manager.connectionCount, 0);
+
+      // A disconnect reconnects (zero backoff): the count tracks the reconnect
+      // and the retry index climbs because the client never re-syncs here.
+      adapter.disconnect();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(manager.connectionCount, 1);
+      expect(manager.connectionRetries, 1);
+      expect(manager.hasEverConnected, isTrue);
+
+      await manager.dispose();
+    });
+
+    test('connectionRetries resets once synced past the last reconnect',
+        () async {
+      final adapter = MockWebSocketAdapter();
+      var synced = false;
+      final manager = WebSocketManager(
+        adapter: adapter,
+        deploymentUrl: 'https://demo.convex.cloud',
+        apiVersion: '0.1.0',
+        onConnected: () => const <ClientMessage>[],
+        onMessage: (_) => const <ClientMessage>[],
+        onDisconnected: (_) async {},
+        onConnectionStateChanged: (_, __) {},
+        maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => synced,
+        reconnectBackoff: const <Duration>[],
+        initialBackoff: Duration.zero,
+        backoffJitter: 0,
+        inactivityTimeout: const Duration(seconds: 30),
+      );
+
+      await manager.start();
+      adapter.disconnect();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(manager.connectionRetries, 1);
+
+      // Once the client reports it has caught up, the next handled message
+      // resets the retry counter.
+      synced = true;
+      adapter.pushServerMessage(
+        const ActionResponse(requestId: 0, success: true, result: 'ok')
+            .toJson(),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(manager.connectionRetries, 0);
+
+      await manager.dispose();
+    });
+
     test('propagates close metadata into reconnect diagnostics', () async {
       final adapter = MockWebSocketAdapter();
       final events = <DartvexLogEvent>[];
