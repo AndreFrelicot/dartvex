@@ -106,21 +106,32 @@ class RequestManager {
     }
   }
 
-  void handleMutationResponse(MutationResponse response) {
-    handleMutationResponseWithAppliedTransition(response);
+  List<int> handleMutationResponse(MutationResponse response) {
+    return handleMutationResponseWithAppliedTransition(response);
   }
 
-  void handleMutationResponseWithAppliedTransition(
+  /// Applies a mutation [response] and returns the request ids whose optimistic
+  /// update should now be dropped.
+  ///
+  /// A layer drops the instant its mutation resolves: immediately on failure
+  /// (rollback) or on a ts-less success, and — for read-your-writes — only once
+  /// the transition carrying the mutation's ts has been observed. When the
+  /// response's ts is still in the future the mutation is parked
+  /// (`completedMutationAwaitingTransition`) with its layer intact, and the
+  /// empty list is returned; [resolveMutationsUpTo] drops it later. If
+  /// [appliedTransitionTs] already covers the response ts (the transition raced
+  /// ahead of the response), it resolves and drops here instead.
+  List<int> handleMutationResponseWithAppliedTransition(
     MutationResponse response, {
     String? appliedTransitionTs,
   }) {
     final pending = _pendingMutations[response.requestId];
     if (pending == null) {
-      return;
+      return const <int>[];
     }
 
     if (pending.status == _RequestStatus.completedMutationAwaitingTransition) {
-      return;
+      return const <int>[];
     }
 
     if (!response.success) {
@@ -133,7 +144,7 @@ class RequestManager {
       );
       _pendingMutations.remove(response.requestId);
       _requestsOlderThanRestart.remove(response.requestId);
-      return;
+      return <int>[response.requestId];
     }
 
     pending.result = response.result;
@@ -143,7 +154,7 @@ class RequestManager {
       pending.completer.complete(response.result);
       _pendingMutations.remove(response.requestId);
       _requestsOlderThanRestart.remove(response.requestId);
-      return;
+      return <int>[response.requestId];
     }
 
     pending.status = _RequestStatus.completedMutationAwaitingTransition;
@@ -152,7 +163,9 @@ class RequestManager {
       pending.completer.complete(pending.result);
       _pendingMutations.remove(response.requestId);
       _requestsOlderThanRestart.remove(response.requestId);
+      return <int>[response.requestId];
     }
+    return const <int>[];
   }
 
   void handleActionResponse(ActionResponse response) {
@@ -174,7 +187,9 @@ class RequestManager {
     );
   }
 
-  void resolveMutationsUpTo(String transitionTs) {
+  /// Resolves every parked mutation whose ts the transition has now reached and
+  /// returns their request ids so their optimistic layers can be dropped.
+  List<int> resolveMutationsUpTo(String transitionTs) {
     final completedIds = <int>[];
     _pendingMutations.forEach((requestId, pending) {
       if (pending.status !=
@@ -194,6 +209,7 @@ class RequestManager {
       _pendingMutations.remove(requestId);
       _requestsOlderThanRestart.remove(requestId);
     }
+    return completedIds;
   }
 
   void handleDisconnect(String reason) {

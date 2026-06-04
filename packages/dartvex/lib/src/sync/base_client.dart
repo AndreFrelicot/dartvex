@@ -3,6 +3,7 @@ import 'dart:collection';
 
 import '../protocol/messages.dart';
 import 'local_state.dart';
+import 'optimistic_updates.dart';
 import 'remote_query_set.dart';
 import 'request_manager.dart';
 
@@ -82,6 +83,7 @@ class BaseClient {
   final LocalSyncState _localState;
   final RemoteQuerySet _remoteQuerySet;
   final RequestManager _requestManager;
+  final OptimisticQueryResults _optimistic = OptimisticQueryResults();
   final Queue<ClientMessage> _outgoing = Queue<ClientMessage>();
 
   int _nextRequestId = 0;
@@ -149,6 +151,20 @@ class BaseClient {
 
   Future<dynamic> mutate(String udfPath, Map<String, dynamic> args) {
     return trackMutation(udfPath, args).future;
+  }
+
+  /// Applies an optimistic [update] tagged with the mutation's [requestId] and
+  /// returns the query-update events for the subscribers it affects.
+  ///
+  /// Call this synchronously right after [trackMutation] with the same request
+  /// id, so the overlay layer is rolled back when that mutation completes.
+  List<BaseClientEvent> applyOptimisticUpdate(
+    OptimisticUpdate update,
+    int requestId,
+  ) {
+    return _eventsForChangedTokens(
+      _optimistic.applyOptimisticUpdate(update, requestId),
+    );
   }
 
   TrackedRequest trackAction(String udfPath, Map<String, dynamic> args) {
@@ -266,6 +282,23 @@ class BaseClient {
     return _resultCacheByToken[token];
   }
 
+  /// Returns the overlaid (server + active optimistic edits) result for a query
+  /// identified by its udf path and arguments, or null if it currently has no
+  /// value.
+  ///
+  /// Lets a fresh subscription emit an optimistic value already set for the
+  /// query before the server has reported on it.
+  StoredQueryResult? optimisticResultForQuery(
+    String udfPath,
+    Map<String, dynamic> args,
+  ) {
+    final token = LocalSyncState.serializeQueryToken(
+      LocalSyncState.canonicalizeUdfPath(udfPath),
+      args,
+    );
+    return _optimistic.rawResultForToken(token);
+  }
+
   List<int> subscriberIdsForQuery(int queryId) {
     return _localState.subscriberIdsForQuery(queryId);
   }
@@ -306,6 +339,59 @@ class BaseClient {
     }
   }
 
+  /// Builds the server-side query results for the optimistic overlay: every
+  /// subscribed query that currently holds a remote result, keyed by token.
+  Map<String, OverlayServerQuery> _buildServerResults() {
+    final serverResults = <String, OverlayServerQuery>{};
+    for (final queryId in _remoteQuerySet.resultQueryIds) {
+      final token = _localState.tokenForQueryId(queryId);
+      if (token == null) {
+        continue;
+      }
+      final state = _localState.queryStateForId(queryId);
+      if (state == null) {
+        continue;
+      }
+      serverResults[token] = (
+        result: _remoteQuerySet.resultFor(queryId),
+        udfPath: state.udfPath,
+        args: state.args,
+      );
+    }
+    return serverResults;
+  }
+
+  /// Re-bases the overlay on the current server results, dropping the layers of
+  /// [droppedRequestIds], and returns events for queries whose value changed.
+  List<BaseClientEvent> _emitOverlayChanges(Iterable<int> droppedRequestIds) {
+    final changedTokens = _optimistic.ingestQueryResultsFromServer(
+      _buildServerResults(),
+      droppedRequestIds.toSet(),
+    );
+    return _eventsForChangedTokens(changedTokens);
+  }
+
+  /// Maps changed overlay [tokens] to query-update events for their subscribers.
+  ///
+  /// Tokens with no live subscription (an optimistic-only value) and tokens
+  /// whose overlaid result is "loading" (null) emit nothing: dartvex's query
+  /// stream has no loading state, so such queries keep their last value until a
+  /// concrete result lands.
+  List<BaseClientEvent> _eventsForChangedTokens(List<String> tokens) {
+    final events = <BaseClientEvent>[];
+    for (final token in tokens) {
+      final queryId = _localState.queryIdForToken(token);
+      if (queryId == null) {
+        continue;
+      }
+      final result = _optimistic.rawResultForToken(token);
+      if (result != null) {
+        events.add(QueryUpdateEvent(queryId: queryId, result: result));
+      }
+    }
+    return events;
+  }
+
   BaseClientReceiveResult receive(ServerMessage message) {
     final events = <BaseClientEvent>[];
     switch (message) {
@@ -314,7 +400,8 @@ class BaseClient {
           final deltas = _remoteQuerySet.applyTransition(message);
           _localState.observeTimestamp(message.endVersion.ts);
           _localState.transition(message);
-          _requestManager.resolveMutationsUpTo(message.endVersion.ts);
+          final completedRequestIds =
+              _requestManager.resolveMutationsUpTo(message.endVersion.ts);
           for (final delta in deltas) {
             if (delta.removed) {
               events.add(QueryRemovedEvent(queryId: delta.queryId));
@@ -323,11 +410,14 @@ class BaseClient {
               if (token != null) {
                 _resultCacheByToken[token] = delta.result!;
               }
-              events.add(
-                QueryUpdateEvent(queryId: delta.queryId, result: delta.result!),
-              );
             }
           }
+          // Emit query value changes through the optimistic overlay: the fresh
+          // server results are re-based, the layers of mutations this transition
+          // completed are dropped, and any still-pending optimistic edits are
+          // replayed on top — atomically, so a resolved mutation's optimistic
+          // value is replaced by its authoritative server value without flicker.
+          events.addAll(_emitOverlayChanges(completedRequestIds));
           // Treat the transition as an auth confirmation only when it advances
           // the identity version and is not stale — i.e. the client has not
           // already moved on to a newer auth version. Mirrors the official
@@ -348,10 +438,18 @@ class BaseClient {
         if (message.success && message.ts != null) {
           _localState.observeTimestamp(message.ts!);
         }
-        _requestManager.handleMutationResponseWithAppliedTransition(
+        final droppedRequestIds =
+            _requestManager.handleMutationResponseWithAppliedTransition(
           message,
           appliedTransitionTs: _remoteQuerySet.version.ts,
         );
+        // A mutation that resolved here (failure rollback, ts-less success, or a
+        // success whose transition already landed) drops its optimistic layer
+        // now; a parked read-your-writes success keeps its layer until its
+        // transition arrives.
+        if (droppedRequestIds.isNotEmpty) {
+          events.addAll(_emitOverlayChanges(droppedRequestIds));
+        }
       case ActionResponse():
         _requestManager.handleActionResponse(message);
       case Ping():

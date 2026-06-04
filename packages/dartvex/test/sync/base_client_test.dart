@@ -5,6 +5,7 @@ import 'package:dartvex/src/protocol/encoding.dart';
 import 'package:dartvex/src/protocol/messages.dart';
 import 'package:dartvex/src/protocol/state_version.dart';
 import 'package:dartvex/src/sync/base_client.dart';
+import 'package:dartvex/src/sync/remote_query_set.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -607,6 +608,195 @@ void main() {
       );
 
       expect(result.events.whereType<AuthConfirmedEvent>(), isNotEmpty);
+    });
+  });
+
+  group('BaseClient optimistic updates', () {
+    // Subscribes to messages:list and seeds it with [initial] from the server.
+    (BaseClient, int) seeded(List<String> initial) {
+      final client = BaseClient();
+      final registration =
+          client.subscribe('messages:list', const <String, dynamic>{});
+      client.drainOutgoing();
+      client.receive(
+        Transition(
+          startVersion: const StateVersion.initial(),
+          endVersion: StateVersion(querySet: 1, identity: 0, ts: encodeTs(1)),
+          modifications: <StateModification>[
+            QueryUpdated(queryId: registration.queryId, value: initial),
+          ],
+        ),
+      );
+      return (client, registration.queryId);
+    }
+
+    List<dynamic> listOf(BaseClientEvent event) {
+      return ((event as QueryUpdateEvent).result as StoredQuerySuccess).value
+          as List<dynamic>;
+    }
+
+    // An optimistic update that appends [body] to messages:list.
+    void Function(dynamic) append(String body) {
+      return (store) {
+        final list = (store.getQuery('messages:list') as List<dynamic>?) ??
+            const <dynamic>[];
+        store.setQuery('messages:list', const <String, dynamic>{}, <dynamic>[
+          ...list,
+          body,
+        ]);
+      };
+    }
+
+    test('overlays the subscribed query value immediately', () {
+      final (client, queryId) = seeded(<String>['a']);
+      final request = client.trackMutation(
+        'messages:send',
+        const <String, dynamic>{'body': 'b'},
+      );
+      final events =
+          client.applyOptimisticUpdate(append('b'), request.requestId);
+
+      final event = events.single as QueryUpdateEvent;
+      expect(event.queryId, queryId);
+      expect(listOf(event), <String>['a', 'b']);
+    });
+
+    test('optimistic value survives an interleaved server load', () {
+      final (client, queryId) = seeded(<String>['a']);
+      final request = client.trackMutation(
+        'messages:send',
+        const <String, dynamic>{'body': 'b'},
+      );
+      client.applyOptimisticUpdate(append('b'), request.requestId);
+
+      // A different message arrives from the server while the mutation pends.
+      final result = client.receive(
+        Transition(
+          startVersion: StateVersion(querySet: 1, identity: 0, ts: encodeTs(1)),
+          endVersion: StateVersion(querySet: 1, identity: 0, ts: encodeTs(2)),
+          modifications: <StateModification>[
+            QueryUpdated(queryId: queryId, value: const <String>['a', 'c']),
+          ],
+        ),
+      );
+
+      // The optimistic 'b' replays on top of the new server value.
+      final event = result.events.whereType<QueryUpdateEvent>().single;
+      expect(listOf(event), <String>['a', 'c', 'b']);
+    });
+
+    test('drops the layer exactly when its transition lands', () async {
+      final (client, queryId) = seeded(<String>['a']);
+      final request = client.trackMutation(
+        'messages:send',
+        const <String, dynamic>{'body': 'b'},
+      );
+      client.drainOutgoing();
+      client.applyOptimisticUpdate(append('b'), request.requestId);
+
+      // Server commits the mutation; its ts is still in the future, so the
+      // layer is parked (read-your-writes) and not yet dropped.
+      final parked = client.receive(
+        MutationResponse(
+          requestId: request.requestId,
+          success: true,
+          result: const <String, dynamic>{'ok': true},
+          ts: encodeTs(5),
+        ),
+      );
+      expect(parked.events.whereType<QueryUpdateEvent>(), isEmpty);
+
+      // The transition carrying the ts both resolves the future and drops the
+      // layer, replacing the optimistic value with the authoritative server one
+      // (no flicker, no duplicate 'b').
+      final landed = client.receive(
+        Transition(
+          startVersion: StateVersion(querySet: 1, identity: 0, ts: encodeTs(1)),
+          endVersion: StateVersion(querySet: 1, identity: 0, ts: encodeTs(5)),
+          modifications: <StateModification>[
+            QueryUpdated(queryId: queryId, value: const <String>['a', 'b']),
+          ],
+        ),
+      );
+      expect(
+        listOf(landed.events.whereType<QueryUpdateEvent>().single),
+        <String>['a', 'b'],
+      );
+      expect(await request.future, const <String, dynamic>{'ok': true});
+
+      // A later server update does not re-add the dropped optimistic value.
+      final later = client.receive(
+        Transition(
+          startVersion: StateVersion(querySet: 1, identity: 0, ts: encodeTs(5)),
+          endVersion: StateVersion(querySet: 1, identity: 0, ts: encodeTs(6)),
+          modifications: <StateModification>[
+            QueryUpdated(
+              queryId: queryId,
+              value: const <String>['a', 'b', 'x'],
+            ),
+          ],
+        ),
+      );
+      expect(
+        listOf(later.events.whereType<QueryUpdateEvent>().single),
+        <String>['a', 'b', 'x'],
+      );
+    });
+
+    test('rolls back the layer when its mutation fails', () async {
+      final (client, queryId) = seeded(<String>['a']);
+      final request = client.trackMutation(
+        'messages:send',
+        const <String, dynamic>{'body': 'b'},
+      );
+      client.drainOutgoing();
+      client.applyOptimisticUpdate(append('b'), request.requestId);
+
+      final result = client.receive(
+        MutationResponse(
+          requestId: request.requestId,
+          success: false,
+          errorMessage: 'rejected',
+        ),
+      );
+      final event = result.events.whereType<QueryUpdateEvent>().single;
+      expect(event.queryId, queryId);
+      expect(listOf(event), <String>['a']);
+      await expectLater(request.future, throwsA(isA<ConvexException>()));
+    });
+
+    test('stacks concurrent layers and rolls each back independently',
+        () async {
+      final (client, _) = seeded(<String>['a']);
+      final first = client.trackMutation(
+        'messages:send',
+        const <String, dynamic>{'body': 'b'},
+      );
+      client.applyOptimisticUpdate(append('b'), first.requestId);
+      final second = client.trackMutation(
+        'messages:send',
+        const <String, dynamic>{'body': 'c'},
+      );
+      final stacked =
+          client.applyOptimisticUpdate(append('c'), second.requestId);
+      client.drainOutgoing();
+
+      // Both layers are visible.
+      expect(listOf(stacked.single), <String>['a', 'b', 'c']);
+
+      // The first mutation fails: only its 'b' is removed; 'c' replays on top.
+      final rollback = client.receive(
+        MutationResponse(
+          requestId: first.requestId,
+          success: false,
+          errorMessage: 'rejected',
+        ),
+      );
+      expect(
+        listOf(rollback.events.whereType<QueryUpdateEvent>().single),
+        <String>['a', 'c'],
+      );
+      await expectLater(first.future, throwsA(isA<ConvexException>()));
     });
   });
 }

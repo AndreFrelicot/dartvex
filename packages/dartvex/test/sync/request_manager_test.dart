@@ -135,4 +135,74 @@ void main() {
       expect(manager.hasSyncedPastLastReconnect(), isTrue);
     });
   });
+
+  group('RequestManager optimistic drop signals', () {
+    Mutation mutation(int requestId) => Mutation(
+          requestId: requestId,
+          udfPath: 'messages:send',
+          args: const <dynamic>[],
+        );
+
+    test('a failed mutation reports its id for an immediate rollback', () {
+      final manager = RequestManager();
+      final future = manager.trackMutation(mutation(0), sent: true);
+      unawaited(future.catchError((Object _) => null));
+
+      final dropped = manager.handleMutationResponse(
+        const MutationResponse(
+          requestId: 0,
+          success: false,
+          errorMessage: 'boom',
+        ),
+      );
+      expect(dropped, <int>[0]);
+    });
+
+    test('a ts-less success reports its id immediately', () async {
+      final manager = RequestManager();
+      final future = manager.trackMutation(mutation(0), sent: true);
+
+      final dropped = manager.handleMutationResponse(
+        const MutationResponse(requestId: 0, success: true, result: 'ok'),
+      );
+      expect(dropped, <int>[0]);
+      expect(await future, 'ok');
+    });
+
+    test('a parked success reports nothing until its transition lands', () {
+      final manager = RequestManager();
+      manager.trackMutation(mutation(0), sent: true);
+
+      final dropped = manager.handleMutationResponseWithAppliedTransition(
+        MutationResponse(
+          requestId: 0,
+          success: true,
+          result: 'ok',
+          ts: encodeTs(5),
+        ),
+        appliedTransitionTs: encodeTs(1),
+      );
+      expect(dropped, isEmpty);
+
+      // The transition carrying the ts both resolves the mutation and surfaces
+      // its id so the optimistic layer can be dropped.
+      expect(manager.resolveMutationsUpTo(encodeTs(5)), <int>[0]);
+    });
+
+    test('a success whose transition already applied reports its id now', () {
+      final manager = RequestManager();
+      manager.trackMutation(mutation(0), sent: true);
+
+      final dropped = manager.handleMutationResponseWithAppliedTransition(
+        MutationResponse(
+          requestId: 0,
+          success: true,
+          result: 'ok',
+          ts: encodeTs(3),
+        ),
+        appliedTransitionTs: encodeTs(5),
+      );
+      expect(dropped, <int>[0]);
+    });
+  });
 }

@@ -116,6 +116,12 @@ class LocalSyncState {
   /// Returns the query token for an active queryId, or null if not found.
   String? tokenForQueryId(int queryId) => _queryTokenByQueryId[queryId];
 
+  /// Returns the active queryId for a query [token], or null if not subscribed.
+  ///
+  /// Lets the optimistic overlay map a changed token back to the query whose
+  /// subscribers must be notified.
+  int? queryIdForToken(String token) => _queriesByToken[token]?.queryId;
+
   SubscriptionRegistration subscribe(
     String udfPath,
     Map<String, dynamic> args, {
