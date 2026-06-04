@@ -83,6 +83,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The default Convex sync API version now uses a currently supported Convex
+  client version, fixing browser WebSocket handshakes that cannot send the
+  native `Convex-Client` header.
 - A Transition that reflects an auth version the client has already moved past
   no longer confirms auth (it is recognized as stale), matching the existing
   guard against stale `AuthError`s. Prevents a superseded token from being

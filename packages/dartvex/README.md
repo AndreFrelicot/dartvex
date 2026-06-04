@@ -49,7 +49,7 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 |----------|-----------|--------|
 | iOS / Android | `dart:io` WebSocket | Tested |
 | macOS / Linux / Windows | `dart:io` WebSocket | Tested |
-| Web (JS / Wasm) | `package:web` WebSocket | Builds, not yet browser-tested |
+| Web (JS / Wasm) | `package:web` WebSocket | Tested |
 
 The web adapter is selected automatically via conditional import.
 

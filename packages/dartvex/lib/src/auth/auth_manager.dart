@@ -116,20 +116,46 @@ class AuthManager {
     // Pause the socket so queries/mutations cannot be sent ahead of the initial
     // token while it is being fetched; resume once the token has been applied.
     await _invokePauseSocket();
-    final token = await fetchToken(forceRefresh: false);
-    if (!_isCurrentFlow(generation, fetchToken)) {
-      // A newer auth flow superseded this one; it now owns the socket gating.
-      return _StaleAuthHandle();
+    var shouldResumeSocket = false;
+    try {
+      final token = await fetchToken(forceRefresh: false);
+      if (!_isCurrentFlow(generation, fetchToken)) {
+        // A newer auth flow superseded this one; it now owns the socket gating.
+        return _StaleAuthHandle();
+      }
+      shouldResumeSocket = true;
+      _currentToken = token;
+      _awaitingConfirmation = token != null;
+      _tokenConfirmationAttempts = 0;
+      await sendAuth(token);
+      if (token == null) {
+        _emit(false);
+      }
+      return _RefreshAuthHandle(this);
+    } catch (error, stackTrace) {
+      if (_isCurrentFlow(generation, fetchToken)) {
+        shouldResumeSocket = true;
+        _log(
+          DartvexLogLevel.error,
+          'Initial auth token fetch failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        _fetchToken = null;
+        _onAuthChange = null;
+        _currentToken = null;
+        _awaitingConfirmation = false;
+        _tokenConfirmationAttempts = 0;
+        _setRefreshing(false);
+        await sendAuth(null);
+        _emit(false);
+      }
+      rethrow;
+    } finally {
+      if (shouldResumeSocket) {
+        await _invokeResumeSocket();
+      }
     }
-    _currentToken = token;
-    _awaitingConfirmation = token != null;
-    _tokenConfirmationAttempts = 0;
-    await sendAuth(token);
-    if (token == null) {
-      _emit(false);
-    }
-    await _invokeResumeSocket();
-    return _RefreshAuthHandle(this);
   }
 
   /// Clears the current auth token and refresh flow.
@@ -265,21 +291,40 @@ class AuthManager {
     // fetch a fresh one, then restart so it is replayed on a clean connection.
     _setRefreshing(true);
     await _invokeStopSocket();
-    final freshToken = await fetchToken(forceRefresh: true);
-    if (_isCurrentFlow(generation, fetchToken)) {
-      _currentToken = freshToken;
-      _awaitingConfirmation = freshToken != null;
-      await sendAuth(freshToken);
-      if (freshToken == null) {
-        _log(DartvexLogLevel.warn, 'Forced auth refresh returned no token');
-        // The refresh could not produce a token; the reauth is over.
+    try {
+      final freshToken = await fetchToken(forceRefresh: true);
+      if (_isCurrentFlow(generation, fetchToken)) {
+        _currentToken = freshToken;
+        _awaitingConfirmation = freshToken != null;
+        _tokenConfirmationAttempts = 0;
+        await sendAuth(freshToken);
+        if (freshToken == null) {
+          _log(DartvexLogLevel.warn, 'Forced auth refresh returned no token');
+          // The refresh could not produce a token; the reauth is over.
+          _setRefreshing(false);
+          _emit(false);
+        }
+      }
+    } catch (error, stackTrace) {
+      if (_isCurrentFlow(generation, fetchToken)) {
+        _log(
+          DartvexLogLevel.error,
+          'Forced auth refresh failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        _currentToken = null;
+        _awaitingConfirmation = false;
+        _tokenConfirmationAttempts = 0;
         _setRefreshing(false);
+        await sendAuth(null);
         _emit(false);
       }
+    } finally {
+      // Always restart, even on a superseded flow, so the socket is never left
+      // stopped; the restart replays whatever auth local state currently holds.
+      await _invokeRestartSocket();
     }
-    // Always restart, even on a superseded flow, so the socket is never left
-    // stopped; the restart replays whatever auth local state currently holds.
-    await _invokeRestartSocket();
   }
 
   /// Stops any active refresh flow without changing the current token.

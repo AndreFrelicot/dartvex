@@ -10,7 +10,7 @@ class ConvexClientConfig {
   /// Creates a client configuration.
   const ConvexClientConfig({
     this.clientId = 'dart-dartvex',
-    this.apiVersion = '0.1.0',
+    this.apiVersion = '1.40.0',
     this.authTokenType = 'User',
     this.refreshTokenLeewaySeconds = 2,
     this.inactivityTimeout = const Duration(seconds: 30),
@@ -33,6 +33,10 @@ class ConvexClientConfig {
   final String clientId;
 
   /// Convex sync API version path segment.
+  ///
+  /// The default tracks the current Convex JavaScript client version because
+  /// Convex uses this path segment for client compatibility checks, especially
+  /// for browser WebSockets where custom headers cannot be sent.
   final String apiVersion;
 
   /// Token type used when authenticating with Convex.

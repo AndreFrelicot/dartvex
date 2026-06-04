@@ -137,11 +137,8 @@ void main() {
 
       await manager.start();
       adapter.disconnect();
-      await Future<void>.delayed(const Duration(milliseconds: 10));
 
-      final connectMessages = adapter.decodedSentMessages
-          .where((message) => message['type'] == 'Connect')
-          .toList(growable: false);
+      final connectMessages = await _waitForConnectMessages(adapter, 2);
 
       expect(connectMessages, hasLength(2));
       expect(connectMessages.first['connectionCount'], 0);
@@ -921,6 +918,25 @@ void main() {
       await manager.dispose();
     });
   });
+}
+
+Future<List<Map<String, dynamic>>> _waitForConnectMessages(
+  MockWebSocketAdapter adapter,
+  int count,
+) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 1));
+  while (DateTime.now().isBefore(deadline)) {
+    final messages = adapter.decodedSentMessages
+        .where((message) => message['type'] == 'Connect')
+        .toList(growable: false);
+    if (messages.length >= count) {
+      return messages;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+  return adapter.decodedSentMessages
+      .where((message) => message['type'] == 'Connect')
+      .toList(growable: false);
 }
 
 class _ThrowingSendAdapter extends MockWebSocketAdapter {

@@ -396,6 +396,48 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   }
 
   static ConvexClientConfig _normalizeConfig(ConvexClientConfig config) {
+    _requireNonNegativeInt(
+      config.refreshTokenLeewaySeconds,
+      'config.refreshTokenLeewaySeconds',
+    );
+    _requirePositiveDuration(
+      config.inactivityTimeout,
+      'config.inactivityTimeout',
+    );
+    _requirePositiveDuration(config.connectTimeout, 'config.connectTimeout');
+    _requireOptionalPositiveDuration(
+      config.queryTimeout,
+      'config.queryTimeout',
+    );
+    _requireOptionalPositiveDuration(
+      config.mutationTimeout,
+      'config.mutationTimeout',
+    );
+    _requireOptionalPositiveDuration(
+      config.actionTimeout,
+      'config.actionTimeout',
+    );
+    _requireNonNegativeDuration(
+      config.initialBackoff,
+      'config.initialBackoff',
+    );
+    _requireNonNegativeDuration(config.maxBackoff, 'config.maxBackoff');
+    if (config.maxBackoff < config.initialBackoff) {
+      throw ArgumentError.value(
+        config.maxBackoff,
+        'config.maxBackoff',
+        'must be greater than or equal to config.initialBackoff',
+      );
+    }
+    if (!config.backoffJitter.isFinite ||
+        config.backoffJitter < 0 ||
+        config.backoffJitter > 1) {
+      throw ArgumentError.value(
+        config.backoffJitter,
+        'config.backoffJitter',
+        'must be finite and between 0 and 1',
+      );
+    }
     final reconnectBackoff =
         List<Duration>.unmodifiable(config.reconnectBackoff);
     // An empty schedule selects the exponential backoff model; only the
@@ -429,6 +471,31 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       logLevel: config.logLevel,
       logger: config.logger,
     );
+  }
+
+  static void _requirePositiveDuration(Duration value, String name) {
+    if (value <= Duration.zero) {
+      throw ArgumentError.value(value, name, 'must be greater than zero');
+    }
+  }
+
+  static void _requireOptionalPositiveDuration(Duration? value, String name) {
+    if (value == null) {
+      return;
+    }
+    _requirePositiveDuration(value, name);
+  }
+
+  static void _requireNonNegativeDuration(Duration value, String name) {
+    if (value.isNegative) {
+      throw ArgumentError.value(value, name, 'must not be negative');
+    }
+  }
+
+  static void _requireNonNegativeInt(int value, String name) {
+    if (value < 0) {
+      throw ArgumentError.value(value, name, 'must not be negative');
+    }
   }
 
   /// Broadcasts connection state changes.

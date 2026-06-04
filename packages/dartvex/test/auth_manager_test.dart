@@ -272,6 +272,32 @@ void main() {
       );
     });
 
+    test('setAuthWithRefresh resumes and clears auth when initial fetch fails',
+        () async {
+      final events = <String>[];
+      final manager = managerRecording(
+        events,
+        fetchToken: ({required bool forceRefresh}) async => 'unused',
+      );
+
+      await expectLater(
+        manager.setAuthWithRefresh(
+          fetchToken: ({required bool forceRefresh}) async {
+            events.add('fetch:$forceRefresh');
+            throw StateError('initial fetch failed');
+          },
+        ),
+        throwsA(isA<StateError>()),
+      );
+
+      expect(
+        events,
+        <String>['pause', 'fetch:false', 'sendAuth:null', 'resume'],
+      );
+      expect(manager.currentToken, isNull);
+      expect(manager.isRefreshing, isFalse);
+    });
+
     test('reauth stops, fetches, authenticates, then restarts', () async {
       final events = <String>[];
       final manager = managerRecording(
@@ -333,6 +359,43 @@ void main() {
 
       // The socket is never left stopped, even when the refresh yields no token.
       expect(events, <String>['stop', 'sendAuth:null', 'restart']);
+    });
+
+    test('reauth clears auth and restarts the socket when refresh throws',
+        () async {
+      final events = <String>[];
+      final manager = managerRecording(
+        events,
+        fetchToken: ({required bool forceRefresh}) async => 'unused',
+      );
+
+      await manager.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) async {
+          events.add('fetch:$forceRefresh');
+          if (forceRefresh) {
+            throw StateError('refresh failed');
+          }
+          return 'cached-token';
+        },
+      );
+      manager.handleAuthConfirmed();
+      events.clear();
+
+      await manager.handleAuthError(
+        const AuthError(
+          error: 'token expired',
+          baseVersion: 0,
+          authUpdateAttempted: true,
+        ),
+        currentAuthVersion: 1,
+      );
+
+      expect(
+        events,
+        <String>['stop', 'fetch:true', 'sendAuth:null', 'restart'],
+      );
+      expect(manager.currentToken, isNull);
+      expect(manager.isRefreshing, isFalse);
     });
   });
 

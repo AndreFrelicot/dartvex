@@ -15,6 +15,23 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 10));
     }
 
+    Future<void> waitForStatus(
+      ConvexClient client,
+      bool Function(ConnectionStatus status) matches,
+    ) async {
+      final deadline = DateTime.now().add(const Duration(seconds: 1));
+      while (DateTime.now().isBefore(deadline)) {
+        if (matches(client.currentConnectionStatus)) {
+          return;
+        }
+        await settle();
+      }
+      fail(
+        'Timed out waiting for connection status. '
+        'Last status: ${client.currentConnectionStatus}',
+      );
+    }
+
     test('accepts empty reconnect backoff (selects exponential mode)', () {
       expect(
         () => ConvexClient(
@@ -45,6 +62,113 @@ void main() {
           ),
         ),
       );
+    });
+
+    test('rejects invalid timing and reconnect config values', () {
+      final cases = <({String name, ConvexClientConfig config})>[
+        (
+          name: 'config.refreshTokenLeewaySeconds',
+          config: const ConvexClientConfig(
+            connectImmediately: false,
+            refreshTokenLeewaySeconds: -1,
+          ),
+        ),
+        (
+          name: 'config.inactivityTimeout',
+          config: const ConvexClientConfig(
+            connectImmediately: false,
+            inactivityTimeout: Duration.zero,
+          ),
+        ),
+        (
+          name: 'config.connectTimeout',
+          config: const ConvexClientConfig(
+            connectImmediately: false,
+            connectTimeout: Duration.zero,
+          ),
+        ),
+        (
+          name: 'config.queryTimeout',
+          config: const ConvexClientConfig(
+            connectImmediately: false,
+            queryTimeout: Duration.zero,
+          ),
+        ),
+        (
+          name: 'config.mutationTimeout',
+          config: const ConvexClientConfig(
+            connectImmediately: false,
+            mutationTimeout: Duration(milliseconds: -1),
+          ),
+        ),
+        (
+          name: 'config.actionTimeout',
+          config: const ConvexClientConfig(
+            connectImmediately: false,
+            actionTimeout: Duration.zero,
+          ),
+        ),
+        (
+          name: 'config.initialBackoff',
+          config: const ConvexClientConfig(
+            connectImmediately: false,
+            initialBackoff: Duration(milliseconds: -1),
+          ),
+        ),
+        (
+          name: 'config.maxBackoff',
+          config: const ConvexClientConfig(
+            connectImmediately: false,
+            maxBackoff: Duration(milliseconds: -1),
+          ),
+        ),
+        (
+          name: 'config.maxBackoff',
+          config: const ConvexClientConfig(
+            connectImmediately: false,
+            initialBackoff: Duration(seconds: 2),
+            maxBackoff: Duration(seconds: 1),
+          ),
+        ),
+        (
+          name: 'config.backoffJitter',
+          config: const ConvexClientConfig(
+            connectImmediately: false,
+            backoffJitter: -0.1,
+          ),
+        ),
+        (
+          name: 'config.backoffJitter',
+          config: const ConvexClientConfig(
+            connectImmediately: false,
+            backoffJitter: 1.1,
+          ),
+        ),
+        (
+          name: 'config.backoffJitter',
+          config: ConvexClientConfig(
+            connectImmediately: false,
+            backoffJitter: double.nan,
+          ),
+        ),
+      ];
+
+      for (final entry in cases) {
+        expect(
+          () => ConvexClient(
+            'https://demo.convex.cloud',
+            config: entry.config,
+          ),
+          throwsA(
+            isA<ArgumentError>().having(
+              (error) => error.name,
+              'name',
+              entry.name,
+            ),
+          ),
+          reason: entry.name,
+        );
+      }
     });
 
     test('rejects deployment URLs without an absolute supported scheme', () {
@@ -101,7 +225,7 @@ void main() {
 
       expect(
         adapter.connectedUrls.single,
-        'wss://demo.convex.cloud/api/0.1.0/sync',
+        'wss://demo.convex.cloud/api/1.40.0/sync',
       );
 
       subscription.cancel();
@@ -1557,9 +1681,17 @@ void main() {
         expect(client.currentConnectionStatus.connectionCount, 0);
 
         adapter.disconnect();
-        await settle();
+        await waitForStatus(
+          client,
+          (status) =>
+              status.connectionCount >= 1 && status.isWebSocketConnected,
+        );
         adapter.disconnect();
-        await settle();
+        await waitForStatus(
+          client,
+          (status) =>
+              status.connectionCount >= 2 && status.isWebSocketConnected,
+        );
 
         final status = client.currentConnectionStatus;
         expect(status.connectionCount, 2);
