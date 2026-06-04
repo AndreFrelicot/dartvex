@@ -274,6 +274,50 @@ class _ConvexFlutterDemoAppState extends State<ConvexFlutterDemoApp> {
     }
   }
 
+  /// Hands the live client a deliberately expired token so the backend rejects
+  /// it, driving the genuine reauth path that toggles the auth-refreshing badge
+  /// on the Sync tab. Recovery is automatic: the configured refresh flow
+  /// re-fetches the real cached token. Requires Demo auth to be signed in (the
+  /// refresh flow must exist for recovery), so it is gated in the UI and here.
+  Future<void> _simulateExpiredToken() async {
+    final client = _client;
+    final authClient = _authClient;
+    if (client == null || authClient == null) {
+      setState(() {
+        _authStatus =
+            'Set CONVEX_DEMO_URL and sign in before simulating a '
+            'token refresh.';
+      });
+      return;
+    }
+    if (authClient.currentAuthState is! AuthAuthenticated<DemoUserSession>) {
+      setState(() {
+        _authStatus =
+            'Sign in with Demo auth before simulating a token '
+            'refresh.';
+      });
+      return;
+    }
+
+    setState(() {
+      _authStatus =
+          'Handed the client an expired token. Watch the '
+          'auth-refreshing badge recover on the Sync tab.';
+    });
+
+    final expiredToken = _demoAuthProvider.simulateExpiredToken();
+    try {
+      await client.updateAuthToken(expiredToken);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _authStatus = error.toString();
+      });
+    }
+  }
+
   void _switchAuthMode(AuthMode mode) {
     if (mode == _authMode) return;
     setState(() {
@@ -410,6 +454,9 @@ class _ConvexFlutterDemoAppState extends State<ConvexFlutterDemoApp> {
       onLoginFromCache: _loginFromCache,
       onLogout: _logout,
       onForceReconnect: _forceReconnect,
+      onSimulateExpiredToken: _authMode == AuthMode.demo
+          ? _simulateExpiredToken
+          : null,
       onAuthModeChanged: _switchAuthMode,
       latencyNotifier: _latencyNotifier,
       logsNotifier: _logsNotifier,
@@ -470,6 +517,7 @@ class DemoHomePage extends StatefulWidget {
     required this.latencyNotifier,
     required this.logsNotifier,
     this.clientConfig,
+    this.onSimulateExpiredToken,
   });
 
   final ConvexApi? api;
@@ -492,6 +540,11 @@ class DemoHomePage extends StatefulWidget {
   final Future<void> Function() onLoginFromCache;
   final Future<void> Function() onLogout;
   final Future<void> Function() onForceReconnect;
+
+  /// Simulates an expired token to exercise the real reauth path on the Sync
+  /// tab. `null` outside Demo auth mode, where the demo provider is not driving
+  /// the client.
+  final Future<void> Function()? onSimulateExpiredToken;
   final ValueChanged<AuthMode> onAuthModeChanged;
   final ValueNotifier<TransitionMetrics?> latencyNotifier;
   final ValueNotifier<List<DartvexLogEvent>> logsNotifier;
@@ -558,6 +611,7 @@ class _DemoHomePageState extends State<DemoHomePage> {
         latencyNotifier: widget.latencyNotifier,
         logsNotifier: widget.logsNotifier,
         clientConfig: widget.clientConfig,
+        onSimulateExpiredToken: widget.onSimulateExpiredToken,
       ),
       _TasksScreen(
         api: widget.api,
@@ -677,6 +731,7 @@ class _ShowcaseScreen extends StatelessWidget {
     required this.latencyNotifier,
     required this.logsNotifier,
     this.clientConfig,
+    this.onSimulateExpiredToken,
   });
 
   final ConvexApi? api;
@@ -686,6 +741,7 @@ class _ShowcaseScreen extends StatelessWidget {
   final ValueNotifier<TransitionMetrics?> latencyNotifier;
   final ValueNotifier<List<DartvexLogEvent>> logsNotifier;
   final ConvexClientConfig? clientConfig;
+  final Future<void> Function()? onSimulateExpiredToken;
 
   @override
   Widget build(BuildContext context) {
@@ -701,6 +757,7 @@ class _ShowcaseScreen extends StatelessWidget {
         hasBackend: api != null,
         logsNotifier: logsNotifier,
         clientConfig: clientConfig,
+        onSimulateExpiredToken: onSimulateExpiredToken,
       ),
     );
   }

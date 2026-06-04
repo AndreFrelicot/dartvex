@@ -1,8 +1,13 @@
 import 'package:dartvex/dartvex.dart'
-    show ConvexClientConfig, DartvexLogEvent, DartvexLogLevel;
+    show
+        AuthAuthenticated,
+        ConvexClientConfig,
+        DartvexLogEvent,
+        DartvexLogLevel;
 import 'package:dartvex_flutter/dartvex_flutter.dart';
 import 'package:flutter/material.dart';
 
+import '../../auth/data/demo_auth_provider.dart' show DemoUserSession;
 import '../../shared/presentation/concierge_design.dart';
 import '../../shared/presentation/section_card.dart';
 
@@ -19,6 +24,7 @@ class ShowcasePanel extends StatelessWidget {
     required this.hasBackend,
     required this.logsNotifier,
     this.clientConfig,
+    this.onSimulateExpiredToken,
   });
 
   /// Whether a deployment URL is configured (the live client is available).
@@ -32,6 +38,11 @@ class ShowcasePanel extends StatelessWidget {
   /// `null` only before the client has bootstrapped, at which point no cards
   /// render (the [hasBackend] notice shows instead).
   final ConvexClientConfig? clientConfig;
+
+  /// Hands the live client an expired token to exercise the genuine reauth path
+  /// (toggling the auth-refreshing badge). `null` outside Demo auth mode; the
+  /// auth-refreshing card then shows only the passive badge.
+  final Future<void> Function()? onSimulateExpiredToken;
 
   @override
   Widget build(BuildContext context) {
@@ -58,7 +69,9 @@ class ShowcasePanel extends StatelessWidget {
             config: clientConfig ?? const ConvexClientConfig(),
           ),
           const SizedBox(height: 20),
-          const _AuthRefreshingDemoCard(),
+          _AuthRefreshingDemoCard(
+            onSimulateExpiredToken: onSimulateExpiredToken,
+          ),
           const SizedBox(height: 20),
           _LoggingDemoCard(logsNotifier: logsNotifier),
         ],
@@ -881,10 +894,16 @@ String _fmtDuration(Duration d) =>
 // ---------------------------------------------------------------------------
 
 class _AuthRefreshingDemoCard extends StatelessWidget {
-  const _AuthRefreshingDemoCard();
+  const _AuthRefreshingDemoCard({this.onSimulateExpiredToken});
+
+  /// When non-null (Demo auth mode), enables an on-demand trigger that hands the
+  /// client an expired token to exercise the genuine reauth path. The badge
+  /// itself stays passive — it tracks the real `authRefreshing` stream.
+  final Future<void> Function()? onSimulateExpiredToken;
 
   @override
   Widget build(BuildContext context) {
+    final onSimulate = onSimulateExpiredToken;
     return SectionCard(
       eyebrow: 'AUTH REFRESHING',
       title: 'A quiet "authenticating…" signal',
@@ -940,11 +959,47 @@ class _AuthRefreshingDemoCard extends StatelessWidget {
               );
             },
           ),
+          if (onSimulate != null) ...<Widget>[
+            const SizedBox(height: 14),
+            ConvexAuthBuilder<DemoUserSession>(
+              builder: (context, state) {
+                final authed = state is AuthAuthenticated<DemoUserSession>;
+                return OutlinedButton.icon(
+                  onPressed: authed
+                      ? () {
+                          onSimulate();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Handed the client an expired token — watch '
+                                'the badge reauthenticate.',
+                              ),
+                            ),
+                          );
+                        }
+                      : null,
+                  icon: const Icon(Icons.lock_reset_rounded),
+                  label: Text(
+                    authed
+                        ? 'Force a token refresh'
+                        : 'Sign in (Demo auth) to try this',
+                  ),
+                );
+              },
+            ),
+          ],
           const SizedBox(height: 12),
-          const _WatchHint(
-            'Genuine refreshes are triggered by the server rejecting an expired '
-            'token. Use the Auth tab to sign in / force a reconnect to exercise '
-            'the auth path; this badge tracks the real authRefreshing stream.',
+          _WatchHint(
+            onSimulate != null
+                ? 'Tap "Force a token refresh" to hand the client a '
+                      'deliberately expired token. The server rejects it, so '
+                      'the client reauthenticates — the badge flips to '
+                      '"Authenticating…" then back to "Auth steady", and your '
+                      'session keeps working throughout.'
+                : 'Genuine refreshes are triggered by the server rejecting an '
+                      'expired token. Sign in with Demo auth to enable an '
+                      'on-demand trigger here; this badge tracks the real '
+                      'authRefreshing stream.',
           ),
         ],
       ),

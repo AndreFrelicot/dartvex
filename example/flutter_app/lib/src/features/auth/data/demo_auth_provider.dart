@@ -1,4 +1,5 @@
 import 'dart:collection';
+import 'dart:convert';
 
 import 'package:dartvex/dartvex.dart';
 import 'package:flutter/foundation.dart';
@@ -127,6 +128,44 @@ class DemoAuthProvider extends ChangeNotifier
   void recordUiEvent(String message) {
     _appendEvent(message);
     notifyListeners();
+  }
+
+  /// Builds a structurally valid but **expired** demo JWT and records the
+  /// simulation in the event log.
+  ///
+  /// Handing this token to the live client (via `ConvexClient.updateAuthToken`)
+  /// forces the backend to reject it, which exercises the genuine reauth path:
+  /// the client stops the socket, fetches a fresh token through
+  /// [loginFromCache] (which still returns the real cached session token), and
+  /// replays it. The `ConvexAuthRefreshingBuilder` badge lights up for the
+  /// duration. This is the only client-observable way to toggle that badge on
+  /// demand — a fresh login uses the initial-fetch path and never sets it.
+  String simulateExpiredToken() {
+    _appendEvent('simulateExpiredToken(): handed the client an expired JWT.');
+    notifyListeners();
+    return _expiredDemoToken();
+  }
+
+  String _expiredDemoToken() {
+    final nowSeconds = _now().toUtc().millisecondsSinceEpoch ~/ 1000;
+    final header = _base64UrlJson(<String, Object?>{
+      'alg': 'HS256',
+      'typ': 'JWT',
+    });
+    final payload = _base64UrlJson(<String, Object?>{
+      'sub': 'demo-user-1',
+      'iat': nowSeconds - 3600,
+      'exp': nowSeconds - 60,
+    });
+    // The signature is deliberately bogus: a genuine server rejection is the
+    // whole point, so the backend must refuse this token.
+    return '$header.$payload.invalid-demo-signature';
+  }
+
+  String _base64UrlJson(Map<String, Object?> claims) {
+    return base64Url
+        .encode(utf8.encode(jsonEncode(claims)))
+        .replaceAll('=', '');
   }
 
   void _appendEvent(String message) {
