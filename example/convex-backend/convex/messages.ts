@@ -1,4 +1,5 @@
 import { ConvexError, v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
 
 import { mutation, query } from "./_generated/server";
 
@@ -84,6 +85,70 @@ export const sendPrivate = mutation({
       subject: identity.subject,
       issuer: identity.issuer,
     });
+  },
+});
+
+// Reactive, gapless pagination over the public feed. Used by the Showcase
+// `PaginatedQueryBuilder` demo. Returns a standard Convex PaginationResult.
+export const paginatePublic = query({
+  args: { paginationOpts: paginationOptsValidator },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("public_messages")
+      .order("desc")
+      .paginate(args.paginationOpts);
+  },
+});
+
+// Idempotent demo seed: tops the public feed up to `target` rows so the
+// pagination demo always has several pages. Returns how many were inserted.
+export const seedPublic = mutation({
+  args: {},
+  returns: v.number(),
+  handler: async (ctx) => {
+    const target = 42;
+    const existing = await ctx.db.query("public_messages").collect();
+    if (existing.length >= target) {
+      return 0;
+    }
+
+    const authors = ["Ada", "Linus", "Grace", "Margaret", "Dennis", "Barbara"];
+    const snippets = [
+      "Shipping the realtime sync demo today.",
+      "Optimistic updates feel instant on mobile.",
+      "Reactive pagination keeps the feed gapless.",
+      "Reconnect after airplane mode just works.",
+      "Auth refresh stays invisible to the user.",
+      "Convex transitions land in a single frame.",
+      "Pure Dart client, no native bridge.",
+      "Connection status surfaces inflight requests.",
+    ];
+
+    const toInsert = target - existing.length;
+    for (let i = 0; i < toInsert; i += 1) {
+      const n = existing.length + i + 1;
+      await ctx.db.insert("public_messages", {
+        author: authors[i % authors.length],
+        text: `#${n} ${snippets[i % snippets.length]}`,
+      });
+    }
+    return toInsert;
+  },
+});
+
+// Always rejects. The Showcase routes "fail the next send" here so the optimistic
+// overlay is observed rolling back when the server rejects the mutation.
+export const failingSend = mutation({
+  args: {
+    author: v.string(),
+    text: v.string(),
+  },
+  returns: v.null(),
+  handler: async () => {
+    throw new ConvexError(
+      "Simulated failure: this mutation always rejects so the optimistic " +
+        "update rolls back.",
+    );
   },
 });
 
