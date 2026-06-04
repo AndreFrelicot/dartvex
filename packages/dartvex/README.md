@@ -229,6 +229,27 @@ final client = ConvexClient(
 await client.reconnectNow('manual-refresh');
 ```
 
+Dropped connections are retried with exponential backoff and jitter, classifying
+server overload reasons to back off more conservatively. Tune the behavior — or
+bound the handshake itself so a dead connection cannot hang on the platform TCP
+timeout — via `ConvexClientConfig`:
+
+```dart
+final client = ConvexClient(
+  'https://your-deployment.convex.cloud',
+  config: const ConvexClientConfig(
+    connectTimeout: Duration(seconds: 10),
+    initialBackoff: Duration(seconds: 1),
+    maxBackoff: Duration(seconds: 16),
+    backoffJitter: 0.5,
+  ),
+);
+```
+
+To reconnect the instant the device regains connectivity instead of waiting out
+the backoff, supply a `connectivitySignal`. Flutter apps can use
+`ConnectivityPlusSignal` from `dartvex_flutter`.
+
 ## API Overview
 
 ### Core

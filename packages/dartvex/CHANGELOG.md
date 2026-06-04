@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `ConvexClientConfig.connectTimeout` bounds the WebSocket handshake so a dead
+  connection no longer hangs on the platform TCP timeout before retrying.
+- Exponential reconnect backoff with jitter and server-reason classification,
+  configurable via `initialBackoff`, `maxBackoff`, and `backoffJitter`.
+- `ConnectivitySignal` and `ConvexClientConfig.connectivitySignal` to reconnect
+  immediately when the device regains network connectivity, cancelling any
+  in-progress backoff.
+
+### Changed
+
+- `reconnectBackoff` now defaults to empty, selecting the exponential backoff
+  model. Provide an explicit non-negative schedule to keep fixed delays.
+
 ## [0.1.5] - 2026-05-13
 
 ### Fixed
