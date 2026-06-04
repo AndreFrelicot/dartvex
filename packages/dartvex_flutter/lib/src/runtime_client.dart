@@ -36,6 +36,15 @@ abstract class ConvexRuntimeClient {
   /// The current connection state.
   ConvexConnectionState get currentConnectionState;
 
+  /// Broadcasts whether the client is refreshing auth after a rejection.
+  ///
+  /// Emits `true` while a fresh token is fetched after a server `AuthError`
+  /// and `false` once it is confirmed. See `ConvexClient.authRefreshing`.
+  Stream<bool> get authRefreshing;
+
+  /// Whether the client is currently refreshing auth after a rejection.
+  bool get currentAuthRefreshing;
+
   /// Forces an immediate reconnect of the underlying connection.
   Future<void> reconnectNow(String reason);
 
@@ -131,6 +140,16 @@ class ConvexClientRuntime implements ConvexRuntimeClient {
 
   /// The current connection state observed from the wrapped client.
   ConvexConnectionState get currentConnectionState => _currentConnectionState;
+
+  @override
+
+  /// Broadcasts auth-refreshing changes from the wrapped client.
+  Stream<bool> get authRefreshing => _client.authRefreshing;
+
+  @override
+
+  /// Whether the wrapped client is currently refreshing auth.
+  bool get currentAuthRefreshing => _client.isAuthRefreshing;
 
   @override
 

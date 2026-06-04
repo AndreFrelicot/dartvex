@@ -13,6 +13,8 @@ export 'src/file_downloader.dart'
 export 'src/offline_image.dart' show ConvexAssetSnapshot, ConvexOfflineImage;
 export 'src/auth_builder.dart' show ConvexAuthBuilder, ConvexAuthWidgetBuilder;
 export 'src/auth_provider.dart' show ConvexAuthProvider;
+export 'src/auth_refreshing_builder.dart'
+    show ConvexAuthRefreshingBuilder, ConvexAuthRefreshingWidgetBuilder;
 export 'src/connection_builder.dart'
     show ConvexConnectionBuilder, ConvexConnectionWidgetBuilder;
 export 'src/connection_indicator.dart'

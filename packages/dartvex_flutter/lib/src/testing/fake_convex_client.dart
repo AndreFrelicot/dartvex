@@ -34,7 +34,10 @@ class FakeConvexClient implements ConvexRuntimeClient {
 
   final StreamController<ConvexConnectionState> _connectionController =
       StreamController<ConvexConnectionState>.broadcast(sync: true);
+  final StreamController<bool> _authRefreshingController =
+      StreamController<bool>.broadcast(sync: true);
   ConvexConnectionState _currentConnectionState;
+  bool _currentAuthRefreshing = false;
   bool _disposed = false;
 
   /// Register a mock query handler that returns a static value.
@@ -96,12 +99,24 @@ class FakeConvexClient implements ConvexRuntimeClient {
     _connectionController.add(state);
   }
 
+  /// Update the fake auth-refreshing state.
+  void emitAuthRefreshing(bool isRefreshing) {
+    _currentAuthRefreshing = isRefreshing;
+    _authRefreshingController.add(isRefreshing);
+  }
+
   @override
   Stream<ConvexConnectionState> get connectionState =>
       _connectionController.stream;
 
   @override
   ConvexConnectionState get currentConnectionState => _currentConnectionState;
+
+  @override
+  Stream<bool> get authRefreshing => _authRefreshingController.stream;
+
+  @override
+  bool get currentAuthRefreshing => _currentAuthRefreshing;
 
   @override
   Future<dynamic> query(
@@ -182,6 +197,7 @@ class FakeConvexClient implements ConvexRuntimeClient {
       unawaited(controller.close());
     }
     unawaited(_connectionController.close());
+    unawaited(_authRefreshingController.close());
   }
 }
 

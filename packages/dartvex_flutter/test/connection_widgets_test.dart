@@ -67,4 +67,30 @@ void main() {
     await tester.pump();
     expect(find.text('offline'), findsOneWidget);
   });
+
+  testWidgets('ConvexAuthRefreshingBuilder reflects the refreshing state', (
+    tester,
+  ) async {
+    final client = FakeRuntimeClient();
+
+    await tester.pumpWidget(
+      wrapWithProvider(
+        client: client,
+        child: ConvexAuthRefreshingBuilder(
+          builder: (context, isRefreshing) =>
+              Text(isRefreshing ? 'refreshing' : 'idle'),
+        ),
+      ),
+    );
+
+    expect(find.text('idle'), findsOneWidget);
+
+    client.emitAuthRefreshing(true);
+    await tester.pump();
+    expect(find.text('refreshing'), findsOneWidget);
+
+    client.emitAuthRefreshing(false);
+    await tester.pump();
+    expect(find.text('idle'), findsOneWidget);
+  });
 }

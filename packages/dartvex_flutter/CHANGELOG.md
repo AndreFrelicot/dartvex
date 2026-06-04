@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ConnectivityPlusSignal`, a `connectivity_plus`-backed `ConnectivitySignal`.
   Pass it to `ConvexClientConfig.connectivitySignal` so the client reconnects
   immediately when the device regains network connectivity.
+- `ConvexAuthRefreshingBuilder`, a widget that rebuilds with the client's
+  auth-refreshing state (`true` while auth is being recovered after a server
+  rejection). `ConvexRuntimeClient` now exposes `authRefreshing` and
+  `currentAuthRefreshing`, backed by `ConvexClient.authRefreshing`.
 
 ## [0.1.5] - 2026-05-13
 

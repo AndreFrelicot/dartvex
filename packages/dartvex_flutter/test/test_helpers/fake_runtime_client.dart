@@ -14,6 +14,9 @@ class FakeRuntimeClient implements ConvexRuntimeClient {
   final List<FakeRequestCall> actionCalls = <FakeRequestCall>[];
   final StreamController<ConvexConnectionState> _connectionController =
       StreamController<ConvexConnectionState>.broadcast(sync: true);
+  final StreamController<bool> _authRefreshingController =
+      StreamController<bool>.broadcast(sync: true);
+  bool _currentAuthRefreshing = false;
 
   Future<dynamic> Function(String name, Map<String, dynamic> args)? onQuery;
   Future<dynamic> Function(String name, Map<String, dynamic> args)? onMutate;
@@ -28,6 +31,17 @@ class FakeRuntimeClient implements ConvexRuntimeClient {
 
   @override
   ConvexConnectionState get currentConnectionState => _currentConnectionState;
+
+  @override
+  Stream<bool> get authRefreshing => _authRefreshingController.stream;
+
+  @override
+  bool get currentAuthRefreshing => _currentAuthRefreshing;
+
+  void emitAuthRefreshing(bool isRefreshing) {
+    _currentAuthRefreshing = isRefreshing;
+    _authRefreshingController.add(isRefreshing);
+  }
 
   @override
   Future<dynamic> action(
@@ -60,6 +74,7 @@ class FakeRuntimeClient implements ConvexRuntimeClient {
       call.subscription.cancel();
     }
     unawaited(_connectionController.close());
+    unawaited(_authRefreshingController.close());
   }
 
   void emitConnectionState(ConvexConnectionState state) {
