@@ -25,4 +25,12 @@ export default defineSchema({
     assignee: v.union(v.string(), v.null()),
     dueAt: v.union(v.number(), v.null()),
   }).index("by_status", ["status"]),
+
+  // Backs the "Files" tab: each row pairs a Convex file-storage id with a
+  // caption. The bytes live in built-in storage; rows here just track which
+  // uploads to render (via dartvex_flutter's ConvexCachedImage).
+  images: defineTable({
+    storageId: v.id("_storage"),
+    caption: v.string(),
+  }),
 });
