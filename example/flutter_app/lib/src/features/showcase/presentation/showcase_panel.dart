@@ -401,11 +401,14 @@ class _PaginationDemoCardState extends State<_PaginationDemoCard> {
                         final inserted = await client.mutate(
                           'messages:seedPublic',
                         );
+                        final added = inserted is num ? inserted.toInt() : 0;
                         if (mounted) {
                           setState(
-                            () => _status =
-                                'Seeded ${inserted is num ? inserted.toInt() : inserted} '
-                                'message(s).',
+                            () => _status = added > 0
+                                ? 'Seeded $added message(s).'
+                                : 'Feed already populated — seedPublic is '
+                                      'idempotent (it tops up to ~42, and '
+                                      'the feed is already above that).',
                           );
                         }
                       }),
