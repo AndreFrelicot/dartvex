@@ -7,3 +7,5 @@ analyzer:
 linter:
   rules:
     avoid_print: false
+    public_member_api_docs: true
+    package_api_docs: true
