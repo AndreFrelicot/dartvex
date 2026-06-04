@@ -33,6 +33,10 @@ typedef ConvexDownloadProgressCallback = void Function(
 /// Uses Dart's [HttpClient] to stream the response, providing real-time
 /// progress updates suitable for UI indicators.
 ///
+/// Native-only: [HttpClient] comes from `dart:io`, so this helper is not
+/// available on Flutter web. Use browser-native loading via `Image.network` or
+/// `fetch`-style APIs in web-specific UI.
+///
 /// ```dart
 /// final bytes = await ConvexFileDownloader.download(
 ///   url,

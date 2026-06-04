@@ -25,6 +25,11 @@
 - **Offline capable** — SQLite query cache and mutation queue with optimistic updates.
 - **Multi-platform** — iOS, Android, web, macOS, Linux, Windows.
 
+Web support covers the core realtime client, auth, storage URL resolution, and
+Flutter query/mutation widgets. Disk-backed file/image cache and offline image
+fallback are native-only because they rely on `dart:io` and local filesystem
+storage.
+
 ## Quick Start
 
 ```dart
@@ -198,6 +203,11 @@ final localClient = await ConvexLocalClient.open(
 // Queries served from cache when offline
 // Mutations queued and synced when back online
 ```
+
+The local-first query cache and mutation queue use SQLite and are intended for
+native targets. For files on web, resolve signed Convex storage URLs and render
+them directly; disk-backed file cache/offline image fallback is not supported on
+web in this release.
 
 ## Contributing
 

@@ -4,6 +4,10 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
 /// Caches binary assets (images, files) from Convex storage to disk,
 /// keyed by stable storage ID rather than expiring signed URLs.
+///
+/// Native-only: this cache uses `dart:io` and `flutter_cache_manager`, so it is
+/// not available on Flutter web. Web apps should resolve signed storage URLs
+/// and render them directly, for example with `Image.network`.
 class ConvexAssetCache {
   /// Shared default asset cache instance.
   static final ConvexAssetCache shared = ConvexAssetCache();

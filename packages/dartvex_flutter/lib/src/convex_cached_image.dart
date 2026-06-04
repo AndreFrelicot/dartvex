@@ -11,6 +11,10 @@ import 'runtime_client.dart';
 /// Unlike [ConvexImage], this widget persists assets to disk via
 /// [ConvexAssetCache] using the stable [storageId] as cache key. The URL
 /// resolver is called as a query unless [useAction] is true.
+///
+/// Native-only: disk-backed image caching uses `dart:io` and is not supported
+/// on Flutter web. Web apps should resolve the signed storage URL and render it
+/// with `Image.network`.
 class ConvexCachedImage extends StatefulWidget {
   /// Creates a [ConvexCachedImage].
   const ConvexCachedImage({

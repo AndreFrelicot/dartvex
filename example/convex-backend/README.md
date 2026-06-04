@@ -45,3 +45,7 @@ npm run token
 
 The generated token is valid for the custom JWT provider configured in
 `convex/auth.config.ts`.
+
+The demo private key in `.env.example` is intentionally public so this example
+can run without an external identity provider. Do not reuse that key or JWKS for
+a deployment containing sensitive data or privileged actions.

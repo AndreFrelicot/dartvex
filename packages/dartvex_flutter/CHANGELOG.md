@@ -35,6 +35,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rejection). `ConvexRuntimeClient` now exposes `authRefreshing` and
   `currentAuthRefreshing`, backed by `ConvexClient.authRefreshing`.
 
+### Changed
+
+- Clarifies in the README and API docs that disk-backed file/image cache
+  helpers (`ConvexAssetCache`, `ConvexCachedImage`, `ConvexOfflineImage`, and
+  progress-download image helpers) are native-only; web apps should render
+  signed storage URLs directly.
+
 ## [0.1.5] - 2026-05-13
 
 ### Fixed

@@ -30,17 +30,23 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 - `ConvexQuery` — reactive query widget with automatic subscription management
 - `ConvexMutation` / `ConvexAction` — request builder widgets, with optional
   optimistic updates on `ConvexMutation`
-- `ConvexImage` — display images from Convex file storage
-- `ConvexCachedImage` — display Convex storage images with persistent disk caching
+- `ConvexImage` — native image display from Convex file storage
+- `ConvexCachedImage` — native Convex storage images with persistent disk caching
 - `PaginatedQueryBuilder` — cursor-based, reactive gapless pagination with load-more
 - `ConvexAuthProvider` / `ConvexAuthBuilder` — auth state widgets
 - `ConvexConnectionBuilder` / `ConvexConnectionIndicator` — coarse connection status
 - `ConvexConnectionStatusBuilder` — rich connection status (inflight, retries, loading)
 - `ConvexAuthRefreshingBuilder` — auth-refreshing indicator
-- `ConvexOfflineImage` / `ConvexAssetCache` — offline binary asset caching
+- `ConvexOfflineImage` / `ConvexAssetCache` — native offline binary asset caching
 - `FakeConvexClient` — test helper for unit and widget tests
 - App lifecycle reconnect when a Flutter app resumes while disconnected
 - Runtime-interface based — works with `ConvexClientRuntime` and local-first adapters
+
+The core storage flow works on web: resolve a signed storage URL and render it
+with `Image.network`. The `ConvexImage`, `ConvexCachedImage`,
+`ConvexOfflineImage`, and `ConvexAssetCache` helpers are native-only because
+they use `dart:io` and `flutter_cache_manager` for streaming downloads and disk
+cache/offline fallback.
 
 ## Installation
 
@@ -139,6 +145,11 @@ ConvexMutation<String>(
 
 ## Cached Images
 
+> Disk-backed image cache is not supported on Flutter web. For web builds,
+> resolve a signed storage URL and render it with `Image.network`; keep
+> `ConvexCachedImage`, `ConvexOfflineImage`, and `ConvexAssetCache` for native
+> targets.
+
 ```dart
 ConvexCachedImage(
   storageId: message.imageStorageId,
@@ -152,6 +163,8 @@ ConvexCachedImage(
 
 `ConvexImage` and `ConvexCachedImage` resolve storage URLs with a Convex query
 by default. Set `useAction: true` when the resolver is implemented as an action.
+Both widgets are native-only in this release; on web, use the same resolver and
+pass the returned URL to `Image.network`.
 
 ## Pagination
 
@@ -260,9 +273,9 @@ ConvexAuthRefreshingBuilder(
 | `ConvexAuthRefreshingBuilder` | Renders based on auth-refreshing state |
 | `ConvexConnectionBuilder` | Renders based on coarse connection state |
 | `ConvexConnectionStatusBuilder` | Renders based on rich connection status |
-| `ConvexImage` | Image from Convex storage |
-| `ConvexCachedImage` | Disk-cached image from Convex storage |
-| `ConvexOfflineImage` | Offline-capable image with caching |
+| `ConvexImage` | Native image from Convex storage |
+| `ConvexCachedImage` | Native disk-cached image from Convex storage |
+| `ConvexOfflineImage` | Native offline-capable image with caching |
 | `FakeConvexClient` | Test double for widget tests |
 
 ## Full Documentation

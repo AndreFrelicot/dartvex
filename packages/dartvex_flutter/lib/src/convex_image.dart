@@ -12,6 +12,10 @@ import 'runtime_client.dart';
 /// [storageId], then downloads the image with optional progress tracking.
 /// The URL resolver is called as a query unless [useAction] is true.
 ///
+/// Native-only in this release: progress downloads are implemented with
+/// `dart:io`. On Flutter web, resolve the signed storage URL and render it with
+/// `Image.network`.
+///
 /// ```dart
 /// ConvexImage(
 ///   storageId: document.avatarId,

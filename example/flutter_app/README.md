@@ -44,6 +44,9 @@ flutter run \
   - queued offline mutations
   - optimistic local updates
   - replay when sync resumes
+- a dedicated `Files` tab showing Convex file storage upload and a live gallery:
+  - web renders signed storage URLs directly
+  - native builds also show disk cache and offline image fallback
 
 ## Auth modes
 
@@ -90,13 +93,22 @@ npm install better-auth@1.5.3 @convex-dev/better-auth
 npx convex env set BETTER_AUTH_SECRET=$(openssl rand -base64 32)
 ```
 
-3. Deploy:
+3. If you host the Flutter web build somewhere other than localhost, allow that
+   origin:
+
+```bash
+npx convex env set BETTER_AUTH_TRUSTED_ORIGINS=https://your-web-demo.example
+```
+
+Flutter web on `localhost` or `127.0.0.1` is allowed automatically.
+
+4. Deploy:
 
 ```bash
 npx convex dev   # or npx convex deploy
 ```
 
-4. Run the demo (no extra `--dart-define` needed beyond `CONVEX_DEMO_URL`):
+5. Run the demo (no extra `--dart-define` needed beyond `CONVEX_DEMO_URL`):
 
 ```bash
 flutter run \
@@ -133,6 +145,13 @@ Suggested manual flow:
 5. Confirm the UI updates immediately and the pending write counter increases.
 6. Tap `Resume sync`.
 7. Confirm the queue replays and the query source returns to remote data.
+
+## Files demo notes
+
+Upload and the live `files:list` gallery work on web and native targets. On web,
+the demo resolves signed Convex storage URLs and renders them with
+`Image.network`; disk-backed file cache and offline image fallback are
+native-only, so the extra image-widget/cache variants are hidden on web.
 
 ## Regenerate the typed API
 

@@ -8,11 +8,13 @@ import 'files_image_chrome.dart';
 /// [ConvexOfflineImage], [ConvexAssetCache] — is built on `dart:io`
 /// (`File` / `HttpClient` / `flutter_cache_manager`), so it cannot compile for
 /// the web target. The conditional export in `files_image_support.dart` picks
-/// this stub when `dart:io` is absent, keeping `flutter build web` green while
-/// the native module (`files_image_support_io.dart`) ships the real widgets.
+/// this stub when `dart:io` is absent, keeping `flutter build web` green. The
+/// web gallery renders signed storage URLs with `Image.network` directly from
+/// `files_panel.dart`; this module only guards native-only cache/offline helpers
+/// against accidental use on web.
 ///
 /// Upload (`ConvexStorage`, HTTP-based) and the live `files:list` subscription
-/// still work on web; only the bitmap rendering degrades to a placeholder.
+/// still work on web; only disk-cache / offline fallback helpers are omitted.
 
 /// Disk caching / offline images are unavailable on this platform.
 const bool filesDiskCacheSupported = false;
