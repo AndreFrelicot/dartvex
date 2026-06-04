@@ -31,19 +31,27 @@ class ShowcasePanel extends StatelessWidget {
     if (!hasBackend) {
       return const _BackendRequiredNotice();
     }
-    return ListView(
+    // A non-recycling scroller (not a ListView) so the demo cards' local state
+    // — the logs level filter, the "fail next send" toggle, the pagination
+    // status/loaded pages — survives scrolling away and back. The set of cards
+    // is small and fixed, so building them all eagerly is cheap, and this
+    // matches every other screen in the app.
+    return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
-      children: <Widget>[
-        const _OptimisticDemoCard(),
-        const SizedBox(height: 20),
-        const _PaginationDemoCard(),
-        const SizedBox(height: 20),
-        const _ConnectionStatusDemoCard(),
-        const SizedBox(height: 20),
-        const _AuthRefreshingDemoCard(),
-        const SizedBox(height: 20),
-        _LoggingDemoCard(logsNotifier: logsNotifier),
-      ],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          const _OptimisticDemoCard(),
+          const SizedBox(height: 20),
+          const _PaginationDemoCard(),
+          const SizedBox(height: 20),
+          const _ConnectionStatusDemoCard(),
+          const SizedBox(height: 20),
+          const _AuthRefreshingDemoCard(),
+          const SizedBox(height: 20),
+          _LoggingDemoCard(logsNotifier: logsNotifier),
+        ],
+      ),
     );
   }
 }
