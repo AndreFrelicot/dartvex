@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Optimistic updates: pass an `OptimisticUpdate` to `ConvexClient.mutate` to
+  locally overlay query results the instant a mutation is sent. The overlay is
+  replayed whenever fresh server data arrives while the mutation is pending and
+  rolled back automatically when it completes (replaced by the authoritative
+  result without flicker) or fails. Read and edit results through the exported
+  `OptimisticLocalStore` (`getQuery` / `getAllQueries` / `setQuery`, with a
+  string path, args map, and `dynamic` values). Mirrors the official client's
+  optimistic update model.
 - `ConvexClientConfig.connectTimeout` bounds the WebSocket handshake so a dead
   connection no longer hangs on the platform TCP timeout before retrying.
 - Exponential reconnect backoff with jitter and server-reason classification,

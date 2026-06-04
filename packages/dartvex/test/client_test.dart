@@ -308,6 +308,85 @@ void main() {
       client.dispose();
     });
 
+    test('mutate overlays an optimistic update and rolls back on failure',
+        () async {
+      final adapter = MockWebSocketAdapter();
+      final client = ConvexClient(
+        'https://demo.convex.cloud',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+      await settle();
+
+      final subscription = client.subscribe('messages:list');
+      final received = <Object?>[];
+      subscription.stream.listen((event) {
+        if (event is QuerySuccess) {
+          received.add(event.value);
+        } else if (event is QueryError) {
+          received.add('error:${event.message}');
+        }
+      });
+      await settle();
+
+      final querySet = adapter.decodedSentMessages
+          .where((message) => message['type'] == 'ModifyQuerySet')
+          .last;
+      final queryId = (((querySet['modifications'] as List<dynamic>).single
+          as Map<String, dynamic>)['queryId']) as int;
+
+      // Seed the server value ['a'].
+      adapter.pushServerMessage(
+        Transition(
+          startVersion: const StateVersion.initial(),
+          endVersion: StateVersion(querySet: 1, identity: 0, ts: encodeTs(1)),
+          modifications: <StateModification>[
+            QueryUpdated(queryId: queryId, value: const <String>['a']),
+          ],
+        ).toJson(),
+      );
+      await settle();
+      expect(received.last, const <String>['a']);
+
+      // Send a mutation with an optimistic update appending 'b'.
+      final future = client.mutate(
+        'messages:send',
+        const <String, dynamic>{'body': 'b'},
+        (store) {
+          final list = (store.getQuery('messages:list') as List<dynamic>?) ??
+              const <dynamic>[];
+          store.setQuery('messages:list', const <String, dynamic>{}, <dynamic>[
+            ...list,
+            'b',
+          ]);
+        },
+      );
+      final expectation = expectLater(future, throwsA(isA<ConvexException>()));
+      // The optimistic value is shown to the subscriber synchronously.
+      expect(received.last, const <String>['a', 'b']);
+      await settle();
+
+      // The server rejects the mutation; the overlay rolls back to ['a'].
+      final mutation = adapter.decodedSentMessages
+          .where((message) => message['type'] == 'Mutation')
+          .last;
+      adapter.pushServerMessage(
+        MutationResponse(
+          requestId: mutation['requestId'] as int,
+          success: false,
+          errorMessage: 'rejected',
+        ).toJson(),
+      );
+      await settle();
+      expect(received.last, const <String>['a']);
+      await expectation;
+
+      subscription.cancel();
+      client.dispose();
+    });
+
     test('cached subscription result waits for listener attachment', () async {
       final adapter = MockWebSocketAdapter();
       final client = ConvexClient(

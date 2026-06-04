@@ -20,6 +20,8 @@ export 'src/config.dart' show ConvexClientConfig;
 export 'src/exceptions.dart' show ConvexException, ConvexFileUploadException;
 export 'src/logging.dart' show DartvexLogEvent, DartvexLogger, DartvexLogLevel;
 export 'src/storage.dart' show ConvexStorage;
+export 'src/sync/optimistic_updates.dart'
+    show OptimisticLocalStore, OptimisticQueryEntry, OptimisticUpdate;
 export 'src/transport/connectivity.dart' show ConnectivitySignal;
 export 'src/transport/ws_manager.dart'
     show TransitionMetrics, TransitionMetricsCallback;

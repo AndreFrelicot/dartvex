@@ -8,6 +8,7 @@ import 'exceptions.dart';
 import 'logging.dart';
 import 'protocol/messages.dart';
 import 'sync/base_client.dart';
+import 'sync/optimistic_updates.dart';
 import 'sync/remote_query_set.dart';
 import 'transport/ws_factory.dart';
 import 'transport/ws_manager.dart';
@@ -417,7 +418,8 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       data: _requestData(name, args),
     );
     final registration = _baseClient.subscribe(name, args);
-    final current = _baseClient.currentResultForQuery(registration.queryId) ??
+    final current = _baseClient.optimisticResultForQuery(name, args) ??
+        _baseClient.currentResultForQuery(registration.queryId) ??
         _baseClient.cachedResultForQuery(name, args);
     var emittedInitialResult = false;
     late final StreamController<QueryResult> controller;
@@ -468,9 +470,16 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   @override
 
   /// Executes a mutation.
+  ///
+  /// Pass [optimisticUpdate] to locally overlay query results the moment the
+  /// mutation is sent; the overlay is replayed whenever fresh server data
+  /// arrives while the mutation is pending and is rolled back automatically
+  /// when the mutation completes (or fails). The update runs synchronously and
+  /// must be pure — it can be replayed multiple times.
   Future<dynamic> mutate(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
+    OptimisticUpdate? optimisticUpdate,
   ]) async {
     _assertNotDisposed();
     _log(
@@ -480,6 +489,12 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     );
     try {
       final request = _baseClient.trackMutation(name, args);
+      if (optimisticUpdate != null) {
+        _dispatchOptimisticEvents(
+          _baseClient.applyOptimisticUpdate(
+              optimisticUpdate, request.requestId),
+        );
+      }
       final future = _withOptionalTimeout(
         request.future,
         _config.mutationTimeout,
@@ -757,21 +772,12 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     for (final event in result.events) {
       switch (event) {
         case QueryUpdateEvent():
-          for (final subscriberId in _baseClient.subscriberIdsForQuery(
-            event.queryId,
-          )) {
-            _subscriptionControllers[subscriberId]?.add(
-              _toPublicQueryResult(event.result),
-            );
-          }
+          _emitToSubscribers(event.queryId, _toPublicQueryResult(event.result));
         case QueryRemovedEvent():
-          for (final subscriberId in _baseClient.subscriberIdsForQuery(
+          _emitToSubscribers(
             event.queryId,
-          )) {
-            _subscriptionControllers[subscriberId]?.add(
-              const QueryError('Query removed'),
-            );
-          }
+            const QueryError('Query removed'),
+          );
         case AuthConfirmedEvent():
           _authManager.handleAuthConfirmed();
         case AuthErrorEvent():
@@ -805,6 +811,24 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
           data: result.data,
           logLines: result.logLines,
         );
+    }
+  }
+
+  void _emitToSubscribers(int queryId, QueryResult result) {
+    for (final subscriberId in _baseClient.subscriberIdsForQuery(queryId)) {
+      _subscriptionControllers[subscriberId]?.add(result);
+    }
+  }
+
+  /// Delivers the query-update events produced by applying an optimistic update
+  /// straight to the affected subscribers.
+  void _dispatchOptimisticEvents(List<BaseClientEvent> events) {
+    for (final event in events) {
+      if (event is QueryUpdateEvent) {
+        _emitToSubscribers(event.queryId, _toPublicQueryResult(event.result));
+      } else if (event is QueryRemovedEvent) {
+        _emitToSubscribers(event.queryId, const QueryError('Query removed'));
+      }
     }
   }
 

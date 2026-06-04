@@ -3,6 +3,7 @@ import 'dart:async';
 import '../client.dart';
 import '../exceptions.dart';
 import '../logging.dart';
+import '../sync/optimistic_updates.dart';
 import 'auth_client.dart';
 import 'auth_manager.dart';
 import 'auth_provider.dart';
@@ -126,12 +127,14 @@ class ConvexClientWithAuth<TUser>
 
   @override
 
-  /// Executes a mutation through the wrapped client.
+  /// Executes a mutation through the wrapped client, with an optional
+  /// [optimisticUpdate]. See [ConvexClient.mutate].
   Future<dynamic> mutate(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
+    OptimisticUpdate? optimisticUpdate,
   ]) {
-    return _client.mutate(name, args);
+    return _client.mutate(name, args, optimisticUpdate);
   }
 
   @override
