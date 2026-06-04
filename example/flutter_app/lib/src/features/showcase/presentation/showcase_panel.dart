@@ -431,6 +431,21 @@ class _PaginationDemoCardState extends State<_PaginationDemoCard> {
                 icon: const Icon(Icons.north_east_rounded),
                 label: const Text('Post to feed'),
               ),
+              OutlinedButton.icon(
+                onPressed: _busy
+                    ? null
+                    : () => _run('Clear', () async {
+                        final cleared = await client.mutate(
+                          'messages:clearPublicMessages',
+                        );
+                        final n = cleared is num ? cleared.toInt() : 0;
+                        if (mounted) {
+                          setState(() => _status = 'Cleared $n message(s).');
+                        }
+                      }),
+                icon: const Icon(Icons.delete_sweep_outlined),
+                label: const Text('Clear feed'),
+              ),
             ],
           ),
           if (_status != null) ...<Widget>[
