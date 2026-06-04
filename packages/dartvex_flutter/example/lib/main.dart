@@ -218,9 +218,96 @@ class _ExampleHomePageState extends State<ExampleHomePage> {
                 },
                 child: const Text('Simulate auth refresh'),
               ),
+              const SizedBox(height: 12),
+              OutlinedButton(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const PaginatedHistoryPage(),
+                  ),
+                ),
+                child: const Text('Open paginated history'),
+              ),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// A page demonstrating live, reactive pagination with [PaginatedQueryBuilder].
+///
+/// The list loads pages on demand via "Load more" and updates reactively: the
+/// "Add entry" button prepends a backlog entry, which appears at the top of the
+/// already-loaded first page without a manual reload.
+class PaginatedHistoryPage extends StatelessWidget {
+  /// Creates the paginated history demo page.
+  const PaginatedHistoryPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Paginated history')),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          final client = ConvexProvider.of(context);
+          if (client is DemoRuntimeClient) {
+            client.addHistoryEntry(
+              'Live entry at ${DateTime.now().toIso8601String()}',
+            );
+          }
+        },
+        icon: const Icon(Icons.add),
+        label: const Text('Add entry'),
+      ),
+      body: PaginatedQueryBuilder<String>(
+        query: 'messages:history',
+        pageSize: 8,
+        fromJson: (json) => json['text'] as String,
+        builder: (context, items, loadMore, status) {
+          if (status == PaginationStatus.loading) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (status == PaginationStatus.error) {
+            return const Center(child: Text('Failed to load history'));
+          }
+          return ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: items.length + 1,
+            itemBuilder: (context, index) {
+              if (index < items.length) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Text(items[index]),
+                );
+              }
+              switch (status) {
+                case PaginationStatus.allLoaded:
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: Center(child: Text('— end of history —')),
+                  );
+                case PaginationStatus.loadingMore:
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                case PaginationStatus.loading:
+                case PaginationStatus.idle:
+                case PaginationStatus.error:
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Center(
+                      child: OutlinedButton(
+                        onPressed: loadMore,
+                        child: const Text('Load more'),
+                      ),
+                    ),
+                  );
+              }
+            },
+          );
+        },
       ),
     );
   }
@@ -283,11 +370,28 @@ class DemoRuntimeClient implements ConvexRuntimeClient {
       StreamController<bool>.broadcast(sync: true);
   final List<DemoRuntimeSubscription> _subscriptions =
       <DemoRuntimeSubscription>[];
+  final List<DemoPaginatedQuery> _paginatedQueries = <DemoPaginatedQuery>[];
   late List<String> _messages;
+  // A longer, paginated backlog rendered by the live paginated history page.
+  late List<Map<String, dynamic>> _history =
+      List<Map<String, dynamic>>.generate(
+        24,
+        (index) => <String, dynamic>{
+          'id': index,
+          'text': 'History message #${24 - index}',
+        },
+      );
   ConvexConnectionState _currentConnectionState =
       ConvexConnectionState.connecting;
   bool _currentAuthRefreshing = false;
   bool _disposed = false;
+
+  /// The number of backlog entries available to paginate through.
+  int get historyLength => _history.length;
+
+  /// The first [count] backlog entries, newest first.
+  List<Map<String, dynamic>> historySlice(int count) =>
+      _history.take(count).toList(growable: false);
 
   /// When `true`, the next [mutate] call fails after showing its optimistic
   /// update, so the example can demonstrate rollback.
@@ -325,6 +429,9 @@ class DemoRuntimeClient implements ConvexRuntimeClient {
     _disposed = true;
     for (final subscription in _subscriptions) {
       subscription.cancel();
+    }
+    for (final query in List<DemoPaginatedQuery>.of(_paginatedQueries)) {
+      query.cancel();
     }
     unawaited(_connectionController.close());
     unawaited(_authRefreshingController.close());
@@ -450,6 +557,36 @@ class DemoRuntimeClient implements ConvexRuntimeClient {
     });
     return subscription;
   }
+
+  @override
+  ConvexRuntimePaginatedQuery paginatedQuery(
+    String name,
+    Map<String, dynamic> args, {
+    int pageSize = 20,
+  }) {
+    // A real ConvexClient runs an actual paginated query; this demo paginates
+    // the in-memory backlog so the page list updates live as entries arrive.
+    final query = DemoPaginatedQuery(this, pageSize);
+    _paginatedQueries.add(query);
+    return query;
+  }
+
+  /// Removes a finished paginated query from the live set.
+  void unregisterPaginatedQuery(DemoPaginatedQuery query) {
+    _paginatedQueries.remove(query);
+  }
+
+  /// Prepends a backlog entry (newest first), reactively growing every live
+  /// paginated query's first page so the new message appears at the top.
+  void addHistoryEntry(String text) {
+    _history = <Map<String, dynamic>>[
+      <String, dynamic>{'id': _history.length, 'text': text},
+      ..._history,
+    ];
+    for (final query in List<DemoPaginatedQuery>.of(_paginatedQueries)) {
+      query.onHistoryChanged();
+    }
+  }
 }
 
 class DemoRuntimeSubscription implements ConvexRuntimeSubscription {
@@ -484,6 +621,114 @@ class DemoRuntimeSubscription implements ConvexRuntimeSubscription {
         hasPendingWrites: hasPendingWrites,
       ),
     );
+  }
+}
+
+/// An in-memory, reactive paginated query over [DemoRuntimeClient]'s backlog.
+///
+/// Loads the first page after a short delay, grows by [pageSize] on
+/// [loadMore], and re-emits when the backlog changes so the page list stays
+/// live — the in-memory stand-in for the core reactive pagination engine.
+class DemoPaginatedQuery implements ConvexRuntimePaginatedQuery {
+  /// Creates a paginated view of [_client]'s backlog with the given [pageSize].
+  DemoPaginatedQuery(this._client, this.pageSize) {
+    Future<void>.delayed(const Duration(milliseconds: 300), () {
+      if (isCanceled) {
+        return;
+      }
+      _loaded = pageSize;
+      _refresh();
+    });
+  }
+
+  final DemoRuntimeClient _client;
+
+  /// Items requested per page.
+  final int pageSize;
+
+  final StreamController<ConvexPaginatedResult> _controller =
+      StreamController<ConvexPaginatedResult>.broadcast(sync: true);
+  ConvexPaginatedResult _current = const ConvexPaginatedResult(
+    results: <dynamic>[],
+    status: ConvexPaginationStatus.loadingFirstPage,
+    isDone: false,
+  );
+  int _loaded = 0;
+  bool _loadingMore = false;
+
+  /// Whether this query has been canceled.
+  bool isCanceled = false;
+
+  @override
+  Stream<ConvexPaginatedResult> get stream => _controller.stream;
+
+  @override
+  ConvexPaginatedResult get current => _current;
+
+  @override
+  bool loadMore([int? numItems]) {
+    if (isCanceled || _loadingMore || _loaded >= _client.historyLength) {
+      return false;
+    }
+    _loadingMore = true;
+    _emit(_current.results, ConvexPaginationStatus.loadingMore, isDone: false);
+    Future<void>.delayed(const Duration(milliseconds: 350), () {
+      if (isCanceled) {
+        return;
+      }
+      _loaded = (_loaded + (numItems ?? pageSize)).clamp(
+        0,
+        _client.historyLength,
+      );
+      _loadingMore = false;
+      _refresh();
+    });
+    return true;
+  }
+
+  /// Grows the window by one and re-emits so a freshly prepended entry shows.
+  void onHistoryChanged() {
+    if (isCanceled || _loaded == 0) {
+      return;
+    }
+    _loaded = (_loaded + 1).clamp(0, _client.historyLength);
+    _refresh();
+  }
+
+  void _refresh() {
+    final isDone = _loaded >= _client.historyLength;
+    _emit(
+      _client.historySlice(_loaded),
+      isDone
+          ? ConvexPaginationStatus.exhausted
+          : ConvexPaginationStatus.canLoadMore,
+      isDone: isDone,
+    );
+  }
+
+  void _emit(
+    List<dynamic> results,
+    ConvexPaginationStatus status, {
+    required bool isDone,
+  }) {
+    _current = ConvexPaginatedResult(
+      results: results,
+      status: status,
+      isDone: isDone,
+    );
+    if (!_controller.isClosed) {
+      _controller.add(_current);
+    }
+  }
+
+  @override
+  void cancel() {
+    if (isCanceled) {
+      return;
+    }
+    isCanceled = true;
+    _client.unregisterPaginatedQuery(this);
+    unawaited(_controller.close());
   }
 }
 
