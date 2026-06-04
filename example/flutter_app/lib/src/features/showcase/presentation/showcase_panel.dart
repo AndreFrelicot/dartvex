@@ -1,20 +1,30 @@
+import 'package:dartvex/dartvex.dart' show DartvexLogEvent, DartvexLogLevel;
 import 'package:dartvex_flutter/dartvex_flutter.dart';
 import 'package:flutter/material.dart';
 
 import '../../shared/presentation/concierge_design.dart';
 import '../../shared/presentation/section_card.dart';
 
-/// The "Showcase" tab: four self-contained, live demos of the SDK capabilities
+/// The "Showcase" tab: five self-contained, live demos of the SDK capabilities
 /// added in the parity work — optimistic updates, reactive pagination, the rich
-/// connection status, and the auth-refreshing signal — all driven against the
-/// real Convex backend via the widgets in `dartvex_flutter`.
+/// connection status, the auth-refreshing signal, and the structured logging
+/// stream — all driven against the real Convex backend via the widgets in
+/// `dartvex_flutter`.
 class ShowcasePanel extends StatelessWidget {
   /// Creates a [ShowcasePanel]. [hasBackend] is `false` when `CONVEX_DEMO_URL`
   /// is unset, in which case a configuration notice is shown instead.
-  const ShowcasePanel({super.key, required this.hasBackend});
+  const ShowcasePanel({
+    super.key,
+    required this.hasBackend,
+    required this.logsNotifier,
+  });
 
   /// Whether a deployment URL is configured (the live client is available).
   final bool hasBackend;
+
+  /// Live, bounded ring buffer of structured SDK log events (newest first), fed
+  /// by the [DartvexLogger] configured on the client in `app.dart`.
+  final ValueNotifier<List<DartvexLogEvent>> logsNotifier;
 
   @override
   Widget build(BuildContext context) {
@@ -23,14 +33,16 @@ class ShowcasePanel extends StatelessWidget {
     }
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
-      children: const <Widget>[
-        _OptimisticDemoCard(),
-        SizedBox(height: 20),
-        _PaginationDemoCard(),
-        SizedBox(height: 20),
-        _ConnectionStatusDemoCard(),
-        SizedBox(height: 20),
-        _AuthRefreshingDemoCard(),
+      children: <Widget>[
+        const _OptimisticDemoCard(),
+        const SizedBox(height: 20),
+        const _PaginationDemoCard(),
+        const SizedBox(height: 20),
+        const _ConnectionStatusDemoCard(),
+        const SizedBox(height: 20),
+        const _AuthRefreshingDemoCard(),
+        const SizedBox(height: 20),
+        _LoggingDemoCard(logsNotifier: logsNotifier),
       ],
     );
   }
@@ -854,6 +866,321 @@ class _AuthRefreshingDemoCard extends StatelessWidget {
       ),
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// 5. Structured logging
+// ---------------------------------------------------------------------------
+
+class _LoggingDemoCard extends StatefulWidget {
+  const _LoggingDemoCard({required this.logsNotifier});
+
+  final ValueNotifier<List<DartvexLogEvent>> logsNotifier;
+
+  @override
+  State<_LoggingDemoCard> createState() => _LoggingDemoCardState();
+}
+
+class _LoggingDemoCardState extends State<_LoggingDemoCard> {
+  /// Active level filter; `null` shows every level.
+  DartvexLogLevel? _filter;
+
+  @override
+  Widget build(BuildContext context) {
+    return SectionCard(
+      eyebrow: 'STRUCTURED LOGGING',
+      title: 'Live SDK logs',
+      subtitle:
+          'DartvexLogger streams the SDK\'s structured transport, auth, and '
+          'storage diagnostics. The client is wired at debug level; events land '
+          'here newest-first, capped to the latest 150.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          _LogLevelFilter(
+            selected: _filter,
+            onChanged: (level) => setState(() => _filter = level),
+          ),
+          const SizedBox(height: 12),
+          ValueListenableBuilder<List<DartvexLogEvent>>(
+            valueListenable: widget.logsNotifier,
+            builder: (context, events, _) {
+              final visible = _filter == null
+                  ? events
+                  : events
+                        .where((event) => event.level == _filter)
+                        .toList(growable: false);
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: <Widget>[
+                      Text(
+                        _filter == null
+                            ? '${events.length} event(s)'
+                            : '${visible.length} of ${events.length} event(s)',
+                        style: const TextStyle(
+                          color: ConciergeColors.textMuted,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12.5,
+                        ),
+                      ),
+                      TextButton.icon(
+                        onPressed: events.isEmpty
+                            ? null
+                            : () => widget.logsNotifier.value =
+                                  const <DartvexLogEvent>[],
+                        icon: const Icon(Icons.delete_sweep_outlined, size: 18),
+                        label: const Text('Clear'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    height: 320,
+                    decoration: BoxDecoration(
+                      color: ConciergeColors.surfaceLowest.withValues(
+                        alpha: 0.6,
+                      ),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: ConciergeColors.cyan.withValues(alpha: 0.12),
+                      ),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: visible.isEmpty
+                        ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Text(
+                                events.isEmpty
+                                    ? 'No SDK logs yet — interact with the app '
+                                          'to see transport, auth, and storage '
+                                          'events stream in.'
+                                    : 'No ${_logLevelLabel(_filter!)} events '
+                                          'captured yet.',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  color: ConciergeColors.textDim,
+                                ),
+                              ),
+                            ),
+                          )
+                        : ListView.separated(
+                            padding: const EdgeInsets.all(12),
+                            itemCount: visible.length,
+                            separatorBuilder: (_, _) =>
+                                const SizedBox(height: 8),
+                            itemBuilder: (context, index) =>
+                                _LogRow(event: visible[index]),
+                          ),
+                  ),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+          const _WatchHint(
+            'Interact with any tab (send a message, force a reconnect, sign in) '
+            'and watch the transport/auth/storage events stream here in real '
+            'time. Tokens and argument values are never logged — only metadata '
+            'such as event reasons and argument keys.',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Compact level filter rendered as a row of choice chips. The leading "All"
+/// chip clears the filter; the rest narrow the stream to a single level.
+class _LogLevelFilter extends StatelessWidget {
+  const _LogLevelFilter({required this.selected, required this.onChanged});
+
+  final DartvexLogLevel? selected;
+  final ValueChanged<DartvexLogLevel?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    const options = <(String, DartvexLogLevel?)>[
+      ('All', null),
+      ('Debug', DartvexLogLevel.debug),
+      ('Info', DartvexLogLevel.info),
+      ('Warn', DartvexLogLevel.warn),
+      ('Error', DartvexLogLevel.error),
+    ];
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: <Widget>[
+        for (final (label, level) in options)
+          _LogFilterChip(
+            label: label,
+            color: level == null
+                ? ConciergeColors.cyanSoft
+                : _logLevelColor(level),
+            selected: level == selected,
+            onSelected: () => onChanged(level),
+          ),
+      ],
+    );
+  }
+}
+
+class _LogFilterChip extends StatelessWidget {
+  const _LogFilterChip({
+    required this.label,
+    required this.color,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final String label;
+  final Color color;
+  final bool selected;
+  final VoidCallback onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      showCheckmark: false,
+      onSelected: (_) => onSelected(),
+      labelStyle: TextStyle(
+        color: selected ? ConciergeColors.surfaceLowest : color,
+        fontWeight: FontWeight.w700,
+        fontSize: 12.5,
+      ),
+      selectedColor: color,
+      backgroundColor: ConciergeColors.surfaceHigh,
+      side: BorderSide(color: color.withValues(alpha: 0.4)),
+    );
+  }
+}
+
+/// A single structured log line: a level chip, the subsystem tag, the message,
+/// and (when present) a compact `key=value` rendering of the structured data
+/// payload and any associated error.
+class _LogRow extends StatelessWidget {
+  const _LogRow({required this.event});
+
+  final DartvexLogEvent event;
+
+  @override
+  Widget build(BuildContext context) {
+    final data = event.data;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        _LogLevelChip(level: event.level),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              if (event.tag != null)
+                Text(
+                  event.tag!,
+                  style: const TextStyle(
+                    color: ConciergeColors.cyanSoft,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              Text(
+                event.message,
+                style: const TextStyle(
+                  color: ConciergeColors.text,
+                  fontSize: 12.5,
+                  fontFamily: 'monospace',
+                  height: 1.3,
+                ),
+              ),
+              if (data != null && data.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    data.entries
+                        .map((entry) => '${entry.key}=${entry.value}')
+                        .join('  '),
+                    style: const TextStyle(
+                      color: ConciergeColors.textDim,
+                      fontSize: 11,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                ),
+              if (event.error != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    '${event.error}',
+                    style: const TextStyle(
+                      color: ConciergeColors.danger,
+                      fontSize: 11,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LogLevelChip extends StatelessWidget {
+  const _LogLevelChip({required this.level});
+
+  final DartvexLogLevel level;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _logLevelColor(level);
+    return Container(
+      width: 52,
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withValues(alpha: 0.5)),
+      ),
+      child: Text(
+        _logLevelLabel(level).toUpperCase(),
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w800,
+          fontSize: 10,
+          letterSpacing: 0.5,
+        ),
+      ),
+    );
+  }
+}
+
+Color _logLevelColor(DartvexLogLevel level) {
+  return switch (level) {
+    DartvexLogLevel.error => ConciergeColors.danger,
+    DartvexLogLevel.warn => ConciergeColors.warning,
+    DartvexLogLevel.info => ConciergeColors.cyanSoft,
+    DartvexLogLevel.debug => ConciergeColors.textDim,
+    DartvexLogLevel.off => ConciergeColors.textDim,
+  };
+}
+
+String _logLevelLabel(DartvexLogLevel level) {
+  return switch (level) {
+    DartvexLogLevel.error => 'error',
+    DartvexLogLevel.warn => 'warn',
+    DartvexLogLevel.info => 'info',
+    DartvexLogLevel.debug => 'debug',
+    DartvexLogLevel.off => 'off',
+  };
 }
 
 // ---------------------------------------------------------------------------

@@ -57,6 +57,16 @@ class _ConvexFlutterDemoAppState extends State<ConvexFlutterDemoApp> {
       DemoReconnectController();
   final ValueNotifier<TransitionMetrics?> _latencyNotifier =
       ValueNotifier<TransitionMetrics?>(null);
+
+  /// Bounded, newest-first ring buffer of structured SDK log events, fed by the
+  /// [DartvexLogger] configured on the client. Threaded to the Sync tab's
+  /// live-logs card the same way [_latencyNotifier] is threaded to the app bar.
+  final ValueNotifier<List<DartvexLogEvent>> _logsNotifier =
+      ValueNotifier<List<DartvexLogEvent>>(const <DartvexLogEvent>[]);
+  static const int _maxLogEntries = 150;
+  final List<DartvexLogEvent> _pendingLogEvents = <DartvexLogEvent>[];
+  bool _logFlushScheduled = false;
+
   final TextEditingController _betterAuthNameController =
       TextEditingController();
   final TextEditingController _betterAuthEmailController =
@@ -121,10 +131,43 @@ class _ConvexFlutterDemoAppState extends State<ConvexFlutterDemoApp> {
     _disposeClient();
     _demoAuthProvider.dispose();
     _latencyNotifier.dispose();
+    _logsNotifier.dispose();
     _betterAuthNameController.dispose();
     _betterAuthEmailController.dispose();
     _betterAuthPasswordController.dispose();
     super.dispose();
+  }
+
+  /// Receives a structured log event from the SDK and queues it for the bounded
+  /// ring buffer. The notifier write is deferred to a microtask because the SDK
+  /// can emit logs synchronously while a widget mounts (for example a query
+  /// subscribing in `initState`), and mutating a listened notifier mid-build
+  /// would trip Flutter's "notifyListeners during build" assertion. Bursts are
+  /// coalesced into a single notifier update per microtask drain.
+  void _appendLog(DartvexLogEvent event) {
+    _pendingLogEvents.insert(0, event);
+    if (_logFlushScheduled) {
+      return;
+    }
+    _logFlushScheduled = true;
+    scheduleMicrotask(_flushLogs);
+  }
+
+  void _flushLogs() {
+    _logFlushScheduled = false;
+    if (!mounted || _pendingLogEvents.isEmpty) {
+      _pendingLogEvents.clear();
+      return;
+    }
+    final next = <DartvexLogEvent>[
+      ..._pendingLogEvents,
+      ..._logsNotifier.value,
+    ];
+    _pendingLogEvents.clear();
+    if (next.length > _maxLogEntries) {
+      next.removeRange(_maxLogEntries, next.length);
+    }
+    _logsNotifier.value = List<DartvexLogEvent>.unmodifiable(next);
   }
 
   Future<void> _runAuthOperation(
@@ -248,6 +291,8 @@ class _ConvexFlutterDemoAppState extends State<ConvexFlutterDemoApp> {
       config: ConvexClientConfig(
         adapterFactory: _reconnectController.createAdapter,
         connectivitySignal: ConnectivityPlusSignal(),
+        logLevel: DartvexLogLevel.debug,
+        logger: _appendLog,
       ),
       onTransitionMetrics: (metrics) {
         _latencyNotifier.value = metrics;
@@ -359,6 +404,7 @@ class _ConvexFlutterDemoAppState extends State<ConvexFlutterDemoApp> {
       onForceReconnect: _forceReconnect,
       onAuthModeChanged: _switchAuthMode,
       latencyNotifier: _latencyNotifier,
+      logsNotifier: _logsNotifier,
     );
   }
 
@@ -413,6 +459,7 @@ class DemoHomePage extends StatefulWidget {
     required this.onForceReconnect,
     required this.onAuthModeChanged,
     required this.latencyNotifier,
+    required this.logsNotifier,
   });
 
   final ConvexApi? api;
@@ -437,6 +484,7 @@ class DemoHomePage extends StatefulWidget {
   final Future<void> Function() onForceReconnect;
   final ValueChanged<AuthMode> onAuthModeChanged;
   final ValueNotifier<TransitionMetrics?> latencyNotifier;
+  final ValueNotifier<List<DartvexLogEvent>> logsNotifier;
 
   @override
   State<DemoHomePage> createState() => _DemoHomePageState();
@@ -495,6 +543,7 @@ class _DemoHomePageState extends State<DemoHomePage> {
         authMode: widget.authMode,
         authProviderReady: _authProviderReady,
         latencyNotifier: widget.latencyNotifier,
+        logsNotifier: widget.logsNotifier,
       ),
       _TasksScreen(
         api: widget.api,
@@ -612,6 +661,7 @@ class _ShowcaseScreen extends StatelessWidget {
     required this.authMode,
     required this.authProviderReady,
     required this.latencyNotifier,
+    required this.logsNotifier,
   });
 
   final ConvexApi? api;
@@ -619,6 +669,7 @@ class _ShowcaseScreen extends StatelessWidget {
   final AuthMode authMode;
   final bool authProviderReady;
   final ValueNotifier<TransitionMetrics?> latencyNotifier;
+  final ValueNotifier<List<DartvexLogEvent>> logsNotifier;
 
   @override
   Widget build(BuildContext context) {
@@ -630,7 +681,7 @@ class _ShowcaseScreen extends StatelessWidget {
         authProviderReady: authProviderReady,
         latencyNotifier: latencyNotifier,
       ),
-      body: ShowcasePanel(hasBackend: api != null),
+      body: ShowcasePanel(hasBackend: api != null, logsNotifier: logsNotifier),
     );
   }
 }
