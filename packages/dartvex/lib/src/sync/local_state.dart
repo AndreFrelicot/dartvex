@@ -4,19 +4,29 @@ import '../protocol/encoding.dart';
 import '../protocol/messages.dart';
 import '../values/json_codec.dart';
 
+/// Captured client-side authentication credentials.
+///
+/// Retains the token type and value so the identity can be re-affirmed across
+/// reconnects and resumes as an [Authenticate] message.
 class AuthState {
+  /// Creates an [AuthState] for the given [tokenType] and [value], optionally
+  /// [impersonating] another identity (used only for `Admin` tokens).
   const AuthState({
     required this.tokenType,
     required this.value,
     this.impersonating,
   });
 
+  /// The auth token type, e.g. `User`, `Admin`, or `None`.
   final String tokenType;
+
+  /// The raw token value sent to the server, or `null` when there is none.
   final String? value;
 
   /// Identity attributes an `Admin` token is impersonating, if any.
   final Map<String, dynamic>? impersonating;
 
+  /// Builds an [Authenticate] message for this auth state at [baseVersion].
   Authenticate toAuthenticate(int baseVersion) {
     return Authenticate(
       tokenType: tokenType,
@@ -27,7 +37,13 @@ class AuthState {
   }
 }
 
+/// The local record of a single active query subscription.
+///
+/// Tracks the wire [queryId], the query being run, and the set of subscribers
+/// sharing it, so multiple callers of the same query coalesce onto one entry in
+/// the query set.
 class QuerySubscriptionState {
+  /// Creates a [QuerySubscriptionState] for the query identified by [queryId].
   QuerySubscriptionState({
     required this.queryId,
     required this.udfPath,
@@ -36,30 +52,63 @@ class QuerySubscriptionState {
     this.journal,
   });
 
+  /// The protocol query id assigned to this subscription.
   final int queryId;
+
+  /// The canonicalized `module:function` path of the query UDF.
   final String udfPath;
+
+  /// The arguments the query is invoked with.
   final Map<String, dynamic> args;
+
+  /// The ids of all subscribers currently sharing this query.
   final Set<int> subscriberIds;
+
+  /// The latest journal token reported by the server for this query, if any.
   String? journal;
 }
 
+/// The result of registering a new subscriber via [LocalSyncState.subscribe].
+///
+/// Carries the assigned ids plus any [ModifyQuerySet] that must be sent to the
+/// server; [message] is `null` when the query was already active or the state
+/// is paused.
 class SubscriptionRegistration {
+  /// Creates a [SubscriptionRegistration] describing a newly added subscriber.
   const SubscriptionRegistration({
     required this.subscriberId,
     required this.queryId,
     this.message,
   });
 
+  /// The id assigned to the newly registered subscriber.
   final int subscriberId;
+
+  /// The query id the subscriber is attached to.
   final int queryId;
+
+  /// The query-set modification to send, or `null` if nothing must go out.
   final ModifyQuerySet? message;
 }
 
+/// The authoritative client-side mirror of the Convex sync protocol state.
+///
+/// Manages the local query set, identity, and version counters, producing the
+/// [ClientMessage]s (ModifyQuerySet, Authenticate) that keep the server in sync
+/// and tracking what remains outstanding across pauses and reconnects.
 class LocalSyncState {
   int _nextQueryId = 0;
   int _nextSubscriberId = 0;
+
+  /// The current query-set version; incremented for every emitted
+  /// [ModifyQuerySet] and reset on reconnect.
   int querySetVersion = 0;
+
+  /// The current identity version; incremented for every emitted
+  /// [Authenticate] and reset on reconnect.
   int authVersion = 0;
+
+  /// The highest server timestamp observed so far, or `null` if none yet.
   String? maxObservedTimestamp;
   AuthState? _authState;
 
@@ -75,8 +124,10 @@ class LocalSyncState {
   final Map<int, String> _queryTokenByQueryId = <int, String>{};
   final Map<int, String> _queryTokenBySubscriberId = <int, String>{};
 
+  /// The current captured auth state, or `null` when unauthenticated.
   AuthState? get authState => _authState;
 
+  /// Whether an auth identity is currently set.
   bool get hasAuth => _authState != null;
 
   /// Whether the sync state is currently paused while auth is being resolved.
@@ -122,6 +173,12 @@ class LocalSyncState {
   /// subscribers must be notified.
   int? queryIdForToken(String token) => _queriesByToken[token]?.queryId;
 
+  /// Registers a new subscriber for the query [udfPath] with [args].
+  ///
+  /// Coalesces onto an existing query when one matches the same token,
+  /// otherwise assigns a fresh query id and produces an [Add] modification. The
+  /// returned [SubscriptionRegistration] carries a [ModifyQuerySet] to send
+  /// unless the query already existed or the state is paused.
   SubscriptionRegistration subscribe(
     String udfPath,
     Map<String, dynamic> args, {
@@ -183,6 +240,11 @@ class LocalSyncState {
     );
   }
 
+  /// Removes the subscriber [subscriberId] from its query.
+  ///
+  /// When the last subscriber of a query is removed, the query is dropped and a
+  /// [ModifyQuerySet] containing a [Remove] is returned; otherwise (or while
+  /// paused, or when the query is still shared) the result is `null`.
   ModifyQuerySet? unsubscribe(int subscriberId) {
     final token = _queryTokenBySubscriberId.remove(subscriberId);
     if (token == null) {
@@ -221,6 +283,11 @@ class LocalSyncState {
     );
   }
 
+  /// Sets the auth identity to [tokenType]/[value] and returns the resulting
+  /// [Authenticate] message.
+  ///
+  /// Advances the identity version unless paused, in which case the new version
+  /// is only emitted by [resume]. Mirrors the official client's `setAuth`.
   Authenticate setAuth({required String tokenType, String? value}) {
     restoreAuth(tokenType: tokenType, value: value);
     if (_authState == null) {
@@ -311,12 +378,19 @@ class LocalSyncState {
     );
   }
 
+  /// Restores the captured auth state without emitting a message or advancing
+  /// the identity version.
+  ///
+  /// A [tokenType] of `None` clears the auth state. Used internally by
+  /// [setAuth] and to re-seat credentials.
   void restoreAuth({required String tokenType, String? value}) {
     _authState = tokenType == 'None'
         ? null
         : AuthState(tokenType: tokenType, value: value);
   }
 
+  /// Records server timestamp [ts], advancing [maxObservedTimestamp] when it is
+  /// newer than the highest seen so far.
   void observeTimestamp(String ts) {
     if (maxObservedTimestamp == null) {
       maxObservedTimestamp = ts;
@@ -327,6 +401,9 @@ class LocalSyncState {
     }
   }
 
+  /// Stores the latest [journal] token reported for the query [queryId].
+  ///
+  /// No-ops when [journal] is `null` or the query is no longer subscribed.
   void updateJournal(int queryId, String? journal) {
     if (journal == null) {
       return;
@@ -342,6 +419,8 @@ class LocalSyncState {
     state.journal = journal;
   }
 
+  /// Returns the ids of all subscribers attached to query [queryId], or an
+  /// empty list when the query is not active.
   List<int> subscriberIdsForQuery(int queryId) {
     final token = _queryTokenByQueryId[queryId];
     if (token == null) {
@@ -354,6 +433,8 @@ class LocalSyncState {
     return state.subscriberIds.toList(growable: false);
   }
 
+  /// Returns the query id the subscriber [subscriberId] is attached to, or
+  /// `null` if the subscriber is unknown.
   int? queryIdForSubscriber(int subscriberId) {
     final token = _queryTokenBySubscriberId[subscriberId];
     if (token == null) {
@@ -362,6 +443,8 @@ class LocalSyncState {
     return _queriesByToken[token]?.queryId;
   }
 
+  /// Returns the [QuerySubscriptionState] for query [queryId], or `null` if no
+  /// such query is active.
   QuerySubscriptionState? queryStateForId(int queryId) {
     final token = _queryTokenByQueryId[queryId];
     if (token == null) {
@@ -444,6 +527,11 @@ class LocalSyncState {
     return messages;
   }
 
+  /// Normalizes [udfPath] to the canonical `module:function` form.
+  ///
+  /// A path without a `:` defaults to the `default` export, and a trailing
+  /// `.js` extension on the module is stripped, matching the server's UDF path
+  /// canonicalization.
   static String canonicalizeUdfPath(String udfPath) {
     final parts = udfPath.split(':');
     late final String moduleName;
@@ -461,6 +549,10 @@ class LocalSyncState {
     return '$normalizedModule:$functionName';
   }
 
+  /// Builds the stable query token that identifies a query by its canonical
+  /// [udfPath] and JSON-encoded [args].
+  ///
+  /// Used as the key under which subscriptions to the same query are coalesced.
   static String serializeQueryToken(String udfPath, Map<String, dynamic> args) {
     final normalized = <String, dynamic>{
       'udfPath': udfPath,

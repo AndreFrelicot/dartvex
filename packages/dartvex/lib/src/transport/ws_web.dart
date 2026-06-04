@@ -5,10 +5,14 @@ import 'package:web/web.dart' as web;
 
 import 'ws_interface.dart';
 
+/// Creates the web platform [WebSocketAdapter] for the client identified by
+/// [clientId].
 WebSocketAdapter createWebSocketAdapter(String clientId) {
   return WebPlatformWebSocketAdapter();
 }
 
+/// Browser [WebSocketAdapter] backed by the native `web.WebSocket`, bridging
+/// the Convex sync transport to JS interop streams for messages and closes.
 class WebPlatformWebSocketAdapter implements WebSocketAdapter {
   final StreamController<String> _messagesController =
       StreamController<String>.broadcast();

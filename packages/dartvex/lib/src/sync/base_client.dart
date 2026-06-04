@@ -7,38 +7,58 @@ import 'optimistic_updates.dart';
 import 'remote_query_set.dart';
 import 'request_manager.dart';
 
+/// Base type for the side effects [BaseClient] surfaces while processing
+/// incoming [ServerMessage]s and client actions.
 sealed class BaseClientEvent {
+  /// Const base constructor for [BaseClientEvent] subtypes.
   const BaseClientEvent();
 }
 
+/// Emitted when a query's result changes and its subscribers must be notified.
 class QueryUpdateEvent extends BaseClientEvent {
+  /// Creates a [QueryUpdateEvent] for [queryId] carrying its new [result].
   const QueryUpdateEvent({required this.queryId, required this.result});
 
+  /// Identifier of the query whose value changed.
   final int queryId;
+
+  /// The new stored result (server value with any optimistic overlay applied).
   final StoredQueryResult result;
 }
 
+/// Emitted when a query is removed from the active query set.
 class QueryRemovedEvent extends BaseClientEvent {
+  /// Creates a [QueryRemovedEvent] for the query identified by [queryId].
   const QueryRemovedEvent({required this.queryId});
 
+  /// Identifier of the query that was removed.
   final int queryId;
 }
 
+/// Emitted when the server confirms an authentication state transition.
 class AuthConfirmedEvent extends BaseClientEvent {
+  /// Creates an [AuthConfirmedEvent] reporting the confirmed auth state.
   const AuthConfirmedEvent({required this.isAuthenticated});
 
+  /// Whether the client is authenticated after the confirmed transition.
   final bool isAuthenticated;
 }
 
+/// Emitted when the server rejects the client's authentication token.
 class AuthErrorEvent extends BaseClientEvent {
+  /// Creates an [AuthErrorEvent] wrapping the server-sent [error].
   const AuthErrorEvent({required this.error});
 
+  /// The auth-error message received from the server.
   final AuthError error;
 }
 
+/// Emitted when the sync layer detects state that requires a reconnect.
 class ReconnectRequiredEvent extends BaseClientEvent {
+  /// Creates a [ReconnectRequiredEvent] describing why a reconnect is needed.
   const ReconnectRequiredEvent({required this.reason});
 
+  /// Human-readable explanation of why a reconnect is required.
   final String reason;
 }
 
@@ -54,24 +74,43 @@ class FatalErrorEvent extends BaseClientEvent {
   final String error;
 }
 
+/// The outcome of [BaseClient.receive]: events to surface and messages to send.
 class BaseClientReceiveResult {
+  /// Creates a receive result with the given [events] and [outgoing] messages.
   const BaseClientReceiveResult({
     this.events = const <BaseClientEvent>[],
     this.outgoing = const <ClientMessage>[],
   });
 
+  /// Events produced while processing the received message.
   final List<BaseClientEvent> events;
+
+  /// Client messages that should be sent over the websocket as a result.
   final List<ClientMessage> outgoing;
 }
 
+/// A request (mutation or action) tracked by the [RequestManager], pairing its
+/// wire request id with the future that resolves to the server response.
 class TrackedRequest {
+  /// Creates a [TrackedRequest] for [requestId] resolving via [future].
   const TrackedRequest({required this.requestId, required this.future});
 
+  /// The wire request id assigned to this request.
   final int requestId;
+
+  /// Future that completes with the request's result or error.
   final Future<dynamic> future;
 }
 
+/// Transport-agnostic core of the Convex sync protocol.
+///
+/// Owns the [LocalSyncState] (query subscriptions and auth), the
+/// [RemoteQuerySet] (authoritative server results), the [RequestManager]
+/// (in-flight mutations/actions), and the optimistic overlay. It turns
+/// caller actions into outgoing [ClientMessage]s and folds incoming
+/// [ServerMessage]s into events, leaving the actual socket I/O to its host.
 class BaseClient {
+  /// Creates a [BaseClient], optionally injecting collaborators for testing.
   BaseClient({
     LocalSyncState? localState,
     RemoteQuerySet? remoteQuerySet,
@@ -88,10 +127,14 @@ class BaseClient {
 
   int _nextRequestId = 0;
 
+  /// The local sync state tracking query subscriptions and auth.
   LocalSyncState get localState => _localState;
 
+  /// The highest server timestamp observed so far, or `null` before any
+  /// transition has been processed.
   String? get maxObservedTimestamp => _localState.maxObservedTimestamp;
 
+  /// The current auth version, incremented each time the auth token changes.
   int get authVersion => _localState.authVersion;
 
   /// Whether the client has fully re-synced after the most recent reconnect.
@@ -131,6 +174,8 @@ class BaseClient {
   final Map<String, StoredQueryResult> _resultCacheByToken =
       <String, StoredQueryResult>{};
 
+  /// Subscribes to the query [udfPath] with [args], queuing the resulting
+  /// query-set update for sending and returning its [SubscriptionRegistration].
   SubscriptionRegistration subscribe(
     String udfPath,
     Map<String, dynamic> args,
@@ -143,6 +188,8 @@ class BaseClient {
     return registration;
   }
 
+  /// Removes the subscriber [subscriberId], queuing a query-set update when this
+  /// drops the last subscriber for its query.
   void unsubscribe(int subscriberId) {
     final message = _localState.unsubscribe(subscriberId);
     if (message != null) {
@@ -150,6 +197,8 @@ class BaseClient {
     }
   }
 
+  /// Enqueues a [Mutation] for [udfPath] with [args] and returns a
+  /// [TrackedRequest] whose future resolves with the server response.
   TrackedRequest trackMutation(String udfPath, Map<String, dynamic> args) {
     final message = Mutation(
       requestId: _nextRequestId++,
@@ -163,6 +212,7 @@ class BaseClient {
     );
   }
 
+  /// Runs the mutation [udfPath] with [args] and returns its result future.
   Future<dynamic> mutate(String udfPath, Map<String, dynamic> args) {
     return trackMutation(udfPath, args).future;
   }
@@ -181,6 +231,8 @@ class BaseClient {
     );
   }
 
+  /// Enqueues an [Action] for [udfPath] with [args] and returns a
+  /// [TrackedRequest] whose future resolves with the server response.
   TrackedRequest trackAction(String udfPath, Map<String, dynamic> args) {
     final message = Action(
       requestId: _nextRequestId++,
@@ -194,6 +246,7 @@ class BaseClient {
     );
   }
 
+  /// Runs the action [udfPath] with [args] and returns its result future.
   Future<dynamic> action(String udfPath, Map<String, dynamic> args) {
     return trackAction(udfPath, args).future;
   }
@@ -213,11 +266,15 @@ class BaseClient {
     return _emitOverlayChanges(<int>[requestId]);
   }
 
+  /// Cancels the in-flight action [requestId], failing its future with [error]
+  /// and dropping any still-queued request message for it.
   void cancelAction(int requestId, Object error) {
     _removeOutgoingRequest(requestId, isMutation: false);
     _requestManager.cancelAction(requestId, error);
   }
 
+  /// Sets the auth token of [tokenType] to [token], clearing the result cache
+  /// and queuing an [Authenticate] message unless emission is paused.
   void setAuth({required String tokenType, String? token}) {
     _resultCacheByToken.clear();
     final message = _localState.setAuth(tokenType: tokenType, value: token);
@@ -228,6 +285,8 @@ class BaseClient {
     }
   }
 
+  /// Clears the auth token, resetting to the unauthenticated identity and
+  /// queuing the change unless emission is paused.
   void clearAuth() {
     _resultCacheByToken.clear();
     final message = _localState.setAuth(tokenType: 'None');
@@ -263,20 +322,27 @@ class BaseClient {
     return drainOutgoing(assumeSent: false);
   }
 
+  /// Restores the auth token of [tokenType] to [token] without emitting a new
+  /// [Authenticate] message, used to re-seed local state after a refresh.
   void restoreAuth({required String tokenType, String? token}) {
     _localState.restoreAuth(tokenType: tokenType, value: token);
   }
 
+  /// Handles a socket disconnect for [reason], dropping queued outgoing messages
+  /// while leaving in-flight requests pending for replay on reconnect.
   void handleDisconnect(String reason) {
     _outgoing.clear();
     _requestManager.handleDisconnect(reason);
   }
 
+  /// Fails every pending request with [message] and clears the outgoing queue.
   void failPendingRequests(String message) {
     _outgoing.clear();
     _requestManager.failAll(message);
   }
 
+  /// Resets remote state for a reconnect and returns the messages that re-sync
+  /// the query set, auth, and in-flight requests on the new connection.
   List<ClientMessage> prepareReconnect() {
     _outgoing.clear();
     // Capture which queries already have a remote result before we throw the
@@ -289,6 +355,8 @@ class BaseClient {
     return drainOutgoing(assumeSent: false);
   }
 
+  /// Returns the current authoritative server result for [queryId], or `null`
+  /// when the query has no remote result yet.
   StoredQueryResult? currentResultForQuery(int queryId) {
     return _remoteQuerySet.resultFor(queryId);
   }
@@ -323,14 +391,19 @@ class BaseClient {
     return _optimistic.rawResultForToken(token);
   }
 
+  /// Returns the ids of all subscribers currently attached to [queryId].
   List<int> subscriberIdsForQuery(int queryId) {
     return _localState.subscriberIdsForQuery(queryId);
   }
 
+  /// Returns the query id that [subscriberId] is attached to, or `null` when the
+  /// subscriber is unknown.
   int? queryIdForSubscriber(int subscriberId) {
     return _localState.queryIdForSubscriber(subscriberId);
   }
 
+  /// Returns and clears the queued outgoing messages; when [assumeSent] is true
+  /// the request manager marks them as sent so they are not requeued.
   List<ClientMessage> drainOutgoing({bool assumeSent = true}) {
     final messages = List<ClientMessage>.from(_outgoing);
     _outgoing.clear();
@@ -352,10 +425,13 @@ class BaseClient {
     });
   }
 
+  /// Marks [messages] as sent in the request manager so they are not retried.
   void markMessagesSent(Iterable<ClientMessage> messages) {
     _requestManager.markSent(messages);
   }
 
+  /// Pushes [messages] back to the front of the outgoing queue, preserving their
+  /// original order so they are drained before any later-enqueued messages.
   void requeueOutgoing(Iterable<ClientMessage> messages) {
     final queuedMessages = messages.toList(growable: false);
     for (final message in queuedMessages.reversed) {
@@ -416,6 +492,13 @@ class BaseClient {
     return events;
   }
 
+  /// Folds an incoming [ServerMessage] into local state, returning the resulting
+  /// events to surface and any messages to send in a [BaseClientReceiveResult].
+  ///
+  /// Handles transitions (query deltas, timestamps, resolved mutations, and auth
+  /// confirmation), mutation/action responses, pings, auth and fatal errors, and
+  /// requests a reconnect on an unexpected [TransitionChunk] or applied-state
+  /// error.
   BaseClientReceiveResult receive(ServerMessage message) {
     final events = <BaseClientEvent>[];
     switch (message) {

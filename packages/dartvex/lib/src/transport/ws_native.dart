@@ -4,13 +4,22 @@ import 'dart:io';
 
 import 'ws_interface.dart';
 
+/// Creates the platform [WebSocketAdapter] backed by `dart:io` sockets.
+///
+/// Used by the Convex sync client on native (non-web) platforms; [clientId]
+/// identifies this client to the server via the `Convex-Client` header.
 WebSocketAdapter createWebSocketAdapter(String clientId) {
   return NativeWebSocketAdapter(clientId: clientId);
 }
 
+/// A [WebSocketAdapter] implementation that transports Convex sync messages
+/// over a native `dart:io` [WebSocket] connection.
 class NativeWebSocketAdapter implements WebSocketAdapter {
+  /// Creates a [NativeWebSocketAdapter] that advertises [clientId] to the
+  /// Convex server when connecting.
   NativeWebSocketAdapter({required this.clientId});
 
+  /// Identifier sent as the `Convex-Client` header to tag this client.
   final String clientId;
   final StreamController<String> _messagesController =
       StreamController<String>.broadcast();

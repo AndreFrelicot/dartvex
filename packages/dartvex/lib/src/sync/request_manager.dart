@@ -47,6 +47,14 @@ class _PendingAction {
   final DateTime requestedAt;
 }
 
+/// Tracks in-flight mutation and action requests and resolves their futures
+/// against the responses and read-your-writes transitions arriving over the
+/// websocket.
+///
+/// Each request is completed when its [MutationResponse]/[ActionResponse] is
+/// received, or — for mutations carrying a future ts — once the transition that
+/// advances local state past that ts has been observed. Also drives reconnect
+/// replay and exposes counters used to report sync health.
 class RequestManager {
   final Map<int, _PendingMutation> _pendingMutations =
       <int, _PendingMutation>{};
@@ -56,6 +64,11 @@ class RequestManager {
   /// and have not yet been resolved. Backs [hasSyncedPastLastReconnect].
   final Set<int> _requestsOlderThanRestart = <int>{};
 
+  /// Begins tracking [message] and returns a future that completes with the
+  /// mutation's result (or an error on failure).
+  ///
+  /// Pass `sent: true` when the message has already been written to the
+  /// websocket so it is not replayed as unsent on the next reconnect.
   Future<dynamic> trackMutation(Mutation message, {bool sent = false}) {
     final completer = Completer<dynamic>();
     _pendingMutations[message.requestId] = _PendingMutation(
@@ -67,6 +80,12 @@ class RequestManager {
     return completer.future;
   }
 
+  /// Begins tracking [message] and returns a future that completes with the
+  /// action's result (or an error on failure).
+  ///
+  /// Pass `sent: true` when the message has already been written to the
+  /// websocket; sent actions are not idempotent and are failed rather than
+  /// replayed on reconnect.
   Future<dynamic> trackAction(Action message, {bool sent = false}) {
     final completer = Completer<dynamic>();
     _pendingActions[message.requestId] = _PendingAction(
@@ -78,6 +97,8 @@ class RequestManager {
     return completer.future;
   }
 
+  /// Stops tracking the mutation with [requestId] and completes its future with
+  /// [error] if it has not already resolved.
   void cancelMutation(int requestId, Object error) {
     final pending = _pendingMutations.remove(requestId);
     _requestsOlderThanRestart.remove(requestId);
@@ -87,6 +108,8 @@ class RequestManager {
     pending.completer.completeError(error);
   }
 
+  /// Stops tracking the action with [requestId] and completes its future with
+  /// [error] if it has not already resolved.
   void cancelAction(int requestId, Object error) {
     final pending = _pendingActions.remove(requestId);
     _requestsOlderThanRestart.remove(requestId);
@@ -96,6 +119,10 @@ class RequestManager {
     pending.completer.completeError(error);
   }
 
+  /// Marks the tracked mutations and actions in [messages] as sent over the
+  /// websocket, transitioning them from unsent to requested.
+  ///
+  /// Non-request client messages (connect, query-set, auth, events) are ignored.
   void markSent(Iterable<ClientMessage> messages) {
     for (final message in messages) {
       switch (message) {
@@ -118,6 +145,11 @@ class RequestManager {
     }
   }
 
+  /// Applies a mutation [response] without an applied transition ts and returns
+  /// the request ids whose optimistic update should now be dropped.
+  ///
+  /// Convenience wrapper around
+  /// [handleMutationResponseWithAppliedTransition].
   List<int> handleMutationResponse(MutationResponse response) {
     return handleMutationResponseWithAppliedTransition(response);
   }
@@ -180,6 +212,8 @@ class RequestManager {
     return const <int>[];
   }
 
+  /// Applies an action [response], completing the matching tracked future with
+  /// its result on success or a [ConvexException] on failure.
   void handleActionResponse(ActionResponse response) {
     final pending = _pendingActions.remove(response.requestId);
     _requestsOlderThanRestart.remove(response.requestId);
@@ -224,6 +258,8 @@ class RequestManager {
     return completedIds;
   }
 
+  /// Fails any already-sent actions because the connection dropped for [reason];
+  /// such actions are not idempotent and cannot be safely retried.
   void handleDisconnect(String reason) {
     _failRequestedActions(
       'Connection lost while action was in flight: $reason',
@@ -255,6 +291,7 @@ class RequestManager {
     ];
   }
 
+  /// Whether any mutation or action is still being tracked.
   bool get hasPendingRequests =>
       _pendingMutations.isNotEmpty || _pendingActions.isNotEmpty;
 
@@ -304,6 +341,8 @@ class RequestManager {
     return oldest;
   }
 
+  /// Fails every tracked mutation and action with [message] and clears all
+  /// pending state, typically on a fatal client shutdown.
   void failAll(String message) {
     final error = ConvexException(message);
     for (final pending in _pendingMutations.values) {
