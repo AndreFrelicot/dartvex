@@ -121,6 +121,39 @@ void main() {
     await tester.pump();
   });
 
+  testWidgets('ConvexMutation forwards its optimisticUpdate', (tester) async {
+    final client = FakeRuntimeClient();
+    client.onMutate = (_, __) async => 'ok';
+
+    void optimistic(OptimisticLocalStore store) {
+      store.setQuery(
+        'messages:list',
+        const <String, dynamic>{},
+        const <String>['x'],
+      );
+    }
+
+    late ConvexRequestExecutor<String> mutate;
+    await tester.pumpWidget(
+      wrapWithProvider(
+        client: client,
+        child: ConvexMutation<String>(
+          mutation: 'messages:send',
+          optimisticUpdate: optimistic,
+          builder: (context, execute, state) {
+            mutate = execute;
+            return const SizedBox();
+          },
+        ),
+      ),
+    );
+
+    await mutate(const <String, dynamic>{'text': 'hello'});
+    await tester.pump();
+
+    expect(client.mutateCalls.single.optimisticUpdate, same(optimistic));
+  });
+
   testWidgets('ConvexAction exposes loading and success state', (tester) async {
     final client = FakeRuntimeClient();
     final completer = Completer<dynamic>();

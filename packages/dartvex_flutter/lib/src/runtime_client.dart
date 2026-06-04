@@ -24,8 +24,14 @@ abstract class ConvexRuntimeClient {
     Map<String, dynamic> args = const {},
   ]);
 
-  /// Executes a mutation.
-  Future<dynamic> mutate(String name, [Map<String, dynamic> args = const {}]);
+  /// Executes a mutation, optionally with an [optimisticUpdate] that overlays
+  /// query results locally until the mutation completes. See
+  /// `ConvexClient.mutate`.
+  Future<dynamic> mutate(
+    String name, [
+    Map<String, dynamic> args = const {},
+    convex.OptimisticUpdate? optimisticUpdate,
+  ]);
 
   /// Executes an action.
   Future<dynamic> action(String name, [Map<String, dynamic> args = const {}]);
@@ -186,8 +192,9 @@ class ConvexClientRuntime implements ConvexRuntimeClient {
   Future<dynamic> mutate(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
+    convex.OptimisticUpdate? optimisticUpdate,
   ]) {
-    return _client.mutate(name, args);
+    return _client.mutate(name, args, optimisticUpdate);
   }
 
   @override

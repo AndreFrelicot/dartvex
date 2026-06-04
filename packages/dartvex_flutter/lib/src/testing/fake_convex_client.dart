@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:dartvex/dartvex.dart' show OptimisticUpdate;
+
 import '../runtime_client.dart';
 
 /// A fake implementation of [ConvexRuntimeClient] for testing Flutter apps
@@ -166,7 +168,11 @@ class FakeConvexClient implements ConvexRuntimeClient {
   Future<dynamic> mutate(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
+    OptimisticUpdate? optimisticUpdate,
   ]) async {
+    // This fake has no query overlay, so [optimisticUpdate] is accepted for API
+    // compatibility but not applied; assert on it via a custom handler if a test
+    // needs to observe it.
     final handler = _mutationHandlers[name];
     if (handler == null) {
       throw StateError('No mutation handler registered for "$name"');

@@ -86,8 +86,13 @@ class FakeRuntimeClient implements ConvexRuntimeClient {
   Future<dynamic> mutate(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
+    OptimisticUpdate? optimisticUpdate,
   ]) {
-    final call = FakeRequestCall(name, Map<String, dynamic>.from(args));
+    final call = FakeRequestCall(
+      name,
+      Map<String, dynamic>.from(args),
+      optimisticUpdate: optimisticUpdate,
+    );
     mutateCalls.add(call);
     final handler = onMutate;
     if (handler == null) {
@@ -136,10 +141,13 @@ class FakeRuntimeClient implements ConvexRuntimeClient {
 }
 
 class FakeRequestCall {
-  const FakeRequestCall(this.name, this.args);
+  const FakeRequestCall(this.name, this.args, {this.optimisticUpdate});
 
   final String name;
   final Map<String, dynamic> args;
+
+  /// The optimistic update passed to a `mutate` call, if any.
+  final OptimisticUpdate? optimisticUpdate;
 }
 
 class FakeSubscriptionCall extends FakeRequestCall {

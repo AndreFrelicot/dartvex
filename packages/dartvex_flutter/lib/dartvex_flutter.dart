@@ -1,6 +1,11 @@
 /// Flutter widgets and runtime adapters for building reactive Convex UIs.
 library;
 
+// Re-exported from the core package so optimistic updates can be written with a
+// single `dartvex_flutter` import.
+export 'package:dartvex/dartvex.dart'
+    show OptimisticLocalStore, OptimisticQueryEntry, OptimisticUpdate;
+
 export 'src/action_builder.dart' show ConvexAction, ConvexActionBuilder;
 export 'src/asset_cache.dart' show ConvexAssetCache, ConvexAssetCacheMetrics;
 export 'src/convex_cached_image.dart' show ConvexCachedImage;

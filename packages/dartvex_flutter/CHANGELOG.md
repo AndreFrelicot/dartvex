@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `ConvexMutation.optimisticUpdate` applies an optimistic update while the
+  mutation is in flight, overlaying query results instantly and rolling back
+  when it completes or fails. `ConvexRuntimeClient.mutate` now accepts an
+  optional `OptimisticUpdate`, and `OptimisticLocalStore` / `OptimisticUpdate` /
+  `OptimisticQueryEntry` are re-exported from `dartvex` for convenience.
 - `ConnectivityPlusSignal`, a `connectivity_plus`-backed `ConnectivitySignal`.
   Pass it to `ConvexClientConfig.connectivitySignal` so the client reconnects
   immediately when the device regains network connectivity.

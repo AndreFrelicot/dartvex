@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dartvex/dartvex.dart' show OptimisticUpdate;
 import 'package:flutter/widgets.dart';
 
 import 'provider.dart';
@@ -22,6 +23,7 @@ class ConvexMutation<T> extends StatefulWidget {
     required this.builder,
     this.decode,
     this.client,
+    this.optimisticUpdate,
   });
 
   /// Convex mutation name to invoke.
@@ -32,6 +34,12 @@ class ConvexMutation<T> extends StatefulWidget {
 
   /// Optional runtime client override.
   final ConvexRuntimeClient? client;
+
+  /// Optional optimistic update applied while the mutation is in flight.
+  ///
+  /// Overlays query results locally the moment the mutation is sent and rolls
+  /// back automatically when it completes or fails. See `ConvexClient.mutate`.
+  final OptimisticUpdate? optimisticUpdate;
 
   /// Builder that receives the mutate callback and current request snapshot.
   final ConvexMutationBuilder<T> builder;
@@ -91,7 +99,11 @@ class _ConvexMutationState<T> extends State<ConvexMutation<T>> {
 
     () async {
       try {
-        final raw = await _runtimeClient!.mutate(widget.mutation, args);
+        final raw = await _runtimeClient!.mutate(
+          widget.mutation,
+          args,
+          widget.optimisticUpdate,
+        );
         final decoded = _decode(raw);
         if (mounted) {
           setState(() {
