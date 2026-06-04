@@ -1186,6 +1186,10 @@ class _HeaderStatusCluster extends StatelessWidget {
           ),
         };
 
+        // Latency only makes sense while the realtime socket is connected.
+        // During reconnecting/connecting/offline the value is stale, so we
+        // hide the trailing "<n>ms" badge entirely.
+        final showLatency = state == ConvexConnectionState.connected;
         final notifier = latencyNotifier;
         return Wrap(
           spacing: 6,
@@ -1196,7 +1200,7 @@ class _HeaderStatusCluster extends StatelessWidget {
               icon: Icons.sync_rounded,
               label: label,
               color: color,
-              trailing: notifier == null
+              trailing: (notifier == null || !showLatency)
                   ? null
                   : ValueListenableBuilder<TransitionMetrics?>(
                       valueListenable: notifier,
