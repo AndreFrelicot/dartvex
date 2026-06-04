@@ -131,10 +131,12 @@ class BaseClient {
   LocalSyncState get localState => _localState;
 
   /// The highest server timestamp observed so far, or `null` before any
-  /// transition has been processed.
+  /// timestamp has been observed (from a transition or a successful mutation
+  /// response).
   String? get maxObservedTimestamp => _localState.maxObservedTimestamp;
 
-  /// The current auth version, incremented each time the auth token changes.
+  /// The current auth version, incremented for every emitted [Authenticate]
+  /// message and reset on reconnect.
   int get authVersion => _localState.authVersion;
 
   /// Whether the client has fully re-synced after the most recent reconnect.
@@ -328,8 +330,10 @@ class BaseClient {
     _localState.restoreAuth(tokenType: tokenType, value: token);
   }
 
-  /// Handles a socket disconnect for [reason], dropping queued outgoing messages
-  /// while leaving in-flight requests pending for replay on reconnect.
+  /// Handles a socket disconnect for [reason], dropping queued outgoing
+  /// messages, failing already-sent in-flight actions (non-idempotent, not
+  /// retryable), and leaving in-flight mutations pending for replay on
+  /// reconnect.
   void handleDisconnect(String reason) {
     _outgoing.clear();
     _requestManager.handleDisconnect(reason);

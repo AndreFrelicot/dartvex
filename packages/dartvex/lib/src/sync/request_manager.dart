@@ -68,7 +68,8 @@ class RequestManager {
   /// mutation's result (or an error on failure).
   ///
   /// Pass `sent: true` when the message has already been written to the
-  /// websocket so it is not replayed as unsent on the next reconnect.
+  /// websocket so it is recorded as already-requested rather than unsent;
+  /// mutations are replayed on reconnect regardless of this flag.
   Future<dynamic> trackMutation(Mutation message, {bool sent = false}) {
     final completer = Completer<dynamic>();
     _pendingMutations[message.requestId] = _PendingMutation(

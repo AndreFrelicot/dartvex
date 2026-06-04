@@ -354,7 +354,7 @@ Flutter apps can use `ConvexAuthRefreshingBuilder` and
 | Class | Description |
 |-------|-------------|
 | `ConvexClient` | Main client — connect, subscribe, mutate, act |
-| `ConvexClientConfig` | Configuration (deployment URL, client ID) |
+| `ConvexClientConfig` | Configuration (client ID, timeouts, backoff, logging) |
 | `ConvexSubscription` | Reactive subscription handle with stream |
 | `QueryResult` | Base type for `QuerySuccess` / `QueryError` |
 | `ConnectionStatus` | Rich connection snapshot — inflight counts, retries, sync |

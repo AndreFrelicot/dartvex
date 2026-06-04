@@ -5,8 +5,9 @@ import 'package:web/web.dart' as web;
 
 import 'ws_interface.dart';
 
-/// Creates the web platform [WebSocketAdapter] for the client identified by
-/// [clientId].
+/// Creates the web platform [WebSocketAdapter]. The [clientId] is accepted for
+/// signature parity with the native adapter but is unused by the web
+/// implementation.
 WebSocketAdapter createWebSocketAdapter(String clientId) {
   return WebPlatformWebSocketAdapter();
 }

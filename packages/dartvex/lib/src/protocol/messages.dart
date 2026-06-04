@@ -190,7 +190,7 @@ class Add extends QuerySetOperation {
   /// Path of the query UDF to subscribe to.
   final String udfPath;
 
-  /// Convex-encoded argument values passed to the query.
+  /// Decoded Convex argument values passed to the query.
   final List<dynamic> args;
 
   /// Optional journal cursor used to resume paginated query state.
@@ -260,7 +260,7 @@ abstract class RequestMessage extends ClientMessage {
   /// Path of the UDF to invoke.
   final String udfPath;
 
-  /// Convex-encoded argument values passed to the UDF.
+  /// Decoded Convex argument values passed to the UDF.
   final List<dynamic> args;
 
   /// Optional component path for UDFs hosted in a component.
@@ -389,7 +389,7 @@ class Event extends ClientMessage {
   /// Name identifying the kind of event.
   final String eventType;
 
-  /// Optional Convex-encoded payload carried with the event.
+  /// Optional decoded Convex payload carried with the event.
   final Object? event;
 
   /// Deserializes an [Event] from JSON.
@@ -448,7 +448,7 @@ class QueryUpdated extends StateModification {
   @override
   final int queryId;
 
-  /// Convex-encoded new result value for the query.
+  /// Decoded Convex new result value for the query.
   final Object? value;
 
   /// Log lines emitted while computing the query result.
@@ -497,7 +497,7 @@ class QueryFailed extends StateModification {
   /// Human-readable error message describing the failure.
   final String errorMessage;
 
-  /// Optional Convex-encoded structured error payload.
+  /// Optional decoded Convex structured error payload.
   final Object? errorData;
 
   /// Log lines emitted before the query failed.
@@ -674,13 +674,13 @@ sealed class ResponseMessage extends ServerMessage {
   /// Whether the request completed successfully.
   final bool success;
 
-  /// Convex-encoded result value when the request succeeded.
+  /// Decoded Convex result value when the request succeeded.
   final Object? result;
 
   /// Human-readable error message when the request failed.
   final String? errorMessage;
 
-  /// Optional Convex-encoded structured error payload.
+  /// Optional decoded Convex structured error payload.
   final Object? errorData;
 
   /// Log lines emitted while handling the request.
