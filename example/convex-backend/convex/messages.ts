@@ -100,6 +100,19 @@ export const paginatePublic = query({
   },
 });
 
+// Total number of public messages. Pairs with the cursor pagination so the
+// Showcase can render a "showing N of TOTAL / page X of Y" indicator — cursor
+// pagination has no built-in total. Counts all rows (fine for the demo; a large
+// table would use an aggregated counter instead).
+export const countPublic = query({
+  args: {},
+  returns: v.number(),
+  handler: async (ctx) => {
+    const all = await ctx.db.query("public_messages").collect();
+    return all.length;
+  },
+});
+
 // Idempotent demo seed: tops the public feed up to `target` rows so the
 // pagination demo always has several pages. Returns how many were inserted.
 export const seedPublic = mutation({
