@@ -321,8 +321,10 @@ class RequestManager {
   ///
   /// Mutations that have completed on the server and are only awaiting their
   /// read-your-writes transition are excluded: they are no longer waiting on the
-  /// network even though they still count toward [inflightMutations]. Mirrors
-  /// the official client's `timeOfOldestInflightRequest`.
+  /// network even though they still count toward [inflightMutations].
+  ///
+  /// This differs from the official client, which returns the current time when
+  /// every in-flight request is already parked behind a transition.
   DateTime? timeOfOldestInflightRequest() {
     DateTime? oldest;
     for (final pending in _pendingMutations.values) {
