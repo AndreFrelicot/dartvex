@@ -161,7 +161,10 @@ class BetterAuthClient {
     }
 
     final sessionToken = _extractSessionToken(response);
-    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    final body = _decodeObjectBody(
+      '/api/auth/magic-link/verify',
+      response,
+    );
     final user = body['user'] as Map<String, dynamic>?;
 
     final cookieJwt = _extractCookieValue(response, 'better-auth.convex_jwt');
@@ -233,7 +236,7 @@ class BetterAuthClient {
   }) async {
     final response = await _post(path, requestBody);
 
-    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    final body = _decodeObjectBody(path, response);
     final user = body['user'] as Map<String, dynamic>?;
 
     // Always extract the session token for persistence.
@@ -412,5 +415,24 @@ class BetterAuthClient {
     } on FormatException {
       return;
     }
+  }
+
+  Map<String, dynamic> _decodeObjectBody(String path, http.Response response) {
+    Object? decoded;
+    try {
+      decoded = jsonDecode(response.body);
+    } on FormatException {
+      throw BetterAuthException(
+        'Better Auth response from $path was not valid JSON '
+        '(status ${response.statusCode}).',
+      );
+    }
+    if (decoded is! Map<String, dynamic>) {
+      throw BetterAuthException(
+        'Better Auth response from $path was not a JSON object '
+        '(status ${response.statusCode}).',
+      );
+    }
+    return decoded;
   }
 }

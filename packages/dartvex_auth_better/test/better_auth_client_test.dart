@@ -284,6 +284,28 @@ void main() {
       expect(session.userId, 'user_123');
     });
 
+    test('throws typed exception when sign-in 200 body is not an object',
+        () async {
+      for (final body in <String>[jsonEncode('OK'), '']) {
+        final mock = MockClient((request) async {
+          if (request.url.path == '/api/auth/sign-in/email') {
+            return http.Response(
+              body,
+              200,
+              headers: {'set-auth-token': 'tok'},
+            );
+          }
+          return http.Response('Not found', 404);
+        });
+        final client = BetterAuthClient(baseUrl: baseUrl, httpClient: mock);
+
+        await expectLater(
+          () => client.signIn(email: 'a@b.com', password: 'p'),
+          throwsA(isA<BetterAuthException>()),
+        );
+      }
+    });
+
     test('throws when set-auth-token header is missing', () async {
       final mock = MockClient((request) async {
         return http.Response(
@@ -363,6 +385,28 @@ void main() {
 
       expect(session.sessionToken, 'ses_cookie');
       expect(session.token, 'jwt_cookie');
+    });
+
+    test('throws typed exception when magic-link 200 body is not an object',
+        () async {
+      for (final body in <String>[jsonEncode(<Object?>[]), '']) {
+        final mock = MockClient((request) async {
+          if (request.url.path == '/api/auth/magic-link/verify') {
+            return http.Response(
+              body,
+              200,
+              headers: {'set-auth-token': 'tok'},
+            );
+          }
+          return http.Response('Not found', 404);
+        });
+        final client = BetterAuthClient(baseUrl: baseUrl, httpClient: mock);
+
+        await expectLater(
+          () => client.verifyMagicLink(token: 'magic-token'),
+          throwsA(isA<BetterAuthException>()),
+        );
+      }
     });
 
     test('preserves baseUrl when not .convex.cloud', () async {
