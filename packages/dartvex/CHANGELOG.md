@@ -95,6 +95,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reactive pagination now rejects malformed `PaginationResult` objects whose
   `continueCursor` is missing or non-string, preventing duplicate page loads or
   load loops.
+- Successful mutations and actions now surface server-side function log lines
+  through the configured logger at info level, matching the official client's
+  function-output visibility.
 - `AuthLoading` documentation now matches the emitted auth states: it covers
   login/cache restore, while background token refreshes remain exposed via
   `authRefreshing`.

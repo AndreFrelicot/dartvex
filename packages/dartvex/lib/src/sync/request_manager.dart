@@ -47,6 +47,29 @@ class _PendingAction {
   final DateTime requestedAt;
 }
 
+/// Minimal request metadata used to surface function log lines safely.
+class RequestLogContext {
+  /// Creates a request log context.
+  const RequestLogContext({
+    required this.requestType,
+    required this.requestId,
+    required this.name,
+    this.componentPath,
+  });
+
+  /// Request kind: `mutation` or `action`.
+  final String requestType;
+
+  /// Wire request id.
+  final int requestId;
+
+  /// Convex function path.
+  final String name;
+
+  /// Optional component path for component-hosted functions.
+  final String? componentPath;
+}
+
 /// Tracks in-flight mutation and action requests and resolves their futures
 /// against the responses and read-your-writes transitions arriving over the
 /// websocket.
@@ -96,6 +119,34 @@ class RequestManager {
       requestedAt: DateTime.now(),
     );
     return completer.future;
+  }
+
+  /// Returns safe logging metadata for a pending mutation response.
+  RequestLogContext? mutationLogContext(int requestId) {
+    final pending = _pendingMutations[requestId];
+    if (pending == null) {
+      return null;
+    }
+    return RequestLogContext(
+      requestType: 'mutation',
+      requestId: requestId,
+      name: pending.message.udfPath,
+      componentPath: pending.message.componentPath,
+    );
+  }
+
+  /// Returns safe logging metadata for a pending action response.
+  RequestLogContext? actionLogContext(int requestId) {
+    final pending = _pendingActions[requestId];
+    if (pending == null) {
+      return null;
+    }
+    return RequestLogContext(
+      requestType: 'action',
+      requestId: requestId,
+      name: pending.message.udfPath,
+      componentPath: pending.message.componentPath,
+    );
   }
 
   /// Stops tracking the mutation with [requestId] and completes its future with

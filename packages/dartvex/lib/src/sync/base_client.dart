@@ -81,6 +81,33 @@ class FatalErrorEvent extends BaseClientEvent {
   final String error;
 }
 
+/// Emitted for a server-side function log line from a successful request.
+class FunctionLogEvent extends BaseClientEvent {
+  /// Creates a function log event.
+  const FunctionLogEvent({
+    required this.requestType,
+    required this.requestId,
+    required this.name,
+    required this.line,
+    this.componentPath,
+  });
+
+  /// Request kind: `mutation` or `action`.
+  final String requestType;
+
+  /// Wire request id.
+  final int requestId;
+
+  /// Convex function path.
+  final String name;
+
+  /// The single log line emitted by the function.
+  final String line;
+
+  /// Optional component path for component-hosted functions.
+  final String? componentPath;
+}
+
 /// The outcome of [BaseClient.receive]: events to surface and messages to send.
 class BaseClientReceiveResult {
   /// Creates a receive result with the given [events] and [outgoing] messages.
@@ -581,6 +608,11 @@ class BaseClient {
           events.add(ReconnectRequiredEvent(reason: '$error'));
         }
       case MutationResponse():
+        _addSuccessfulFunctionLogs(
+          events,
+          _requestManager.mutationLogContext(message.requestId),
+          message,
+        );
         if (message.success && message.ts != null) {
           _localState.observeTimestamp(message.ts!);
         }
@@ -597,6 +629,11 @@ class BaseClient {
           events.addAll(_emitOverlayChanges(droppedRequestIds));
         }
       case ActionResponse():
+        _addSuccessfulFunctionLogs(
+          events,
+          _requestManager.actionLogContext(message.requestId),
+          message,
+        );
         _requestManager.handleActionResponse(message);
       case Ping():
         break;
@@ -615,5 +652,26 @@ class BaseClient {
     final outgoing = List<ClientMessage>.from(_outgoing);
     _outgoing.clear();
     return BaseClientReceiveResult(events: events, outgoing: outgoing);
+  }
+
+  void _addSuccessfulFunctionLogs(
+    List<BaseClientEvent> events,
+    RequestLogContext? context,
+    ResponseMessage response,
+  ) {
+    if (!response.success || context == null || response.logLines.isEmpty) {
+      return;
+    }
+    for (final line in response.logLines) {
+      events.add(
+        FunctionLogEvent(
+          requestType: context.requestType,
+          requestId: context.requestId,
+          name: context.name,
+          line: line,
+          componentPath: context.componentPath,
+        ),
+      );
+    }
   }
 }

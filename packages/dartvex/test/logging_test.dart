@@ -11,6 +11,10 @@ import 'test_helpers/mock_web_socket_adapter.dart';
 
 void main() {
   group('structured logging', () {
+    Future<void> settle() async {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+
     test('does not emit logs by default', () async {
       final adapter = MockWebSocketAdapter();
       final events = <DartvexLogEvent>[];
@@ -88,6 +92,153 @@ void main() {
         expect(events.single.tag, 'transport.ws');
         await manager.dispose();
       });
+    });
+
+    test('emits successful mutation function log lines', () async {
+      final adapter = MockWebSocketAdapter();
+      final events = <DartvexLogEvent>[];
+      final client = ConvexClient(
+        'https://example.com',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          reconnectBackoff: const <Duration>[Duration.zero],
+          logLevel: DartvexLogLevel.info,
+          logger: events.add,
+        ),
+      );
+      await settle();
+
+      final future = client.mutate(
+        'messages:send',
+        const <String, dynamic>{'body': 'hello'},
+      );
+      await settle();
+
+      final mutation = adapter.decodedSentMessages
+          .where((message) => message['type'] == 'Mutation')
+          .single;
+      adapter.pushServerMessage(
+        MutationResponse(
+          requestId: mutation['requestId'] as int,
+          success: true,
+          result: const <String, dynamic>{'ok': true},
+          logLines: const <String>['server log 1', 'server log 2'],
+        ).toJson(),
+      );
+
+      await expectLater(
+          future, completion(const <String, dynamic>{'ok': true}));
+      await settle();
+
+      final functionLogs = events
+          .where((event) => event.tag == 'function')
+          .toList(growable: false);
+      expect(
+        functionLogs.map((event) => event.message),
+        <String>['server log 1', 'server log 2'],
+      );
+      expect(
+        functionLogs.every((event) => event.level == DartvexLogLevel.info),
+        isTrue,
+      );
+      expect(
+        functionLogs.first.data,
+        containsPair('requestType', 'mutation'),
+      );
+      expect(functionLogs.first.data, containsPair('name', 'messages:send'));
+      expect(
+        functionLogs.first.data,
+        containsPair('requestId', mutation['requestId']),
+      );
+
+      client.dispose();
+    });
+
+    test('emits successful action function log lines', () async {
+      final adapter = MockWebSocketAdapter();
+      final events = <DartvexLogEvent>[];
+      final client = ConvexClient(
+        'https://example.com',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          reconnectBackoff: const <Duration>[Duration.zero],
+          logLevel: DartvexLogLevel.info,
+          logger: events.add,
+        ),
+      );
+      await settle();
+
+      final future = client.action(
+        'messages:notify',
+        const <String, dynamic>{'body': 'hello'},
+      );
+      await settle();
+
+      final action = adapter.decodedSentMessages
+          .where((message) => message['type'] == 'Action')
+          .single;
+      adapter.pushServerMessage(
+        ActionResponse(
+          requestId: action['requestId'] as int,
+          success: true,
+          result: 'ok',
+          logLines: const <String>['action log'],
+        ).toJson(),
+      );
+
+      await expectLater(future, completion('ok'));
+      await settle();
+
+      final functionLogs = events
+          .where((event) => event.tag == 'function')
+          .toList(growable: false);
+      expect(
+          functionLogs.map((event) => event.message), <String>['action log']);
+      expect(functionLogs.single.data, containsPair('requestType', 'action'));
+      expect(functionLogs.single.data, containsPair('name', 'messages:notify'));
+      expect(
+        functionLogs.single.data,
+        containsPair('requestId', action['requestId']),
+      );
+
+      client.dispose();
+    });
+
+    test('does not emit successful function log lines when logging is off',
+        () async {
+      final adapter = MockWebSocketAdapter();
+      final events = <DartvexLogEvent>[];
+      final client = ConvexClient(
+        'https://example.com',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          reconnectBackoff: const <Duration>[Duration.zero],
+          logger: events.add,
+        ),
+      );
+      await settle();
+
+      final future = client.mutate('messages:send');
+      await settle();
+
+      final mutation = adapter.decodedSentMessages
+          .where((message) => message['type'] == 'Mutation')
+          .single;
+      adapter.pushServerMessage(
+        MutationResponse(
+          requestId: mutation['requestId'] as int,
+          success: true,
+          result: 'ok',
+          logLines: const <String>['server log'],
+        ).toJson(),
+      );
+
+      await expectLater(future, completion('ok'));
+      await settle();
+
+      expect(events, isEmpty);
+
+      client.dispose();
     });
 
     test('storage logs can use a caller log source', () async {

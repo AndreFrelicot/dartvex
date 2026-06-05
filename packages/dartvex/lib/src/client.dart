@@ -1096,6 +1096,8 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
           await _wsManager.terminate();
           _baseClient.failPendingRequests(event.error);
           _emitConnectionState(ConnectionState.fatalError);
+        case FunctionLogEvent():
+          _logFunctionOutput(event);
       }
     }
     _publishConnectionStatus();
@@ -1254,6 +1256,22 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       error: error,
       stackTrace: stackTrace,
       data: data,
+    );
+  }
+
+  void _logFunctionOutput(FunctionLogEvent event) {
+    emitDartvexLog(
+      configuredLevel: _config.logLevel,
+      logger: _config.logger,
+      eventLevel: DartvexLogLevel.info,
+      message: event.line,
+      tag: 'function',
+      data: <String, Object?>{
+        'requestType': event.requestType,
+        'name': event.name,
+        'requestId': event.requestId,
+        if (event.componentPath != null) 'componentPath': event.componentPath,
+      },
     );
   }
 }
