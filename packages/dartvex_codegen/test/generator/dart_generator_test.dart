@@ -194,7 +194,35 @@ void main() {
         ),
       );
     });
+
+    test('throws when generated Dart cannot be formatted', () {
+      final invalidSpec = FunctionsSpec(
+        url: 'https://example.com',
+        functions: <BaseFunctionSpec>[
+          _function(identifier: 'messages.ts:list'),
+        ],
+      );
+
+      expect(
+        () => DartGenerator(naming: const _InvalidMethodNaming())
+            .generate(invalidSpec),
+        throwsA(
+          isA<GenerationException>().having(
+            (error) => error.message,
+            'message',
+            contains('could not be formatted'),
+          ),
+        ),
+      );
+    });
   });
+}
+
+class _InvalidMethodNaming extends Naming {
+  const _InvalidMethodNaming();
+
+  @override
+  String methodName(String raw) => 'broken-name';
 }
 
 FunctionSpec _function({

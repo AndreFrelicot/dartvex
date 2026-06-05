@@ -23,6 +23,18 @@ class GeneratedOutput {
   final List<String> warnings;
 }
 
+/// Thrown when generated Dart source cannot be emitted safely.
+class GenerationException implements Exception {
+  /// Creates a generation error.
+  GenerationException(this.message);
+
+  /// Human-readable failure details.
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 /// Generates typed Dart API bindings from a Convex function spec.
 class DartGenerator {
   /// Creates a generator with optional naming overrides and client import path.
@@ -42,24 +54,23 @@ class DartGenerator {
     final root = _buildTree(spec);
     final files = <String, String>{};
 
-    files['runtime.dart'] =
-        _formatIfPossible(_buildRuntimeFile(), 'runtime.dart', warnings);
+    files['runtime.dart'] = _formatOrThrow(_buildRuntimeFile(), 'runtime.dart');
 
     for (final node in _flattenNodes(root)) {
       if (node.pathSegments.isEmpty) {
-        files['api.dart'] = _formatIfPossible(
-            _renderNode(node, isRoot: true), 'api.dart', warnings);
+        files['api.dart'] =
+            _formatOrThrow(_renderNode(node, isRoot: true), 'api.dart');
       } else {
         final filePath = 'modules/${node.pathSegments.join('/')}.dart';
-        files[filePath] = _formatIfPossible(
-            _renderNode(node, isRoot: false), filePath, warnings);
+        files[filePath] =
+            _formatOrThrow(_renderNode(node, isRoot: false), filePath);
       }
       warnings.addAll(node.renderWarnings);
       warnings.addAll(node.typeWarnings);
     }
 
-    files['schema.dart'] = _formatIfPossible(
-        _buildSchemaFile(root.tableNames), 'schema.dart', warnings);
+    files['schema.dart'] =
+        _formatOrThrow(_buildSchemaFile(root.tableNames), 'schema.dart');
     warnings.addAll(root.warnings);
     return GeneratedOutput(files: files, warnings: warnings);
   }
@@ -609,15 +620,15 @@ String describeType(dynamic value) {
 ''';
   }
 
-  String _formatIfPossible(
-      String source, String filePath, List<String> warnings) {
+  String _formatOrThrow(String source, String filePath) {
     try {
       return DartFormatter(
         languageVersion: DartFormatter.latestLanguageVersion,
       ).format(source);
     } catch (e) {
-      warnings.add('Generated code for "$filePath" could not be formatted: $e');
-      return source;
+      throw GenerationException(
+        'Generated code for "$filePath" could not be formatted: $e',
+      );
     }
   }
 
