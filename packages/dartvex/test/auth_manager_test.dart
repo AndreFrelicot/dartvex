@@ -242,21 +242,26 @@ void main() {
   });
 
   group('AuthManager.computeRefreshDelay', () {
-    test('derives the delay from token lifetime, not the wall clock', () {
-      // Two tokens with the same lifetime but wildly different absolute
-      // timestamps must schedule identically: the wall clock is never read.
-      final near = AuthManager.computeRefreshDelay(
-        iat: 1000,
-        exp: 2000,
+    test('uses token lifetime while the token is fresh', () {
+      final now = DateTime.fromMillisecondsSinceEpoch(1000000 * 1000);
+      final delay = AuthManager.computeRefreshDelay(
+        iat: 1000000,
+        exp: 1001000,
         leewaySeconds: 2,
+        now: now,
       );
-      final far = AuthManager.computeRefreshDelay(
-        iat: 5000000000,
-        exp: 5000001000,
-        leewaySeconds: 2,
+      expect(delay, const Duration(milliseconds: 998000));
+    });
+
+    test('clamps iat-based delay to the token time remaining', () {
+      final now = DateTime.fromMillisecondsSinceEpoch(1000000 * 1000);
+      final delay = AuthManager.computeRefreshDelay(
+        iat: 997000,
+        exp: 1000600,
+        leewaySeconds: 300,
+        now: now,
       );
-      expect(near, const Duration(milliseconds: 998000));
-      expect(near, far);
+      expect(delay, const Duration(minutes: 5));
     });
 
     test('refreshes immediately when leeway exceeds the token lifetime', () {
@@ -284,6 +289,7 @@ void main() {
         iat: 0,
         exp: 1000000000,
         leewaySeconds: 2,
+        now: DateTime.fromMillisecondsSinceEpoch(0),
       );
       expect(delay, const Duration(days: 20));
     });

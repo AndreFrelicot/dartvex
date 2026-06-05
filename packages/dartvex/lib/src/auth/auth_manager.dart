@@ -330,11 +330,12 @@ class AuthManager {
   /// Computes when to proactively refresh a token, immune to device clock skew.
   ///
   /// When the token carries an `iat` claim the delay is derived from the
-  /// token's own lifetime (`exp - iat`) minus [leewaySeconds] — the wall clock
-  /// is never consulted, so a skewed device clock cannot mis-schedule the
-  /// refresh. The result is capped at the official 20-day maximum, clamped to
-  /// zero (refresh immediately) when the leeway meets or exceeds the lifetime,
-  /// and `null` (do not schedule) for tokens that live `<= 2s`.
+  /// token's own lifetime (`exp - iat`) minus [leewaySeconds], then clamped to
+  /// the token's remaining wall-clock lifetime (`exp - now - leewaySeconds`) so
+  /// a cached token cannot schedule its refresh after it has already expired.
+  /// The result is capped at the official 20-day maximum, clamped to zero
+  /// (refresh immediately) when the leeway meets or exceeds the lifetime, and
+  /// `null` (do not schedule) for tokens that live `<= 2s`.
   ///
   /// When `iat` is absent the lifetime is unknown, so the computation falls
   /// back to the wall clock (`exp - now - leewaySeconds`); this is the only
@@ -353,6 +354,11 @@ class AuthManager {
         return null;
       }
       var delayMs = (tokenValiditySeconds - leewaySeconds) * 1000;
+      final nowSeconds = (now ?? DateTime.now()).millisecondsSinceEpoch ~/ 1000;
+      final remainingDelayMs = (exp - nowSeconds - leewaySeconds) * 1000;
+      if (remainingDelayMs < delayMs) {
+        delayMs = remainingDelayMs;
+      }
       if (delayMs < 0) {
         delayMs = 0;
       }
