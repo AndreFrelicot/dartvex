@@ -94,6 +94,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `authRefreshing`.
 - `timeOfOldestInflightRequest` documentation now describes its parked-mutation
   behavior instead of claiming exact parity with the official client.
+- Connection-state emissions now no-op after the client has closed its
+  controller, preventing a concurrent fatal-error shutdown from being
+  reclassified as an invalid server message.
 - WebSocket `connectionCount` now advances only after a successful socket open,
   so failed pre-open connection attempts no longer inflate the next `Connect`
   frame.

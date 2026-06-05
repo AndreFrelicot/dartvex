@@ -1174,6 +1174,9 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   }
 
   void _emitConnectionState(ConnectionState state) {
+    if (_connectionStateController.isClosed) {
+      return;
+    }
     _currentConnectionState = state;
     _log(
       DartvexLogLevel.info,

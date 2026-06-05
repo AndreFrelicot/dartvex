@@ -877,6 +877,38 @@ void main() {
       client.dispose();
     });
 
+    test('close during fatal termination does not report invalid message',
+        () async {
+      final adapter = _GatedCloseWebSocketAdapter();
+      final logs = <DartvexLogEvent>[];
+      final client = ConvexClient(
+        'http://localhost:3210',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          logLevel: DartvexLogLevel.error,
+          logger: logs.add,
+        ),
+      );
+      await settle();
+
+      adapter.pushServerMessage(
+        const FatalError(error: 'deployment is broken').toJson(),
+      );
+      await adapter.closeStarted;
+
+      final closeFuture = client.close();
+      await settle();
+      adapter.releaseClose();
+      await closeFuture;
+      await settle();
+
+      expect(
+        logs.where(
+            (event) => event.message == 'Failed to handle WebSocket message'),
+        isEmpty,
+      );
+    });
+
     test('mutation waits for transition before resolving', () async {
       final adapter = MockWebSocketAdapter();
       final client = ConvexClient(
@@ -1754,4 +1786,26 @@ class _FakeConnectivitySignal implements ConnectivitySignal {
   void restore() => _controller.add(null);
 
   void dispose() => _controller.close();
+}
+
+final class _GatedCloseWebSocketAdapter extends MockWebSocketAdapter {
+  final Completer<void> _closeStarted = Completer<void>();
+  final Completer<void> _releaseClose = Completer<void>();
+
+  Future<void> get closeStarted => _closeStarted.future;
+
+  void releaseClose() {
+    if (!_releaseClose.isCompleted) {
+      _releaseClose.complete();
+    }
+  }
+
+  @override
+  Future<void> close() async {
+    if (!_closeStarted.isCompleted) {
+      _closeStarted.complete();
+    }
+    await _releaseClose.future;
+    await super.close();
+  }
 }
