@@ -6,6 +6,7 @@
     "convex:codegen": "npx convex codegen",
     "convex:dev": "npx convex dev",
     "convex:function-spec": "npx convex function-spec",
+    "demo:key": "node ./scripts/generate-demo-jwt-keypair.mjs",
     "token": "node ./scripts/generate-demo-jwt.mjs"
   },
   "dependencies": {

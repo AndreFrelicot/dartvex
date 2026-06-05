@@ -7,7 +7,8 @@ It exposes:
 - public queries and mutations
 - authenticated queries and mutations
 - a simple action
-- a self-contained custom JWT auth provider for demo use
+- Better Auth backed by Convex
+- an optional custom JWT auth provider for integration tests
 
 ## Install
 
@@ -15,6 +16,29 @@ It exposes:
 cd example/convex-backend
 npm install
 ```
+
+## Optional demo JWT provider
+
+Better Auth works without this step. Use the custom JWT provider only when you
+want to run the SDK auth integration tests with a static token.
+
+Generate local demo JWT material:
+
+```bash
+npm run demo:key
+```
+
+The script writes `.env` if it does not already exist and prints the matching
+Convex command. Run that command to configure the public JWKS in your dev
+deployment:
+
+```bash
+npx convex env set DEMO_JWKS '<value printed by npm run demo:key>'
+```
+
+Do not commit `.env`; it is gitignored.
+If `.env` already exists and you want to replace the demo keypair, run
+`npm run demo:key -- --force`.
 
 ## Generate Convex types
 
@@ -44,8 +68,4 @@ npm run token
 ```
 
 The generated token is valid for the custom JWT provider configured in
-`convex/auth.config.ts`.
-
-The demo private key in `.env.example` is intentionally public so this example
-can run without an external identity provider. Do not reuse that key or JWKS for
-a deployment containing sensitive data or privileged actions.
+`convex/auth.config.ts` when `DEMO_JWKS` is configured in Convex.

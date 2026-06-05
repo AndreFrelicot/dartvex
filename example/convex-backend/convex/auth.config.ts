@@ -1,16 +1,22 @@
 import type { AuthConfig } from "convex/server";
 import { getAuthConfigProvider } from "@convex-dev/better-auth/auth-config";
 
-export default {
-  providers: [
-    // Demo app custom JWT (ES256 self-signed for demo auth provider).
-    {
+type AuthProvider = NonNullable<AuthConfig["providers"]>[number];
+
+const demoJwks = process.env.DEMO_JWKS;
+const demoJwtProvider = demoJwks
+  ? ({
       type: "customJwt",
       issuer: "https://demo.convex-flutter-sdk.local",
       applicationID: "convex-flutter-demo",
       algorithm: "ES256",
-      jwks: "data:application/json;base64,eyJrZXlzIjpbeyJrdHkiOiJFQyIsIngiOiIyMm1ZTVpGcEM0dHNid1ZmdXhpSmFiTUNuVWVYM1lnQ09LY0poVGJfSmlJIiwieSI6IjZYUXpFMHptSkgwT3dYZlVLbmlSbzRjTTRVTVJMY2tiVEMwazczcEdHdlEiLCJjcnYiOiJQLTI1NiIsInVzZSI6InNpZyIsImFsZyI6IkVTMjU2Iiwia2lkIjoiZGVtby1rZXktMSJ9XX0=",
-    },
+      jwks: demoJwks,
+    } satisfies AuthProvider)
+  : null;
+
+export default {
+  providers: [
+    ...(demoJwtProvider ? [demoJwtProvider] : []),
     // Better Auth (self-hosted in Convex, RS256 JWTs).
     getAuthConfigProvider(),
   ],

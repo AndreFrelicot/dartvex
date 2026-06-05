@@ -30,7 +30,13 @@ if (!privateKeyPem) {
 
 if (!privateKeyPem) {
   console.error("Error: DEMO_PRIVATE_KEY is not set.");
-  console.error("Please copy .env.example to .env in example/convex-backend and try again.");
+  console.error("Run `npm run demo:key` in example/convex-backend first.");
+  process.exit(1);
+}
+
+if (privateKeyPem.includes("replace-with-generated")) {
+  console.error("Error: DEMO_PRIVATE_KEY still contains the placeholder value.");
+  console.error("Run `npm run demo:key` in example/convex-backend first.");
   process.exit(1);
 }
 

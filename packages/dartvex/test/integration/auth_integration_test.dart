@@ -7,8 +7,8 @@
 //   CONVEX_TEST_AUTH_TOKEN – a valid JWT accepted by the deployment's auth
 //                           config (generate with:
 //                           cd example/convex-backend &&
-//                           cp .env.example .env &&
-//                           node scripts/generate-demo-jwt.mjs)
+//                           npm run demo:key &&
+//                           npm run token)
 //
 // The tests exercise ConvexClientWithAuth<T> against the demo backend
 // functions demo:whoAmI (authenticated query) and demo:requireAuthEcho
@@ -80,7 +80,7 @@ void main() {
   final skip = deploymentUrl == null || authToken == null
       ? 'Set CONVEX_DEPLOYMENT_URL and CONVEX_TEST_AUTH_TOKEN to run auth '
           'integration tests. Generate a token with:\n'
-          '  cd example/convex-backend && cp .env.example .env && node scripts/generate-demo-jwt.mjs'
+          '  cd example/convex-backend && npm run demo:key && npm run token'
       : false;
 
   group('Auth integration', skip: skip, () {
