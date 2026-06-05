@@ -6,7 +6,27 @@ repo_root="$(git rev-parse --show-toplevel)"
 package_name="$(basename "$package_dir")"
 
 relative_path() {
-  realpath --relative-to="$1" "$2"
+  local from="$1"
+  local to="$2"
+  local relative
+
+  if relative="$(realpath --relative-to="$from" "$to" 2>/dev/null)"; then
+    printf '%s\n' "$relative"
+    return
+  fi
+
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$from" "$to" <<'PY'
+import os
+import sys
+
+print(os.path.relpath(os.path.realpath(sys.argv[2]), os.path.realpath(sys.argv[1])))
+PY
+    return
+  fi
+
+  printf '%s\n' 'error: realpath --relative-to is unavailable and python3 was not found' >&2
+  return 1
 }
 
 write_overrides() {
@@ -20,9 +40,12 @@ write_overrides() {
   {
     printf '%s\n' 'dependency_overrides:'
     for dependency_name in "$@"; do
+      local dependency_path
+      dependency_path="$(
+        relative_path "$target_dir" "$repo_root/packages/$dependency_name"
+      )"
       printf '  %s:\n' "$dependency_name"
-      printf '    path: %s\n' \
-        "$(relative_path "$target_dir" "$repo_root/packages/$dependency_name")"
+      printf '    path: %s\n' "$dependency_path"
     done
   } > "$target_dir/pubspec_overrides.yaml"
 }
