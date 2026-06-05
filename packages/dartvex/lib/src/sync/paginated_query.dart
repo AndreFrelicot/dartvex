@@ -158,11 +158,15 @@ class ConvexPaginatedQuery {
 
   /// Loads the next page, returning whether loading was actually started.
   ///
-  /// Returns `false` (a no-op) when the query is disposed, the last page is
-  /// still loading (concurrent loads are not allowed), or the query is already
-  /// exhausted. [numItems] overrides the page size for the new page.
+  /// Returns `false` (a no-op) when the query is disposed, the aggregate is in
+  /// an error state, the last page is still loading (concurrent loads are not
+  /// allowed), or the query is already exhausted. [numItems] overrides the page
+  /// size for the new page.
   bool loadMore([int? numItems]) {
     if (_disposed || _pages.isEmpty) {
+      return false;
+    }
+    if (_current.status == ConvexPaginationStatus.error) {
       return false;
     }
     final data = _pages.last.data;

@@ -250,6 +250,29 @@ void main() {
       query.cancel();
     });
 
+    test('loadMore is a no-op while an earlier page is errored', () {
+      final source = _FakeSource();
+      final query = ConvexPaginatedQuery(
+        subscribe: source.subscribe,
+        name: 'messages:list',
+        args: const <String, dynamic>{},
+        pageSize: 3,
+      );
+      source.pages[0]
+          .emitPage(<dynamic>['a'], continueCursor: 'X', isDone: false);
+      expect(query.loadMore(), isTrue);
+      source.pages[1]
+          .emitPage(<dynamic>['b'], continueCursor: 'Y', isDone: false);
+
+      source.pages[0].emitError('boom');
+
+      expect(query.status, ConvexPaginationStatus.error);
+      expect(query.loadMore(), isFalse);
+      expect(source.pages, hasLength(2));
+
+      query.cancel();
+    });
+
     test('re-splits a page on SplitRecommended and swaps in both halves', () {
       final source = _FakeSource();
       final query = ConvexPaginatedQuery(

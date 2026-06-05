@@ -100,6 +100,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Query subscriptions now seed each newly attached listener from the latest
   cached, remote, or optimistic value instead of only seeding the first listener
   from the value captured at subscribe time.
+- Reactive pagination now refuses `loadMore()` while any earlier page error is
+  making the aggregate status `error`, avoiding invisible extra page
+  subscriptions past the gap.
 - WebSocket `connectionCount` now advances only after a successful socket open,
   so failed pre-open connection attempts no longer inflate the next `Connect`
   frame.
