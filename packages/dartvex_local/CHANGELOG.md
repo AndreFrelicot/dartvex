@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Auto-mode mutations now queue behind any existing replay work instead of
+  bypassing a non-empty offline queue and committing newer mutations before
+  older queued ones.
 - Drops queued mutations that still reference unresolved `local-*` IDs during
   replay, so dependents of a failed create are reported via `onConflict` instead
   of being sent to the backend with stale local IDs.

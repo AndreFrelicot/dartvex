@@ -408,6 +408,42 @@ void main() {
       expect(remoteClient.mutationCalls, hasLength(1));
     });
 
+    test(
+      'queues auto-mode mutations behind a non-empty replay queue',
+      () async {
+        await localClient.setNetworkMode(LocalNetworkMode.offline);
+        await localClient.mutate('messages:sendPublic', <String, dynamic>{
+          'author': 'A',
+          'text': 'OLDER',
+        });
+
+        remoteClient.mutationResults['messages:sendPublic'] = <Object?>[
+          const ConvexException('Server busy', retryable: true),
+          'server-id-old',
+          'server-id-new',
+        ];
+
+        await localClient.setNetworkMode(LocalNetworkMode.auto);
+        await pumpEventQueue();
+
+        expect(localClient.currentPendingMutations, hasLength(1));
+        expect(remoteClient.mutationCalls, hasLength(1));
+        expect(remoteClient.mutationCalls.single.args['text'], 'OLDER');
+
+        final newer = await localClient.mutate(
+          'messages:sendPublic',
+          <String, dynamic>{'author': 'B', 'text': 'NEWER'},
+        );
+
+        expect(newer, isA<LocalMutationQueued>());
+        expect(localClient.currentPendingMutations, hasLength(2));
+        expect(
+          remoteClient.mutationCalls.map((call) => call.args['text']).toList(),
+          <String>['OLDER'],
+        );
+      },
+    );
+
     test('replay retries automatically after retryable error', () async {
       remoteClient.queryResults['messages:listPublic'] = <dynamic>[];
       await localClient.query('messages:listPublic');

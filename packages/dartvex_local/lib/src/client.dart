@@ -650,7 +650,10 @@ class ConvexLocalClient {
     _assertNotDisposed();
     final normalizedArgs = Map<String, dynamic>.from(args);
     if (_networkMode == LocalNetworkMode.auto &&
-        _lastRemoteConnectionState == LocalRemoteConnectionState.connected) {
+        _lastRemoteConnectionState == LocalRemoteConnectionState.connected &&
+        _pendingMutations.isEmpty &&
+        !_isSyncing &&
+        _replayRetryTimer == null) {
       _log('mutate', '$name — mode=auto, trying remote first');
       try {
         final value = await _remoteClient.mutate(name, normalizedArgs);
@@ -673,6 +676,14 @@ class ConvexLocalClient {
         }
         _log('mutate', '$name — remote unavailable, falling through to queue');
       }
+    } else if (_networkMode == LocalNetworkMode.auto &&
+        _lastRemoteConnectionState == LocalRemoteConnectionState.connected) {
+      _log(
+        'mutate',
+        '$name — queueing behind replay work '
+            '(remote=$_lastRemoteConnectionState '
+            'syncing=$_isSyncing pending=${_pendingMutations.length})',
+      );
     } else if (_networkMode == LocalNetworkMode.auto) {
       _log('mutate', '$name — remote not connected, queueing immediately');
     }
