@@ -27,7 +27,7 @@ void main() {
 
     test('restarting without outstanding queries stays synced', () {
       final state = LocalSyncState();
-      state.prepareReconnect(<int>{});
+      state.prepareReconnect();
       expect(state.hasSyncedPastLastReconnect(), isTrue);
     });
 
@@ -45,7 +45,7 @@ void main() {
           state.subscribe('hello:world2', const <String, dynamic>{}).queryId;
 
       // Restart before any results arrive.
-      state.prepareReconnect(<int>{});
+      state.prepareReconnect();
       expect(state.hasSyncedPastLastReconnect(), isFalse);
 
       // A partial result keeps the flag false.
@@ -57,19 +57,22 @@ void main() {
       expect(state.hasSyncedPastLastReconnect(), isTrue);
     });
 
-    test('queries with a prior remote result are not outstanding', () {
+    test('queries with a prior remote result stay outstanding', () {
       final state = LocalSyncState();
       final queryId1 =
           state.subscribe('hello:world1', const <String, dynamic>{}).queryId;
       final queryId2 =
           state.subscribe('hello:world2', const <String, dynamic>{}).queryId;
 
-      // queryId1 already held a result before the reconnect, so only queryId2
-      // is outstanding after the restart.
-      state.prepareReconnect(<int>{queryId1});
+      // queryId1 already held a result before the reconnect, but the server
+      // still has to re-confirm it before the restart is considered synced.
+      state.prepareReconnect();
       expect(state.hasSyncedPastLastReconnect(), isFalse);
 
       state.transition(transitionUpdating(<int>[queryId2]));
+      expect(state.hasSyncedPastLastReconnect(), isFalse);
+
+      state.transition(transitionUpdating(<int>[queryId1]));
       expect(state.hasSyncedPastLastReconnect(), isTrue);
     });
 
@@ -79,7 +82,7 @@ void main() {
           state.subscribe('hello:world1', const <String, dynamic>{}).queryId;
       final queryId2 =
           state.subscribe('hello:world2', const <String, dynamic>{}).queryId;
-      state.prepareReconnect(<int>{});
+      state.prepareReconnect();
       expect(state.hasSyncedPastLastReconnect(), isFalse);
 
       state.transition(
@@ -99,7 +102,7 @@ void main() {
       final state = LocalSyncState();
       final registration =
           state.subscribe('hello:world', const <String, dynamic>{});
-      state.prepareReconnect(<int>{});
+      state.prepareReconnect();
       expect(state.hasSyncedPastLastReconnect(), isFalse);
 
       state.unsubscribe(registration.subscriberId);
@@ -111,7 +114,7 @@ void main() {
       state.setAuth(tokenType: 'User', value: 'token-123');
       expect(state.hasSyncedPastLastReconnect(), isTrue);
 
-      state.prepareReconnect(<int>{});
+      state.prepareReconnect();
       expect(state.hasSyncedPastLastReconnect(), isFalse);
 
       state.markAuthCompletion();
@@ -121,7 +124,7 @@ void main() {
     test('clearing auth resolves outstanding auth', () {
       final state = LocalSyncState();
       state.setAuth(tokenType: 'User', value: 'token-123');
-      state.prepareReconnect(<int>{});
+      state.prepareReconnect();
       expect(state.hasSyncedPastLastReconnect(), isFalse);
 
       state.setAuth(tokenType: 'None');
@@ -133,7 +136,7 @@ void main() {
       final queryId =
           state.subscribe('hello:world', const <String, dynamic>{}).queryId;
       state.setAuth(tokenType: 'User', value: 'token-123');
-      state.prepareReconnect(<int>{});
+      state.prepareReconnect();
       expect(state.hasSyncedPastLastReconnect(), isFalse);
 
       // Confirming the query is not enough while auth is outstanding.
@@ -149,7 +152,7 @@ void main() {
       final state = LocalSyncState();
       final queryId =
           state.subscribe('hello:world', const <String, dynamic>{}).queryId;
-      state.prepareReconnect(<int>{});
+      state.prepareReconnect();
       expect(state.hasSyncedPastLastReconnect(), isFalse);
 
       // With no auth, confirming the query alone resyncs.
@@ -226,7 +229,7 @@ void main() {
       final state = LocalSyncState();
       state.pause();
       state.subscribe('messages:list', const <String, dynamic>{});
-      state.prepareReconnect(const <int>{});
+      state.prepareReconnect();
       expect(state.isPaused, isFalse);
       // A subsequent resume is a no-op.
       expect(state.resume(), equals((null, null)));
@@ -276,7 +279,7 @@ void main() {
       final state = LocalSyncState();
       state.setAdminAuth(value: 'admin-key', impersonating: impersonating);
 
-      final messages = state.prepareReconnect(const <int>{});
+      final messages = state.prepareReconnect();
       final authenticate = messages.whereType<Authenticate>().single;
       expect(authenticate.tokenType, 'Admin');
       expect(authenticate.value, 'admin-key');

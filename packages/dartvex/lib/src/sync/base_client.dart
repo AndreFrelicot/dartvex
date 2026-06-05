@@ -152,16 +152,10 @@ class BaseClient {
   /// `true` only once every query, auth update, and request that predated the
   /// last [prepareReconnect] has been confirmed by the server.
   ///
-  /// This is package-internal plumbing — it is intentionally not surfaced on
-  /// the public `ConvexClient` API (rich connection state is a later
-  /// workstream) — consumed by the reconnect and auth layers to decide when a
-  /// connection has proven itself.
-  ///
-  /// Note: the official Convex JS client combines these two signals with `||`,
-  /// reporting "synced" as soon as either side is clear, so a query-only client
-  /// appears synced before its first post-reconnect result. dartvex uses `&&`
-  /// so the flag reflects *all* outstanding work, matching the documented
-  /// intent of the signal.
+  /// This is package-internal plumbing consumed by the reconnect and auth
+  /// layers to decide when a connection has proven itself. It mirrors the
+  /// official client by requiring both query/auth state and request state to
+  /// clear their outstanding work before the reconnect is considered synced.
   bool get hasSyncedPastLastReconnect =>
       _localState.hasSyncedPastLastReconnect() &&
       _requestManager.hasSyncedPastLastReconnect();
@@ -362,12 +356,8 @@ class BaseClient {
   /// the query set, auth, and in-flight requests on the new connection.
   List<ClientMessage> prepareReconnect() {
     _outgoing.clear();
-    // Capture which queries already have a remote result before we throw the
-    // remote query set away, so the local state only marks the queries that
-    // still need a fresh result as outstanding since this restart.
-    final oldRemoteQueryResults = _remoteQuerySet.resultQueryIds;
     _remoteQuerySet.reset();
-    _outgoing.addAll(_localState.prepareReconnect(oldRemoteQueryResults));
+    _outgoing.addAll(_localState.prepareReconnect());
     _outgoing.addAll(_requestManager.prepareReconnect());
     return drainOutgoing(assumeSent: false);
   }

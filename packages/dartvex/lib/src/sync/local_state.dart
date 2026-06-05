@@ -474,13 +474,11 @@ class LocalSyncState {
 
   /// Rebuilds the messages needed to restore this state on a fresh connection.
   ///
-  /// [oldRemoteQueryResults] is the set of query ids that already held a remote
-  /// result before the reconnect (captured before the remote query set is
-  /// reset). Re-issued queries missing from that set are recorded as
-  /// outstanding until the server reports on them again, and re-sent auth is
-  /// likewise recorded as outstanding, so [hasSyncedPastLastReconnect] stays
-  /// `false` until the connection has fully re-synced.
-  List<ClientMessage> prepareReconnect(Set<int> oldRemoteQueryResults) {
+  /// Re-issued queries are recorded as outstanding until the server reports on
+  /// them again, and re-sent auth is likewise recorded as outstanding, so
+  /// [hasSyncedPastLastReconnect] stays `false` until the connection has fully
+  /// re-synced.
+  List<ClientMessage> prepareReconnect() {
     // A restart supersedes any pause: the full query set (and auth) is rebuilt
     // from scratch below, so the buffered modifications are discarded.
     _paused = false;
@@ -513,9 +511,7 @@ class LocalSyncState {
           journal: state.journal,
         ),
       );
-      if (!oldRemoteQueryResults.contains(state.queryId)) {
-        _outstandingQueriesOlderThanRestart.add(state.queryId);
-      }
+      _outstandingQueriesOlderThanRestart.add(state.queryId);
     }
     messages.add(
       ModifyQuerySet(

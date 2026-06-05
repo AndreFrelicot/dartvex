@@ -97,6 +97,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Resume after auth gating now sends `Authenticate` before replaying query-set
   changes, matching reconnect ordering and avoiding auth-gated queries racing
   ahead of the refreshed identity.
+- Reconnect sync tracking now waits for every active query to be re-confirmed
+  by the server, even when a cached remote result existed before reconnect, so
+  reconnect backoff is reset only after the session proves healthy.
 - Persistent auth rejections now reach the retry cap and report the client as
   signed out instead of resetting the confirmation-attempt counter after every
   forced token refresh.
