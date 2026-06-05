@@ -21,11 +21,24 @@ Map<String, dynamic> decodeJwtPayload(String token) {
 }
 
 /// Returns the JWT expiration (`exp`) claim, if present.
-int? jwtExp(String token) {
-  return decodeJwtPayload(token)['exp'] as int?;
-}
+///
+/// Reads the claim defensively: a numeric value is coerced to an `int`, and a
+/// missing or non-numeric claim yields `null` rather than throwing a cast
+/// error. This keeps a malformed token from escaping refresh scheduling as an
+/// unhandled error that would otherwise tear down the connection.
+int? jwtExp(String token) => _readIntClaim(decodeJwtPayload(token)['exp']);
 
 /// Returns the JWT issued-at (`iat`) claim, if present.
-int? jwtIat(String token) {
-  return decodeJwtPayload(token)['iat'] as int?;
+///
+/// Uses the same defensive numeric coercion as [jwtExp].
+int? jwtIat(String token) => _readIntClaim(decodeJwtPayload(token)['iat']);
+
+int? _readIntClaim(Object? value) {
+  if (value is int) {
+    return value;
+  }
+  if (value is num) {
+    return value.toInt();
+  }
+  return null;
 }
