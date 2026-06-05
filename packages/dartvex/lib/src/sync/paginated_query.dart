@@ -326,8 +326,11 @@ class ConvexPaginatedQuery {
       }
       final data = page.data;
       if (data == null) {
+        // Stop at the first not-yet-loaded page so the aggregated result stays a
+        // gapless prefix: concatenating later, already-loaded pages here would
+        // expose a hole where this page's items belong.
         hasLoading = true;
-        continue;
+        break;
       }
       results.addAll(data.page);
       lastPageIsDone = data.isDone;
