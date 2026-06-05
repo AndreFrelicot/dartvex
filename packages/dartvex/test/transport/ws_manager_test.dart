@@ -840,6 +840,39 @@ void main() {
       await manager.dispose();
     });
 
+    test('deferred handshake does not send after paused socket closes',
+        () async {
+      final adapter = MockWebSocketAdapter();
+      var connectedCalls = 0;
+      final manager = WebSocketManager(
+        adapter: adapter,
+        deploymentUrl: 'http://localhost:3210',
+        apiVersion: '0.1.0',
+        onConnected: () {
+          connectedCalls += 1;
+          return const <ClientMessage>[];
+        },
+        onMessage: (_) => const <ClientMessage>[],
+        onDisconnected: (_) async {},
+        onConnectionStateChanged: (_, __) {},
+        maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => false,
+        reconnectBackoff: const <Duration>[Duration.zero],
+        inactivityTimeout: const Duration(seconds: 30),
+      );
+
+      manager.pause();
+      await manager.start();
+      adapter.disconnect(errorMessage: 'network dropped during auth');
+
+      await expectLater(manager.resume(), completes);
+
+      expect(adapter.sentMessages, isEmpty);
+      expect(connectedCalls, 0);
+
+      await manager.dispose();
+    });
+
     test('pause buffers sends and resume flushes buffered messages', () async {
       final adapter = MockWebSocketAdapter();
       const buffered = <ClientMessage>[

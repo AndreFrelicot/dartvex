@@ -100,6 +100,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reconnect sync tracking now waits for every active query to be re-confirmed
   by the server, even when a cached remote result existed before reconnect, so
   reconnect backoff is reset only after the session proves healthy.
+- Deferred initial handshakes now no-op if a paused WebSocket closed before
+  `resume()`, letting the scheduled reconnect rebuild the session instead of
+  throwing from a send on a closed socket.
 - Persistent auth rejections now reach the retry cap and report the client as
   signed out instead of resetting the confirmation-attempt counter after every
   forced token refresh.

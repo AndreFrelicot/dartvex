@@ -466,6 +466,13 @@ class WebSocketManager {
   /// Sends the post-connect handshake: the [Connect] message followed by the
   /// session-restoring messages built by [onConnected].
   Future<void> _sendInitialMessages() async {
+    if (!adapter.isConnected) {
+      _log(
+        DartvexLogLevel.debug,
+        'Skipping WebSocket handshake because the socket is no longer open',
+      );
+      return;
+    }
     adapter.send(
       jsonEncode(
         Connect(
