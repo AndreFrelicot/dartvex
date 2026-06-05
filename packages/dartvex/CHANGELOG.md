@@ -97,6 +97,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Connection-state emissions now no-op after the client has closed its
   controller, preventing a concurrent fatal-error shutdown from being
   reclassified as an invalid server message.
+- Query subscriptions now seed each newly attached listener from the latest
+  cached, remote, or optimistic value instead of only seeding the first listener
+  from the value captured at subscribe time.
 - WebSocket `connectionCount` now advances only after a successful socket open,
   so failed pre-open connection attempts no longer inflate the next `Connect`
   frame.

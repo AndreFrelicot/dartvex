@@ -676,6 +676,54 @@ void main() {
       client.dispose();
     });
 
+    test('subscription re-listen seeds the latest query result', () async {
+      final adapter = MockWebSocketAdapter();
+      final client = ConvexClient(
+        'http://localhost:3210',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+      await settle();
+
+      final subscription = client.subscribe('messages:list');
+      final firstFuture = subscription.stream.first;
+      await settle();
+      final querySet = adapter.decodedSentMessages
+          .where((message) => message['type'] == 'ModifyQuerySet')
+          .last;
+      final queryId = (((querySet['modifications'] as List<dynamic>).single
+          as Map<String, dynamic>)['queryId']) as int;
+      adapter.pushServerMessage(
+        Transition(
+          startVersion: const StateVersion.initial(),
+          endVersion: StateVersion(querySet: 1, identity: 0, ts: encodeTs(1)),
+          modifications: <StateModification>[
+            QueryUpdated(queryId: queryId, value: 'current'),
+          ],
+        ).toJson(),
+      );
+
+      expect(
+        await firstFuture,
+        isA<QuerySuccess>()
+            .having((result) => result.value, 'value', 'current'),
+      );
+
+      final secondResult = await subscription.stream.first.timeout(
+        const Duration(seconds: 1),
+      );
+      expect(
+        secondResult,
+        isA<QuerySuccess>()
+            .having((result) => result.value, 'value', 'current'),
+      );
+
+      subscription.cancel();
+      client.dispose();
+    });
+
     test('subscribe receives query errors with data and log lines', () async {
       final adapter = MockWebSocketAdapter();
       final client = ConvexClient(

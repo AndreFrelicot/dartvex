@@ -661,23 +661,17 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       data: _requestData(name, args),
     );
     final registration = _baseClient.subscribe(name, args);
-    final current = _baseClient.optimisticResultForQuery(name, args) ??
-        _baseClient.currentResultForQuery(registration.queryId) ??
-        _baseClient.cachedResultForQuery(name, args);
-    var emittedInitialResult = false;
     late final StreamController<QueryResult> controller;
     controller = StreamController<QueryResult>.broadcast(
       sync: true,
       onListen: () {
-        if (emittedInitialResult) {
-          return;
-        }
-        emittedInitialResult = true;
-        final initial = current;
-        if (initial == null) {
-          return;
-        }
         scheduleMicrotask(() {
+          final initial = _baseClient.optimisticResultForQuery(name, args) ??
+              _baseClient.currentResultForQuery(registration.queryId) ??
+              _baseClient.cachedResultForQuery(name, args);
+          if (initial == null) {
+            return;
+          }
           if (!controller.isClosed) {
             controller.add(
               _toPublicQueryResult(
