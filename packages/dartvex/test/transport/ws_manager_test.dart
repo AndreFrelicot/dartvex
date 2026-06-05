@@ -182,7 +182,7 @@ void main() {
       // opens, and the retry index climbs because the client never re-syncs
       // here.
       adapter.disconnect();
-      await Future<void>.delayed(const Duration(milliseconds: 10));
+      await _waitForConnectMessages(adapter, 2);
       expect(manager.connectionCount, 2);
       expect(manager.connectionRetries, 1);
       expect(manager.hasEverConnected, isTrue);
