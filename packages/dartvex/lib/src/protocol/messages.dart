@@ -126,7 +126,8 @@ class Connect extends ClientMessage {
       'sessionId': sessionId,
       'connectionCount': connectionCount,
       'lastCloseReason': lastCloseReason,
-      'maxObservedTimestamp': maxObservedTimestamp,
+      if (maxObservedTimestamp != null)
+        'maxObservedTimestamp': maxObservedTimestamp,
       'clientTs': clientTs,
     };
   }

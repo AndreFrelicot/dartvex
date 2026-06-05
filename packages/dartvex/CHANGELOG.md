@@ -103,6 +103,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reactive pagination now refuses `loadMore()` while any earlier page error is
   making the aggregate status `error`, avoiding invisible extra page
   subscriptions past the gap.
+- `Connect` handshakes now omit `maxObservedTimestamp` when no timestamp has
+  been observed yet, matching the optional wire shape used by the reference
+  client.
 - WebSocket `connectionCount` now advances only after a successful socket open,
   so failed pre-open connection attempts no longer inflate the next `Connect`
   frame.

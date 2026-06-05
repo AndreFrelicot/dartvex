@@ -254,6 +254,21 @@ void main() {
 
     test('new optional protocol fields are omitted when unset', () {
       expect(
+        const Connect(
+          sessionId: 'session-1',
+          connectionCount: 0,
+          lastCloseReason: null,
+          clientTs: 7,
+        ).toJson(),
+        <String, dynamic>{
+          'type': 'Connect',
+          'sessionId': 'session-1',
+          'connectionCount': 0,
+          'lastCloseReason': null,
+          'clientTs': 7,
+        },
+      );
+      expect(
         Add(
           queryId: 1,
           udfPath: 'messages:list',
