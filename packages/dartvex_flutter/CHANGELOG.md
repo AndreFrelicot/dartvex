@@ -45,6 +45,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   progress-download image helpers) are native-only; web apps should render
   signed storage URLs directly.
 
+### Fixed
+
+- `FakeConvexClient` now broadcasts duplicate query subscriptions and paginated
+  queries with the same name to every live handle instead of only the latest.
+
 ## [0.1.5] - 2026-05-13
 
 ### Fixed

@@ -37,11 +37,11 @@ class FakeConvexClient implements ConvexRuntimeClient {
       <String, dynamic Function(Map<String, dynamic>)>{};
   final Map<String, dynamic Function(Map<String, dynamic>)> _actionHandlers =
       <String, dynamic Function(Map<String, dynamic>)>{};
-  final Map<String, StreamController<ConvexRuntimeQueryEvent>>
+  final Map<String, List<StreamController<ConvexRuntimeQueryEvent>>>
       _subscriptionControllers =
-      <String, StreamController<ConvexRuntimeQueryEvent>>{};
-  final Map<String, FakeConvexPaginatedQuery> _paginatedQueries =
-      <String, FakeConvexPaginatedQuery>{};
+      <String, List<StreamController<ConvexRuntimeQueryEvent>>>{};
+  final Map<String, List<FakeConvexPaginatedQuery>> _paginatedQueries =
+      <String, List<FakeConvexPaginatedQuery>>{};
 
   final StreamController<ConvexConnectionState> _connectionController =
       StreamController<ConvexConnectionState>.broadcast(sync: true);
@@ -95,16 +95,26 @@ class FakeConvexClient implements ConvexRuntimeClient {
 
   /// Emit a success value to a named subscription.
   void emitSubscription(String name, dynamic value) {
-    _subscriptionControllers[name]?.add(
-      ConvexRuntimeQuerySuccess(value),
-    );
+    for (final controller in List<StreamController<ConvexRuntimeQueryEvent>>.of(
+      _subscriptionControllers[name] ??
+          const <StreamController<ConvexRuntimeQueryEvent>>[],
+    )) {
+      if (!controller.isClosed) {
+        controller.add(ConvexRuntimeQuerySuccess(value));
+      }
+    }
   }
 
   /// Emit an error to a named subscription.
   void emitSubscriptionError(String name, Object error) {
-    _subscriptionControllers[name]?.add(
-      ConvexRuntimeQueryError(error),
-    );
+    for (final controller in List<StreamController<ConvexRuntimeQueryEvent>>.of(
+      _subscriptionControllers[name] ??
+          const <StreamController<ConvexRuntimeQueryEvent>>[],
+    )) {
+      if (!controller.isClosed) {
+        controller.add(ConvexRuntimeQueryError(error));
+      }
+    }
   }
 
   /// Emit an aggregated paginated result to the named paginated query.
@@ -114,9 +124,18 @@ class FakeConvexClient implements ConvexRuntimeClient {
     ConvexPaginationStatus status = ConvexPaginationStatus.canLoadMore,
     bool isDone = false,
   }) {
-    _paginatedQueries[name]?.emit(
-      ConvexPaginatedResult(results: results, status: status, isDone: isDone),
+    final result = ConvexPaginatedResult(
+      results: results,
+      status: status,
+      isDone: isDone,
     );
+    for (final query in List<FakeConvexPaginatedQuery>.of(
+      _paginatedQueries[name] ?? const <FakeConvexPaginatedQuery>[],
+    )) {
+      if (!query.isCanceled) {
+        query.emit(result);
+      }
+    }
   }
 
   /// Update the fake connection state.
@@ -196,7 +215,12 @@ class FakeConvexClient implements ConvexRuntimeClient {
   ]) {
     final controller =
         StreamController<ConvexRuntimeQueryEvent>.broadcast(sync: true);
-    _subscriptionControllers[name] = controller;
+    _subscriptionControllers
+        .putIfAbsent(
+          name,
+          () => <StreamController<ConvexRuntimeQueryEvent>>[],
+        )
+        .add(controller);
 
     // Auto-emit initial value from handler if registered.
     // Scheduled as a microtask so the listener is attached first.
@@ -209,7 +233,11 @@ class FakeConvexClient implements ConvexRuntimeClient {
       });
     }
 
-    return FakeConvexSubscription(name, controller);
+    return FakeConvexSubscription(
+      name,
+      controller,
+      onCancel: () => _removeSubscriptionController(name, controller),
+    );
   }
 
   @override
@@ -218,8 +246,15 @@ class FakeConvexClient implements ConvexRuntimeClient {
     Map<String, dynamic> args, {
     int pageSize = 20,
   }) {
-    final query = FakeConvexPaginatedQuery(name: name, pageSize: pageSize);
-    _paginatedQueries[name] = query;
+    late final FakeConvexPaginatedQuery query;
+    query = FakeConvexPaginatedQuery(
+      name: name,
+      pageSize: pageSize,
+      onCancel: () => _removePaginatedQuery(name, query),
+    );
+    _paginatedQueries
+        .putIfAbsent(name, () => <FakeConvexPaginatedQuery>[])
+        .add(query);
     return query;
   }
 
@@ -258,15 +293,46 @@ class FakeConvexClient implements ConvexRuntimeClient {
   void dispose() {
     if (_disposed) return;
     _disposed = true;
-    for (final controller in _subscriptionControllers.values) {
-      unawaited(controller.close());
+    for (final controllers in _subscriptionControllers.values) {
+      for (final controller in controllers) {
+        unawaited(controller.close());
+      }
     }
-    for (final query in _paginatedQueries.values) {
-      query.cancel();
+    for (final queries in List<List<FakeConvexPaginatedQuery>>.of(
+      _paginatedQueries.values,
+    )) {
+      for (final query in List<FakeConvexPaginatedQuery>.of(queries)) {
+        query.cancel();
+      }
     }
     unawaited(_connectionController.close());
     unawaited(_connectionStatusController.close());
     unawaited(_authRefreshingController.close());
+  }
+
+  void _removeSubscriptionController(
+    String name,
+    StreamController<ConvexRuntimeQueryEvent> controller,
+  ) {
+    final controllers = _subscriptionControllers[name];
+    if (controllers == null) {
+      return;
+    }
+    controllers.remove(controller);
+    if (controllers.isEmpty) {
+      _subscriptionControllers.remove(name);
+    }
+  }
+
+  void _removePaginatedQuery(String name, FakeConvexPaginatedQuery query) {
+    final queries = _paginatedQueries[name];
+    if (queries == null) {
+      return;
+    }
+    queries.remove(query);
+    if (queries.isEmpty) {
+      _paginatedQueries.remove(name);
+    }
   }
 }
 
@@ -276,7 +342,11 @@ class FakeConvexClient implements ConvexRuntimeClient {
 /// many times [loadMore] was called via [loadMoreCount].
 class FakeConvexPaginatedQuery implements ConvexRuntimePaginatedQuery {
   /// Creates a fake paginated query for [name] with the given [pageSize].
-  FakeConvexPaginatedQuery({required this.name, required this.pageSize});
+  FakeConvexPaginatedQuery({
+    required this.name,
+    required this.pageSize,
+    void Function()? onCancel,
+  }) : _onCancel = onCancel;
 
   /// The query name this paginated query is for.
   final String name;
@@ -298,6 +368,8 @@ class FakeConvexPaginatedQuery implements ConvexRuntimePaginatedQuery {
   /// Whether this query has been canceled.
   bool isCanceled = false;
 
+  final void Function()? _onCancel;
+
   @override
   Stream<ConvexPaginatedResult> get stream => _controller.stream;
 
@@ -314,6 +386,7 @@ class FakeConvexPaginatedQuery implements ConvexRuntimePaginatedQuery {
   void cancel() {
     if (isCanceled) return;
     isCanceled = true;
+    _onCancel?.call();
     unawaited(_controller.close());
   }
 
@@ -329,11 +402,16 @@ class FakeConvexPaginatedQuery implements ConvexRuntimePaginatedQuery {
 /// A fake subscription returned by [FakeConvexClient.subscribe].
 class FakeConvexSubscription implements ConvexRuntimeSubscription {
   /// Creates a fake subscription for the given query [name].
-  FakeConvexSubscription(this.name, this._controller);
+  FakeConvexSubscription(
+    this.name,
+    this._controller, {
+    void Function()? onCancel,
+  }) : _onCancel = onCancel;
 
   /// The query name this subscription is for.
   final String name;
   final StreamController<ConvexRuntimeQueryEvent> _controller;
+  final void Function()? _onCancel;
   bool _canceled = false;
 
   /// Whether this subscription has been canceled.
@@ -346,6 +424,7 @@ class FakeConvexSubscription implements ConvexRuntimeSubscription {
   void cancel() {
     if (_canceled) return;
     _canceled = true;
+    _onCancel?.call();
     unawaited(_controller.close());
   }
 }

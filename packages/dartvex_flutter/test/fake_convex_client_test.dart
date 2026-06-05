@@ -92,6 +92,28 @@ void main() {
       );
     });
 
+    test('emitSubscription broadcasts to duplicate subscriptions', () async {
+      final client = FakeConvexClient();
+      final first = client.subscribe('messages:list');
+      final second = client.subscribe('messages:list');
+
+      final firstEvents = <ConvexRuntimeQueryEvent>[];
+      final secondEvents = <ConvexRuntimeQueryEvent>[];
+      first.stream.listen(firstEvents.add);
+      second.stream.listen(secondEvents.add);
+
+      client.emitSubscription('messages:list', ['msg1']);
+
+      await Future<void>.delayed(Duration.zero);
+
+      expect(firstEvents, hasLength(1));
+      expect(secondEvents, hasLength(1));
+      expect((firstEvents.single as ConvexRuntimeQuerySuccess).value, ['msg1']);
+      expect((secondEvents.single as ConvexRuntimeQuerySuccess).value, [
+        'msg1',
+      ]);
+    });
+
     test('emitSubscriptionError pushes error events', () async {
       final client = FakeConvexClient();
       final subscription = client.subscribe('messages:list');
@@ -180,6 +202,38 @@ void main() {
 
       expect(query.loadMore(), isTrue);
       expect((query as FakeConvexPaginatedQuery).loadMoreCount, 1);
+
+      client.dispose();
+    });
+
+    test('emitPaginated broadcasts to duplicate paginated queries', () async {
+      final client = FakeConvexClient();
+      final first = client.paginatedQuery(
+        'messages:list',
+        const <String, dynamic>{},
+      );
+      final second = client.paginatedQuery(
+        'messages:list',
+        const <String, dynamic>{},
+      );
+
+      final firstResults = <ConvexPaginatedResult>[];
+      final secondResults = <ConvexPaginatedResult>[];
+      first.stream.listen(firstResults.add);
+      second.stream.listen(secondResults.add);
+
+      client.emitPaginated(
+        'messages:list',
+        results: <dynamic>['a'],
+        status: ConvexPaginationStatus.exhausted,
+        isDone: true,
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(firstResults, hasLength(1));
+      expect(secondResults, hasLength(1));
+      expect(first.current.results, <dynamic>['a']);
+      expect(second.current.results, <dynamic>['a']);
 
       client.dispose();
     });
