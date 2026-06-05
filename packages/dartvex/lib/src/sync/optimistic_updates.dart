@@ -166,10 +166,22 @@ class OptimisticQueryResults {
 
     final oldQueryResults = _queryResults;
     _queryResults = Map<String, OverlayServerQuery>.from(serverQueryResults);
-    final store = _OptimisticLocalStoreImpl(_queryResults);
+    final survivingUpdates = <({OptimisticUpdate update, int mutationId})>[];
     for (final entry in _optimisticUpdates) {
-      entry.update(store);
+      final candidateResults =
+          Map<String, OverlayServerQuery>.from(_queryResults);
+      final store = _OptimisticLocalStoreImpl(candidateResults);
+      try {
+        entry.update(store);
+      } catch (_) {
+        continue;
+      }
+      _queryResults = candidateResults;
+      survivingUpdates.add(entry);
     }
+    _optimisticUpdates
+      ..clear()
+      ..addAll(survivingUpdates);
 
     // Shallow identity comparison: an unchanged server query keeps the same
     // StoredQueryResult instance across transitions, so only genuinely changed
@@ -189,9 +201,12 @@ class OptimisticQueryResults {
   ///
   /// Returns the tokens the update touched so the caller can notify subscribers.
   List<String> applyOptimisticUpdate(OptimisticUpdate update, int mutationId) {
-    _optimisticUpdates.add((update: update, mutationId: mutationId));
-    final store = _OptimisticLocalStoreImpl(_queryResults);
+    final candidateResults =
+        Map<String, OverlayServerQuery>.from(_queryResults);
+    final store = _OptimisticLocalStoreImpl(candidateResults);
     update(store);
+    _queryResults = candidateResults;
+    _optimisticUpdates.add((update: update, mutationId: mutationId));
     return store.modifiedQueries;
   }
 

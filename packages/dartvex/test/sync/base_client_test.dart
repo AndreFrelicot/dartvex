@@ -685,6 +685,50 @@ void main() {
       expect(listOf(event), <String>['a', 'c', 'b']);
     });
 
+    test('drops a throwing replay layer without reconnecting', () {
+      final (client, queryId) = seeded(<String>['a']);
+      final poison = client.trackMutation(
+        'messages:send',
+        const <String, dynamic>{'body': 'poison'},
+      );
+      var poisonRuns = 0;
+      client.applyOptimisticUpdate((store) {
+        poisonRuns += 1;
+        if (poisonRuns > 1) {
+          throw StateError('poisoned replay');
+        }
+        final list = (store.getQuery('messages:list') as List<dynamic>?) ??
+            const <dynamic>[];
+        store.setQuery('messages:list', const <String, dynamic>{}, <dynamic>[
+          ...list,
+          'poison',
+        ]);
+      }, poison.requestId);
+
+      final safe = client.trackMutation(
+        'messages:send',
+        const <String, dynamic>{'body': 'safe'},
+      );
+      client.applyOptimisticUpdate(append('safe'), safe.requestId);
+      client.drainOutgoing();
+
+      final result = client.receive(
+        Transition(
+          startVersion: StateVersion(querySet: 1, identity: 0, ts: encodeTs(1)),
+          endVersion: StateVersion(querySet: 1, identity: 0, ts: encodeTs(2)),
+          modifications: <StateModification>[
+            QueryUpdated(queryId: queryId, value: const <String>['server']),
+          ],
+        ),
+      );
+
+      expect(result.events.whereType<ReconnectRequiredEvent>(), isEmpty);
+      expect(
+        listOf(result.events.whereType<QueryUpdateEvent>().single),
+        <String>['server', 'safe'],
+      );
+    });
+
     test('drops the layer exactly when its transition lands', () async {
       final (client, queryId) = seeded(<String>['a']);
       final request = client.trackMutation(

@@ -210,5 +210,57 @@ void main() {
       }, 0);
       expect(readBack, isNull);
     });
+
+    test('apply-time failures do not leave active optimistic layers', () {
+      final results = OptimisticQueryResults();
+      final server = <String, OverlayServerQuery>{
+        token('query'): serverQuery('query', 1),
+      };
+      results.ingestQueryResultsFromServer(server, <int>{});
+
+      expect(
+        () => results.applyOptimisticUpdate((_) {
+          throw StateError('bad optimistic update');
+        }, 0),
+        throwsStateError,
+      );
+      expect(results.hasActiveUpdates, isFalse);
+
+      results.ingestQueryResultsFromServer(
+        <String, OverlayServerQuery>{token('query'): serverQuery('query', 2)},
+        <int>{},
+      );
+      expect(valueAt(results, token('query')), 2);
+    });
+
+    test('replay-time failures drop only the failing optimistic layer', () {
+      final results = OptimisticQueryResults();
+      Map<String, OverlayServerQuery> serverResults(int value) {
+        return <String, OverlayServerQuery>{
+          token('query'): serverQuery('query', value),
+        };
+      }
+
+      results.ingestQueryResultsFromServer(serverResults(1), <int>{});
+      var poisonRuns = 0;
+      results.applyOptimisticUpdate((store) {
+        poisonRuns += 1;
+        if (poisonRuns > 1) {
+          throw StateError('poisoned replay');
+        }
+        store.setQuery('query', const <String, dynamic>{}, 'poison');
+      }, 0);
+      results.applyOptimisticUpdate((store) {
+        store.setQuery('query', const <String, dynamic>{}, 'safe');
+      }, 1);
+
+      results.ingestQueryResultsFromServer(serverResults(2), <int>{});
+      expect(valueAt(results, token('query')), 'safe');
+      expect(results.hasActiveUpdates, isTrue);
+
+      results.ingestQueryResultsFromServer(serverResults(3), <int>{1});
+      expect(results.hasActiveUpdates, isFalse);
+      expect(valueAt(results, token('query')), 3);
+    });
   });
 }
