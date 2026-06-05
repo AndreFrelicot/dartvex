@@ -118,6 +118,53 @@ void main() {
       await manager.dispose();
     });
 
+    test('send failure after adapter disconnect reports disconnect bookkeeping',
+        () async {
+      final adapter = _DisconnectingThrowingSendAdapter(failAtSentCount: 1);
+      final disconnectReasons = <String>[];
+      final states = <({bool connected, bool connecting})>[];
+      final manager = WebSocketManager(
+        adapter: adapter,
+        deploymentUrl: 'https://example.com',
+        apiVersion: '0.1.0',
+        onConnected: () => const <ClientMessage>[],
+        onMessage: (_) => const <ClientMessage>[],
+        onDisconnected: (reason) async {
+          disconnectReasons.add(reason);
+        },
+        onConnectionStateChanged: (connected, connecting) {
+          states.add((connected: connected, connecting: connecting));
+        },
+        maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => false,
+        reconnectBackoff: const <Duration>[Duration.zero],
+        inactivityTimeout: const Duration(seconds: 30),
+      );
+
+      await manager.start();
+      final sentMessages = await manager.sendMessages(
+        const <ClientMessage>[
+          Mutation(
+            requestId: 1,
+            udfPath: 'messages:send',
+            args: <dynamic>[
+              <String, dynamic>{'body': 'hello'}
+            ],
+          ),
+        ],
+      );
+      await _waitForConnectMessages(adapter, 2);
+
+      expect(sentMessages, isEmpty);
+      expect(disconnectReasons, <String>['FailedToSendMessage']);
+      expect(
+        states.where((state) => !state.connected && !state.connecting),
+        hasLength(1),
+      );
+
+      await manager.dispose();
+    });
+
     test('reconnect reuses session ID and increments connection count',
         () async {
       final adapter = MockWebSocketAdapter();
@@ -424,6 +471,43 @@ void main() {
       await manager.dispose();
     });
 
+    test('reconnectNow while silently disconnected reports disconnect',
+        () async {
+      final adapter = _SilentDisconnectAdapter();
+      final disconnectReasons = <String>[];
+      final states = <({bool connected, bool connecting})>[];
+      final manager = WebSocketManager(
+        adapter: adapter,
+        deploymentUrl: 'https://example.com',
+        apiVersion: '0.1.0',
+        onConnected: () => const <ClientMessage>[],
+        onMessage: (_) => const <ClientMessage>[],
+        onDisconnected: (reason) async {
+          disconnectReasons.add(reason);
+        },
+        onConnectionStateChanged: (connected, connecting) {
+          states.add((connected: connected, connecting: connecting));
+        },
+        maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => false,
+        reconnectBackoff: const <Duration>[Duration.zero],
+        inactivityTimeout: const Duration(seconds: 30),
+      );
+
+      await manager.start();
+      adapter.silentlyDisconnect();
+      await manager.reconnectNow('ManualReconnect');
+      await _waitForConnectMessages(adapter, 2);
+
+      expect(disconnectReasons, <String>['ManualReconnect']);
+      expect(
+        states.where((state) => !state.connected && !state.connecting),
+        hasLength(1),
+      );
+
+      await manager.dispose();
+    });
+
     test('connect watchdog times out a hanging connect and retries', () async {
       final adapter = _HangingThenConnectingAdapter();
       final disconnectReasons = <String>[];
@@ -678,6 +762,43 @@ void main() {
         adapter.decodedSentMessages
             .where((message) => message['type'] == 'Connect'),
         hasLength(2),
+      );
+
+      await manager.dispose();
+    });
+
+    test('invalid message after silent disconnect reports disconnect',
+        () async {
+      final adapter = _SilentDisconnectAdapter();
+      final disconnectReasons = <String>[];
+      final states = <({bool connected, bool connecting})>[];
+      final manager = WebSocketManager(
+        adapter: adapter,
+        deploymentUrl: 'https://example.com',
+        apiVersion: '0.1.0',
+        onConnected: () => const <ClientMessage>[],
+        onMessage: (_) => const <ClientMessage>[],
+        onDisconnected: (reason) async {
+          disconnectReasons.add(reason);
+        },
+        onConnectionStateChanged: (connected, connecting) {
+          states.add((connected: connected, connecting: connecting));
+        },
+        maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => false,
+        reconnectBackoff: const <Duration>[Duration.zero],
+        inactivityTimeout: const Duration(seconds: 30),
+      );
+
+      await manager.start();
+      adapter.silentlyDisconnect();
+      adapter.pushServerMessage(<String, dynamic>{'type': 'Bogus'});
+      await _waitForConnectMessages(adapter, 2);
+
+      expect(disconnectReasons, <String>['InvalidServerMessage']);
+      expect(
+        states.where((state) => !state.connected && !state.connecting),
+        hasLength(1),
       );
 
       await manager.dispose();
@@ -985,6 +1106,89 @@ class _ThrowingSendAdapter extends MockWebSocketAdapter {
     }
     super.send(message);
   }
+}
+
+class _DisconnectingThrowingSendAdapter extends MockWebSocketAdapter {
+  _DisconnectingThrowingSendAdapter({required this.failAtSentCount});
+
+  final int failAtSentCount;
+  bool _failed = false;
+
+  @override
+  void send(String message) {
+    if (!_failed && sentMessages.length == failAtSentCount) {
+      _failed = true;
+      disconnect();
+      throw StateError('send failed after disconnect');
+    }
+    super.send(message);
+  }
+}
+
+class _SilentDisconnectAdapter extends MockWebSocketAdapter {
+  final StreamController<String> _messagesController =
+      StreamController<String>.broadcast();
+  final StreamController<WebSocketCloseEvent> _closeController =
+      StreamController<WebSocketCloseEvent>.broadcast(sync: true);
+
+  final List<String> _sentMessages = <String>[];
+  final List<String> _connectedUrls = <String>[];
+
+  @override
+  List<String> get sentMessages => _sentMessages;
+
+  @override
+  List<String> get connectedUrls => _connectedUrls;
+
+  bool _connected = false;
+
+  @override
+  Future<void> connect(String url) async {
+    connectedUrls.add(url);
+    _connected = true;
+  }
+
+  void silentlyDisconnect() {
+    _connected = false;
+  }
+
+  @override
+  void send(String message) {
+    if (!_connected) {
+      throw StateError('Mock socket is disconnected');
+    }
+    sentMessages.add(message);
+  }
+
+  @override
+  List<Map<String, dynamic>> get decodedSentMessages {
+    return sentMessages
+        .map((message) => jsonDecode(message) as Map<String, dynamic>)
+        .toList(growable: false);
+  }
+
+  @override
+  void pushServerMessage(Map<String, dynamic> message) {
+    _messagesController.add(jsonEncode(message));
+  }
+
+  @override
+  Stream<String> get messages => _messagesController.stream;
+
+  @override
+  Stream<WebSocketCloseEvent> get closeEvents => _closeController.stream;
+
+  @override
+  Future<void> close() async {
+    if (!_connected) {
+      return;
+    }
+    _connected = false;
+    _closeController.add(const WebSocketCloseEvent());
+  }
+
+  @override
+  bool get isConnected => _connected;
 }
 
 class _HangingThenConnectingAdapter implements WebSocketAdapter {

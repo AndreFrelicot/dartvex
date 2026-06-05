@@ -98,6 +98,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Successful mutations and actions now surface server-side function log lines
   through the configured logger at info level, matching the official client's
   function-output visibility.
+- WebSocket reconnect paths that discover an already-closed adapter now run the
+  same disconnect bookkeeping as normal close events, so state listeners and
+  disconnect callbacks are not skipped before reconnecting.
 - `AuthLoading` documentation now matches the emitted auth states: it covers
   login/cache restore, while background token refreshes remain exposed via
   `authRefreshing`.

@@ -276,9 +276,7 @@ class WebSocketManager {
       if (adapter.isConnected) {
         await adapter.close();
       } else {
-        _pendingCloseReason = null;
-        _closeHandled = true;
-        _scheduleReconnect(immediate: true);
+        await _handleSyntheticDisconnect(_lastCloseReason, immediate: true);
       }
       return sentMessages;
     }
@@ -319,9 +317,7 @@ class WebSocketManager {
       _pendingCloseReason = reason;
       return;
     }
-    _pendingCloseReason = null;
-    _closeHandled = true;
-    _scheduleReconnect(immediate: true);
+    await _handleSyntheticDisconnect(reason, immediate: true);
   }
 
   /// Cancels any pending reconnect backoff and reconnects immediately, but only
@@ -648,9 +644,7 @@ class WebSocketManager {
       if (adapter.isConnected) {
         await adapter.close();
       } else {
-        _pendingCloseReason = null;
-        _closeHandled = true;
-        _scheduleReconnect(immediate: true);
+        await _handleSyntheticDisconnect(_lastCloseReason, immediate: true);
       }
     }
   }
@@ -779,6 +773,29 @@ class WebSocketManager {
     await onDisconnected(reason);
     _lastCloseReason = reason;
     _scheduleReconnect();
+  }
+
+  Future<void> _handleSyntheticDisconnect(
+    String reason, {
+    bool immediate = false,
+  }) async {
+    if (_disposed || _closeHandled || _stopped) {
+      return;
+    }
+    _closeHandled = true;
+    _pendingCloseReason = null;
+    _log(
+      DartvexLogLevel.info,
+      'WebSocket disconnected',
+      data: <String, Object?>{'reason': reason},
+    );
+    _inactivityTimer?.cancel();
+    _chunkBuffer = null;
+    _connecting = false;
+    onConnectionStateChanged(false, false);
+    await onDisconnected(reason);
+    _lastCloseReason = reason;
+    _scheduleReconnect(immediate: immediate);
   }
 
   void _scheduleReconnect({bool immediate = false}) {
