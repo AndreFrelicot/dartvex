@@ -1327,6 +1327,51 @@ void main() {
       client.dispose();
     });
 
+    test('reconnect auth confirmation does not re-emit auth state', () async {
+      final adapter = MockWebSocketAdapter();
+      final client = ConvexClient(
+        'https://example.com',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+      await settle();
+
+      final states = <bool>[];
+      final subscription = client.authState.listen(states.add);
+      await client.setAuth('fixed-token');
+      await settle();
+      adapter.pushServerMessage(
+        Transition(
+          startVersion: const StateVersion.initial(),
+          endVersion: StateVersion(querySet: 0, identity: 1, ts: encodeTs(1)),
+          modifications: const <StateModification>[],
+        ).toJson(),
+      );
+      await settle();
+      expect(states, <bool>[true]);
+
+      states.clear();
+      adapter.disconnect(reason: 'network drop');
+      await waitForStatus(
+        client,
+        (status) => status.state == ConnectionState.connected,
+      );
+      adapter.pushServerMessage(
+        Transition(
+          startVersion: const StateVersion.initial(),
+          endVersion: StateVersion(querySet: 0, identity: 1, ts: encodeTs(2)),
+          modifications: const <StateModification>[],
+        ).toJson(),
+      );
+      await settle();
+
+      expect(states, isEmpty);
+      await subscription.cancel();
+      client.dispose();
+    });
+
     test('reconnect auth refresh failure does not abort handshake', () async {
       final adapter = MockWebSocketAdapter();
       final client = ConvexClient(

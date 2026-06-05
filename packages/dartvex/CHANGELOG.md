@@ -104,6 +104,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reactive pagination now tears down both split-half subscriptions and surfaces
   an error if either half of a split page fails, avoiding leaked hidden
   subscriptions.
+- Auth confirmations are now ignored unless a token update is actually pending,
+  and reauth confirmations no longer re-emit an already-authenticated public
+  state.
 - `AuthLoading` documentation now matches the emitted auth states: it covers
   login/cache restore, while background token refreshes remain exposed via
   `authRefreshing`.

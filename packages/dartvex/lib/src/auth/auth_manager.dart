@@ -71,7 +71,9 @@ class AuthManager {
   String? _currentToken;
   int _authGeneration = 0;
   int _tokenConfirmationAttempts = 0;
+  bool _backendAuthenticated = false;
   bool _awaitingConfirmation = false;
+  bool _emitAuthenticatedOnConfirmation = false;
 
   static const int _maxTokenConfirmationAttempts = 3;
 
@@ -95,8 +97,7 @@ class AuthManager {
     _fetchToken = null;
     _onAuthChange = null;
     _currentToken = token;
-    _awaitingConfirmation = token != null;
-    _tokenConfirmationAttempts = 0;
+    _expectConfirmationForToken(token);
     await sendAuth(token);
     if (token == null) {
       _emit(false);
@@ -125,8 +126,7 @@ class AuthManager {
       }
       shouldResumeSocket = true;
       _currentToken = token;
-      _awaitingConfirmation = token != null;
-      _tokenConfirmationAttempts = 0;
+      _expectConfirmationForToken(token);
       await sendAuth(token);
       if (token == null) {
         _emit(false);
@@ -144,8 +144,7 @@ class AuthManager {
         _fetchToken = null;
         _onAuthChange = null;
         _currentToken = null;
-        _awaitingConfirmation = false;
-        _tokenConfirmationAttempts = 0;
+        _clearPendingConfirmation();
         _setRefreshing(false);
         await sendAuth(null);
         _emit(false);
@@ -167,8 +166,7 @@ class AuthManager {
     _fetchToken = null;
     _onAuthChange = null;
     _currentToken = null;
-    _awaitingConfirmation = false;
-    _tokenConfirmationAttempts = 0;
+    _clearPendingConfirmation();
     await sendAuth(null);
     _emit(false);
   }
@@ -187,8 +185,7 @@ class AuthManager {
       return;
     }
     _currentToken = freshToken;
-    _awaitingConfirmation = freshToken != null;
-    _tokenConfirmationAttempts = 0;
+    _expectConfirmationForToken(freshToken);
     if (freshToken == null) {
       _log(DartvexLogLevel.warn, 'Reconnect auth refresh returned no token');
       _emit(false);
@@ -212,23 +209,37 @@ class AuthManager {
     _cancelRefreshTimer();
     _authGeneration += 1;
     _currentToken = token;
-    _awaitingConfirmation = true;
-    _tokenConfirmationAttempts = 0;
+    _expectConfirmationForToken(token);
     await sendAuth(token);
   }
 
   /// Marks the current auth token as confirmed by the backend.
   void handleAuthConfirmed() {
+    if (!_awaitingConfirmation) {
+      _log(
+        DartvexLogLevel.debug,
+        'Ignoring auth confirmation without a pending auth update',
+      );
+      return;
+    }
     final isAuthenticated = _currentToken != null;
     _log(
       DartvexLogLevel.debug,
       isAuthenticated ? 'Auth confirmed' : 'Auth confirmed without token',
     );
-    _awaitingConfirmation = false;
-    _tokenConfirmationAttempts = 0;
+    final shouldEmitAuthenticated = _emitAuthenticatedOnConfirmation;
+    _clearPendingConfirmation();
     // A confirming transition completes any in-progress reauth refresh.
     _setRefreshing(false);
-    _emit(isAuthenticated);
+    if (!isAuthenticated) {
+      _emit(false);
+      return;
+    }
+    if (shouldEmitAuthenticated) {
+      _emit(true);
+    } else {
+      _backendAuthenticated = true;
+    }
     if (isAuthenticated && _fetchToken != null) {
       _scheduleRefresh(_currentToken!);
     }
@@ -288,7 +299,7 @@ class AuthManager {
       final freshToken = await fetchToken(forceRefresh: true);
       if (_isCurrentFlow(generation, fetchToken)) {
         _currentToken = freshToken;
-        _awaitingConfirmation = freshToken != null;
+        _expectConfirmationForToken(freshToken, resetAttempts: false);
         await sendAuth(freshToken);
         if (freshToken == null) {
           _log(DartvexLogLevel.warn, 'Forced auth refresh returned no token');
@@ -322,8 +333,7 @@ class AuthManager {
     _authGeneration += 1;
     _fetchToken = null;
     _onAuthChange = null;
-    _awaitingConfirmation = false;
-    _tokenConfirmationAttempts = 0;
+    _clearPendingConfirmation();
     _cancelRefreshTimer();
     _setRefreshing(false);
   }
@@ -431,7 +441,7 @@ class AuthManager {
           return;
         }
         _currentToken = freshToken;
-        _awaitingConfirmation = freshToken != null;
+        _expectConfirmationForToken(freshToken);
         await sendAuth(freshToken);
         if (freshToken == null) {
           _log(
@@ -465,9 +475,25 @@ class AuthManager {
     _fetchToken = null;
     _onAuthChange = null;
     _currentToken = null;
+    _clearPendingConfirmation();
+    _setRefreshing(false);
+  }
+
+  void _expectConfirmationForToken(
+    String? token, {
+    bool resetAttempts = true,
+  }) {
+    _awaitingConfirmation = token != null;
+    if (resetAttempts) {
+      _tokenConfirmationAttempts = 0;
+    }
+    _emitAuthenticatedOnConfirmation = token != null && !_backendAuthenticated;
+  }
+
+  void _clearPendingConfirmation() {
     _awaitingConfirmation = false;
     _tokenConfirmationAttempts = 0;
-    _setRefreshing(false);
+    _emitAuthenticatedOnConfirmation = false;
   }
 
   Future<void> _invokePauseSocket() async {
@@ -499,6 +525,7 @@ class AuthManager {
   }
 
   void _emit(bool isAuthenticated) {
+    _backendAuthenticated = isAuthenticated;
     emitAuthState(isAuthenticated);
     _onAuthChange?.call(isAuthenticated);
   }

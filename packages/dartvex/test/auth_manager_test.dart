@@ -212,6 +212,26 @@ void main() {
       expect(sentTokens, <String?>['token']);
     });
 
+    test('server confirmation without pending auth update is ignored',
+        () async {
+      final authStates = <bool>[];
+      final manager = AuthManager(
+        config: const ConvexClientConfig(connectImmediately: false),
+        sendAuth: (_) async {},
+        emitAuthState: authStates.add,
+      );
+
+      await manager.setAuth('token');
+      manager.handleAuthConfirmed();
+      expect(authStates, <bool>[true]);
+
+      authStates.clear();
+      manager.handleAuthConfirmed();
+
+      expect(authStates, isEmpty);
+      await manager.stopRefreshing();
+    });
+
     test('persistent auth rejection eventually reports signed out', () async {
       var fetchCount = 0;
       final sentTokens = <String?>[];
@@ -566,6 +586,42 @@ void main() {
       expect(manager.isRefreshing, isFalse);
       expect(refreshing, <bool>[true, false]);
 
+      await manager.stopRefreshing();
+    });
+
+    test('reauth confirmation does not re-emit an authenticated state',
+        () async {
+      final authStates = <bool>[];
+      final refreshing = <bool>[];
+      final manager = AuthManager(
+        config: const ConvexClientConfig(connectImmediately: false),
+        sendAuth: (_) async {},
+        emitAuthState: authStates.add,
+        stopSocket: () async {},
+        restartSocket: () async {},
+        onRefreshingChange: refreshing.add,
+      );
+
+      await manager.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) async =>
+            forceRefresh ? 'fresh' : 'cached',
+      );
+      manager.handleAuthConfirmed();
+      expect(authStates, <bool>[true]);
+      authStates.clear();
+
+      await manager.handleAuthError(
+        const AuthError(
+          error: 'expired',
+          baseVersion: 0,
+          authUpdateAttempted: true,
+        ),
+        currentAuthVersion: 1,
+      );
+      manager.handleAuthConfirmed();
+
+      expect(refreshing, <bool>[true, false]);
+      expect(authStates, isEmpty);
       await manager.stopRefreshing();
     });
 
