@@ -200,6 +200,12 @@ class WebSocketManager {
   Timer? _reconnectTimer;
   Timer? _inactivityTimer;
 
+  /// Serializes message handling so a handler that awaits (an auth refresh or a
+  /// reconnect) cannot interleave with the next incoming message. Each message
+  /// is chained after the previous one completes; errors are isolated so the
+  /// chain never stalls.
+  Future<void> _messageQueue = Future<void>.value();
+
   bool _disposed = false;
   bool _connecting = false;
   bool _closeHandled = false;
@@ -371,7 +377,19 @@ class WebSocketManager {
 
   void _attachListeners() {
     _messageSubscription ??= adapter.messages.listen((raw) {
-      unawaited(_handleRawMessage(raw));
+      _messageQueue = _messageQueue
+          .then((_) => _handleRawMessage(raw))
+          .catchError((Object error, StackTrace stackTrace) {
+        // _handleRawMessage already contains its own error handling; this guard
+        // only keeps the serialization chain alive so a later failure cannot
+        // block all subsequent messages.
+        _log(
+          DartvexLogLevel.error,
+          'Unhandled error while processing WebSocket message',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      });
     });
     _closeSubscription ??= adapter.closeEvents.listen((event) {
       unawaited(_handleClosed(event));
