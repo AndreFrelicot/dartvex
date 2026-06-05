@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   errors instead of raw cast or decode exceptions.
 - Clarify missing session-token errors with Flutter web CORS guidance and
   document that cookie fallback is native-only.
+- Do not reject successful 200 Better Auth responses merely because they
+  include informational `message` or `error` fields.
 
 ### Changed
 

@@ -242,7 +242,10 @@ void main() {
     test('throws when sign-in returns 200 with error body', () async {
       final mock = MockClient((request) async {
         return http.Response(
-          jsonEncode({'error': 'invalid_credentials'}),
+          jsonEncode({
+            'code': 'INVALID_CREDENTIALS',
+            'error': 'invalid_credentials',
+          }),
           200,
           headers: {'set-auth-token': 'tok'},
         );
@@ -253,6 +256,32 @@ void main() {
         () => client.signIn(email: 'a@b.com', password: 'bad'),
         throwsA(isA<BetterAuthException>()),
       );
+    });
+
+    test('allows successful 200 body with informational fields', () async {
+      final mock = MockClient((request) async {
+        if (request.url.path == '/api/auth/sign-in/email') {
+          return http.Response(
+            jsonEncode({
+              ..._defaultSignInResponse,
+              'message': 'Signed in',
+              'error': 'none',
+            }),
+            200,
+            headers: {'set-auth-token': 'tok'},
+          );
+        }
+        if (request.url.path == '/api/auth/convex/token') {
+          return http.Response(jsonEncode({'token': 'jwt'}), 200);
+        }
+        return http.Response('Not found', 404);
+      });
+      final client = BetterAuthClient(baseUrl: baseUrl, httpClient: mock);
+
+      final session = await client.signIn(email: 'a@b.com', password: 'p');
+
+      expect(session.token, 'jwt');
+      expect(session.userId, 'user_123');
     });
 
     test('throws when set-auth-token header is missing', () async {

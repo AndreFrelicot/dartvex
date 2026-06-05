@@ -392,6 +392,10 @@ class BetterAuthClient {
       if (body is! Map<String, dynamic>) {
         return;
       }
+      final code = body['code'];
+      if (code is! String || code.isEmpty) {
+        return;
+      }
       final error = body['error'];
       final message = body['message'];
       final detail = switch ((error, message)) {
@@ -399,14 +403,12 @@ class BetterAuthClient {
           '$error: $message',
         (final String error, _) when error.isNotEmpty => error,
         (_, final String message) when message.isNotEmpty => message,
-        _ => null,
+        _ => code,
       };
-      if (detail != null) {
-        throw BetterAuthException(
-          'Better Auth request to $path failed: $detail',
-          data: body,
-        );
-      }
+      throw BetterAuthException(
+        'Better Auth request to $path failed: $detail',
+        data: body,
+      );
     } on FormatException {
       return;
     }
