@@ -163,6 +163,44 @@ void main() {
       expect(fetchCount, 1);
       expect(sentTokens, <String?>['token']);
     });
+
+    test('persistent auth rejection eventually reports signed out', () async {
+      var fetchCount = 0;
+      final sentTokens = <String?>[];
+      final authStates = <bool>[];
+      final manager = AuthManager(
+        config: const ConvexClientConfig(connectImmediately: false),
+        sendAuth: (token) async {
+          sentTokens.add(token);
+        },
+        emitAuthState: authStates.add,
+      );
+
+      await manager.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) async {
+          fetchCount += 1;
+          return forceRefresh ? 'fresh-$fetchCount' : 'cached-token';
+        },
+      );
+      manager.handleAuthConfirmed();
+      authStates.clear();
+
+      for (var i = 0; i < 6 && !authStates.contains(false); i += 1) {
+        await manager.handleAuthError(
+          AuthError(
+            error: 'token rejected $i',
+            baseVersion: i,
+            authUpdateAttempted: true,
+          ),
+          currentAuthVersion: i + 1,
+        );
+      }
+
+      expect(authStates, contains(false));
+      expect(sentTokens.last, isNull);
+      expect(fetchCount, lessThan(7));
+      await manager.stopRefreshing();
+    });
   });
 
   group('AuthManager.computeRefreshDelay', () {

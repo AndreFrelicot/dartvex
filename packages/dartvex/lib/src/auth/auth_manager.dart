@@ -272,19 +272,17 @@ class AuthManager {
       await sendAuth(null);
       return;
     }
-    if (_awaitingConfirmation &&
-        _tokenConfirmationAttempts >= _maxTokenConfirmationAttempts) {
+    if (_tokenConfirmationAttempts >= _maxTokenConfirmationAttempts) {
       _log(DartvexLogLevel.error, 'Auth confirmation retries exhausted');
       _currentToken = null;
       _awaitingConfirmation = false;
+      _tokenConfirmationAttempts = 0;
       _setRefreshing(false);
       _emit(false);
       await sendAuth(null);
       return;
     }
-    if (_awaitingConfirmation) {
-      _tokenConfirmationAttempts += 1;
-    }
+    _tokenConfirmationAttempts += 1;
 
     final generation = _authGeneration;
     // Stop the socket so in-flight messages cannot retry with the stale token,
@@ -296,11 +294,11 @@ class AuthManager {
       if (_isCurrentFlow(generation, fetchToken)) {
         _currentToken = freshToken;
         _awaitingConfirmation = freshToken != null;
-        _tokenConfirmationAttempts = 0;
         await sendAuth(freshToken);
         if (freshToken == null) {
           _log(DartvexLogLevel.warn, 'Forced auth refresh returned no token');
           // The refresh could not produce a token; the reauth is over.
+          _tokenConfirmationAttempts = 0;
           _setRefreshing(false);
           _emit(false);
         }

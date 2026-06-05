@@ -86,6 +86,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Persistent auth rejections now reach the retry cap and report the client as
+  signed out instead of resetting the confirmation-attempt counter after every
+  forced token refresh.
 - The default Convex sync API version now uses a currently supported Convex
   client version, fixing browser WebSocket handshakes that cannot send the
   native `Convex-Client` header.
