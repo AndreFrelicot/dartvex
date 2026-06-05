@@ -328,6 +328,49 @@ void main() {
       await future;
     });
 
+    test('failed optimistic update does not leave mutation queued', () async {
+      final adapter = MockWebSocketAdapter();
+      final client = ConvexClient(
+        'https://demo.convex.cloud',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          connectImmediately: false,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+
+      await expectLater(
+        client.mutate(
+          'messages:bad',
+          const <String, dynamic>{'body': 'bad'},
+          (_) => throw StateError('bad optimistic update'),
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            'bad optimistic update',
+          ),
+        ),
+      );
+
+      final future = client.mutate('messages:send',
+          const <String, dynamic>{'body': 'ok'}).catchError((_) {});
+      await settle();
+
+      final mutationMessages = adapter.decodedSentMessages
+          .where((message) => message['type'] == 'Mutation')
+          .toList(growable: false);
+      expect(mutationMessages, hasLength(1));
+      expect(
+        (mutationMessages.single['args'] as List<dynamic>).single,
+        const <String, dynamic>{'body': 'ok'},
+      );
+
+      client.dispose();
+      await future;
+    });
+
     test('first lazy action starts socket and sends action', () async {
       final adapter = MockWebSocketAdapter();
       final client = ConvexClient(

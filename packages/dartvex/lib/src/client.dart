@@ -795,10 +795,19 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     try {
       final request = _baseClient.trackMutation(name, args);
       if (optimisticUpdate != null) {
-        _dispatchOptimisticEvents(
-          _baseClient.applyOptimisticUpdate(
-              optimisticUpdate, request.requestId),
-        );
+        try {
+          _dispatchOptimisticEvents(
+            _baseClient.applyOptimisticUpdate(
+                optimisticUpdate, request.requestId),
+          );
+        } catch (error, stackTrace) {
+          unawaited(request.future.catchError((_) {}));
+          _dispatchOptimisticEvents(
+            _baseClient.cancelMutation(request.requestId, error),
+          );
+          _publishConnectionStatus();
+          Error.throwWithStackTrace(error, stackTrace);
+        }
       }
       _publishConnectionStatus();
       final future = _withOptionalTimeout(

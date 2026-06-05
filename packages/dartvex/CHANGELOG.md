@@ -117,6 +117,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reactive paginated queries now seed their first page synchronously from the
   current local/cache result when available, avoiding a loading flash on warm
   remounts.
+- Mutations whose optimistic update throws now cancel their tracked request
+  immediately, preventing the failed mutation from being sent by a later flush.
 - `AuthLoading` documentation now matches the emitted auth states: it covers
   login/cache restore, while background token refreshes remain exposed via
   `authRefreshing`.
