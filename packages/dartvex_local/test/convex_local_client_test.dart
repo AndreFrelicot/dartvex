@@ -32,6 +32,41 @@ void main() {
       await localClient.dispose();
     });
 
+    test('synchronous cancel while delivering an event does not throw '
+        'ConcurrentModificationError', () async {
+      // Two subscribers share one query state; delivering an event fans out
+      // over that shared subscriber set. Cancelling one subscriber from its
+      // own (synchronous) listener mutates the set mid-iteration, which
+      // previously threw a ConcurrentModificationError.
+      final feed = StreamController<LocalRemoteQueryEvent>.broadcast();
+      addTearDown(feed.close);
+      remoteClient.subscriptionStreams['messages:listPublic'] = feed.stream;
+
+      final received = <String>[];
+      final first = localClient.subscribe('messages:listPublic');
+      final second = localClient.subscribe('messages:listPublic');
+
+      first.stream.listen((event) {
+        received.add('first');
+        first.cancel();
+      });
+      second.stream.listen((event) {
+        received.add('second');
+      });
+
+      // Let both subscriptions wire up their shared remote feed.
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      feed.add(const LocalRemoteQuerySuccess(<dynamic>[]));
+
+      // Allow the cache write + fan-out to run. With the bug, the fan-out
+      // raised an unhandled ConcurrentModificationError and never reached the
+      // second subscriber.
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(received, containsAll(<String>['first', 'second']));
+    });
+
     // ---------------------------------------------------------------
     // Cache behavior
     // ---------------------------------------------------------------

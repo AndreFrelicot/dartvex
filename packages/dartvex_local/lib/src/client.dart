@@ -763,7 +763,10 @@ class ConvexLocalClient {
     _pendingMutations = const <PendingMutation>[];
     _pendingWritesByQueryKey.clear();
     _pendingMutationsController.add(currentPendingMutations);
-    for (final queryState in _queryStates.values) {
+    // Snapshot the query states: emitting below can synchronously cancel a
+    // subscription, which removes its query state, mutating `_queryStates`
+    // mid-iteration.
+    for (final queryState in _queryStates.values.toList(growable: false)) {
       final cached = await _queryCache.read(
         queryState.descriptor.name,
         queryState.descriptor.args,
@@ -795,6 +798,11 @@ class ConvexLocalClient {
         _queryStates.remove(queryState.descriptor.key);
       }
     }
+    // Yield before closing. cancel() may be invoked synchronously from a
+    // listener while this controller is still dispatching its event, and
+    // closing a synchronous broadcast controller mid-dispatch throws
+    // "Cannot fire new event". The microtask resumes once the dispatch unwinds.
+    await Future<void>.value();
     await state.controller.close();
   }
 
@@ -927,7 +935,9 @@ class ConvexLocalClient {
   }
 
   Future<void> _emitCachedSnapshotsForActiveQueries() async {
-    for (final queryState in _queryStates.values) {
+    // Snapshot: a synchronous cancel triggered by the emit below mutates
+    // `_queryStates` while we iterate it.
+    for (final queryState in _queryStates.values.toList(growable: false)) {
       final cached = await _queryCache.read(
         queryState.descriptor.name,
         queryState.descriptor.args,
@@ -1335,7 +1345,14 @@ class ConvexLocalClient {
     if (queryState == null) {
       return;
     }
-    for (final subscriptionId in queryState.subscriberIds) {
+    // Iterate a snapshot: the controllers are synchronous broadcast streams, so
+    // a listener that cancels (or re-subscribes the same query) while receiving
+    // this event would mutate `subscriberIds` mid-iteration and throw a
+    // ConcurrentModificationError. Cancelled subscribers are skipped via the
+    // `_subscriptionStates` lookup below.
+    for (final subscriptionId in queryState.subscriberIds.toList(
+      growable: false,
+    )) {
       _subscriptionStates[subscriptionId]?.controller.add(event);
     }
   }
@@ -1416,9 +1433,12 @@ class ConvexLocalClient {
     await _networkModeController.close();
     await _pendingMutationsController.close();
 
-    final controllers = _subscriptionStates.values.map(
-      (state) => state.controller,
-    );
+    // Materialize before closing: closing a controller can synchronously run a
+    // listener's onDone that cancels its subscription, mutating
+    // `_subscriptionStates` while this lazy view is still being iterated.
+    final controllers = _subscriptionStates.values
+        .map((state) => state.controller)
+        .toList(growable: false);
     for (final controller in controllers) {
       await controller.close();
     }
