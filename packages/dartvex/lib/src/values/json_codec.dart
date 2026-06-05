@@ -94,6 +94,13 @@ dynamic _convexToJson(dynamic value) {
   if (value == null || value is bool || value is String) {
     return value;
   }
+  // Special doubles (NaN, ±Infinity, -0.0) must round-trip through the tagged
+  // $float form. This is checked before the int branch because on the web a
+  // value such as -0.0 also satisfies `is int`, which would otherwise drop the
+  // sign and encode it as a plain `0`.
+  if (value is double && _isSpecialDouble(value)) {
+    return <String, String>{r'$float': _encodeFloat64(value)};
+  }
   if (value is BigInt) {
     _checkInt64(value);
     return <String, String>{r'$integer': _encodeInt64(value)};
@@ -102,9 +109,6 @@ dynamic _convexToJson(dynamic value) {
     return value;
   }
   if (value is double) {
-    if (_isSpecialDouble(value)) {
-      return <String, String>{r'$float': _encodeFloat64(value)};
-    }
     return value;
   }
   if (value is num) {
