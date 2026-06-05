@@ -1062,14 +1062,15 @@ class ConvexLocalClient {
           _log('replay:mutate-ok', '[$iteration] remote mutate succeeded');
 
           // Capture ID mapping: if this mutation produced a local operationId
-          // and the server returned a string (the real document ID), record it.
+          // and the server returned the real document ID, record it.
           final operationId = mutation.optimisticData?['operationId'];
+          final serverId = _extractServerId(result);
           if (operationId is String &&
               operationId.startsWith('local-') &&
-              result is String) {
-            idRemaps[operationId] = result;
-            await _mutationQueue.saveIdRemap(operationId, result);
-            _log('replay:id-remap', '[$iteration] $operationId → $result');
+              serverId != null) {
+            idRemaps[operationId] = serverId;
+            await _mutationQueue.saveIdRemap(operationId, serverId);
+            _log('replay:id-remap', '[$iteration] $operationId → $serverId');
           }
 
           await _mutationQueue.remove(mutation.id);
@@ -1420,6 +1421,23 @@ class ConvexLocalClient {
     _operationCounter += 1;
     final micros = DateTime.now().toUtc().microsecondsSinceEpoch;
     return 'local-$micros-$_operationCounter';
+  }
+
+  static String? _extractServerId(dynamic result) {
+    if (result is String && result.isNotEmpty) {
+      return result;
+    }
+    if (result is Map) {
+      final id = result['_id'];
+      if (id is String && id.isNotEmpty) {
+        return id;
+      }
+      final fallbackId = result['id'];
+      if (fallbackId is String && fallbackId.isNotEmpty) {
+        return fallbackId;
+      }
+    }
+    return null;
   }
 
   void _updateConnectionState() {

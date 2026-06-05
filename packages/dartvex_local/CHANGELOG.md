@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Drops queued mutations that still reference unresolved `local-*` IDs during
   replay, so dependents of a failed create are reported via `onConflict` instead
   of being sent to the backend with stale local IDs.
+- Local ID replay remaps can now be captured from create mutations returning
+  either a string id or an object containing `_id`/`id`.
 - Stops in-flight replay cleanly during `dispose()`, preventing writes to closed
   SQLite stores or closed mutation streams after a delayed remote mutation
   returns.

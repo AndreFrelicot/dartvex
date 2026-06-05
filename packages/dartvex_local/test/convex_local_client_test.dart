@@ -820,6 +820,56 @@ void main() {
       expect(advanceCall.args['taskId'], 'server-task-abc');
     });
 
+    test('replay remaps local IDs from object create result', () async {
+      remoteClient.queryResults['tasks:list'] = <dynamic>[];
+      await localClient.dispose();
+
+      store = await SqliteLocalStore.openInMemory();
+      remoteClient = FakeRemoteClient();
+      remoteClient.queryResults['tasks:list'] = <dynamic>[];
+      localClient = await ConvexLocalClient.openWithRemote(
+        remoteClient: remoteClient,
+        config: LocalClientConfig(
+          cacheStorage: store,
+          queueStorage: store,
+          mutationHandlers: const <LocalMutationHandler>[
+            CreateTaskHandler(),
+            AdvanceTaskHandler(),
+          ],
+        ),
+      );
+
+      await localClient.query('tasks:list');
+      await localClient.setNetworkMode(LocalNetworkMode.offline);
+
+      await localClient.mutate('tasks:create', <String, dynamic>{
+        'title': 'Object result',
+      });
+      final createOpId =
+          localClient
+                  .currentPendingMutations
+                  .first
+                  .optimisticData!['operationId']
+              as String;
+      await localClient.mutate('tasks:advance', <String, dynamic>{
+        'taskId': createOpId,
+      });
+
+      remoteClient.mutationResults['tasks:create'] = <Object?>[
+        <String, dynamic>{'_id': 'server-task-object'},
+      ];
+      remoteClient.mutationResults['tasks:advance'] = <Object?>['ok'];
+
+      await localClient.setNetworkMode(LocalNetworkMode.auto);
+      await pumpEventQueue();
+
+      expect(localClient.currentPendingMutations, isEmpty);
+      expect(remoteClient.mutationCalls, hasLength(2));
+      final advanceCall = remoteClient.mutationCalls[1];
+      expect(advanceCall.name, 'tasks:advance');
+      expect(advanceCall.args['taskId'], 'server-task-object');
+    });
+
     test('replay drops dependents when producer local ID fails', () async {
       await localClient.dispose();
       store = await SqliteLocalStore.openInMemory();
