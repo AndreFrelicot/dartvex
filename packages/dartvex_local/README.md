@@ -39,7 +39,8 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 - No CRDTs or conflict-free merge engine. Conflicts are surfaced via the
   `onConflict` callback — the app decides what to do.
 - No automatic cache eviction. Once cached, results stay until `clearCache()`.
-- No web support. SQLite requires native `dart:io` targets.
+- No bundled web storage. The included `SqliteLocalStore` requires native
+  `dart:io` targets; on web, supply your own `CacheStorage`/`QueueStorage`.
 
 ## Platform Support
 
@@ -47,7 +48,15 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 |----------|--------|
 | iOS / Android | Supported with native SQLite |
 | macOS / Linux / Windows | Supported with native SQLite |
-| Web | Not supported |
+| Web | Bundled `SqliteLocalStore` unavailable — supply a custom store |
+
+> **Requirements:** `dartvex_local` requires Dart **≥ 3.10** — its `sqlite3`
+> dependency sets that floor (the other Dartvex packages require Dart ≥ 3.6).
+>
+> The bundled `SqliteLocalStore` is native-only (`dart:io`). To run
+> `ConvexLocalClient` on the web, implement the `CacheStorage` and
+> `QueueStorage` interfaces yourself (for example over IndexedDB) and pass them
+> in `LocalClientConfig`.
 
 ## Installation
 

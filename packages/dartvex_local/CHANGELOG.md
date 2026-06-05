@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Map the new terminal `dartvex` `ConnectionState.fatalError` to a disconnected
   local connection state, keeping the remote-client adapter's connection-state
   mapping exhaustive and analyzer-clean.
+- Delivering a query event no longer throws when a subscriber cancels (or
+  re-subscribes the same query) synchronously from its listener: the fan-out
+  iterates a snapshot of subscribers and defers closing the subscription stream
+  past the in-progress dispatch, fixing a `ConcurrentModificationError` and a
+  "Cannot fire new event" state error.
+- `SqliteLocalStore.close()` no longer deletes the database file's parent
+  directory, which could remove unrelated files placed alongside it.
 
 ## [0.1.3] - 2026-05-13
 
