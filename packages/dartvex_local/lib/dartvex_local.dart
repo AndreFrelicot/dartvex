@@ -2,8 +2,12 @@
 library;
 
 export 'src/cache/cache_storage.dart'
-    show CacheStorage, StoredCacheEntry, CachedQueryEntry;
-export 'src/cache/query_cache.dart' show QueryCache;
+    show
+        CacheStorage,
+        CacheStorageMaintenance,
+        StoredCacheEntry,
+        CachedQueryEntry;
+export 'src/cache/query_cache.dart' show QueryCache, QueryCachePolicy;
 export 'src/client.dart'
     show
         ConvexLocalClient,

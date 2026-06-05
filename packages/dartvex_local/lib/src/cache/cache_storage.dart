@@ -69,3 +69,21 @@ abstract class CacheStorage {
   /// Releases any storage resources held by the implementation.
   Future<void> close();
 }
+
+/// Optional maintenance operations for cache storage implementations.
+///
+/// [QueryCache] uses these hooks when a query cache policy requests physical
+/// deletion of expired entries or pruning to a maximum entry count. Custom
+/// [CacheStorage] implementations may omit this interface and still work; in
+/// that case stale entries are ignored on read but not deleted automatically.
+abstract interface class CacheStorageMaintenance {
+  /// Deletes a single cached query entry by its canonical [key].
+  ///
+  /// When [updatedAtMillis] is provided, implementations should only delete the
+  /// row if it still has that timestamp, avoiding deletion of a fresh value
+  /// written concurrently after the stale read.
+  Future<void> deleteCacheEntry(String key, {int? updatedAtMillis});
+
+  /// Keeps only the newest [maxEntries] cache entries.
+  Future<void> pruneCacheToSize(int maxEntries);
+}

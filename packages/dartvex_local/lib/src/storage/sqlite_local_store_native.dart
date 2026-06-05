@@ -7,7 +7,8 @@ import '../cache/cache_storage.dart';
 import '../offline/queue_storage.dart';
 
 /// SQLite-backed implementation of the local cache and mutation queue stores.
-class SqliteLocalStore implements CacheStorage, QueueStorage {
+class SqliteLocalStore
+    implements CacheStorage, CacheStorageMaintenance, QueueStorage {
   SqliteLocalStore._(
     this._database, {
     required bool deleteOnClose,
@@ -68,6 +69,40 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
   Future<void> clearCache() async {
     final database = _assertOpen();
     database.execute('DELETE FROM query_cache;');
+  }
+
+  @override
+  /// Removes a cached query entry by [key].
+  Future<void> deleteCacheEntry(String key, {int? updatedAtMillis}) async {
+    final database = _assertOpen();
+    if (updatedAtMillis == null) {
+      database.execute('DELETE FROM query_cache WHERE key = ?;', <Object?>[
+        key,
+      ]);
+      return;
+    }
+    database.execute(
+      'DELETE FROM query_cache WHERE key = ? AND updated_at = ?;',
+      <Object?>[key, updatedAtMillis],
+    );
+  }
+
+  @override
+  /// Keeps only the newest [maxEntries] cached query entries.
+  Future<void> pruneCacheToSize(int maxEntries) async {
+    final database = _assertOpen();
+    database.execute(
+      '''
+      DELETE FROM query_cache
+      WHERE key IN (
+        SELECT key
+        FROM query_cache
+        ORDER BY updated_at DESC, key DESC
+        LIMIT -1 OFFSET ?
+      );
+      ''',
+      <Object?>[maxEntries],
+    );
   }
 
   @override
@@ -302,6 +337,10 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
         ''');
       database.execute('PRAGMA user_version = 1;');
     }
+    database.execute('''
+      CREATE INDEX IF NOT EXISTS idx_query_cache_updated_at
+      ON query_cache(updated_at);
+      ''');
   }
 
   StoredPendingMutation _storedPendingMutationFromRow(

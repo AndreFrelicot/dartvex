@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `LocalClientConfig.queryCachePolicy` can now expire stale cached query
+  results and prune the SQLite query cache to a maximum entry count, preventing
+  unbounded growth and arbitrarily old offline reads when configured.
 - SQLite database handles are now closed if schema migration fails during
   `SqliteLocalStore.open` or `openInMemory`.
 - Auto-mode mutations now queue behind any existing replay work instead of

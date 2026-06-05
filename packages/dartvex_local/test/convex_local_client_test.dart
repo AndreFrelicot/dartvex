@@ -1031,6 +1031,76 @@ void main() {
       );
     });
 
+    test('offline query ignores expired cache entries', () async {
+      await localClient.dispose();
+      store = await SqliteLocalStore.openInMemory();
+      remoteClient = FakeRemoteClient();
+      localClient = await ConvexLocalClient.openWithRemote(
+        remoteClient: remoteClient,
+        config: LocalClientConfig(
+          cacheStorage: store,
+          queueStorage: store,
+          queryCachePolicy: const QueryCachePolicy(
+            maxEntryAge: Duration(minutes: 5),
+          ),
+        ),
+      );
+
+      await store.upsert(
+        StoredCacheEntry(
+          key: LocalQueryDescriptor('tasks:list').key,
+          queryName: 'tasks:list',
+          argsJson: '{}',
+          valueJson: '["expired-task"]',
+          updatedAtMillis: DateTime.now()
+              .toUtc()
+              .subtract(const Duration(hours: 1))
+              .millisecondsSinceEpoch,
+        ),
+      );
+
+      await localClient.setNetworkMode(LocalNetworkMode.offline);
+
+      await expectLater(
+        localClient.query('tasks:list'),
+        throwsA(isA<StateError>()),
+      );
+      expect(await store.read(LocalQueryDescriptor('tasks:list').key), isNull);
+    });
+
+    test('cache policy prunes least recently written entries', () async {
+      await localClient.dispose();
+      store = await SqliteLocalStore.openInMemory();
+      remoteClient = FakeRemoteClient();
+      localClient = await ConvexLocalClient.openWithRemote(
+        remoteClient: remoteClient,
+        config: LocalClientConfig(
+          cacheStorage: store,
+          queueStorage: store,
+          queryCachePolicy: const QueryCachePolicy(maxEntries: 2),
+        ),
+      );
+
+      remoteClient.queryResults['tasks:first'] = 'first';
+      remoteClient.queryResults['tasks:second'] = 'second';
+      remoteClient.queryResults['tasks:third'] = 'third';
+
+      await localClient.query('tasks:first');
+      await Future<void>.delayed(const Duration(milliseconds: 2));
+      await localClient.query('tasks:second');
+      await Future<void>.delayed(const Duration(milliseconds: 2));
+      await localClient.query('tasks:third');
+
+      await localClient.setNetworkMode(LocalNetworkMode.offline);
+
+      await expectLater(
+        localClient.query('tasks:first'),
+        throwsA(isA<StateError>()),
+      );
+      expect(await localClient.query('tasks:second'), 'second');
+      expect(await localClient.query('tasks:third'), 'third');
+    });
+
     test(
       'clearQueue removes pending mutations and updates subscribers',
       () async {

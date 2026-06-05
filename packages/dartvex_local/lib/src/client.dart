@@ -402,6 +402,7 @@ class LocalClientConfig {
     required this.cacheStorage,
     required this.queueStorage,
     this.valueCodec = const JsonValueCodec(),
+    this.queryCachePolicy = QueryCachePolicy.unbounded,
     this.mutationHandlers = const <LocalMutationHandler>[],
     this.initialNetworkMode = LocalNetworkMode.auto,
     this.refreshQueryTimeout = const Duration(seconds: 5),
@@ -418,6 +419,13 @@ class LocalClientConfig {
 
   /// Codec used for cache and queue persistence.
   final ValueCodec valueCodec;
+
+  /// Policy used to expire or prune locally cached query results.
+  ///
+  /// Expired entries are always ignored when read. Entry-count pruning requires
+  /// a cache storage implementation that supports maintenance hooks, such as
+  /// the built-in SQLite store.
+  final QueryCachePolicy queryCachePolicy;
 
   /// Mutation handlers that generate optimistic patches.
   final List<LocalMutationHandler> mutationHandlers;
@@ -471,6 +479,7 @@ class ConvexLocalClient {
     final queryCache = QueryCache(
       storage: config.cacheStorage,
       codec: config.valueCodec,
+      policy: config.queryCachePolicy,
     );
     final mutationQueue = MutationQueue(
       storage: config.queueStorage,
