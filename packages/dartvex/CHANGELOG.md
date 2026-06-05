@@ -106,6 +106,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Connect` handshakes now omit `maxObservedTimestamp` when no timestamp has
   been observed yet, matching the optional wire shape used by the reference
   client.
+- `jsonToConvex` now preserves incoming object field order on decode, matching
+  the reference client; encoding remains canonical and sorted.
 - WebSocket `connectionCount` now advances only after a successful socket open,
   so failed pre-open connection attempts no longer inflate the next `Connect`
   frame.

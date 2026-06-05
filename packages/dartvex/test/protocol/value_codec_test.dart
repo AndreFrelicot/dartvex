@@ -97,6 +97,13 @@ void main() {
       expect((decoded['items'] as List<dynamic>).first, BigInt.from(-3));
     });
 
+    test('jsonToConvex preserves decoded object key order', () {
+      final decoded = jsonToConvex(<String, dynamic>{'b': 1, 'a': 2, 'c': 3})
+          as Map<String, dynamic>;
+
+      expect(decoded.keys, orderedEquals(<String>['b', 'a', 'c']));
+    });
+
     test('invalid field names throw', () {
       expect(
         () => convexToJson(<String, dynamic>{r'$bad': 1}),

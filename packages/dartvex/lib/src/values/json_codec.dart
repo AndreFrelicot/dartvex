@@ -29,6 +29,7 @@ dynamic convexToJson(dynamic value) {
 ///
 /// Convex `int64`, `bytes`, and special floating-point sentinels are converted
 /// to [BigInt], [Uint8List], and [double] values respectively.
+/// Object fields preserve the incoming map's iteration order.
 dynamic jsonToConvex(dynamic value) {
   if (value == null || value is bool || value is num || value is String) {
     return value;
@@ -82,8 +83,7 @@ dynamic jsonToConvex(dynamic value) {
   }
 
   final out = <String, dynamic>{};
-  final sortedKeys = map.keys.toList()..sort();
-  for (final key in sortedKeys) {
+  for (final key in map.keys) {
     _validateObjectField(key);
     out[key] = jsonToConvex(map[key]);
   }
