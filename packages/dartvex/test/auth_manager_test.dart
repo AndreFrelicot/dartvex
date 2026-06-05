@@ -111,6 +111,54 @@ void main() {
       await manager.stopRefreshing();
     });
 
+    test('reconnect refresh cancels the scheduled refresh timer', () async {
+      final forceRefreshCalls = <bool>[];
+      final reconnectToken = Completer<String?>();
+      final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final manager = AuthManager(
+        // The confirmed token schedules an immediate refresh. Starting a
+        // reconnect refresh before the timer fires must cancel that timer so
+        // only the reconnect fetch runs.
+        config: const ConvexClientConfig(
+          connectImmediately: false,
+          refreshTokenLeewaySeconds: 60,
+        ),
+        sendAuth: (_) async {},
+        emitAuthState: (_) {},
+      );
+
+      await manager.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) {
+          forceRefreshCalls.add(forceRefresh);
+          if (!forceRefresh) {
+            return Future<String?>.value(
+              _jwt(
+                subject: 'cached',
+                issuedAt: nowSeconds,
+                expiresAt: nowSeconds + 60,
+              ),
+            );
+          }
+          return reconnectToken.future;
+        },
+      );
+      manager.handleAuthConfirmed();
+
+      final reconnect = manager.refreshAuthForReconnect();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(forceRefreshCalls, <bool>[false, true]);
+      reconnectToken.complete(
+        _jwt(
+          subject: 'fresh',
+          issuedAt: nowSeconds + 1,
+          expiresAt: nowSeconds + 3600,
+        ),
+      );
+      await reconnect;
+      await manager.stopRefreshing();
+    });
+
     test('stale initial token fetch cannot resurrect auth after clear',
         () async {
       final sentTokens = <String?>[];

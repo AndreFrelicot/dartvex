@@ -180,7 +180,8 @@ class AuthManager {
       return;
     }
     _log(DartvexLogLevel.debug, 'Refreshing auth token for reconnect');
-    final generation = _authGeneration;
+    _cancelRefreshTimer();
+    final generation = ++_authGeneration;
     final freshToken = await fetchToken(forceRefresh: true);
     if (!_isCurrentFlow(generation, fetchToken)) {
       return;
