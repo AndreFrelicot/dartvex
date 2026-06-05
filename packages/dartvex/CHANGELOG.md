@@ -59,6 +59,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`LocalSyncState.setAdminAuth`), including replay across reconnects. This is
   wire-completeness groundwork only — there is intentionally no client-facing
   admin API, since shipping an admin key in an app is a security hazard.
+- Exported `WebSocketAdapter`, `WebSocketCloseEvent`, and
+  `WebSocketAdapterFactory`, so the existing `ConvexClientConfig.adapterFactory`
+  customization point can be supplied with a custom transport implementation.
 
 ### Changed
 
@@ -97,6 +100,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An unrecoverable server `FatalError` now terminates the connection — pending
   requests fail, the connection state becomes `fatalError`, and no reconnect is
   attempted — instead of triggering a reconnect that could loop indefinitely.
+- WebSocket messages are now processed strictly in order. A handler that awaits
+  (an auth refresh or a reconnect) can no longer interleave with the next
+  incoming message.
+- Auth refresh scheduling reads the `exp`/`iat` claims defensively, so a
+  malformed token can no longer raise a cast error that would otherwise escape
+  into message handling and tear down the connection.
+- Paginated results stay a gapless prefix while a page is still loading: a
+  not-yet-loaded page no longer hides behind later, already-loaded pages.
+- Special doubles (`NaN`, `±Infinity`, and `-0.0`) now always encode through the
+  tagged `$float` wire form, including `-0.0` on the web, where it was previously
+  encoded as a plain `0` and lost its sign.
+- The after-unsubscribe query-result seed cache is now bounded (evicting the
+  least-recently-written entry), so a long-lived client that subscribes to many
+  distinct queries no longer grows it without bound.
 
 ## [0.1.5] - 2026-05-13
 

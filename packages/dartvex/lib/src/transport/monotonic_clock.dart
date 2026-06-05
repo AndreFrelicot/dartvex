@@ -1,17 +1,21 @@
 import 'package:meta/meta.dart';
 
-/// A millisecond clock that is anchored once to the wall clock and then only
-/// ever advances.
+/// A millisecond clock that is anchored once to the wall clock and then advances
+/// via a [Stopwatch].
 ///
 /// Reading [nowMillis] returns the wall-clock epoch captured at construction
-/// plus the time elapsed since, as measured by a monotonic [Stopwatch]. Unlike
-/// `DateTime.now()`, the result never jumps backwards when the device wall
-/// clock is corrected (NTP sync, manual change, daylight-saving transitions),
-/// which keeps `Connect.clientTs` and transition transit metrics meaningful as
-/// a measure of elapsed time and server clock skew.
+/// plus the time elapsed since, as measured by a [Stopwatch]. On native targets
+/// the stopwatch is a high-resolution monotonic source, so the result never
+/// jumps backwards when the device wall clock is corrected (NTP sync, manual
+/// change, daylight-saving transitions), which keeps `Connect.clientTs` and
+/// transition transit metrics meaningful as a measure of elapsed time and
+/// server clock skew.
 ///
-/// `Stopwatch` is monotonic on both native and web targets, so this needs no
-/// platform-specific code. Mirrors the official Convex client's monotonic clock
+/// On the web `Stopwatch` is millisecond-resolution and not guaranteed strictly
+/// monotonic, so the no-rewind property is best-effort there. These readings
+/// feed only diagnostic metrics (transit time and clock-skew estimates), never
+/// sync correctness. Using `Stopwatch` keeps this free of platform-specific
+/// code and mirrors the intent of the official Convex client's monotonic clock
 /// (`firstTime + performance.now()`), implemented per design decision D5.
 class MonotonicClock {
   /// Creates a clock anchored to the current wall-clock epoch, advancing via a
