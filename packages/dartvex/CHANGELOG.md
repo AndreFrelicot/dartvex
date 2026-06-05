@@ -94,6 +94,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   frame.
 - Reconnect-time auth refresh now cancels any scheduled token refresh timer,
   avoiding redundant concurrent forced token fetches around reconnects.
+- Resume after auth gating now sends `Authenticate` before replaying query-set
+  changes, matching reconnect ordering and avoiding auth-gated queries racing
+  ahead of the refreshed identity.
 - Persistent auth rejections now reach the retry cap and report the client as
   signed out instead of resetting the confirmation-attempt counter after every
   forced token refresh.

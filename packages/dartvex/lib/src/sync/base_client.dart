@@ -323,13 +323,13 @@ class BaseClient {
 
   /// Replays everything buffered while paused, returning the messages to send.
   ///
-  /// The resume query-set delta and re-affirmed auth are queued ahead of any
+  /// The re-affirmed auth and resume query-set delta are queued ahead of any
   /// request enqueued while paused, then the full outgoing queue is drained.
   List<ClientMessage> resume() {
     final (querySet, authenticate) = _localState.resume();
     final resumeMessages = <ClientMessage>[
-      if (querySet != null) querySet,
       if (authenticate != null) authenticate,
+      if (querySet != null) querySet,
     ];
     if (resumeMessages.isNotEmpty) {
       requeueOutgoing(resumeMessages);

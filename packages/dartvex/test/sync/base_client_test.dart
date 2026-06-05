@@ -569,9 +569,10 @@ void main() {
       client.mutate('messages:send', const <String, dynamic>{'body': 'hi'});
       final resumeMessages = client.resume();
       expect(client.isPaused, isFalse);
-      // Resume order: coalesced query-set, then auth, then the queued mutation.
-      expect(resumeMessages[0], isA<ModifyQuerySet>());
-      expect(resumeMessages[1], isA<Authenticate>());
+      // Resume order: auth first, then the coalesced query-set, then the
+      // queued mutation.
+      expect(resumeMessages[0], isA<Authenticate>());
+      expect(resumeMessages[1], isA<ModifyQuerySet>());
       expect(resumeMessages[2], isA<Mutation>());
     });
 
