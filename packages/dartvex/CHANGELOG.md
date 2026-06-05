@@ -89,6 +89,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `AuthLoading` documentation now matches the emitted auth states: it covers
+  login/cache restore, while background token refreshes remain exposed via
+  `authRefreshing`.
 - WebSocket `connectionCount` now advances only after a successful socket open,
   so failed pre-open connection attempts no longer inflate the next `Connect`
   frame.

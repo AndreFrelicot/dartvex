@@ -10,7 +10,11 @@ final class AuthUnauthenticated<TUser> extends AuthState<TUser> {
   const AuthUnauthenticated();
 }
 
-/// Authentication state used while a login or refresh is in progress.
+/// Authentication state used while an interactive login or cache restore is in
+/// progress.
+///
+/// Background token refreshes keep the current auth state and are exposed
+/// separately through `ConvexClient.authRefreshing`.
 final class AuthLoading<TUser> extends AuthState<TUser> {
   /// Creates a loading auth state.
   const AuthLoading();
