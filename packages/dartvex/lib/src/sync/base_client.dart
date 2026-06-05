@@ -173,6 +173,12 @@ class BaseClient {
   DateTime? get timeOfOldestInflightRequest =>
       _requestManager.timeOfOldestInflightRequest();
 
+  /// Upper bound on the number of per-query results retained to seed a future
+  /// re-subscription after a query is unsubscribed. Caps memory for a long-lived
+  /// client that subscribes to many distinct queries; the least-recently-written
+  /// entry is evicted once the cap is exceeded.
+  static const int _maxCachedResults = 256;
+
   final Map<String, StoredQueryResult> _resultCacheByToken =
       <String, StoredQueryResult>{};
 
@@ -378,6 +384,19 @@ class BaseClient {
     return _resultCacheByToken[token];
   }
 
+  /// Records [result] for [token] in the bounded after-unsubscribe seed cache,
+  /// evicting the least-recently-written entry once [_maxCachedResults] is
+  /// exceeded. Re-inserting moves [token] to the most-recent position, so a
+  /// query that keeps updating stays resident while an idle one ages out.
+  void _cacheResultForToken(String token, StoredQueryResult result) {
+    _resultCacheByToken
+      ..remove(token)
+      ..[token] = result;
+    if (_resultCacheByToken.length > _maxCachedResults) {
+      _resultCacheByToken.remove(_resultCacheByToken.keys.first);
+    }
+  }
+
   /// Returns the overlaid (server + active optimistic edits) result for a query
   /// identified by its udf path and arguments, or null if it currently has no
   /// value.
@@ -519,7 +538,7 @@ class BaseClient {
             } else if (delta.result != null) {
               final token = _localState.tokenForQueryId(delta.queryId);
               if (token != null) {
-                _resultCacheByToken[token] = delta.result!;
+                _cacheResultForToken(token, delta.result!);
               }
             }
           }
