@@ -30,14 +30,17 @@ jobs:
 
       - name: Run protocol watch
         id: watch
-        continue-on-error: true
         run: |
+          set +e
+          set -o pipefail
           chmod +x scripts/protocol-watch.sh
           ./scripts/protocol-watch.sh 2>&1 | tee /tmp/watch-output.txt
-          echo "exit_code=$?" >> $GITHUB_OUTPUT
+          exit_code=$?
+          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+          exit 0
 
       - name: Create issue on drift
-        if: steps.watch.outcome == 'failure'
+        if: steps.watch.outputs.exit_code != '0'
         uses: actions/github-script@v7
         with:
           script: |
