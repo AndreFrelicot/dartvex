@@ -240,7 +240,7 @@ class ConvexPaginatedQuery {
           page.data = null;
           page.error = const ConvexException(
             'Invalid paginated query result: expected a PaginationResult '
-            'object with page and isDone fields',
+            'object with page, isDone, and continueCursor fields',
           );
         } else {
           page.data = parsed;
@@ -371,15 +371,22 @@ class ConvexPaginatedQuery {
     final map = value.cast<String, dynamic>();
     final page = map['page'];
     final isDone = map['isDone'];
-    if (page is! List || isDone is! bool) {
+    final continueCursor = map['continueCursor'];
+    final splitCursor = map['splitCursor'];
+    final pageStatus = map['pageStatus'];
+    if (page is! List ||
+        isDone is! bool ||
+        continueCursor is! String ||
+        (splitCursor != null && splitCursor is! String) ||
+        (pageStatus != null && pageStatus is! String)) {
       return null;
     }
     return _PageData(
       page: List<dynamic>.from(page),
-      continueCursor: map['continueCursor'] as String?,
+      continueCursor: continueCursor,
       isDone: isDone,
-      splitCursor: map['splitCursor'] as String?,
-      pageStatus: map['pageStatus'] as String?,
+      splitCursor: splitCursor,
+      pageStatus: pageStatus,
     );
   }
 }
@@ -416,7 +423,7 @@ class _PageData {
   });
 
   final List<dynamic> page;
-  final String? continueCursor;
+  final String continueCursor;
   final bool isDone;
   final String? splitCursor;
   final String? pageStatus;

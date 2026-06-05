@@ -92,6 +92,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The default WebSocket inactivity timeout now matches the official Convex
   client's 60-second threshold, reducing false reconnects while large messages
   are in flight.
+- Reactive pagination now rejects malformed `PaginationResult` objects whose
+  `continueCursor` is missing or non-string, preventing duplicate page loads or
+  load loops.
 - `AuthLoading` documentation now matches the emitted auth states: it covers
   login/cache restore, while background token refreshes remain exposed via
   `authRefreshing`.

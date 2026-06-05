@@ -250,6 +250,33 @@ void main() {
       query.cancel();
     });
 
+    test('rejects missing continueCursor when more pages are available', () {
+      final source = _FakeSource();
+      final query = ConvexPaginatedQuery(
+        subscribe: source.subscribe,
+        name: 'messages:list',
+        args: const <String, dynamic>{},
+        pageSize: 3,
+      );
+
+      source.pages[0].emitPage(
+        <dynamic>['a', 'b', 'c'],
+        continueCursor: null,
+        isDone: false,
+      );
+
+      expect(query.status, ConvexPaginationStatus.error);
+      expect(query.current.error, isA<ConvexException>());
+      expect(
+        (query.current.error! as ConvexException).message,
+        contains('continueCursor'),
+      );
+      expect(query.loadMore(), isFalse);
+      expect(source.pages, hasLength(1));
+
+      query.cancel();
+    });
+
     test('loadMore is a no-op while an earlier page is errored', () {
       final source = _FakeSource();
       final query = ConvexPaginatedQuery(
