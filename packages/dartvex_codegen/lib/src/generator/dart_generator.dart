@@ -362,6 +362,11 @@ class DartGenerator {
           'TypedQuerySuccess<${resultType.annotation}>(${resultType.decode('value')}),',
         )
         ..writeln(
+          '    QueryLoading(:final hasPendingWrites) => '
+          'TypedQueryLoading<${resultType.annotation}>('
+          'hasPendingWrites: hasPendingWrites),',
+        )
+        ..writeln(
           '    QueryError(:final message, :final data, :final logLines) => '
           'TypedQueryError<${resultType.annotation}>('
           'message, data: data, logLines: logLines),',
@@ -500,6 +505,12 @@ class TypedQuerySuccess<T> extends TypedQueryResult<T> {
   const TypedQuerySuccess(this.value);
 
   final T value;
+}
+
+class TypedQueryLoading<T> extends TypedQueryResult<T> {
+  const TypedQueryLoading({this.hasPendingWrites = false});
+
+  final bool hasPendingWrites;
 }
 
 class TypedQueryError<T> extends TypedQueryResult<T> {

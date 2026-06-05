@@ -206,6 +206,46 @@ void main() {
       sub.cancel();
     });
 
+    test('subscribe ignores remote loading while seeding from cache', () async {
+      await localClient.dispose();
+      final cacheStore = await SqliteLocalStore.openInMemory();
+      final queueStore = await SqliteLocalStore.openInMemory();
+      await QueryCache(
+        storage: cacheStore,
+        codec: const JsonValueCodec(),
+      ).write(
+        name: 'tasks:list',
+        args: const <String, dynamic>{},
+        value: ['cached'],
+      );
+      remoteClient = FakeRemoteClient();
+      remoteClient.subscriptionStreams['tasks:list'] =
+          Stream<LocalRemoteQueryEvent>.value(
+            const LocalRemoteQueryLoading(hasPendingWrites: true),
+          );
+      localClient = await ConvexLocalClient.openWithRemote(
+        remoteClient: remoteClient,
+        config: LocalClientConfig(
+          cacheStorage: cacheStore,
+          queueStorage: queueStore,
+        ),
+      );
+
+      final events = <LocalQueryEvent>[];
+      final sub = localClient.subscribe('tasks:list');
+      final listener = sub.stream.listen(events.add);
+      await pumpEventQueue();
+
+      expect(events, hasLength(1));
+      expect(events.single, isA<LocalQuerySuccess>());
+      final cachedEvent = events.single as LocalQuerySuccess;
+      expect(cachedEvent.source, LocalQuerySource.cache);
+      expect(cachedEvent.value, <dynamic>['cached']);
+
+      await listener.cancel();
+      sub.cancel();
+    });
+
     test('subscribe emits error when offline with no cache', () async {
       await localClient.setNetworkMode(LocalNetworkMode.offline);
 

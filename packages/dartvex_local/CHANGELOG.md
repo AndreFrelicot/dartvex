@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Remote query loading events from `dartvex` are now handled explicitly by the
+  local runtime adapter, keeping switches exhaustive while preserving cached
+  local results until a remote success or error arrives.
 - `LocalClientConfig.queryCachePolicy` can now expire stale cached query
   results and prune the SQLite query cache to a maximum entry count, preventing
   unbounded growth and arbitrarily old offline reads when configured.

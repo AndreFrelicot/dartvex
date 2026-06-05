@@ -96,6 +96,15 @@ class LocalRemoteQuerySuccess extends LocalRemoteQueryEvent {
   final dynamic value;
 }
 
+/// Remote query event indicating a query is temporarily loading.
+class LocalRemoteQueryLoading extends LocalRemoteQueryEvent {
+  /// Creates a loading remote query event.
+  const LocalRemoteQueryLoading({this.hasPendingWrites = false});
+
+  /// Whether optimistic writes are currently pending for the remote query.
+  final bool hasPendingWrites;
+}
+
 /// Remote query event containing a query error.
 class LocalRemoteQueryError extends LocalRemoteQueryEvent {
   /// Creates a failed remote query event.
@@ -907,9 +916,9 @@ class ConvexLocalClient {
     _LocalQueryState queryState,
     LocalRemoteQueryEvent event,
   ) async {
-    _markRemoteEventSeen(queryState);
     switch (event) {
       case LocalRemoteQuerySuccess(:final value):
+        _markRemoteEventSeen(queryState);
         await _queryCache.write(
           name: queryState.descriptor.name,
           args: queryState.descriptor.args,
@@ -924,6 +933,7 @@ class ConvexLocalClient {
           ),
         );
       case LocalRemoteQueryError(:final error):
+        _markRemoteEventSeen(queryState);
         _emitToQueryKey(
           queryState.descriptor.key,
           LocalQueryError(
@@ -932,6 +942,8 @@ class ConvexLocalClient {
             hasPendingWrites: _hasPendingWrites(queryState.descriptor.key),
           ),
         );
+      case LocalRemoteQueryLoading():
+        return;
     }
   }
 
@@ -1270,6 +1282,8 @@ class ConvexLocalClient {
           completer.complete(value);
         case LocalRemoteQueryError(:final error):
           completeError(error);
+        case LocalRemoteQueryLoading():
+          break;
       }
     }, onError: completeError);
 

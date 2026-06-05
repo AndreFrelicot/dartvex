@@ -32,6 +32,8 @@ class ConvexApi {
         QuerySuccess(:final value) => TypedQuerySuccess<HealthResult>(
           _decodeHealthResult(value),
         ),
+        QueryLoading(:final hasPendingWrites) =>
+          TypedQueryLoading<HealthResult>(hasPendingWrites: hasPendingWrites),
         QueryError(:final message, :final data, :final logLines) =>
           TypedQueryError<HealthResult>(
             message,

@@ -31,6 +31,7 @@ export 'src/client.dart'
         LocalRemoteConnectionState,
         LocalRemoteQueryError,
         LocalRemoteQueryEvent,
+        LocalRemoteQueryLoading,
         LocalRemoteQuerySuccess,
         LocalRemoteSubscription,
         LocalSubscription,

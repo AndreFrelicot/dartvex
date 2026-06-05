@@ -74,8 +74,16 @@ class TasksApi {
               label: 'ListBoardResult',
             ).map((item) => _decodeListBoardResultItem(item)).toList(),
           ),
-        QueryError(:final message) =>
-          TypedQueryError<List<ListBoardResultItem>>(message),
+        QueryLoading(:final hasPendingWrites) =>
+          TypedQueryLoading<List<ListBoardResultItem>>(
+            hasPendingWrites: hasPendingWrites,
+          ),
+        QueryError(:final message, :final data, :final logLines) =>
+          TypedQueryError<List<ListBoardResultItem>>(
+            message,
+            data: data,
+            logLines: logLines,
+          ),
       },
     );
     return TypedConvexSubscription<List<ListBoardResultItem>>(

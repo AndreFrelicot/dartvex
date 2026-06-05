@@ -42,6 +42,10 @@ class MessagesApi {
             label: 'ListResult',
           ).map((item) => _decodeListResultItem(item)).toList(),
         ),
+        QueryLoading(:final hasPendingWrites) =>
+          TypedQueryLoading<List<ListResultItem>>(
+            hasPendingWrites: hasPendingWrites,
+          ),
         QueryError(:final message, :final data, :final logLines) =>
           TypedQueryError<List<ListResultItem>>(
             message,

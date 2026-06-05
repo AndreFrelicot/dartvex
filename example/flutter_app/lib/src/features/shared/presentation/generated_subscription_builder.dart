@@ -113,6 +113,14 @@ class _GeneratedSubscriptionBuilderState<T>
               isLoading: false,
             );
           });
+        case TypedQueryLoading():
+          setState(() {
+            _snapshot = TypedSubscriptionSnapshot<T>(
+              data: _snapshot.data,
+              error: null,
+              isLoading: true,
+            );
+          });
         case TypedQueryError(:final message):
           setState(() {
             _snapshot = TypedSubscriptionSnapshot<T>(

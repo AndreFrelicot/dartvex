@@ -75,6 +75,7 @@ void main() {
 
       expect(runtime, contains('BigInt expectBigInt'));
       expect(runtime, contains("Expected \${label ?? 'bigint'}"));
+      expect(runtime, contains('class TypedQueryLoading<T>'));
       expect(runtime, contains('final Object? data;'));
       expect(runtime, contains('final List<String> logLines;'));
       expect(runtime, isNot(contains('base64Decode')));
@@ -85,6 +86,7 @@ void main() {
         api,
         contains('QueryError(:final message, :final data, :final logLines)'),
       );
+      expect(api, contains('QueryLoading(:final hasPendingWrites)'));
       expect(
           messages,
           contains(

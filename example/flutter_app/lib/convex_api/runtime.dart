@@ -83,10 +83,22 @@ class TypedQuerySuccess<T> extends TypedQueryResult<T> {
   final T value;
 }
 
+class TypedQueryLoading<T> extends TypedQueryResult<T> {
+  const TypedQueryLoading({this.hasPendingWrites = false});
+
+  final bool hasPendingWrites;
+}
+
 class TypedQueryError<T> extends TypedQueryResult<T> {
-  const TypedQueryError(this.message);
+  const TypedQueryError(
+    this.message, {
+    this.data,
+    this.logLines = const <String>[],
+  });
 
   final String message;
+  final Object? data;
+  final List<String> logLines;
 }
 
 class TypedConvexSubscription<T> {

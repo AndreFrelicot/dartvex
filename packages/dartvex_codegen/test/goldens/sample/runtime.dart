@@ -83,6 +83,12 @@ class TypedQuerySuccess<T> extends TypedQueryResult<T> {
   final T value;
 }
 
+class TypedQueryLoading<T> extends TypedQueryResult<T> {
+  const TypedQueryLoading({this.hasPendingWrites = false});
+
+  final bool hasPendingWrites;
+}
+
 class TypedQueryError<T> extends TypedQueryResult<T> {
   const TypedQueryError(
     this.message, {

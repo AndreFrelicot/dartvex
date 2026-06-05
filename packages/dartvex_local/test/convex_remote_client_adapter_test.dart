@@ -91,6 +91,47 @@ void main() {
       subscription.cancel();
       adapter.dispose();
     });
+
+    test('maps remote optimistic loading events', () async {
+      final socket = _MockWebSocketAdapter();
+      final client = convex.ConvexClient(
+        'https://example.com',
+        config: convex.ConvexClientConfig(
+          adapterFactory: (_) => socket,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+      final adapter = ConvexRemoteClientAdapter(client, disposeClient: true);
+      await settle();
+
+      final subscription = adapter.subscribe('messages:list');
+      final events = <LocalRemoteQueryEvent>[];
+      final listener = subscription.stream.listen(events.add);
+      await settle();
+
+      final mutationFuture = client.mutate(
+        'messages:send',
+        const <String, dynamic>{'body': 'pending'},
+        (store) => store.clearQuery('messages:list', const <String, dynamic>{}),
+      );
+      unawaited(mutationFuture.catchError((_) {}));
+      await settle();
+
+      expect(
+        events,
+        contains(
+          isA<LocalRemoteQueryLoading>().having(
+            (event) => event.hasPendingWrites,
+            'hasPendingWrites',
+            isTrue,
+          ),
+        ),
+      );
+
+      await listener.cancel();
+      subscription.cancel();
+      adapter.dispose();
+    });
   });
 }
 

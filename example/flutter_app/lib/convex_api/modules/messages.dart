@@ -42,8 +42,16 @@ class MessagesApi {
               label: 'ListPrivateResult',
             ).map((item) => _decodeListPrivateResultItem(item)).toList(),
           ),
-        QueryError(:final message) =>
-          TypedQueryError<List<ListPrivateResultItem>>(message),
+        QueryLoading(:final hasPendingWrites) =>
+          TypedQueryLoading<List<ListPrivateResultItem>>(
+            hasPendingWrites: hasPendingWrites,
+          ),
+        QueryError(:final message, :final data, :final logLines) =>
+          TypedQueryError<List<ListPrivateResultItem>>(
+            message,
+            data: data,
+            logLines: logLines,
+          ),
       },
     );
     return TypedConvexSubscription<List<ListPrivateResultItem>>(
@@ -77,8 +85,16 @@ class MessagesApi {
               label: 'ListPublicResult',
             ).map((item) => _decodeListPublicResultItem(item)).toList(),
           ),
-        QueryError(:final message) =>
-          TypedQueryError<List<ListPublicResultItem>>(message),
+        QueryLoading(:final hasPendingWrites) =>
+          TypedQueryLoading<List<ListPublicResultItem>>(
+            hasPendingWrites: hasPendingWrites,
+          ),
+        QueryError(:final message, :final data, :final logLines) =>
+          TypedQueryError<List<ListPublicResultItem>>(
+            message,
+            data: data,
+            logLines: logLines,
+          ),
       },
     );
     return TypedConvexSubscription<List<ListPublicResultItem>>(

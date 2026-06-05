@@ -39,9 +39,16 @@ class DemoApi {
         QuerySuccess(:final value) => TypedQuerySuccess<RequireAuthEchoResult>(
           _decodeRequireAuthEchoResult(value),
         ),
-        QueryError(:final message) => TypedQueryError<RequireAuthEchoResult>(
-          message,
-        ),
+        QueryLoading(:final hasPendingWrites) =>
+          TypedQueryLoading<RequireAuthEchoResult>(
+            hasPendingWrites: hasPendingWrites,
+          ),
+        QueryError(:final message, :final data, :final logLines) =>
+          TypedQueryError<RequireAuthEchoResult>(
+            message,
+            data: data,
+            logLines: logLines,
+          ),
       },
     );
     return TypedConvexSubscription<RequireAuthEchoResult>(
@@ -65,7 +72,14 @@ class DemoApi {
         QuerySuccess(:final value) => TypedQuerySuccess<WhoAmIResult?>(
           value == null ? null : _decodeWhoAmIResult(value),
         ),
-        QueryError(:final message) => TypedQueryError<WhoAmIResult?>(message),
+        QueryLoading(:final hasPendingWrites) =>
+          TypedQueryLoading<WhoAmIResult?>(hasPendingWrites: hasPendingWrites),
+        QueryError(:final message, :final data, :final logLines) =>
+          TypedQueryError<WhoAmIResult?>(
+            message,
+            data: data,
+            logLines: logLines,
+          ),
       },
     );
     return TypedConvexSubscription<WhoAmIResult?>(subscription, typedStream);

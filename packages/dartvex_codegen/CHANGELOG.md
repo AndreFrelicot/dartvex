@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Generated typed query subscriptions now include `TypedQueryLoading<T>` and
+  handle `dartvex` `QueryLoading` events, keeping generated switches exhaustive
+  with `dartvex` 0.2.x.
 - CLI generation failures now return non-zero exit codes and print concise
   errors instead of leaking raw uncaught stack traces to callers.
 - Escapes literal-union enum `fromJson` error messages so literal values with
