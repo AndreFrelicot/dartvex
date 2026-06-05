@@ -314,6 +314,43 @@ void main() {
       expect(client.queryCalls, isEmpty);
       expect(find.text('error'), findsOneWidget);
     });
+
+    testWidgets('reloads when the explicit client changes after an error',
+        (tester) async {
+      final firstClient = FakeRuntimeClient(
+        initialConnectionState: ConvexConnectionState.connected,
+      );
+      final secondClient = FakeRuntimeClient(
+        initialConnectionState: ConvexConnectionState.connected,
+      );
+      firstClient.onQuery = (name, args) async => '';
+      secondClient.onQuery = (name, args) async => '';
+
+      Widget build(FakeRuntimeClient client) {
+        return Directionality(
+          textDirection: TextDirection.ltr,
+          child: ConvexImage(
+            storageId: 'img-1',
+            getUrlAction: 'files:getUrl',
+            client: client,
+            placeholder: const Text('loading'),
+            errorWidget: const Text('error'),
+          ),
+        );
+      }
+
+      await tester.pumpWidget(build(firstClient));
+      await tester.pumpAndSettle();
+
+      expect(firstClient.queryCalls, hasLength(1));
+      expect(find.text('error'), findsOneWidget);
+
+      await tester.pumpWidget(build(secondClient));
+      await tester.pumpAndSettle();
+
+      expect(secondClient.queryCalls, hasLength(1));
+      expect(find.text('error'), findsOneWidget);
+    });
   });
 
   group('ConvexCachedImage', () {
@@ -357,6 +394,55 @@ void main() {
       expect(fakeCacheManager.getSingleFileCalls, hasLength(1));
       expect(fakeCacheManager.getSingleFileCalls.single.url,
           'https://example.com/img.png');
+      expect(find.text('loaded'), findsOneWidget);
+    });
+
+    testWidgets('reloads when the provider client changes after load',
+        (tester) async {
+      final firstClient = FakeRuntimeClient(
+        initialConnectionState: ConvexConnectionState.connected,
+      );
+      final secondClient = FakeRuntimeClient(
+        initialConnectionState: ConvexConnectionState.connected,
+      );
+      firstClient.onQuery = (name, args) async => 'https://example.com/a.png';
+      secondClient.onQuery = (name, args) async => 'https://example.com/b.png';
+
+      Widget build(FakeRuntimeClient client) {
+        return Directionality(
+          textDirection: TextDirection.ltr,
+          child: ConvexProvider(
+            client: client,
+            child: ConvexCachedImage(
+              storageId: 'img-1',
+              getUrlAction: 'files:getUrl',
+              cache: cache,
+              placeholder: const Text('loading'),
+              builder: (context, image) => const Text('loaded'),
+            ),
+          ),
+        );
+      }
+
+      await tester.pumpWidget(build(firstClient));
+      await tester.pumpAndSettle();
+
+      expect(firstClient.queryCalls, hasLength(1));
+      expect(fakeCacheManager.getSingleFileCalls, hasLength(1));
+      expect(
+        fakeCacheManager.getSingleFileCalls.single.url,
+        'https://example.com/a.png',
+      );
+
+      await tester.pumpWidget(build(secondClient));
+      await tester.pumpAndSettle();
+
+      expect(secondClient.queryCalls, hasLength(1));
+      expect(fakeCacheManager.getSingleFileCalls, hasLength(2));
+      expect(
+        fakeCacheManager.getSingleFileCalls.last.url,
+        'https://example.com/b.png',
+      );
       expect(find.text('loaded'), findsOneWidget);
     });
   });

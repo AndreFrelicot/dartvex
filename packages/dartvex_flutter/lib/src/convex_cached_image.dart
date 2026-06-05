@@ -76,6 +76,7 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
   String? _loadedStorageId;
   String? _loadedGetUrlAction;
   bool? _loadedUseAction;
+  ConvexRuntimeClient? _loadedClient;
   int _requestGeneration = 0;
 
   ConvexAssetCache get _cache => widget.cache ?? ConvexAssetCache.shared;
@@ -91,31 +92,42 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.storageId != widget.storageId ||
         oldWidget.getUrlAction != widget.getUrlAction ||
-        oldWidget.useAction != widget.useAction) {
+        oldWidget.useAction != widget.useAction ||
+        oldWidget.client != widget.client) {
       _loadIfNeeded();
     }
   }
 
   void _loadIfNeeded() {
+    final client = widget.client ?? ConvexProvider.of(context);
     final loadedGetUrlAction = _loadedGetUrlAction;
     final loadedUseAction = _loadedUseAction;
+    final loadedClient = _loadedClient;
     if (_loadedStorageId == widget.storageId &&
         loadedGetUrlAction == widget.getUrlAction &&
         loadedUseAction == widget.useAction &&
-        _file != null) {
+        identical(loadedClient, client) &&
+        (_loading || _file != null || _error != null)) {
       return;
     }
     final shouldBypassCache = loadedGetUrlAction != null &&
         (loadedGetUrlAction != widget.getUrlAction ||
-            loadedUseAction != widget.useAction);
+            loadedUseAction != widget.useAction ||
+            !identical(loadedClient, client));
     _loadedStorageId = widget.storageId;
     _loadedGetUrlAction = widget.getUrlAction;
     _loadedUseAction = widget.useAction;
-    _fetchAndCache(++_requestGeneration, bypassCache: shouldBypassCache);
+    _loadedClient = client;
+    _fetchAndCache(
+      ++_requestGeneration,
+      client,
+      bypassCache: shouldBypassCache,
+    );
   }
 
   Future<void> _fetchAndCache(
-    int generation, {
+    int generation,
+    ConvexRuntimeClient client, {
     bool bypassCache = false,
   }) async {
     final storageId = widget.storageId;
@@ -128,7 +140,6 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
     });
 
     try {
-      final client = widget.client ?? ConvexProvider.of(context);
       if (!bypassCache) {
         final cached = await _cache.get(storageId);
         if (cached != null) {
@@ -137,6 +148,7 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
             storageId,
             getUrlAction,
             useAction,
+            client,
           )) {
             return;
           }
@@ -152,7 +164,13 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
       final url = useAction
           ? await client.action(getUrlAction, args)
           : await client.query(getUrlAction, args);
-      if (!_isCurrentRequest(generation, storageId, getUrlAction, useAction)) {
+      if (!_isCurrentRequest(
+        generation,
+        storageId,
+        getUrlAction,
+        useAction,
+        client,
+      )) {
         return;
       }
 
@@ -166,7 +184,13 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
         urlStr,
         force: bypassCache,
       );
-      if (!_isCurrentRequest(generation, storageId, getUrlAction, useAction)) {
+      if (!_isCurrentRequest(
+        generation,
+        storageId,
+        getUrlAction,
+        useAction,
+        client,
+      )) {
         return;
       }
       setState(() {
@@ -174,7 +198,13 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
         _loading = false;
       });
     } catch (error) {
-      if (!_isCurrentRequest(generation, storageId, getUrlAction, useAction)) {
+      if (!_isCurrentRequest(
+        generation,
+        storageId,
+        getUrlAction,
+        useAction,
+        client,
+      )) {
         return;
       }
       setState(() {
@@ -189,12 +219,14 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
     String storageId,
     String getUrlAction,
     bool useAction,
+    ConvexRuntimeClient client,
   ) {
     return mounted &&
         generation == _requestGeneration &&
         widget.storageId == storageId &&
         widget.getUrlAction == getUrlAction &&
-        widget.useAction == useAction;
+        widget.useAction == useAction &&
+        identical(_loadedClient, client);
   }
 
   @override
