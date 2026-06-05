@@ -271,6 +271,37 @@ void main() {
       );
     });
 
+    test('throws typed exception when Convex token body has no string token',
+        () async {
+      for (final tokenBody in <String>[
+        jsonEncode(<String, dynamic>{}),
+        jsonEncode({'token': null}),
+        jsonEncode({'token': 42}),
+        jsonEncode('OK'),
+        '',
+      ]) {
+        final mock = MockClient((request) async {
+          if (request.url.path == '/api/auth/sign-in/email') {
+            return http.Response(
+              jsonEncode(_defaultSignInResponse),
+              200,
+              headers: {'set-auth-token': 'tok'},
+            );
+          }
+          if (request.url.path == '/api/auth/convex/token') {
+            return http.Response(tokenBody, 200);
+          }
+          return http.Response('Not found', 404);
+        });
+        final client = BetterAuthClient(baseUrl: baseUrl, httpClient: mock);
+
+        await expectLater(
+          () => client.signIn(email: 'a@b.com', password: 'p'),
+          throwsA(isA<BetterAuthSessionExpiredException>()),
+        );
+      }
+    });
+
     test('extracts cookies when Expires contains a comma', () async {
       final mock = MockClient((request) async {
         if (request.url.path == '/api/auth/sign-in/email') {

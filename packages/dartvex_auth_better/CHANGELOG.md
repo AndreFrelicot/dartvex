@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.5] - 2026-06-04
 
+### Fixed
+
+- Convert malformed Convex token endpoint responses into typed session-expired
+  errors instead of raw cast or decode exceptions.
+
 ### Changed
 
 - Require `dartvex` `^0.2.0`.

@@ -279,8 +279,22 @@ class BetterAuthClient {
       );
     }
 
-    final body = jsonDecode(response.body) as Map<String, dynamic>;
-    return body['token'] as String;
+    Object? decoded;
+    try {
+      decoded = jsonDecode(response.body);
+    } on FormatException {
+      throw const BetterAuthSessionExpiredException(
+        'Convex token endpoint returned no token.',
+      );
+    }
+
+    final token = decoded is Map<String, dynamic> ? decoded['token'] : null;
+    if (token is! String || token.isEmpty) {
+      throw const BetterAuthSessionExpiredException(
+        'Convex token endpoint returned no token.',
+      );
+    }
+    return token;
   }
 
   String _extractSessionToken(http.Response response) {
