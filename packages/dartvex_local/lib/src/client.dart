@@ -1001,6 +1001,16 @@ class ConvexLocalClient {
         // Remap any local IDs in args to server IDs.
         final remappedArgs =
             _remapIds(mutation.args, idRemaps) as Map<String, dynamic>;
+        final unresolvedLocalIds = _unresolvedLocalIds(remappedArgs, idRemaps);
+        if (unresolvedLocalIds.isNotEmpty) {
+          final error = StateError(
+            'Cannot replay ${mutation.mutationName} with unresolved local '
+            'ID(s): ${unresolvedLocalIds.join(', ')}',
+          );
+          _log('replay:unresolved-local-id', '[$iteration] ${error.message}');
+          await _dropFailedMutation(mutation, error);
+          continue;
+        }
         if (!identical(remappedArgs, mutation.args)) {
           _log('replay:remap', '[$iteration] remapped args');
           await _mutationQueue.updateArgs(mutation.id, remappedArgs);
@@ -1394,6 +1404,36 @@ class ConvexLocalClient {
     }
     if (value is List) return value.map((i) => _remapIds(i, idMap)).toList();
     return value;
+  }
+
+  static List<String> _unresolvedLocalIds(
+    dynamic value,
+    Map<String, String> idMap,
+  ) {
+    final ids = <String>{};
+
+    void visit(dynamic item) {
+      if (item is String) {
+        if (item.startsWith('local-') && !idMap.containsKey(item)) {
+          ids.add(item);
+        }
+        return;
+      }
+      if (item is Map) {
+        for (final entry in item.values) {
+          visit(entry);
+        }
+        return;
+      }
+      if (item is Iterable) {
+        for (final entry in item) {
+          visit(entry);
+        }
+      }
+    }
+
+    visit(value);
+    return ids.toList(growable: false);
   }
 
   void _log(String tag, String message) {

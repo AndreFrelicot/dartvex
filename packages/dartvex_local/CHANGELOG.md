@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Drops queued mutations that still reference unresolved `local-*` IDs during
+  replay, so dependents of a failed create are reported via `onConflict` instead
+  of being sent to the backend with stale local IDs.
 - Map the new terminal `dartvex` `ConnectionState.fatalError` to a disconnected
   local connection state, keeping the remote-client adapter's connection-state
   mapping exhaustive and analyzer-clean.
