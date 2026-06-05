@@ -159,17 +159,51 @@ void main() {
         ),
       );
     });
+
+    test('throws when table ID class names collide', () {
+      final collidingSpec = FunctionsSpec(
+        url: 'https://example.com',
+        functions: <BaseFunctionSpec>[
+          _function(
+            identifier: 'users.ts:first',
+            returns: const ConvexIdType('user-data'),
+          ),
+          _function(
+            identifier: 'users.ts:second',
+            returns: const ConvexIdType('user_data'),
+          ),
+        ],
+      );
+
+      expect(
+        () => DartGenerator().generate(collidingSpec),
+        throwsA(
+          isA<NamingException>()
+              .having(
+                (error) => error.message,
+                'message',
+                contains('UserDataId'),
+              )
+              .having(
+                (error) => error.message,
+                'message',
+                allOf(contains('user-data'), contains('user_data')),
+              ),
+        ),
+      );
+    });
   });
 }
 
 FunctionSpec _function({
   required String identifier,
   String functionType = 'Mutation',
+  ConvexType returns = const ConvexStringType(),
 }) {
   return FunctionSpec(
     functionType: functionType,
     args: const ConvexObjectType(<String, ConvexField>{}),
-    returns: const ConvexStringType(),
+    returns: returns,
     identifier: identifier,
     visibility: const Visibility('public'),
   );

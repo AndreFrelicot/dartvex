@@ -382,6 +382,20 @@ class DartGenerator {
 
   String _buildSchemaFile(Set<String> tables) {
     final sortedTables = tables.toList()..sort();
+    final tableIdClasses = <String, String>{};
+    for (final table in sortedTables) {
+      final typeName = '${_naming.typeName(table)}Id';
+      final existingTable = tableIdClasses[typeName];
+      if (existingTable != null) {
+        throw NamingException(
+          'Generated table ID class name collision: "$typeName" is used by '
+          'tables "$existingTable" and "$table". Rename one of the Convex '
+          'tables.',
+        );
+      }
+      tableIdClasses[typeName] = table;
+    }
+
     final buffer = StringBuffer()
       ..writeln(generatedFileHeader)
       ..writeln()
