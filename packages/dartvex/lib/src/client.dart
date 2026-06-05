@@ -1156,6 +1156,8 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
           logLines: result.logLines,
           hasPendingWrites: hasPendingWrites,
         );
+      case StoredQueryLoading():
+        return QueryLoading(hasPendingWrites: hasPendingWrites);
       case StoredQueryError():
         return QueryError(
           result.message,
@@ -1345,7 +1347,7 @@ class _PageSubscriptionAdapter implements PageSubscription {
           StoredQuerySuccess(value: value, logLines: const <String>[]),
         );
       case QueryLoading():
-        return const Stream<StoredQueryResult>.empty();
+        return Stream<StoredQueryResult>.value(const StoredQueryLoading());
       case QueryError(:final message, :final data, :final logLines):
         return Stream<StoredQueryResult>.value(
           StoredQueryError(

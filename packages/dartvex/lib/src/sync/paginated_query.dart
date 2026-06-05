@@ -78,8 +78,8 @@ typedef PageInitialResultReader = StoredQueryResult? Function(
 /// A live subscription to one page query consumed by [ConvexPaginatedQuery].
 ///
 /// Internal plumbing produced by a [PageSubscriber]. [results] emits the
-/// page's [StoredQueryResult] each time it changes; [cancel] tears the
-/// subscription down.
+/// page's [StoredQueryResult] each time it changes, including local loading
+/// markers from optimistic clears; [cancel] tears the subscription down.
 abstract interface class PageSubscription {
   /// The live results for this page (success values carry the raw
   /// `PaginationResult` map).
@@ -265,6 +265,9 @@ class ConvexPaginatedQuery {
           page.data = parsed;
           page.error = null;
         }
+      case StoredQueryLoading():
+        page.data = null;
+        page.error = null;
       case StoredQueryError(:final message, :final data, :final logLines):
         page.data = null;
         page.error = ConvexException(message, data: data, logLines: logLines);

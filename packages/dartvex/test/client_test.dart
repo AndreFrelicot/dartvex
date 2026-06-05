@@ -726,6 +726,72 @@ void main() {
       client.dispose();
     });
 
+    test('paginatedQuery reacts when a loaded page becomes optimistic loading',
+        () async {
+      final adapter = MockWebSocketAdapter();
+      final client = ConvexClient(
+        'https://example.com',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+      await settle();
+
+      final query = client.paginatedQuery(
+        'messages:list',
+        const <String, dynamic>{'channel': 'general'},
+        pageSize: 2,
+      );
+      await settle();
+
+      final querySet = adapter.decodedSentMessages
+          .where((message) => message['type'] == 'ModifyQuerySet')
+          .last;
+      final queryId = (((querySet['modifications'] as List<dynamic>).single
+          as Map<String, dynamic>)['queryId']) as int;
+      adapter.pushServerMessage(
+        Transition(
+          startVersion: const StateVersion.initial(),
+          endVersion: StateVersion(querySet: 1, identity: 0, ts: encodeTs(1)),
+          modifications: <StateModification>[
+            QueryUpdated(
+              queryId: queryId,
+              value: const <String, dynamic>{
+                'page': <String>['stale'],
+                'continueCursor': 'C',
+                'isDone': false,
+              },
+            ),
+          ],
+        ).toJson(),
+      );
+      await settle();
+      expect(query.current.results, <dynamic>['stale']);
+      expect(query.status, ConvexPaginationStatus.canLoadMore);
+
+      final pageArgs = <String, dynamic>{
+        'channel': 'general',
+        'paginationOpts': <String, dynamic>{
+          'numItems': 2,
+          'cursor': null,
+        },
+      };
+      final mutationFuture = client.mutate(
+        'messages:refresh',
+        const <String, dynamic>{},
+        (store) => store.clearQuery('messages:list', pageArgs),
+      );
+      unawaited(mutationFuture.catchError((_) {}));
+      await settle();
+
+      expect(query.current.results, isEmpty);
+      expect(query.status, ConvexPaginationStatus.loadingFirstPage);
+
+      query.cancel();
+      client.dispose();
+    });
+
     test('mutate overlays an optimistic update and rolls back on failure',
         () async {
       final adapter = MockWebSocketAdapter();

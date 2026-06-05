@@ -3,7 +3,8 @@ import '../protocol/state_version.dart';
 
 /// The locally stored outcome of a remote query subscription.
 ///
-/// Either a [StoredQuerySuccess] carrying the query value or a
+/// Either a [StoredQuerySuccess] carrying the query value, a
+/// [StoredQueryLoading] marking an optimistically-cleared result, or a
 /// [StoredQueryError] describing why the query function failed on the server.
 sealed class StoredQueryResult {
   /// Creates a [StoredQueryResult].
@@ -20,6 +21,15 @@ class StoredQuerySuccess extends StoredQueryResult {
 
   /// Log lines emitted by the query function during evaluation.
   final List<String> logLines;
+}
+
+/// A remote query result that is currently loading locally.
+///
+/// The server does not send this value directly. It is produced by optimistic
+/// updates that clear a query result while a mutation is pending.
+class StoredQueryLoading extends StoredQueryResult {
+  /// Creates a loading stored query result.
+  const StoredQueryLoading();
 }
 
 /// A remote query result representing a server-side query function failure.

@@ -58,6 +58,10 @@ class _FakePage implements PageSubscription {
       StoredQueryError(message: message, logLines: const <String>[]),
     );
   }
+
+  void emitLoading() {
+    _controller.add(const StoredQueryLoading());
+  }
 }
 
 class _FakeSource {
@@ -211,6 +215,30 @@ void main() {
       source.pages[0]
           .emitPage(<dynamic>['a', 'c'], continueCursor: 'X', isDone: false);
       expect(query.current.results, <dynamic>['a', 'c', 'd', 'e', 'f']);
+
+      query.cancel();
+    });
+
+    test('returns a loaded page to loading when it receives loading', () {
+      final source = _FakeSource();
+      final query = ConvexPaginatedQuery(
+        subscribe: source.subscribe,
+        name: 'messages:list',
+        args: const <String, dynamic>{},
+        pageSize: 3,
+      );
+      source.pages[0].emitPage(
+        <dynamic>['a', 'b', 'c'],
+        continueCursor: 'X',
+        isDone: false,
+      );
+      expect(query.current.results, <dynamic>['a', 'b', 'c']);
+      expect(query.status, ConvexPaginationStatus.canLoadMore);
+
+      source.pages[0].emitLoading();
+
+      expect(query.current.results, isEmpty);
+      expect(query.status, ConvexPaginationStatus.loadingFirstPage);
 
       query.cancel();
     });
