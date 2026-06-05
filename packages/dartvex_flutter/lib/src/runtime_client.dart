@@ -321,8 +321,19 @@ class _ConvexClientRuntimeSubscription implements ConvexRuntimeSubscription {
   _ConvexClientRuntimeSubscription(this._subscription)
       : _stream = _subscription.stream.map((event) {
           switch (event) {
-            case convex.QuerySuccess(:final value):
-              return ConvexRuntimeQuerySuccess(value);
+            case convex.QuerySuccess(
+                :final value,
+                :final logLines,
+                :final hasPendingWrites
+              ):
+              return ConvexRuntimeQuerySuccess(
+                value,
+                logLines: logLines,
+                source: hasPendingWrites
+                    ? ConvexQuerySource.cache
+                    : ConvexQuerySource.remote,
+                hasPendingWrites: hasPendingWrites,
+              );
             case convex.QueryError(
                 :final message,
                 :final data,

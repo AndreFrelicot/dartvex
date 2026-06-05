@@ -658,6 +658,7 @@ void main() {
 
       final event = events.single as QueryUpdateEvent;
       expect(event.queryId, queryId);
+      expect(event.hasPendingWrites, isTrue);
       expect(listOf(event), <String>['a', 'b']);
     });
 
@@ -682,6 +683,7 @@ void main() {
 
       // The optimistic 'b' replays on top of the new server value.
       final event = result.events.whereType<QueryUpdateEvent>().single;
+      expect(event.hasPendingWrites, isTrue);
       expect(listOf(event), <String>['a', 'c', 'b']);
     });
 
@@ -761,6 +763,10 @@ void main() {
             QueryUpdated(queryId: queryId, value: const <String>['a', 'b']),
           ],
         ),
+      );
+      expect(
+        landed.events.whereType<QueryUpdateEvent>().single.hasPendingWrites,
+        isFalse,
       );
       expect(
         listOf(landed.events.whereType<QueryUpdateEvent>().single),

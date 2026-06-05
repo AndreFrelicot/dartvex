@@ -17,13 +17,20 @@ sealed class BaseClientEvent {
 /// Emitted when a query's result changes and its subscribers must be notified.
 class QueryUpdateEvent extends BaseClientEvent {
   /// Creates a [QueryUpdateEvent] for [queryId] carrying its new [result].
-  const QueryUpdateEvent({required this.queryId, required this.result});
+  const QueryUpdateEvent({
+    required this.queryId,
+    required this.result,
+    this.hasPendingWrites = false,
+  });
 
   /// Identifier of the query whose value changed.
   final int queryId;
 
   /// The new stored result (server value with any optimistic overlay applied).
   final StoredQueryResult result;
+
+  /// Whether optimistic writes are currently affecting this query result.
+  final bool hasPendingWrites;
 }
 
 /// Emitted when a query is removed from the active query set.
@@ -414,6 +421,19 @@ class BaseClient {
     return _optimistic.rawResultForToken(token);
   }
 
+  /// Returns whether optimistic writes currently affect the query result for
+  /// [udfPath] and [args].
+  bool hasOptimisticUpdateForQuery(
+    String udfPath,
+    Map<String, dynamic> args,
+  ) {
+    final token = LocalSyncState.serializeQueryToken(
+      LocalSyncState.canonicalizeUdfPath(udfPath),
+      args,
+    );
+    return _optimistic.hasOptimisticUpdateForToken(token);
+  }
+
   /// Returns the ids of all subscribers currently attached to [queryId].
   List<int> subscriberIdsForQuery(int queryId) {
     return _localState.subscriberIdsForQuery(queryId);
@@ -509,7 +529,13 @@ class BaseClient {
       }
       final result = _optimistic.rawResultForToken(token);
       if (result != null) {
-        events.add(QueryUpdateEvent(queryId: queryId, result: result));
+        events.add(
+          QueryUpdateEvent(
+            queryId: queryId,
+            result: result,
+            hasPendingWrites: _optimistic.hasOptimisticUpdateForToken(token),
+          ),
+        );
       }
     }
     return events;

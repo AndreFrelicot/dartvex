@@ -175,10 +175,20 @@ sealed class QueryResult {
 /// Query result representing a successful value.
 class QuerySuccess extends QueryResult {
   /// Creates a successful query result.
-  const QuerySuccess(this.value);
+  const QuerySuccess(
+    this.value, {
+    this.logLines = const <String>[],
+    this.hasPendingWrites = false,
+  });
 
   /// Returned query value.
   final dynamic value;
+
+  /// Optional log lines attached to the successful query result.
+  final List<String> logLines;
+
+  /// Whether optimistic writes are currently affecting this query result.
+  final bool hasPendingWrites;
 }
 
 /// Query result representing an error.
@@ -668,7 +678,15 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
         }
         scheduleMicrotask(() {
           if (!controller.isClosed) {
-            controller.add(_toPublicQueryResult(initial));
+            controller.add(
+              _toPublicQueryResult(
+                initial,
+                hasPendingWrites: _baseClient.hasOptimisticUpdateForQuery(
+                  name,
+                  args,
+                ),
+              ),
+            );
           }
         });
       },
@@ -1053,7 +1071,13 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     for (final event in result.events) {
       switch (event) {
         case QueryUpdateEvent():
-          _emitToSubscribers(event.queryId, _toPublicQueryResult(event.result));
+          _emitToSubscribers(
+            event.queryId,
+            _toPublicQueryResult(
+              event.result,
+              hasPendingWrites: event.hasPendingWrites,
+            ),
+          );
         case QueryRemovedEvent():
           _emitToSubscribers(
             event.queryId,
@@ -1083,10 +1107,17 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     return result.outgoing;
   }
 
-  QueryResult _toPublicQueryResult(StoredQueryResult result) {
+  QueryResult _toPublicQueryResult(
+    StoredQueryResult result, {
+    bool hasPendingWrites = false,
+  }) {
     switch (result) {
       case StoredQuerySuccess():
-        return QuerySuccess(result.value);
+        return QuerySuccess(
+          result.value,
+          logLines: result.logLines,
+          hasPendingWrites: hasPendingWrites,
+        );
       case StoredQueryError():
         return QueryError(
           result.message,
@@ -1107,7 +1138,13 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   void _dispatchOptimisticEvents(List<BaseClientEvent> events) {
     for (final event in events) {
       if (event is QueryUpdateEvent) {
-        _emitToSubscribers(event.queryId, _toPublicQueryResult(event.result));
+        _emitToSubscribers(
+          event.queryId,
+          _toPublicQueryResult(
+            event.result,
+            hasPendingWrites: event.hasPendingWrites,
+          ),
+        );
       } else if (event is QueryRemovedEvent) {
         _emitToSubscribers(event.queryId, const QueryError('Query removed'));
       }

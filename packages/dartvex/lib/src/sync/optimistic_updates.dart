@@ -150,6 +150,7 @@ class OptimisticQueryResults {
       <String, OverlayServerQuery>{};
   final List<({OptimisticUpdate update, int mutationId})> _optimisticUpdates =
       <({OptimisticUpdate update, int mutationId})>[];
+  final Set<String> _optimisticTokens = <String>{};
 
   /// Rebuilds the overlay from fresh [serverQueryResults], dropping the layers
   /// of mutations in [optimisticUpdatesToDrop], and replaying the rest on top.
@@ -167,6 +168,7 @@ class OptimisticQueryResults {
     final oldQueryResults = _queryResults;
     _queryResults = Map<String, OverlayServerQuery>.from(serverQueryResults);
     final survivingUpdates = <({OptimisticUpdate update, int mutationId})>[];
+    final optimisticTokens = <String>{};
     for (final entry in _optimisticUpdates) {
       final candidateResults =
           Map<String, OverlayServerQuery>.from(_queryResults);
@@ -178,10 +180,14 @@ class OptimisticQueryResults {
       }
       _queryResults = candidateResults;
       survivingUpdates.add(entry);
+      optimisticTokens.addAll(store.modifiedQueries);
     }
     _optimisticUpdates
       ..clear()
       ..addAll(survivingUpdates);
+    _optimisticTokens
+      ..clear()
+      ..addAll(optimisticTokens);
 
     // Shallow identity comparison: an unchanged server query keeps the same
     // StoredQueryResult instance across transitions, so only genuinely changed
@@ -207,6 +213,7 @@ class OptimisticQueryResults {
     update(store);
     _queryResults = candidateResults;
     _optimisticUpdates.add((update: update, mutationId: mutationId));
+    _optimisticTokens.addAll(store.modifiedQueries);
     return store.modifiedQueries;
   }
 
@@ -217,4 +224,8 @@ class OptimisticQueryResults {
 
   /// Whether any optimistic update is currently active.
   bool get hasActiveUpdates => _optimisticUpdates.isNotEmpty;
+
+  /// Whether an active optimistic update has touched [token].
+  bool hasOptimisticUpdateForToken(String token) =>
+      _optimisticTokens.contains(token);
 }

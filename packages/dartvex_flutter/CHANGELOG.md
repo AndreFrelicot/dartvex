@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `ConvexClientRuntime` now preserves successful query log lines and maps real
+  core optimistic query emissions to `source: cache` with
+  `hasPendingWrites: true`.
 - Rich connection status: `ConvexRuntimeClient` gains `connectionStatus` (a
   `Stream<ConnectionStatus>`) and `currentConnectionStatus`, and the new
   `ConvexConnectionStatusBuilder` rebuilds on the detailed status (inflight

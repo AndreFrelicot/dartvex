@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `QuerySuccess` now carries successful query log lines and whether optimistic
+  writes are currently affecting the emitted value, so runtime adapters can
+  surface pending-write state from the real client.
 - Rich connection status: `ConvexClient.currentConnectionStatus` and the
   `connectionStatus` stream expose a `ConnectionStatus` snapshot
   (`isWebSocketConnected`, `isConnected`, `hasEverConnected`, `connectionCount`,
