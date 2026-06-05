@@ -66,13 +66,11 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
       if (databasePath == null) {
         return;
       }
+      // Only the database file is removed; deleting its parent directory could
+      // wipe unrelated files the caller placed alongside it.
       final databaseFile = File(databasePath);
-      final parent = databaseFile.parent;
       if (await databaseFile.exists()) {
         await databaseFile.delete();
-      }
-      if (await parent.exists()) {
-        await parent.delete();
       }
     }
   }
