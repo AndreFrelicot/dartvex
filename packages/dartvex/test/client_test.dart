@@ -45,6 +45,13 @@ void main() {
       );
     });
 
+    test('defaults inactivity timeout to official 60 second threshold', () {
+      expect(
+        const ConvexClientConfig().inactivityTimeout,
+        const Duration(seconds: 60),
+      );
+    });
+
     test('rejects negative reconnect backoff entries', () {
       expect(
         () => ConvexClient(

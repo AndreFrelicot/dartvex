@@ -89,6 +89,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The default WebSocket inactivity timeout now matches the official Convex
+  client's 60-second threshold, reducing false reconnects while large messages
+  are in flight.
 - `AuthLoading` documentation now matches the emitted auth states: it covers
   login/cache restore, while background token refreshes remain exposed via
   `authRefreshing`.

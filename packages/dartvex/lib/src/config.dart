@@ -13,7 +13,7 @@ class ConvexClientConfig {
     this.apiVersion = '1.40.0',
     this.authTokenType = 'User',
     this.refreshTokenLeewaySeconds = 2,
-    this.inactivityTimeout = const Duration(seconds: 30),
+    this.inactivityTimeout = const Duration(seconds: 60),
     this.connectTimeout = const Duration(seconds: 10),
     this.queryTimeout,
     this.mutationTimeout,
@@ -52,6 +52,10 @@ class ConvexClientConfig {
   final int refreshTokenLeewaySeconds;
 
   /// Maximum time to wait for server messages before reconnecting.
+  ///
+  /// Defaults to 60 seconds, matching the official Convex client. Convex sends
+  /// regular pings, but a large downstream message can monopolize the
+  /// connection; the longer threshold avoids false reconnects mid-message.
   final Duration inactivityTimeout;
 
   /// Maximum time to wait for the WebSocket handshake to complete before
