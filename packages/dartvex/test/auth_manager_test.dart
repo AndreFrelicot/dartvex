@@ -201,6 +201,44 @@ void main() {
       expect(fetchCount, lessThan(7));
       await manager.stopRefreshing();
     });
+
+    test('terminal auth rejection disables reconnect refresh', () async {
+      var fetchCount = 0;
+      final authStates = <bool>[];
+      final manager = AuthManager(
+        config: const ConvexClientConfig(connectImmediately: false),
+        sendAuth: (_) async {},
+        emitAuthState: authStates.add,
+      );
+
+      await manager.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) async {
+          fetchCount += 1;
+          return forceRefresh ? 'fresh-$fetchCount' : 'cached-token';
+        },
+      );
+      manager.handleAuthConfirmed();
+      authStates.clear();
+
+      for (var i = 0; i < 6 && !authStates.contains(false); i += 1) {
+        await manager.handleAuthError(
+          AuthError(
+            error: 'token rejected $i',
+            baseVersion: i,
+            authUpdateAttempted: true,
+          ),
+          currentAuthVersion: i + 1,
+        );
+      }
+      final terminalFetchCount = fetchCount;
+
+      await manager.refreshAuthForReconnect();
+
+      expect(authStates, contains(false));
+      expect(fetchCount, terminalFetchCount);
+      expect(manager.currentToken, isNull);
+      await manager.stopRefreshing();
+    });
   });
 
   group('AuthManager.computeRefreshDelay', () {

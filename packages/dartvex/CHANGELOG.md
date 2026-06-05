@@ -91,6 +91,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   forced token refresh.
 - Optimistic updates that throw no longer leave behind poison layers that can
   wedge future server transitions into a reconnect loop.
+- Terminal auth failures now clear the refresh callback, preventing later
+  reconnects from refetching and reapplying a rejected token.
 - The default Convex sync API version now uses a currently supported Convex
   client version, fixing browser WebSocket handshakes that cannot send the
   native `Convex-Client` header.
