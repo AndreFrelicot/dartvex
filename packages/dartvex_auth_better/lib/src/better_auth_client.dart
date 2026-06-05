@@ -305,7 +305,8 @@ class BetterAuthClient {
       return header;
     }
 
-    // Fallback: extract from set-cookie (browser flow).
+    // Fallback: extract from set-cookie. Browsers never expose Set-Cookie to
+    // Dart/JavaScript, so this path is native/test HTTP only.
     final fromCookie = _extractCookieValue(
       response,
       'better-auth.session_token',
@@ -316,7 +317,11 @@ class BetterAuthClient {
 
     throw BetterAuthException(
       'Better Auth did not return a session token '
-      '(status ${response.statusCode}).',
+      '(status ${response.statusCode}). '
+      'Mobile and desktop clients need the bearer() plugin to expose '
+      'set-auth-token. Flutter web clients must also configure CORS with '
+      'Access-Control-Expose-Headers: set-auth-token; browsers cannot read '
+      'Set-Cookie.',
     );
   }
 

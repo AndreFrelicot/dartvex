@@ -56,6 +56,17 @@ export const createAuth = (ctx) => {
 
 Without `bearer()`, session tokens cannot be restored across app restarts.
 
+### Flutter web CORS
+
+For Flutter web, Better Auth must expose the session-token header through CORS:
+
+```http
+Access-Control-Expose-Headers: set-auth-token
+```
+
+Browsers do not expose `Set-Cookie` to Dart or JavaScript, so the cookie fallback
+is native-only. Web sign-in and sign-up require the `set-auth-token` header.
+
 ## Usage
 
 ### 1. Create the auth client

@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Convert malformed Convex token endpoint responses into typed session-expired
   errors instead of raw cast or decode exceptions.
+- Clarify missing session-token errors with Flutter web CORS guidance and
+  document that cookie fallback is native-only.
 
 ### Changed
 

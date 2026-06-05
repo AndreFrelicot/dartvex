@@ -267,7 +267,19 @@ void main() {
 
       expect(
         () => client.signIn(email: 'a@b.com', password: 'p'),
-        throwsA(isA<BetterAuthException>()),
+        throwsA(
+          isA<BetterAuthException>()
+              .having(
+                (error) => error.message,
+                'message',
+                contains('Access-Control-Expose-Headers: set-auth-token'),
+              )
+              .having(
+                (error) => error.message,
+                'message',
+                contains('Set-Cookie'),
+              ),
+        ),
       );
     });
 
