@@ -1013,7 +1013,16 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     _refreshAuthOnNextConnect = false;
     _skipNextReconnectAuthRefresh = false;
     if (refreshAuth) {
-      await _authManager.refreshAuthForReconnect();
+      try {
+        await _authManager.refreshAuthForReconnect();
+      } catch (error, stackTrace) {
+        _log(
+          DartvexLogLevel.warn,
+          'Reconnect auth refresh failed; continuing with current auth state',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
       final token = _authManager.currentToken;
       if (token == null) {
         _baseClient.restoreAuth(tokenType: 'None');

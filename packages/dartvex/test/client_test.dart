@@ -1240,6 +1240,47 @@ void main() {
       client.dispose();
     });
 
+    test('reconnect auth refresh failure does not abort handshake', () async {
+      final adapter = MockWebSocketAdapter();
+      final client = ConvexClient(
+        'https://example.com',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+      await settle();
+
+      var forcedRefreshCalls = 0;
+      await client.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) async {
+          if (forceRefresh) {
+            forcedRefreshCalls += 1;
+            throw StateError('refresh failed');
+          }
+          return 'cached-token';
+        },
+      );
+      await settle();
+
+      adapter.disconnect(reason: 'network drop');
+      await settle();
+
+      await waitForStatus(
+        client,
+        (status) => status.state == ConnectionState.connected,
+      );
+      final authMessages = adapter.decodedSentMessages
+          .where((message) => message['type'] == 'Authenticate')
+          .toList(growable: false);
+
+      expect(forcedRefreshCalls, 1);
+      expect(authMessages.last['tokenType'], 'User');
+      expect(authMessages.last['value'], 'cached-token');
+
+      client.dispose();
+    });
+
     test('stale auth error is ignored after newer auth update', () async {
       final adapter = MockWebSocketAdapter();
       final client = ConvexClient(
