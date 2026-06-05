@@ -17,7 +17,7 @@ export 'src/client.dart'
         QueryError,
         QueryResult,
         QuerySuccess;
-export 'src/config.dart' show ConvexClientConfig;
+export 'src/config.dart' show ConvexClientConfig, WebSocketAdapterFactory;
 export 'src/exceptions.dart' show ConvexException, ConvexFileUploadException;
 export 'src/logging.dart' show DartvexLogEvent, DartvexLogger, DartvexLogLevel;
 export 'src/storage.dart' show ConvexStorage;
@@ -26,6 +26,8 @@ export 'src/sync/optimistic_updates.dart'
 export 'src/sync/paginated_query.dart'
     show ConvexPaginatedQuery, ConvexPaginatedResult, ConvexPaginationStatus;
 export 'src/transport/connectivity.dart' show ConnectivitySignal;
+export 'src/transport/ws_interface.dart'
+    show WebSocketAdapter, WebSocketCloseEvent;
 export 'src/transport/ws_manager.dart'
     show TransitionMetrics, TransitionMetricsCallback;
 export 'src/values/json_codec.dart'

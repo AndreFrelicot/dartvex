@@ -111,6 +111,12 @@ class ConvexClientConfig {
   final bool connectImmediately;
 
   /// Optional override for the platform WebSocket adapter.
+  ///
+  /// Advanced/testing seam: supply a factory returning a custom
+  /// [WebSocketAdapter] to route the sync transport through your own socket
+  /// implementation (for example to inject instrumentation or a mock in tests).
+  /// Leave `null` (the default) to use the platform adapter selected by
+  /// conditional import.
   final WebSocketAdapterFactory? adapterFactory;
 
   /// Optional signal used to reconnect immediately when the device regains
