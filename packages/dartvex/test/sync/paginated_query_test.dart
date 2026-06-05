@@ -27,7 +27,9 @@ class _FakePage implements PageSubscription {
   @override
   void cancel() {
     canceled = true;
-    unawaited(_controller.close());
+    scheduleMicrotask(() {
+      unawaited(_controller.close());
+    });
   }
 
   void emitPage(
@@ -350,6 +352,42 @@ void main() {
       expect(source.pages[0].canceled, isTrue);
 
       query.cancel();
+    });
+
+    test('cleans up split halves and surfaces errors', () {
+      final source = _FakeSource();
+      final query = ConvexPaginatedQuery(
+        subscribe: source.subscribe,
+        name: 'messages:list',
+        args: const <String, dynamic>{},
+        pageSize: 3,
+      );
+
+      source.pages[0].emitPage(
+        <dynamic>['a', 'b', 'ba', 'bb', 'c'],
+        continueCursor: 'C',
+        isDone: false,
+        splitCursor: 'S',
+        pageStatus: 'SplitRecommended',
+      );
+
+      expect(source.pages, hasLength(3));
+      final firstHalf = source.pages[1];
+      final secondHalf = source.pages[2];
+
+      firstHalf
+          .emitPage(<dynamic>['a', 'b'], continueCursor: 'S', isDone: false);
+      secondHalf.emitError('split failed');
+
+      expect(query.status, ConvexPaginationStatus.error);
+      expect(query.current.error, isA<ConvexException>());
+      expect((query.current.error! as ConvexException).message, 'split failed');
+      expect(firstHalf.canceled, isTrue);
+      expect(secondHalf.canceled, isTrue);
+      expect(source.pages[0].canceled, isFalse);
+
+      query.cancel();
+      expect(source.pages.every((page) => page.canceled), isTrue);
     });
 
     test('cancel tears down every page subscription and closes the stream', () {

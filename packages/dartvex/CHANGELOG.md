@@ -101,6 +101,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - WebSocket reconnect paths that discover an already-closed adapter now run the
   same disconnect bookkeeping as normal close events, so state listeners and
   disconnect callbacks are not skipped before reconnecting.
+- Reactive pagination now tears down both split-half subscriptions and surfaces
+  an error if either half of a split page fails, avoiding leaked hidden
+  subscriptions.
 - `AuthLoading` documentation now matches the emitted auth states: it covers
   login/cache restore, while background token refreshes remain exposed via
   `authRefreshing`.

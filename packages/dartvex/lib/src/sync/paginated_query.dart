@@ -255,6 +255,20 @@ class ConvexPaginatedQuery {
   }
 
   void _reconcileSplits() {
+    // If either split half fails, tear down both halves and report the failure
+    // through the original page. The original remains active so a fresh server
+    // result can clear the error and retry the split later.
+    final failed = _splits
+        .where(
+            (split) => split.first.error != null || split.second.error != null)
+        .toList(growable: false);
+    for (final split in failed) {
+      split.original.error = split.first.error ?? split.second.error;
+      split.first.dispose();
+      split.second.dispose();
+      _splits.remove(split);
+    }
+
     // Complete any split whose two halves have both loaded a result: swap the
     // original page out for the two halves atomically so the aggregated result
     // never shows a gap or duplicate mid-split.
@@ -280,6 +294,9 @@ class ConvexPaginatedQuery {
     // have grown past twice the page size.
     for (final page in List<_Page>.of(_pages)) {
       if (_splits.any((split) => split.original == page)) {
+        continue;
+      }
+      if (page.error != null) {
         continue;
       }
       final data = page.data;
