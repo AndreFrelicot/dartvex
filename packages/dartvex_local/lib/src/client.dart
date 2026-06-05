@@ -982,7 +982,8 @@ class ConvexLocalClient {
       // Recover any ID remaps persisted from a prior crash.
       final idRemaps = await _mutationQueue.loadIdRemaps();
       var iteration = 0;
-      while (_pendingMutations.isNotEmpty &&
+      while (!_disposed &&
+          _pendingMutations.isNotEmpty &&
           _networkMode == LocalNetworkMode.auto) {
         iteration++;
         final mutation = _pendingMutations.first;
@@ -1022,6 +1023,10 @@ class ConvexLocalClient {
             mutation.mutationName,
             remappedArgs,
           );
+          if (_disposed) {
+            _log('replay:disposed', '[$iteration] stopping after mutate');
+            break;
+          }
           _log('replay:mutate-ok', '[$iteration] remote mutate succeeded');
 
           // Capture ID mapping: if this mutation produced a local operationId
@@ -1046,6 +1051,10 @@ class ConvexLocalClient {
           unawaited(_refreshTargetsFromMutation(mutation));
           _replayRetryCount = 0;
         } on ConvexException catch (error) {
+          if (_disposed) {
+            _log('replay:disposed', '[$iteration] stopping after error');
+            break;
+          }
           _log(
             'replay:convex-error',
             '[$iteration] ${error.message} '
@@ -1064,6 +1073,10 @@ class ConvexLocalClient {
           }
           await _dropFailedMutation(mutation, error);
         } catch (error, stack) {
+          if (_disposed) {
+            _log('replay:disposed', '[$iteration] stopping after error');
+            break;
+          }
           _log('replay:error', '[$iteration] $error\n$stack');
           if (_shouldQueueRemoteFailure(error)) {
             await _mutationQueue.markStatus(
@@ -1080,7 +1093,7 @@ class ConvexLocalClient {
         }
       }
       // Clean up remap table when the queue is fully drained.
-      if (_pendingMutations.isEmpty && idRemaps.isNotEmpty) {
+      if (!_disposed && _pendingMutations.isEmpty && idRemaps.isNotEmpty) {
         await _mutationQueue.clearIdRemaps();
       }
       _log(
@@ -1090,8 +1103,10 @@ class ConvexLocalClient {
       );
     } finally {
       _isSyncing = false;
-      _updateConnectionState();
-      if (hitRetryableError) {
+      if (!_disposed) {
+        _updateConnectionState();
+      }
+      if (!_disposed && hitRetryableError) {
         _scheduleReplayRetry();
       }
     }

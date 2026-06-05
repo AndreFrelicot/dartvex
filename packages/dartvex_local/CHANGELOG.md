@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Drops queued mutations that still reference unresolved `local-*` IDs during
   replay, so dependents of a failed create are reported via `onConflict` instead
   of being sent to the backend with stale local IDs.
+- Stops in-flight replay cleanly during `dispose()`, preventing writes to closed
+  SQLite stores or closed mutation streams after a delayed remote mutation
+  returns.
 - Map the new terminal `dartvex` `ConnectionState.fatalError` to a disconnected
   local connection state, keeping the remote-client adapter's connection-state
   mapping exhaustive and analyzer-clean.

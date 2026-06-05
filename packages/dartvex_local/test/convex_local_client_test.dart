@@ -446,6 +446,34 @@ void main() {
     });
 
     test(
+      'dispose cancels in-flight replay without closed store writes',
+      () async {
+        remoteClient.queryResults['messages:listPublic'] = <dynamic>[];
+        await localClient.query('messages:listPublic');
+        await localClient.setNetworkMode(LocalNetworkMode.offline);
+
+        await localClient.mutate('messages:sendPublic', <String, dynamic>{
+          'author': 'A',
+          'text': 'dispose-mid-replay',
+        });
+
+        final replayResult = Completer<Object?>();
+        remoteClient.mutationResults['messages:sendPublic'] = <Object?>[
+          replayResult.future,
+        ];
+
+        final goOnline = localClient.setNetworkMode(LocalNetworkMode.auto);
+        await pumpEventQueue();
+        expect(remoteClient.mutationCalls, hasLength(1));
+
+        await localClient.dispose();
+        replayResult.complete('server-id-after-dispose');
+
+        await expectLater(goOnline, completes);
+      },
+    );
+
+    test(
       'replay drops mutation and fires onConflict on non-retryable error',
       () async {
         remoteClient.queryResults['messages:listPublic'] = <dynamic>[];
@@ -1311,6 +1339,9 @@ class FakeRemoteClient implements LocalRemoteClient {
     }
     if (next is Error) {
       throw next;
+    }
+    if (next is Future<Object?>) {
+      return next;
     }
     return next;
   }
