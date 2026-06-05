@@ -4,6 +4,8 @@ import 'dart:typed_data';
 
 import 'package:dartvex/dartvex.dart';
 import 'package:dartvex_local/dartvex_local.dart';
+import 'package:dartvex_local/src/storage/sqlite_local_store_native.dart'
+    as native;
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 import 'package:test/test.dart';
 
@@ -1114,6 +1116,17 @@ void main() {
       expect(version, 1);
     });
 
+    test('closes database handle when migration fails', () async {
+      final database = _MigrationFailureDatabase();
+
+      await expectLater(
+        native.SqliteLocalStore.openFromDatabaseForTesting(database),
+        throwsA(isA<sqlite.SqliteException>()),
+      );
+
+      expect(database.closed, isTrue);
+    });
+
     test('read returns null for missing key', () async {
       final store = await SqliteLocalStore.openInMemory();
       final entry = await store.read('nonexistent');
@@ -1286,6 +1299,26 @@ void main() {
       expect(decoded['special'], double.infinity);
     });
   });
+}
+
+final class _MigrationFailureDatabase implements sqlite.Database {
+  var closed = false;
+
+  @override
+  void close() {
+    closed = true;
+  }
+
+  @override
+  void execute(String sql, [List<Object?> parameters = const <Object?>[]]) {
+    throw sqlite.SqliteException(
+      extendedResultCode: 26,
+      message: 'file is not a database',
+    );
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // ---------------------------------------------------------------------------

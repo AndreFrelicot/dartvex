@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- SQLite database handles are now closed if schema migration fails during
+  `SqliteLocalStore.open` or `openInMemory`.
 - Auto-mode mutations now queue behind any existing replay work instead of
   bypassing a non-empty offline queue and committing newer mutations before
   older queued ones.

@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:meta/meta.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 import '../cache/cache_storage.dart';
@@ -12,9 +13,7 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
     required bool deleteOnClose,
     String? databasePath,
   }) : _deleteOnClose = deleteOnClose,
-       _databasePath = databasePath {
-    _migrate();
-  }
+       _databasePath = databasePath;
 
   final Database _database;
   final bool _deleteOnClose;
@@ -25,7 +24,7 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
   static Future<SqliteLocalStore> open(String path) async {
     final databaseFile = File(path);
     await databaseFile.parent.create(recursive: true);
-    return SqliteLocalStore._(
+    return _openMigrated(
       sqlite3.open(path),
       deleteOnClose: false,
       databasePath: path,
@@ -34,7 +33,34 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
 
   /// Opens an in-memory SQLite database.
   static Future<SqliteLocalStore> openInMemory() async {
-    return SqliteLocalStore._(sqlite3.openInMemory(), deleteOnClose: false);
+    return _openMigrated(sqlite3.openInMemory(), deleteOnClose: false);
+  }
+
+  /// Opens a store around [database] for migration-failure tests.
+  @visibleForTesting
+  static Future<SqliteLocalStore> openFromDatabaseForTesting(
+    Database database,
+  ) async {
+    return _openMigrated(database, deleteOnClose: false);
+  }
+
+  static SqliteLocalStore _openMigrated(
+    Database database, {
+    required bool deleteOnClose,
+    String? databasePath,
+  }) {
+    final store = SqliteLocalStore._(
+      database,
+      deleteOnClose: deleteOnClose,
+      databasePath: databasePath,
+    );
+    try {
+      store._migrate();
+      return store;
+    } catch (_) {
+      database.close();
+      rethrow;
+    }
   }
 
   @override
