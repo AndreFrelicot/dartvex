@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- CLI generation failures now return non-zero exit codes and print concise
+  errors instead of leaking raw uncaught stack traces to callers.
 - Escapes literal-union enum `fromJson` error messages so literal values with
   quotes, dollars, or newlines do not generate invalid Dart source.
 - Rejects Convex table names that would generate duplicate `ConvexTableId`

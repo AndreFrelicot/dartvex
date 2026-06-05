@@ -63,52 +63,59 @@ void main() {
     test('fails clearly when process execution fails', () async {
       final tempDir = await Directory.systemTemp.createTemp('dartvex_codegen_');
       addTearDown(() => tempDir.delete(recursive: true));
+      final logs = <String>[];
 
-      expect(
-        () => runConvexCodegen(
-          <String>[
-            'generate',
-            '--project',
-            tempDir.path,
-            '--output',
-            tempDir.path,
-          ],
-          processRunner: _FailingProcessRunner(),
-          log: (_) {},
-        ),
-        throwsA(isA<ProcessRunnerException>()),
+      final exitCode = await runConvexCodegen(
+        <String>[
+          'generate',
+          '--project',
+          tempDir.path,
+          '--output',
+          tempDir.path,
+        ],
+        processRunner: _FailingProcessRunner(),
+        log: (_) {},
+        errorLog: logs.add,
       );
+
+      expect(exitCode, 70);
+      expect(logs, contains('synthetic failure'));
     });
 
     test('rejects missing input mode', () async {
       final tempDir = await Directory.systemTemp.createTemp('dartvex_codegen_');
       addTearDown(() => tempDir.delete(recursive: true));
+      final logs = <String>[];
 
-      expect(
-        () => runConvexCodegen(
-          <String>[
-            'generate',
-            '--output',
-            tempDir.path,
-          ],
-          log: (_) {},
-        ),
-        throwsA(isA<ArgumentError>()),
+      final exitCode = await runConvexCodegen(
+        <String>[
+          'generate',
+          '--output',
+          tempDir.path,
+        ],
+        log: (_) {},
+        errorLog: logs.add,
       );
+
+      expect(exitCode, 64);
+      expect(logs.single, contains('Exactly one of --project or --spec-file'));
     });
 
     test('rejects missing output path', () async {
-      expect(
-        () => runConvexCodegen(
-          <String>[
-            'generate',
-            '--spec-file',
-            fixtureFile.path,
-          ],
-          log: (_) {},
-        ),
-        throwsA(isA<ArgumentError>()),
+      final logs = <String>[];
+
+      final exitCode = await runConvexCodegen(
+        <String>[
+          'generate',
+          '--spec-file',
+          fixtureFile.path,
+        ],
+        log: (_) {},
+        errorLog: logs.add,
       );
+
+      expect(exitCode, 64);
+      expect(logs.single, contains('--output is required'));
     });
   });
 }

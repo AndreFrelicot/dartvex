@@ -16,11 +16,14 @@ Future<int> runConvexCodegen(
   ProcessRunner? processRunner,
   FileEmitter? fileEmitter,
   void Function(String message)? log,
+  void Function(String message)? errorLog,
 }) {
+  final void Function(String message) outputLog = log ?? stdout.writeln;
   return GenerateCommand(
     processRunner: processRunner ?? const SystemProcessRunner(),
     fileEmitter: fileEmitter ?? const FileEmitter(),
-    log: log ?? stdout.writeln,
+    log: outputLog,
+    errorLog: errorLog ?? stderr.writeln,
   ).run(args);
 }
 
@@ -31,13 +34,16 @@ class GenerateCommand {
     required ProcessRunner processRunner,
     required FileEmitter fileEmitter,
     required void Function(String message) log,
+    void Function(String message)? errorLog,
   })  : _processRunner = processRunner,
         _fileEmitter = fileEmitter,
-        _log = log;
+        _log = log,
+        _errorLog = errorLog ?? log;
 
   final ProcessRunner _processRunner;
   final FileEmitter _fileEmitter;
   final void Function(String message) _log;
+  final void Function(String message) _errorLog;
 
   /// Builds the CLI parser for the `generate` subcommand.
   static ArgParser buildParser() {
@@ -57,6 +63,21 @@ class GenerateCommand {
 
   /// Executes the generator command for the provided CLI [args].
   Future<int> run(List<String> args) async {
+    try {
+      return await _run(args);
+    } on ArgumentError catch (error) {
+      _errorLog(error.message?.toString() ?? error.toString());
+      return 64;
+    } on FormatException catch (error) {
+      _errorLog(error.toString());
+      return 65;
+    } on Exception catch (error) {
+      _errorLog(error.toString());
+      return 70;
+    }
+  }
+
+  Future<int> _run(List<String> args) async {
     if (args.isEmpty) {
       _printUsage();
       return 64;
@@ -68,7 +89,14 @@ class GenerateCommand {
     }
 
     final parser = buildParser();
-    final parsed = parser.parse(args.sublist(1));
+    final ArgResults parsed;
+    try {
+      parsed = parser.parse(args.sublist(1));
+    } on FormatException catch (error) {
+      _errorLog(error.message);
+      _printUsage();
+      return 64;
+    }
     if (parsed['help'] as bool) {
       _log('Usage: dart run dartvex_codegen generate [options]');
       _log(parser.usage);
