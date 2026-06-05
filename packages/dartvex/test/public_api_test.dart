@@ -55,4 +55,14 @@ void main() {
     expect(convexInt64(7), BigInt.from(7));
     expect(jsonToConvex(convexToJson(convexInt64(7))), BigInt.from(7));
   });
+
+  test('exports paginated query plumbing types from the public barrel', () {
+    PageSubscriber? subscriber;
+    PageInitialResultReader? initialResultReader;
+    PageSubscription? subscription;
+
+    expect(subscriber, isNull);
+    expect(initialResultReader, isNull);
+    expect(subscription, isNull);
+  });
 }

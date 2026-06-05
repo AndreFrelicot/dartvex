@@ -27,6 +27,7 @@ class FakeRuntimeClient implements ConvexRuntimeClient {
   Future<dynamic> Function(String name, Map<String, dynamic> args)? onQuery;
   Future<dynamic> Function(String name, Map<String, dynamic> args)? onMutate;
   Future<dynamic> Function(String name, Map<String, dynamic> args)? onAction;
+  ConvexPaginatedResult? nextPaginatedInitialResult;
 
   ConvexConnectionState _currentConnectionState;
   ConnectionStatus _currentConnectionStatus;
@@ -179,7 +180,9 @@ class FakeRuntimeClient implements ConvexRuntimeClient {
       name,
       Map<String, dynamic>.from(args),
       pageSize,
+      initial: nextPaginatedInitialResult,
     );
+    nextPaginatedInitialResult = null;
     paginatedQueryCalls.add(
       FakePaginatedQueryCall(
         name,
@@ -223,18 +226,24 @@ class FakePaginatedQueryCall {
 }
 
 class FakeRuntimePaginatedQuery implements ConvexRuntimePaginatedQuery {
-  FakeRuntimePaginatedQuery(this.name, this.args, this.pageSize);
+  FakeRuntimePaginatedQuery(
+    this.name,
+    this.args,
+    this.pageSize, {
+    ConvexPaginatedResult? initial,
+  }) : _current = initial ??
+            const ConvexPaginatedResult(
+              results: <dynamic>[],
+              status: ConvexPaginationStatus.loadingFirstPage,
+              isDone: false,
+            );
 
   final String name;
   final Map<String, dynamic> args;
   final int pageSize;
   final StreamController<ConvexPaginatedResult> _controller =
       StreamController<ConvexPaginatedResult>.broadcast(sync: true);
-  ConvexPaginatedResult _current = const ConvexPaginatedResult(
-    results: <dynamic>[],
-    status: ConvexPaginationStatus.loadingFirstPage,
-    isDone: false,
-  );
+  ConvexPaginatedResult _current;
   int loadMoreCount = 0;
   int? lastLoadMoreNumItems;
   bool isCanceled = false;

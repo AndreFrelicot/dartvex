@@ -765,6 +765,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     return ConvexPaginatedQuery(
       subscribe: (pageName, pageArgs) =>
           _PageSubscriptionAdapter(subscribe(pageName, pageArgs)),
+      readInitialResult: _baseClient.localResultForQuery,
       name: name,
       args: args,
       pageSize: pageSize,

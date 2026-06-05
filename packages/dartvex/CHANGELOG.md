@@ -114,6 +114,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Query subscriptions now emit `QueryLoading` when an optimistic update clears a
   live query, and one-shot queries ignore that loading state until a concrete
   success or error arrives.
+- Reactive paginated queries now seed their first page synchronously from the
+  current local/cache result when available, avoiding a loading flash on warm
+  remounts.
 - `AuthLoading` documentation now matches the emitted auth states: it covers
   login/cache restore, while background token refreshes remain exposed via
   `authRefreshing`.

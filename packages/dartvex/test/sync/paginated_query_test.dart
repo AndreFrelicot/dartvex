@@ -102,6 +102,37 @@ void main() {
       query.cancel();
     });
 
+    test('seeds the first page synchronously from a warm result', () {
+      final source = _FakeSource();
+      final query = ConvexPaginatedQuery(
+        subscribe: source.subscribe,
+        readInitialResult: (name, args) {
+          expect(name, 'messages:list');
+          expect(args['paginationOpts'], const <String, dynamic>{
+            'numItems': 3,
+            'cursor': null,
+          });
+          return StoredQuerySuccess(
+            value: const <String, dynamic>{
+              'page': <String>['warm'],
+              'continueCursor': 'C',
+              'isDone': false,
+            },
+            logLines: const <String>[],
+          );
+        },
+        name: 'messages:list',
+        args: const <String, dynamic>{},
+        pageSize: 3,
+      );
+
+      expect(query.current.results, <dynamic>['warm']);
+      expect(query.status, ConvexPaginationStatus.canLoadMore);
+      expect(source.pages, hasLength(1));
+
+      query.cancel();
+    });
+
     test('loadMore chains the next page via the continueCursor', () {
       final source = _FakeSource();
       final query = ConvexPaginatedQuery(

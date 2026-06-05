@@ -69,6 +69,12 @@ typedef PageSubscriber = PageSubscription Function(
   Map<String, dynamic> args,
 );
 
+/// Reads the current local result for a page query, if one is already known.
+typedef PageInitialResultReader = StoredQueryResult? Function(
+  String name,
+  Map<String, dynamic> args,
+);
+
 /// A live subscription to one page query consumed by [ConvexPaginatedQuery].
 ///
 /// Internal plumbing produced by a [PageSubscriber]. [results] emits the
@@ -110,10 +116,12 @@ class ConvexPaginatedQuery {
   /// and [pageSize] is the number of items requested per page.
   ConvexPaginatedQuery({
     required PageSubscriber subscribe,
+    PageInitialResultReader? readInitialResult,
     required String name,
     required Map<String, dynamic> args,
     int pageSize = 20,
   })  : _subscribe = subscribe,
+        _readInitialResult = readInitialResult,
         _name = name,
         _args = Map<String, dynamic>.from(args),
         _pageSize = pageSize {
@@ -126,6 +134,7 @@ class ConvexPaginatedQuery {
   }
 
   final PageSubscriber _subscribe;
+  final PageInitialResultReader? _readInitialResult;
   final String _name;
   final Map<String, dynamic> _args;
   final int _pageSize;
@@ -201,7 +210,13 @@ class ConvexPaginatedQuery {
   }
 
   void _addPage({required String? cursor, required int numItems}) {
-    _pages.add(_openPage(cursor: cursor, numItems: numItems));
+    final page = _openPage(cursor: cursor, numItems: numItems);
+    _pages.add(page);
+    final initial = page.initialResult;
+    if (initial != null) {
+      page.initialResult = null;
+      _onPageResult(page, initial);
+    }
   }
 
   _Page _openPage({
@@ -222,7 +237,11 @@ class ConvexPaginatedQuery {
       'paginationOpts': paginationOpts,
     };
     final subscription = _subscribe(_name, pageArgs);
-    final page = _Page(startCursor: cursor, subscription: subscription);
+    final page = _Page(
+      startCursor: cursor,
+      subscription: subscription,
+      initialResult: _readInitialResult?.call(_name, pageArgs),
+    );
     page.streamSub = subscription.results.listen(
       (result) => _onPageResult(page, result),
     );
@@ -410,11 +429,16 @@ class ConvexPaginatedQuery {
 
 /// One active or being-split page subscription and its latest parsed result.
 class _Page {
-  _Page({required this.startCursor, required this.subscription});
+  _Page({
+    required this.startCursor,
+    required this.subscription,
+    this.initialResult,
+  });
 
   /// The cursor this page starts at (`null` for the first page).
   final String? startCursor;
   final PageSubscription subscription;
+  StoredQueryResult? initialResult;
   late final StreamSubscription<StoredQueryResult> streamSub;
 
   /// The latest successful page result, or `null` while loading or errored.

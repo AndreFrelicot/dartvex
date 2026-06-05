@@ -423,6 +423,35 @@ class BaseClient {
     return _resultCacheByToken[token];
   }
 
+  /// Returns the best local result currently known for [udfPath]/[args].
+  ///
+  /// Optimistic loading (`clearQuery`) intentionally returns `null` so callers
+  /// do not seed from stale remote/cache data while a query is cleared.
+  StoredQueryResult? localResultForQuery(
+    String udfPath,
+    Map<String, dynamic> args,
+  ) {
+    if (optimisticQueryIsLoading(udfPath, args)) {
+      return null;
+    }
+    final optimistic = optimisticResultForQuery(udfPath, args);
+    if (optimistic != null) {
+      return optimistic;
+    }
+    final token = LocalSyncState.serializeQueryToken(
+      LocalSyncState.canonicalizeUdfPath(udfPath),
+      args,
+    );
+    final queryId = _localState.queryIdForToken(token);
+    if (queryId != null) {
+      final current = currentResultForQuery(queryId);
+      if (current != null) {
+        return current;
+      }
+    }
+    return _resultCacheByToken[token];
+  }
+
   /// Records [result] for [token] in the bounded after-unsubscribe seed cache,
   /// evicting the least-recently-written entry once [_maxCachedResults] is
   /// exceeded. Re-inserting moves [token] to the most-recent position, so a

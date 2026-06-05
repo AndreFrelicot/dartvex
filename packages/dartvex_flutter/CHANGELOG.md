@@ -49,6 +49,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ConvexQuery` now renders loading when it receives an optimistic clear event,
   and `hasData` represents a concrete query result even when that result is
   Convex `null`.
+- `PaginatedQueryBuilder` now uses the core paginated query's synchronous
+  current snapshot on the first build, so warm remounts can render cached pages
+  without a loading frame.
 
 ### Fixed
 

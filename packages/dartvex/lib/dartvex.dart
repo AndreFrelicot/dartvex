@@ -25,7 +25,13 @@ export 'src/storage.dart' show ConvexStorage;
 export 'src/sync/optimistic_updates.dart'
     show OptimisticLocalStore, OptimisticQueryEntry, OptimisticUpdate;
 export 'src/sync/paginated_query.dart'
-    show ConvexPaginatedQuery, ConvexPaginatedResult, ConvexPaginationStatus;
+    show
+        ConvexPaginatedQuery,
+        ConvexPaginatedResult,
+        ConvexPaginationStatus,
+        PageInitialResultReader,
+        PageSubscriber,
+        PageSubscription;
 export 'src/transport/connectivity.dart' show ConnectivitySignal;
 export 'src/transport/ws_interface.dart'
     show WebSocketAdapter, WebSocketCloseEvent;

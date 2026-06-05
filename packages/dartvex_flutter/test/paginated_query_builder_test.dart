@@ -56,6 +56,36 @@ void main() {
     expect(client.paginatedQueryCalls.single.pageSize, 2);
   });
 
+  testWidgets('seeds the first build from a warm paginated result',
+      (tester) async {
+    final client = connectedClient();
+    client.nextPaginatedInitialResult = const ConvexPaginatedResult(
+      results: <dynamic>[
+        <String, dynamic>{'id': 'warm'},
+      ],
+      status: ConvexPaginationStatus.canLoadMore,
+      isDone: false,
+    );
+    List<Map<String, dynamic>>? capturedItems;
+    PaginationStatus? capturedStatus;
+
+    await tester.pumpWidget(
+      buildPaginated(
+        client: client,
+        onBuild: (items, status) {
+          capturedItems = items;
+          capturedStatus = status;
+        },
+      ),
+    );
+
+    expect(capturedItems, <Map<String, dynamic>>[
+      <String, dynamic>{'id': 'warm'},
+    ]);
+    expect(capturedStatus, PaginationStatus.idle);
+    expect(client.paginatedQueryCalls, hasLength(1));
+  });
+
   testWidgets('renders the first page reactively', (tester) async {
     final client = connectedClient();
     List<Map<String, dynamic>>? capturedItems;
