@@ -96,9 +96,10 @@ class ConnectionStatus {
   /// "disconnected after a successful connection".
   final bool hasEverConnected;
 
-  /// The number of times the client has reconnected to the backend.
+  /// The number of times the client's WebSocket has opened successfully.
   ///
-  /// A high value signals trouble keeping a stable connection.
+  /// The first successful open reports `1`. A high value signals trouble
+  /// keeping a stable connection.
   final int connectionCount;
 
   /// The number of connection attempts since the last successful re-sync.

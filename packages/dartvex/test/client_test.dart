@@ -1719,23 +1719,23 @@ void main() {
         );
         await settle();
         expect(client.currentConnectionStatus.hasEverConnected, isTrue);
-        expect(client.currentConnectionStatus.connectionCount, 0);
+        expect(client.currentConnectionStatus.connectionCount, 1);
 
-        adapter.disconnect();
-        await waitForStatus(
-          client,
-          (status) =>
-              status.connectionCount >= 1 && status.isWebSocketConnected,
-        );
         adapter.disconnect();
         await waitForStatus(
           client,
           (status) =>
               status.connectionCount >= 2 && status.isWebSocketConnected,
         );
+        adapter.disconnect();
+        await waitForStatus(
+          client,
+          (status) =>
+              status.connectionCount >= 3 && status.isWebSocketConnected,
+        );
 
         final status = client.currentConnectionStatus;
-        expect(status.connectionCount, 2);
+        expect(status.connectionCount, 3);
         expect(status.connectionRetries, 2);
         expect(status.hasEverConnected, isTrue);
 

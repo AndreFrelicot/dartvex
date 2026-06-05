@@ -176,13 +176,14 @@ void main() {
 
       await manager.start();
       expect(manager.hasEverConnected, isTrue);
-      expect(manager.connectionCount, 0);
+      expect(manager.connectionCount, 1);
 
-      // A disconnect reconnects (zero backoff): the count tracks the reconnect
-      // and the retry index climbs because the client never re-syncs here.
+      // A disconnect reconnects (zero backoff): the count tracks successful
+      // opens, and the retry index climbs because the client never re-syncs
+      // here.
       adapter.disconnect();
       await Future<void>.delayed(const Duration(milliseconds: 10));
-      expect(manager.connectionCount, 1);
+      expect(manager.connectionCount, 2);
       expect(manager.connectionRetries, 1);
       expect(manager.hasEverConnected, isTrue);
 
@@ -336,7 +337,7 @@ void main() {
           .where((message) => message['type'] == 'Connect')
           .toList(growable: false);
       expect(connectMessages, hasLength(1));
-      expect(connectMessages.single['connectionCount'], 1);
+      expect(connectMessages.single['connectionCount'], 0);
       expect(
         connectMessages.single['lastCloseReason'],
         'WebSocket closed with code 1006',

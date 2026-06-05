@@ -298,6 +298,7 @@ class WebSocketManager {
   void _markConnected() {
     _hasEverConnected = true;
     onConnectionStateChanged(true, false);
+    _connectionCount += 1;
   }
 
   /// Forces a reconnect using [reason] as the last close reason.
@@ -770,7 +771,6 @@ class WebSocketManager {
     onConnectionStateChanged(false, false);
     await onDisconnected(reason);
     _lastCloseReason = reason;
-    _connectionCount += 1;
     _scheduleReconnect();
   }
 

@@ -89,6 +89,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- WebSocket `connectionCount` now advances only after a successful socket open,
+  so failed pre-open connection attempts no longer inflate the next `Connect`
+  frame.
 - Persistent auth rejections now reach the retry cap and report the client as
   signed out instead of resetting the confirmation-attempt counter after every
   forced token refresh.
