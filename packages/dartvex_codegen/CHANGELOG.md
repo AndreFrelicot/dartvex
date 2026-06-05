@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.5] - 2026-06-04
 
+### Fixed
+
+- Escapes literal-union enum `fromJson` error messages so literal values with
+  quotes, dollars, or newlines do not generate invalid Dart source.
+
 ### Changed
 
 - Widen the `dartvex` dev-dependency to `^0.2.0` for golden fixture validation.

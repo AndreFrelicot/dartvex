@@ -411,10 +411,12 @@ class TypeMapper {
           " return $typeName.${enumNames[index]};",
         );
       }
+      final expectedValues =
+          literals.map((literal) => _literalMessage(literal.value)).join(', ');
       enumBuffer
         ..writeln('      default:')
         ..writeln(
-          "        throw FormatException('Expected one of ${literals.map((literal) => literal.value).join(', ')} for $typeName');",
+          "        throw FormatException('Expected one of $expectedValues for $typeName');",
         )
         ..writeln('    }')
         ..writeln('  }')
@@ -555,6 +557,13 @@ class TypeMapper {
       return value.toString();
     }
     throw TypeMapperException('Unsupported literal value "$value"');
+  }
+
+  static String _literalMessage(Object? value) {
+    if (value is String) {
+      return _escapeStringLiteral(value);
+    }
+    return value.toString();
   }
 
   static String _escapeStringLiteral(String value) {

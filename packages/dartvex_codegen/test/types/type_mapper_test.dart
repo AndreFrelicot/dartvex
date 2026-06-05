@@ -237,5 +237,31 @@ void main() {
       expect(definitions, contains('fooBarValue0'));
       expect(definitions, contains('fooBarValue1'));
     });
+
+    test('escapes literal union enum error messages', () {
+      final context = TypeRenderContext();
+      final mapper = TypeMapper();
+
+      mapper.mapType(
+        const ConvexUnionType(
+          <ConvexType>[
+            ConvexLiteralType("can't"),
+            ConvexLiteralType(r'price$total'),
+            ConvexLiteralType('line1\nline2'),
+          ],
+        ),
+        suggestedName: 'SpecialStatus',
+        context: context,
+      );
+
+      final definitions = context.renderDefinitions();
+      expect(
+        definitions,
+        contains(
+          r"Expected one of can\'t, price\$total, line1\nline2 "
+          'for SpecialStatus',
+        ),
+      );
+    });
   });
 }
