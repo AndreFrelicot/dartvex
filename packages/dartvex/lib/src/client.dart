@@ -192,6 +192,15 @@ class QuerySuccess extends QueryResult {
   final bool hasPendingWrites;
 }
 
+/// Query result representing an intentionally cleared/loading value.
+class QueryLoading extends QueryResult {
+  /// Creates a loading query result.
+  const QueryLoading({this.hasPendingWrites = false});
+
+  /// Whether optimistic writes are currently affecting this query result.
+  final bool hasPendingWrites;
+}
+
 /// Query result representing an error.
 class QueryError extends QueryResult {
   /// Creates a failed query result.
@@ -617,6 +626,10 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
           completer.completeError(
             ConvexException(message, data: data, logLines: logLines),
           );
+        case QueryLoading():
+          // Keep waiting; one-shot queries resolve only on concrete success or
+          // error, matching the official client's undefined/loading semantics.
+          return;
       }
       unawaited(cancelQuerySubscription());
     });
@@ -666,6 +679,19 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       sync: true,
       onListen: () {
         scheduleMicrotask(() {
+          if (_baseClient.optimisticQueryIsLoading(name, args)) {
+            if (!controller.isClosed) {
+              controller.add(
+                QueryLoading(
+                  hasPendingWrites: _baseClient.hasOptimisticUpdateForQuery(
+                    name,
+                    args,
+                  ),
+                ),
+              );
+            }
+            return;
+          }
           final initial = _baseClient.optimisticResultForQuery(name, args) ??
               _baseClient.currentResultForQuery(registration.queryId) ??
               _baseClient.cachedResultForQuery(name, args);
@@ -1078,6 +1104,11 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
             event.queryId,
             const QueryError('Query removed'),
           );
+        case QueryLoadingEvent():
+          _emitToSubscribers(
+            event.queryId,
+            QueryLoading(hasPendingWrites: event.hasPendingWrites),
+          );
         case AuthConfirmedEvent():
           _authManager.handleAuthConfirmed();
         case AuthErrorEvent():
@@ -1144,6 +1175,11 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
         );
       } else if (event is QueryRemovedEvent) {
         _emitToSubscribers(event.queryId, const QueryError('Query removed'));
+      } else if (event is QueryLoadingEvent) {
+        _emitToSubscribers(
+          event.queryId,
+          QueryLoading(hasPendingWrites: event.hasPendingWrites),
+        );
       }
     }
   }
@@ -1281,7 +1317,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
 /// public client types. Maps each [QueryResult] to its [StoredQueryResult].
 class _PageSubscriptionAdapter implements PageSubscription {
   _PageSubscriptionAdapter(this._subscription)
-      : _results = _subscription.stream.map(_toStored);
+      : _results = _subscription.stream.asyncExpand(_toStoredEvents);
 
   final ConvexSubscription _subscription;
   final Stream<StoredQueryResult> _results;
@@ -1292,15 +1328,21 @@ class _PageSubscriptionAdapter implements PageSubscription {
   @override
   void cancel() => _subscription.cancel();
 
-  static StoredQueryResult _toStored(QueryResult result) {
+  static Stream<StoredQueryResult> _toStoredEvents(QueryResult result) {
     switch (result) {
       case QuerySuccess(:final value):
-        return StoredQuerySuccess(value: value, logLines: const <String>[]);
+        return Stream<StoredQueryResult>.value(
+          StoredQuerySuccess(value: value, logLines: const <String>[]),
+        );
+      case QueryLoading():
+        return const Stream<StoredQueryResult>.empty();
       case QueryError(:final message, :final data, :final logLines):
-        return StoredQueryError(
-          message: message,
-          data: data,
-          logLines: logLines,
+        return Stream<StoredQueryResult>.value(
+          StoredQueryError(
+            message: message,
+            data: data,
+            logLines: logLines,
+          ),
         );
     }
   }

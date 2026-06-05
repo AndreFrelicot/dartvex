@@ -157,7 +157,7 @@ void main() {
       expect(valueAt(results, token('query')), 2);
     });
 
-    test('an update can set a query to null (loading)', () {
+    test('setQuery can write a successful Convex null value', () {
       final results = OptimisticQueryResults();
       results.ingestQueryResultsFromServer(
         <String, OverlayServerQuery>{
@@ -170,7 +170,28 @@ void main() {
       results.applyOptimisticUpdate((store) {
         store.setQuery('query', const <String, dynamic>{}, null);
       }, 0);
+
+      final result = results.rawResultForToken(token('query'));
+      expect(result, isA<StoredQuerySuccess>());
+      expect((result! as StoredQuerySuccess).value, isNull);
+    });
+
+    test('clearQuery marks a query as loading', () {
+      final results = OptimisticQueryResults();
+      results.ingestQueryResultsFromServer(
+        <String, OverlayServerQuery>{
+          token('query'): serverQuery('query', 'query value'),
+        },
+        <int>{},
+      );
+      expect(valueAt(results, token('query')), 'query value');
+
+      results.applyOptimisticUpdate((store) {
+        store.clearQuery('query', const <String, dynamic>{});
+      }, 0);
+
       expect(results.rawResultForToken(token('query')), isNull);
+      expect(results.isLoadingForToken(token('query')), isTrue);
     });
 
     test('getAllQueries returns every query of a given name', () {

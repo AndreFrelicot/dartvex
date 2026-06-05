@@ -101,6 +101,74 @@ void main() {
       runtime.dispose();
       client.dispose();
     });
+
+    test('maps optimistic clear to runtime loading events', () async {
+      final adapter = _MockWebSocketAdapter();
+      final client = convex.ConvexClient(
+        'https://example.com',
+        config: convex.ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+        ),
+      );
+      final runtime = ConvexClientRuntime(client);
+      await _settle();
+
+      final subscription = runtime.subscribe('messages:list');
+      final events = <ConvexRuntimeQueryEvent>[];
+      final listener = subscription.stream.listen(events.add);
+      await _settle();
+
+      final querySet = adapter.decodedSentMessages
+          .where((message) => message['type'] == 'ModifyQuerySet')
+          .last;
+      final queryId = (((querySet['modifications'] as List<dynamic>).single
+          as Map<String, dynamic>)['queryId']) as int;
+
+      adapter.pushServerMessage(<String, dynamic>{
+        'type': 'Transition',
+        'startVersion': _version(querySet: 0, ts: 'AAAAAAAAAAA='),
+        'endVersion': _version(querySet: 1, ts: 'AQAAAAAAAAA='),
+        'modifications': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'type': 'QueryUpdated',
+            'queryId': queryId,
+            'value': <String>['a'],
+          },
+        ],
+      });
+      await _settle();
+      expect(events.last, isA<ConvexRuntimeQuerySuccess>());
+
+      final mutation = runtime.mutate(
+        'messages:send',
+        const <String, dynamic>{'body': 'b'},
+        (store) => store.clearQuery(
+          'messages:list',
+          const <String, dynamic>{},
+        ),
+      );
+      await _settle();
+
+      final loading = events.last as ConvexRuntimeQueryLoading;
+      expect(loading.source, ConvexQuerySource.cache);
+      expect(loading.hasPendingWrites, isTrue);
+
+      final mutationMessage = adapter.decodedSentMessages
+          .where((message) => message['type'] == 'Mutation')
+          .last;
+      adapter.pushServerMessage(<String, dynamic>{
+        'type': 'MutationResponse',
+        'requestId': mutationMessage['requestId'],
+        'success': false,
+        'errorMessage': 'rejected',
+      });
+
+      await expectLater(mutation, throwsA(isA<convex.ConvexException>()));
+      await listener.cancel();
+      subscription.cancel();
+      runtime.dispose();
+      client.dispose();
+    });
   });
 }
 

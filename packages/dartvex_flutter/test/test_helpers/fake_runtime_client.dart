@@ -335,6 +335,21 @@ class FakeRuntimeSubscription implements ConvexRuntimeSubscription {
     );
   }
 
+  void emitLoading({
+    ConvexQuerySource source = ConvexQuerySource.cache,
+    bool hasPendingWrites = false,
+  }) {
+    if (isCanceled) {
+      return;
+    }
+    _controller.add(
+      ConvexRuntimeQueryLoading(
+        source: source,
+        hasPendingWrites: hasPendingWrites,
+      ),
+    );
+  }
+
   @override
   void cancel() {
     if (isCanceled) {

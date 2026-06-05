@@ -636,6 +636,134 @@ void main() {
       client.dispose();
     });
 
+    test('optimistic clear emits loading to subscribers', () async {
+      final adapter = MockWebSocketAdapter();
+      final client = ConvexClient(
+        'https://example.com',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+      await settle();
+
+      final subscription =
+          client.subscribe('messages:list', const <String, dynamic>{});
+      final received = <QueryResult>[];
+      final streamSubscription = subscription.stream.listen(received.add);
+      await settle();
+
+      final querySet = adapter.decodedSentMessages
+          .where((message) => message['type'] == 'ModifyQuerySet')
+          .last;
+      final queryId = (((querySet['modifications'] as List<dynamic>).single
+          as Map<String, dynamic>)['queryId']) as int;
+
+      adapter.pushServerMessage(
+        Transition(
+          startVersion: const StateVersion.initial(),
+          endVersion: StateVersion(querySet: 1, identity: 0, ts: encodeTs(1)),
+          modifications: <StateModification>[
+            QueryUpdated(queryId: queryId, value: const <String>['server']),
+          ],
+        ).toJson(),
+      );
+      await settle();
+      expect(received.last, isA<QuerySuccess>());
+
+      final future = client.mutate(
+        'messages:send',
+        const <String, dynamic>{'body': 'pending'},
+        (store) => store.clearQuery(
+          'messages:list',
+          const <String, dynamic>{},
+        ),
+      );
+      await settle();
+
+      expect(received.last, isA<QueryLoading>());
+      expect((received.last as QueryLoading).hasPendingWrites, isTrue);
+
+      final mutation = adapter.decodedSentMessages
+          .where((message) => message['type'] == 'Mutation')
+          .last;
+      adapter.pushServerMessage(
+        MutationResponse(
+          requestId: mutation['requestId'] as int,
+          success: false,
+          errorMessage: 'rollback',
+        ).toJson(),
+      );
+      await expectLater(future, throwsA(isA<ConvexException>()));
+
+      await streamSubscription.cancel();
+      subscription.cancel();
+      client.dispose();
+    });
+
+    test('one-shot query ignores optimistic loading and waits for success',
+        () async {
+      final adapter = MockWebSocketAdapter();
+      final client = ConvexClient(
+        'https://example.com',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+      await settle();
+
+      final mutationFuture = client.mutate(
+        'messages:send',
+        const <String, dynamic>{'body': 'pending'},
+        (store) => store.clearQuery(
+          'messages:once',
+          const <String, dynamic>{},
+        ),
+      );
+      unawaited(mutationFuture.catchError((_) {}));
+      await settle();
+
+      var completed = false;
+      final queryFuture = client.query('messages:once').then((value) {
+        completed = true;
+        return value;
+      });
+      await settle();
+      expect(completed, isFalse);
+
+      final querySet = adapter.decodedSentMessages
+          .where((message) => message['type'] == 'ModifyQuerySet')
+          .last;
+      final queryId = (((querySet['modifications'] as List<dynamic>).single
+          as Map<String, dynamic>)['queryId']) as int;
+      adapter.pushServerMessage(
+        Transition(
+          startVersion: const StateVersion.initial(),
+          endVersion: StateVersion(querySet: 1, identity: 0, ts: encodeTs(1)),
+          modifications: <StateModification>[
+            QueryUpdated(queryId: queryId, value: 'ready'),
+          ],
+        ).toJson(),
+      );
+      await settle();
+      expect(completed, isFalse);
+
+      final mutation = adapter.decodedSentMessages
+          .where((message) => message['type'] == 'Mutation')
+          .last;
+      adapter.pushServerMessage(
+        MutationResponse(
+          requestId: mutation['requestId'] as int,
+          success: false,
+          errorMessage: 'rollback',
+        ).toJson(),
+      );
+      await expectLater(queryFuture, completion('ready'));
+
+      client.dispose();
+    });
+
     test('cached subscription result waits for listener attachment', () async {
       final adapter = MockWebSocketAdapter();
       final client = ConvexClient(

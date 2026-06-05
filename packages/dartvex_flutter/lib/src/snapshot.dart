@@ -56,7 +56,8 @@ class ConvexQuerySnapshot<T> {
   /// Whether existing data is being refreshed.
   final bool isRefreshing;
 
-  /// Whether [data] is non-null and should be considered usable.
+  /// Whether a concrete query value has been received. This can be true even
+  /// when [data] is `null`, because Convex `null` is a valid successful value.
   final bool hasData;
 
   /// Whether [error] contains a current error.

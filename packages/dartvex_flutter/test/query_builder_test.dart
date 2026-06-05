@@ -80,6 +80,38 @@ void main() {
     expect(snapshot.hasPendingWrites, isTrue);
   });
 
+  testWidgets('ConvexQuery renders loading events from optimistic clear', (
+    tester,
+  ) async {
+    final client = FakeRuntimeClient();
+    late ConvexQuerySnapshot<String> snapshot;
+
+    await tester.pumpWidget(
+      buildTestWidget(
+        client: client,
+        query: 'messages:list',
+        args: const <String, dynamic>{},
+        onSnapshot: (value) => snapshot = value,
+      ),
+    );
+
+    client.subscribeCalls.single.subscription.emitSuccess('hello');
+    await tester.pump();
+    expect(snapshot.hasData, isTrue);
+    expect(snapshot.isLoading, isFalse);
+
+    client.subscribeCalls.single.subscription.emitLoading(
+      hasPendingWrites: true,
+    );
+    await tester.pump();
+
+    expect(snapshot.isLoading, isTrue);
+    expect(snapshot.hasData, isFalse);
+    expect(snapshot.data, isNull);
+    expect(snapshot.hasPendingWrites, isTrue);
+    expect(find.text('empty'), findsOneWidget);
+  });
+
   testWidgets('ConvexQuery delivers error events', (tester) async {
     final client = FakeRuntimeClient();
     late ConvexQuerySnapshot<String> snapshot;

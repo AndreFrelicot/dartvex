@@ -15,6 +15,7 @@ export 'src/client.dart'
         ConvexFunctionCaller,
         ConvexSubscription,
         QueryError,
+        QueryLoading,
         QueryResult,
         QuerySuccess;
 export 'src/config.dart' show ConvexClientConfig, WebSocketAdapterFactory;

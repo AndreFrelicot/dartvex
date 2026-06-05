@@ -130,6 +130,19 @@ class _ConvexQueryState<T> extends State<ConvexQuery<T>> {
             );
           });
         }
+      case ConvexRuntimeQueryLoading():
+        setState(() {
+          _snapshot = ConvexQuerySnapshot<T>(
+            data: null,
+            error: null,
+            isLoading: true,
+            isRefreshing: false,
+            hasData: false,
+            hasError: false,
+            source: event.source,
+            hasPendingWrites: event.hasPendingWrites,
+          );
+        });
       case ConvexRuntimeQueryError(:final error):
         setState(() {
           _snapshot = _snapshot.copyWith(

@@ -86,6 +86,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   clock (a one-time wall-clock anchor plus a monotonic `Stopwatch`) instead of
   `DateTime.now()`, so elapsed-time and server clock-skew estimates stay stable
   even when the device wall clock is corrected.
+- `OptimisticLocalStore.setQuery(..., null)` now represents the real Convex
+  `null` value. Use the new `clearQuery(...)` method to optimistically return a
+  query to loading, matching the official client's `setQuery(..., undefined)`
+  behavior with an explicit Dart API.
 
 ### Fixed
 
@@ -107,6 +111,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Auth confirmations are now ignored unless a token update is actually pending,
   and reauth confirmations no longer re-emit an already-authenticated public
   state.
+- Query subscriptions now emit `QueryLoading` when an optimistic update clears a
+  live query, and one-shot queries ignore that loading state until a concrete
+  success or error arrives.
 - `AuthLoading` documentation now matches the emitted auth states: it covers
   login/cache restore, while background token refreshes remain exposed via
   `authRefreshing`.

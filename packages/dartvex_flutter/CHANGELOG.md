@@ -37,6 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   auth-refreshing state (`true` while auth is being recovered after a server
   rejection). `ConvexRuntimeClient` now exposes `authRefreshing` and
   `currentAuthRefreshing`, backed by `ConvexClient.authRefreshing`.
+- `ConvexRuntimeQueryLoading`, emitted when the core client reports an
+  optimistic query clear/loading state.
 
 ### Changed
 
@@ -44,6 +46,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   helpers (`ConvexAssetCache`, `ConvexCachedImage`, `ConvexOfflineImage`, and
   progress-download image helpers) are native-only; web apps should render
   signed storage URLs directly.
+- `ConvexQuery` now renders loading when it receives an optimistic clear event,
+  and `hasData` represents a concrete query result even when that result is
+  Convex `null`.
 
 ### Fixed
 

@@ -33,6 +33,21 @@ class QueryUpdateEvent extends BaseClientEvent {
   final bool hasPendingWrites;
 }
 
+/// Emitted when an optimistic update intentionally clears a query to loading.
+class QueryLoadingEvent extends BaseClientEvent {
+  /// Creates a [QueryLoadingEvent] for [queryId].
+  const QueryLoadingEvent({
+    required this.queryId,
+    this.hasPendingWrites = false,
+  });
+
+  /// Identifier of the query whose value is now loading.
+  final int queryId;
+
+  /// Whether optimistic writes are currently affecting this query result.
+  final bool hasPendingWrites;
+}
+
 /// Emitted when a query is removed from the active query set.
 class QueryRemovedEvent extends BaseClientEvent {
   /// Creates a [QueryRemovedEvent] for the query identified by [queryId].
@@ -438,6 +453,19 @@ class BaseClient {
     return _optimistic.rawResultForToken(token);
   }
 
+  /// Returns whether [udfPath]/[args] is explicitly loading due to an
+  /// optimistic clear.
+  bool optimisticQueryIsLoading(
+    String udfPath,
+    Map<String, dynamic> args,
+  ) {
+    final token = LocalSyncState.serializeQueryToken(
+      LocalSyncState.canonicalizeUdfPath(udfPath),
+      args,
+    );
+    return _optimistic.isLoadingForToken(token);
+  }
+
   /// Returns whether optimistic writes currently affect the query result for
   /// [udfPath] and [args].
   bool hasOptimisticUpdateForQuery(
@@ -533,10 +561,9 @@ class BaseClient {
 
   /// Maps changed overlay [tokens] to query-update events for their subscribers.
   ///
-  /// Tokens with no live subscription (an optimistic-only value) and tokens
-  /// whose overlaid result is "loading" (null) emit nothing: dartvex's query
-  /// stream has no loading state, so such queries keep their last value until a
-  /// concrete result lands.
+  /// Tokens with no live subscription emit nothing. Tokens whose overlaid
+  /// result is explicitly loading produce [QueryLoadingEvent], the Dart
+  /// equivalent of the official client's `undefined` query result.
   List<BaseClientEvent> _eventsForChangedTokens(List<String> tokens) {
     final events = <BaseClientEvent>[];
     for (final token in tokens) {
@@ -550,6 +577,13 @@ class BaseClient {
           QueryUpdateEvent(
             queryId: queryId,
             result: result,
+            hasPendingWrites: _optimistic.hasOptimisticUpdateForToken(token),
+          ),
+        );
+      } else if (_optimistic.isLoadingForToken(token)) {
+        events.add(
+          QueryLoadingEvent(
+            queryId: queryId,
             hasPendingWrites: _optimistic.hasOptimisticUpdateForToken(token),
           ),
         );

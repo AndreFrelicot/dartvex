@@ -143,6 +143,15 @@ class ConvexRuntimeQuerySuccess extends ConvexRuntimeQueryEvent {
   final List<String> logLines;
 }
 
+/// Runtime event indicating a query is currently loading.
+class ConvexRuntimeQueryLoading extends ConvexRuntimeQueryEvent {
+  /// Creates a loading query event.
+  const ConvexRuntimeQueryLoading({
+    super.source = ConvexQuerySource.cache,
+    super.hasPendingWrites = false,
+  });
+}
+
 /// Runtime event containing a query error.
 class ConvexRuntimeQueryError extends ConvexRuntimeQueryEvent {
   /// Creates a failed query event.
@@ -332,6 +341,11 @@ class _ConvexClientRuntimeSubscription implements ConvexRuntimeSubscription {
                 source: hasPendingWrites
                     ? ConvexQuerySource.cache
                     : ConvexQuerySource.remote,
+                hasPendingWrites: hasPendingWrites,
+              );
+            case convex.QueryLoading(:final hasPendingWrites):
+              return ConvexRuntimeQueryLoading(
+                source: ConvexQuerySource.cache,
                 hasPendingWrites: hasPendingWrites,
               );
             case convex.QueryError(

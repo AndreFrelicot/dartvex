@@ -48,6 +48,7 @@ export 'src/runtime_client.dart'
         ConvexRuntimePaginatedQuery,
         ConvexRuntimeQueryError,
         ConvexRuntimeQueryEvent,
+        ConvexRuntimeQueryLoading,
         ConvexRuntimeQuerySuccess,
         ConvexRuntimeSubscription;
 export 'src/snapshot.dart'

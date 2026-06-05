@@ -952,6 +952,7 @@ class _DemoOptimisticStore implements OptimisticLocalStore {
   _DemoOptimisticStore(this._values);
 
   final Map<String, Object?> _values;
+  final Set<String> _loadingQueries = <String>{};
 
   @override
   dynamic getQuery(
@@ -963,10 +964,19 @@ class _DemoOptimisticStore implements OptimisticLocalStore {
 
   @override
   List<OptimisticQueryEntry> getAllQueries(String name) {
-    final value = _values[name];
-    if (value == null) {
+    if (_loadingQueries.contains(name)) {
+      return const <OptimisticQueryEntry>[
+        OptimisticQueryEntry(
+          args: <String, dynamic>{},
+          value: null,
+          isLoading: true,
+        ),
+      ];
+    }
+    if (!_values.containsKey(name)) {
       return const <OptimisticQueryEntry>[];
     }
+    final value = _values[name];
     return <OptimisticQueryEntry>[
       OptimisticQueryEntry(args: const <String, dynamic>{}, value: value),
     ];
@@ -974,6 +984,13 @@ class _DemoOptimisticStore implements OptimisticLocalStore {
 
   @override
   void setQuery(String name, Map<String, dynamic> args, Object? value) {
+    _loadingQueries.remove(name);
     _values[name] = value;
+  }
+
+  @override
+  void clearQuery(String name, Map<String, dynamic> args) {
+    _values.remove(name);
+    _loadingQueries.add(name);
   }
 }

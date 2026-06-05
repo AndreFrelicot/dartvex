@@ -15,9 +15,10 @@ import 'remote_query_set.dart';
 abstract interface class OptimisticLocalStore {
   /// Returns the current result of the query [name] called with [args].
   ///
-  /// Returns `null` when the query is not in the client or is loading (or is in
-  /// an error state — errors are reported as loading so an update never crashes
-  /// on a single failed query).
+  /// Returns `null` when the query's value is Convex `null`, when the query is
+  /// not in the client, when it is loading, or when it is in an error state.
+  /// Use [clearQuery] rather than `setQuery(..., null)` when you need to
+  /// explicitly show loading.
   dynamic getQuery(String name,
       [Map<String, dynamic> args = const <String, dynamic>{}]);
 
@@ -25,29 +26,47 @@ abstract interface class OptimisticLocalStore {
   /// client.
   ///
   /// Useful for updates that must inspect or rewrite many instances of a query
-  /// at once (for example, every page of a paginated list). Each entry's value
-  /// is `null` when that query is loading.
+  /// at once (for example, every page of a paginated list). Each entry exposes
+  /// [OptimisticQueryEntry.isLoading] to distinguish a loading/cleared query
+  /// from a concrete Convex `null` value.
   List<OptimisticQueryEntry> getAllQueries(String name);
 
   /// Optimistically sets the result of the query [name] called with [args].
   ///
-  /// [value] may be derived from [getQuery]; pass `null` to remove the query's
-  /// value (showing it as loading) while the server recomputes it. The override
-  /// lives only until the owning mutation completes, then it is rolled back.
+  /// [value] may be derived from [getQuery]. Passing `null` now means the real
+  /// Convex `null` value. Use [clearQuery] to remove the query's value and show
+  /// loading while the server recomputes it. The override lives only until the
+  /// owning mutation completes, then it is rolled back.
   void setQuery(String name, Map<String, dynamic> args, Object? value);
+
+  /// Optimistically clears the result of the query [name] called with [args].
+  ///
+  /// This is the Dart equivalent of the official JavaScript client's
+  /// `setQuery(..., undefined)`: live subscribers see a loading event until the
+  /// server sends a concrete success or error, or until the optimistic layer is
+  /// rolled back.
+  void clearQuery(String name, Map<String, dynamic> args);
 }
 
 /// One query returned by [OptimisticLocalStore.getAllQueries]: its [args] and
-/// current [value] (`null` while loading).
+/// current [value], plus whether the query is currently loading.
 class OptimisticQueryEntry {
   /// Creates an entry pairing a query's [args] with its current [value].
-  const OptimisticQueryEntry({required this.args, required this.value});
+  const OptimisticQueryEntry({
+    required this.args,
+    required this.value,
+    this.isLoading = false,
+  });
 
   /// The arguments the query was subscribed with.
   final Map<String, dynamic> args;
 
-  /// The query's current value, or `null` if it is loading.
+  /// The query's current value. This can be `null` for either a concrete Convex
+  /// `null` or for a loading query; check [isLoading] to distinguish them.
   final Object? value;
+
+  /// Whether this entry currently represents a loading/cleared query.
+  final bool isLoading;
 }
 
 /// A temporary, local edit to query results applied while a mutation is in
@@ -105,6 +124,7 @@ class _OptimisticLocalStoreImpl implements OptimisticLocalStore {
           OptimisticQueryEntry(
             args: query.args,
             value: _queryValue(query.result),
+            isLoading: query.result == null,
           ),
         );
       }
@@ -114,11 +134,25 @@ class _OptimisticLocalStoreImpl implements OptimisticLocalStore {
 
   @override
   void setQuery(String name, Map<String, dynamic> args, Object? value) {
+    _writeQuery(
+      name,
+      args,
+      StoredQuerySuccess(value: value, logLines: const <String>[]),
+    );
+  }
+
+  @override
+  void clearQuery(String name, Map<String, dynamic> args) {
+    _writeQuery(name, args, null);
+  }
+
+  void _writeQuery(
+    String name,
+    Map<String, dynamic> args,
+    StoredQueryResult? result,
+  ) {
     final canonicalPath = LocalSyncState.canonicalizeUdfPath(name);
     final token = LocalSyncState.serializeQueryToken(canonicalPath, args);
-    final StoredQueryResult? result = value == null
-        ? null
-        : StoredQuerySuccess(value: value, logLines: const <String>[]);
     _queryResults[token] = (
       result: result,
       udfPath: canonicalPath,
@@ -221,6 +255,12 @@ class OptimisticQueryResults {
   /// or `null` if the token has no value (absent or loading).
   StoredQueryResult? rawResultForToken(String token) =>
       _queryResults[token]?.result;
+
+  /// Whether [token] is present in the overlay as an explicit loading result.
+  bool isLoadingForToken(String token) {
+    final query = _queryResults[token];
+    return query != null && query.result == null;
+  }
 
   /// Whether any optimistic update is currently active.
   bool get hasActiveUpdates => _optimisticUpdates.isNotEmpty;

@@ -31,6 +31,8 @@ Future<void> main() async {
     switch (result) {
       case QuerySuccess(:final value):
         stdout.writeln('subscription update: $value');
+      case QueryLoading():
+        stdout.writeln('subscription loading');
       case QueryError(:final message):
         stderr.writeln('subscription error: $message');
     }
