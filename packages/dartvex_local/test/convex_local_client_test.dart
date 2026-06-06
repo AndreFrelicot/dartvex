@@ -625,6 +625,49 @@ void main() {
       },
     );
 
+    test('replay rollback reapplies later pending optimistic writes', () async {
+      remoteClient.queryResults['messages:listPublic'] = <dynamic>[];
+      await localClient.query('messages:listPublic');
+      await localClient.setNetworkMode(LocalNetworkMode.offline);
+
+      await localClient.mutate('messages:sendPublic', <String, dynamic>{
+        'author': 'A',
+        'text': 'WillFail',
+      });
+      await localClient.mutate('messages:sendPublic', <String, dynamic>{
+        'author': 'B',
+        'text': 'ShouldRemainOptimistic',
+      });
+
+      remoteClient.mutationResults['messages:sendPublic'] = <Object?>[
+        const ConvexException('Validation failed', retryable: false),
+        const ConvexException('Server busy', retryable: true),
+      ];
+      remoteClient.subscriptionStreams['messages:listPublic'] =
+          Stream<LocalRemoteQueryEvent>.value(
+            const LocalRemoteQueryError(
+              ConvexException('Refresh failed', retryable: true),
+            ),
+          );
+
+      await localClient.setNetworkMode(LocalNetworkMode.auto);
+      await pumpEventQueue();
+
+      expect(localClient.currentPendingMutations, hasLength(1));
+      expect(
+        localClient.currentPendingMutations.single.args['text'],
+        'ShouldRemainOptimistic',
+      );
+
+      await localClient.setNetworkMode(LocalNetworkMode.offline);
+      final restored =
+          await localClient.query('messages:listPublic') as List<dynamic>;
+
+      expect(restored.map((message) => message['text']).toList(), <String>[
+        'ShouldRemainOptimistic',
+      ]);
+    });
+
     test(
       'replay rollback deletes optimistic-only cache through custom storage',
       () async {

@@ -1403,9 +1403,58 @@ class ConvexLocalClient {
       _log('replay:rollback-error', '$error\n$stackTrace');
       return;
     }
+    final restoredKeys = snapshots
+        .map((snapshot) => snapshot.target.key)
+        .toSet();
+    final reappliedPatches = await _reapplyPendingOptimisticPatchesForTargets(
+      restoredKeys,
+    );
+    final reappliedKeys = reappliedPatches
+        .map((patch) => patch.target.key)
+        .toSet();
     for (final snapshot in snapshots) {
-      _emitRestoredSnapshot(snapshot);
+      if (!reappliedKeys.contains(snapshot.target.key)) {
+        _emitRestoredSnapshot(snapshot);
+      }
     }
+    _emitPendingWriteUpdatesForTargets(reappliedPatches);
+  }
+
+  Future<List<LocalMutationPatch>> _reapplyPendingOptimisticPatchesForTargets(
+    Set<String> targetKeys,
+  ) async {
+    if (targetKeys.isEmpty || _pendingMutations.isEmpty) {
+      return const <LocalMutationPatch>[];
+    }
+    final reapplied = <LocalMutationPatch>[];
+    for (final pendingMutation in _pendingMutations) {
+      final operationId = pendingMutation.optimisticData?['operationId'];
+      if (operationId is! String) {
+        continue;
+      }
+      final context = LocalMutationContext(
+        operationId: operationId,
+        queuedAt: pendingMutation.createdAt,
+      );
+      final patches =
+          _buildPatches(
+                pendingMutation.mutationName,
+                pendingMutation.args,
+                context,
+              )
+              .where((patch) => targetKeys.contains(patch.target.key))
+              .toList(growable: false);
+      if (patches.isEmpty) {
+        continue;
+      }
+      try {
+        await _applyOptimisticPatches(patches);
+        reapplied.addAll(patches);
+      } catch (error, stackTrace) {
+        _log('replay:rollback-reapply-error', '$error\n$stackTrace');
+      }
+    }
+    return reapplied;
   }
 
   void _emitRestoredSnapshot(_CacheSnapshot snapshot) {

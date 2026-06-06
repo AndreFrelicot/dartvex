@@ -8,18 +8,12 @@ import 'package:test/test.dart';
 
 void main() {
   group('AuthManager', () {
-    test('scheduled refresh force-refreshes token after confirmation',
-        () async {
+    test('cached token confirmation force-refreshes immediately', () async {
       final sentTokens = <String?>[];
       final forceRefreshCalls = <bool>[];
       final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
       final manager = AuthManager(
-        // Leeway wider than the cached token's lifetime forces an immediate
-        // refetch under the exp-iat schedule, so the test stays fast.
-        config: const ConvexClientConfig(
-          connectImmediately: false,
-          refreshTokenLeewaySeconds: 7200,
-        ),
+        config: const ConvexClientConfig(connectImmediately: false),
         sendAuth: (token) async {
           sentTokens.add(token);
         },
@@ -31,8 +25,8 @@ void main() {
           forceRefreshCalls.add(forceRefresh);
           return _jwt(
             subject: forceRefresh ? 'fresh' : 'cached',
-            issuedAt: forceRefresh ? nowSeconds + 1 : nowSeconds - 3600,
-            expiresAt: forceRefresh ? nowSeconds + 3601 : nowSeconds + 1,
+            issuedAt: forceRefresh ? nowSeconds + 1 : nowSeconds,
+            expiresAt: forceRefresh ? nowSeconds + 7201 : nowSeconds + 7200,
           );
         },
       );
@@ -42,6 +36,37 @@ void main() {
       expect(forceRefreshCalls, <bool>[false, true]);
       expect(sentTokens, hasLength(2));
       expect(sentTokens.first, isNot(sentTokens.last));
+      await manager.stopRefreshing();
+    });
+
+    test('cached token refresh does not resend identical auth token', () async {
+      final sentTokens = <String?>[];
+      final forceRefreshCalls = <bool>[];
+      final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final token = _jwt(
+        subject: 'same',
+        issuedAt: nowSeconds,
+        expiresAt: nowSeconds + 7200,
+      );
+      final manager = AuthManager(
+        config: const ConvexClientConfig(connectImmediately: false),
+        sendAuth: (token) async {
+          sentTokens.add(token);
+        },
+        emitAuthState: (_) {},
+      );
+
+      await manager.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) async {
+          forceRefreshCalls.add(forceRefresh);
+          return token;
+        },
+      );
+      manager.handleAuthConfirmed();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(forceRefreshCalls, <bool>[false, true]);
+      expect(sentTokens, <String?>[token]);
       await manager.stopRefreshing();
     });
 
@@ -136,7 +161,8 @@ void main() {
       await manager.stopRefreshing();
     });
 
-    test('scheduled refresh only requires token expiration', () async {
+    test('scheduled refresh requires issued-at and expiration claims',
+        () async {
       final sentTokens = <String?>[];
       final forceRefreshCalls = <bool>[];
       final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
@@ -151,10 +177,13 @@ void main() {
       await manager.setAuthWithRefresh(
         fetchToken: ({required bool forceRefresh}) async {
           forceRefreshCalls.add(forceRefresh);
+          if (!forceRefresh) {
+            return null;
+          }
           return _jwt(
-            subject: forceRefresh ? 'fresh' : 'cached',
-            issuedAt: forceRefresh ? nowSeconds + 1 : null,
-            expiresAt: forceRefresh ? nowSeconds + 3601 : nowSeconds + 1,
+            subject: 'fresh',
+            issuedAt: null,
+            expiresAt: nowSeconds + 1,
           );
         },
       );
@@ -162,7 +191,7 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 10));
 
       expect(forceRefreshCalls, <bool>[false, true]);
-      expect(sentTokens, hasLength(2));
+      expect(sentTokens, hasLength(1));
       await manager.stopRefreshing();
     });
 
@@ -182,13 +211,18 @@ void main() {
         emitAuthState: (_) {},
       );
 
+      var forceRefreshCount = 0;
       await manager.setAuthWithRefresh(
         fetchToken: ({required bool forceRefresh}) {
           forceRefreshCalls.add(forceRefresh);
           if (!forceRefresh) {
+            return Future<String?>.value(null);
+          }
+          forceRefreshCount += 1;
+          if (forceRefreshCount == 1) {
             return Future<String?>.value(
               _jwt(
-                subject: 'cached',
+                subject: 'fresh-initial',
                 issuedAt: nowSeconds,
                 expiresAt: nowSeconds + 60,
               ),
@@ -202,7 +236,7 @@ void main() {
       final reconnect = manager.refreshAuthForReconnect();
       await Future<void>.delayed(const Duration(milliseconds: 10));
 
-      expect(forceRefreshCalls, <bool>[false, true]);
+      expect(forceRefreshCalls, <bool>[false, true, true]);
       reconnectToken.complete(
         _jwt(
           subject: 'fresh',
@@ -211,6 +245,47 @@ void main() {
         ),
       );
       await reconnect;
+      await manager.stopRefreshing();
+    });
+
+    test('auth rejection clears auth when forced refresh returns same token',
+        () async {
+      final events = <String>[];
+      const token = 'same-token';
+      final manager = AuthManager(
+        config: const ConvexClientConfig(connectImmediately: false),
+        sendAuth: (token) async => events.add('sendAuth:${token ?? 'null'}'),
+        emitAuthState: (authenticated) =>
+            events.add('authState:$authenticated'),
+        stopSocket: () async => events.add('stop'),
+        restartSocket: () async => events.add('restart'),
+      );
+
+      await manager.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) async {
+          events.add('fetch:$forceRefresh');
+          return token;
+        },
+      );
+      events.clear();
+
+      await manager.handleAuthError(
+        const AuthError(
+          error: 'expired',
+          baseVersion: 0,
+          authUpdateAttempted: true,
+        ),
+        currentAuthVersion: 1,
+      );
+
+      expect(manager.currentToken, isNull);
+      expect(events, <String>[
+        'stop',
+        'fetch:true',
+        'authState:false',
+        'sendAuth:null',
+        'restart',
+      ]);
       await manager.stopRefreshing();
     });
 
@@ -345,6 +420,7 @@ void main() {
         },
       );
       manager.handleAuthConfirmed();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
       authStates.clear();
 
       for (var i = 0; i < 6 && !authStates.contains(false); i += 1) {
@@ -360,7 +436,7 @@ void main() {
 
       expect(authStates, contains(false));
       expect(sentTokens.last, isNull);
-      expect(fetchCount, 3);
+      expect(fetchCount, 4);
       await manager.stopRefreshing();
     });
 
@@ -380,6 +456,7 @@ void main() {
         },
       );
       manager.handleAuthConfirmed();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
       authStates.clear();
 
       for (var i = 0; i < 6 && !authStates.contains(false); i += 1) {
@@ -397,7 +474,7 @@ void main() {
       await manager.refreshAuthForReconnect();
 
       expect(authStates, contains(false));
-      expect(terminalFetchCount, 3);
+      expect(terminalFetchCount, 4);
       expect(fetchCount, terminalFetchCount);
       expect(manager.currentToken, isNull);
       await manager.stopRefreshing();
@@ -457,7 +534,7 @@ void main() {
       expect(delay, const Duration(days: 20));
     });
 
-    test('falls back to the wall clock when iat is absent', () {
+    test('returns null when iat is absent', () {
       final now = DateTime.fromMillisecondsSinceEpoch(1000000 * 1000);
       final delay = AuthManager.computeRefreshDelay(
         iat: null,
@@ -465,10 +542,10 @@ void main() {
         leewaySeconds: 2,
         now: now,
       );
-      expect(delay, const Duration(milliseconds: 98000));
+      expect(delay, isNull);
     });
 
-    test('wall-clock fallback clamps to zero for an expiring token', () {
+    test('does not schedule expiring tokens without iat', () {
       final now = DateTime.fromMillisecondsSinceEpoch(1000000 * 1000);
       final delay = AuthManager.computeRefreshDelay(
         iat: null,
@@ -476,7 +553,7 @@ void main() {
         leewaySeconds: 2,
         now: now,
       );
-      expect(delay, Duration.zero);
+      expect(delay, isNull);
     });
   });
 
@@ -578,14 +655,20 @@ void main() {
         fetchToken: ({required bool forceRefresh}) async => 'unused',
       );
 
+      var forceRefreshCount = 0;
       await manager.setAuthWithRefresh(
         fetchToken: ({required bool forceRefresh}) async {
           events.add('fetch:$forceRefresh');
-          return forceRefresh ? 'fresh-token' : 'cached-token';
+          if (!forceRefresh) {
+            return 'cached-token';
+          }
+          forceRefreshCount += 1;
+          return 'fresh-token-$forceRefreshCount';
         },
       );
       // Confirm the cached token so the manager is no longer awaiting it.
       manager.handleAuthConfirmed();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
       events.clear();
 
       await manager.handleAuthError(
@@ -600,7 +683,7 @@ void main() {
 
       expect(
         events,
-        <String>['stop', 'fetch:true', 'sendAuth:fresh-token', 'restart'],
+        <String>['stop', 'fetch:true', 'sendAuth:fresh-token-2', 'restart'],
       );
     });
 
@@ -612,9 +695,14 @@ void main() {
         fetchToken: ({required bool forceRefresh}) async => 'unused',
       );
 
+      var forceRefreshCount = 0;
       await manager.setAuthWithRefresh(
         fetchToken: ({required bool forceRefresh}) async {
-          return forceRefresh ? null : 'cached-token';
+          if (!forceRefresh) {
+            return null;
+          }
+          forceRefreshCount += 1;
+          return forceRefreshCount == 1 ? 'initial-fresh-token' : null;
         },
       );
       manager.handleAuthConfirmed();
@@ -642,13 +730,18 @@ void main() {
         fetchToken: ({required bool forceRefresh}) async => 'unused',
       );
 
+      var forceRefreshCount = 0;
       await manager.setAuthWithRefresh(
         fetchToken: ({required bool forceRefresh}) async {
           events.add('fetch:$forceRefresh');
-          if (forceRefresh) {
+          if (!forceRefresh) {
+            return null;
+          }
+          forceRefreshCount += 1;
+          if (forceRefreshCount > 1) {
             throw StateError('refresh failed');
           }
-          return 'cached-token';
+          return 'initial-fresh-token';
         },
       );
       manager.handleAuthConfirmed();
@@ -684,9 +777,10 @@ void main() {
         onRefreshingChange: refreshing.add,
       );
 
+      var forceRefreshCount = 0;
       await manager.setAuthWithRefresh(
         fetchToken: ({required bool forceRefresh}) async =>
-            forceRefresh ? 'fresh' : 'cached',
+            forceRefresh ? 'fresh-${++forceRefreshCount}' : null,
       );
       manager.handleAuthConfirmed();
       // The initial token fetch is not a "refresh".
@@ -725,9 +819,10 @@ void main() {
         onRefreshingChange: refreshing.add,
       );
 
+      var forceRefreshCount = 0;
       await manager.setAuthWithRefresh(
         fetchToken: ({required bool forceRefresh}) async =>
-            forceRefresh ? 'fresh' : 'cached',
+            forceRefresh ? 'fresh-${++forceRefreshCount}' : null,
       );
       manager.handleAuthConfirmed();
       expect(authStates, <bool>[true]);

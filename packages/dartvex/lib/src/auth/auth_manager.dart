@@ -23,6 +23,8 @@ typedef AuthStateEmitter = void Function(bool isAuthenticated);
 typedef AuthTokenFetcher = Future<String?> Function(
     {required bool forceRefresh});
 
+enum _AuthConfirmationSource { none, fixed, cached, fresh }
+
 /// Coordinates auth token updates and refresh scheduling for [ConvexClient].
 class AuthManager {
   /// Creates an auth manager.
@@ -74,6 +76,8 @@ class AuthManager {
   bool _backendAuthenticated = false;
   bool _awaitingConfirmation = false;
   bool _emitAuthenticatedOnConfirmation = false;
+  _AuthConfirmationSource _pendingConfirmationSource =
+      _AuthConfirmationSource.none;
 
   static const int _maxTokenConfirmationAttempts = 2;
 
@@ -120,6 +124,7 @@ class AuthManager {
     var shouldResumeSocket = false;
     try {
       var token = await fetchToken(forceRefresh: false);
+      var confirmationSource = _AuthConfirmationSource.cached;
       if (!_isCurrentFlow(generation, fetchToken)) {
         // A newer auth flow superseded this one; it now owns the socket gating.
         return _StaleAuthHandle();
@@ -130,13 +135,14 @@ class AuthManager {
           'Cached auth token unavailable; forcing initial refresh',
         );
         token = await fetchToken(forceRefresh: true);
+        confirmationSource = _AuthConfirmationSource.fresh;
         if (!_isCurrentFlow(generation, fetchToken)) {
           return _StaleAuthHandle();
         }
       }
       shouldResumeSocket = true;
       _currentToken = token;
-      _expectConfirmationForToken(token);
+      _expectConfirmationForToken(token, source: confirmationSource);
       if (token == null) {
         _clearFailedAuthFlowAndEmitUnauthenticated();
         await sendAuth(null);
@@ -198,7 +204,10 @@ class AuthManager {
         _clearFailedAuthFlowAndEmitUnauthenticated();
         return;
       }
-      _expectConfirmationForToken(freshToken);
+      _expectConfirmationForToken(
+        freshToken,
+        source: _AuthConfirmationSource.fresh,
+      );
     } catch (error, stackTrace) {
       if (!_isCurrentFlow(generation, fetchToken)) {
         return;
@@ -230,7 +239,10 @@ class AuthManager {
     _cancelRefreshTimer();
     _authGeneration += 1;
     _currentToken = token;
-    _expectConfirmationForToken(token);
+    _expectConfirmationForToken(
+      token,
+      source: _AuthConfirmationSource.fresh,
+    );
     await sendAuth(token);
   }
 
@@ -249,6 +261,9 @@ class AuthManager {
       isAuthenticated ? 'Auth confirmed' : 'Auth confirmed without token',
     );
     final shouldEmitAuthenticated = _emitAuthenticatedOnConfirmation;
+    final confirmationSource = _pendingConfirmationSource;
+    final fetchToken = _fetchToken;
+    final generation = _authGeneration;
     _clearPendingConfirmation();
     // A confirming transition completes any in-progress reauth refresh.
     _setRefreshing(false);
@@ -261,7 +276,13 @@ class AuthManager {
     } else {
       _backendAuthenticated = true;
     }
-    if (isAuthenticated && _fetchToken != null) {
+    if (confirmationSource == _AuthConfirmationSource.cached &&
+        fetchToken != null) {
+      unawaited(_refetchTokenAfterCachedConfirmation(generation, fetchToken));
+      return;
+    }
+    if (confirmationSource == _AuthConfirmationSource.fresh &&
+        fetchToken != null) {
       _scheduleRefresh(_currentToken!);
     }
   }
@@ -317,14 +338,18 @@ class AuthManager {
     try {
       final freshToken = await fetchToken(forceRefresh: true);
       if (_isCurrentFlow(generation, fetchToken)) {
-        _currentToken = freshToken;
-        _expectConfirmationForToken(freshToken, resetAttempts: false);
-        if (freshToken == null) {
+        if (freshToken == null || !_isNewAuth(freshToken)) {
           _log(DartvexLogLevel.warn, 'Forced auth refresh returned no token');
           // The refresh could not produce a token; the reauth is over.
           _clearFailedAuthFlowAndEmitUnauthenticated();
           await sendAuth(null);
         } else {
+          _currentToken = freshToken;
+          _expectConfirmationForToken(
+            freshToken,
+            resetAttempts: false,
+            source: _AuthConfirmationSource.fresh,
+          );
           await sendAuth(freshToken);
         }
       }
@@ -367,9 +392,7 @@ class AuthManager {
   /// (refresh immediately) when the leeway meets or exceeds the lifetime, and
   /// `null` (do not schedule) for tokens that live `<= 2s`.
   ///
-  /// When `iat` is absent the lifetime is unknown, so the computation falls
-  /// back to the wall clock (`exp - now - leewaySeconds`); this is the only
-  /// clock-dependent path and is used solely for tokens that omit `iat`.
+  /// When `iat` is absent the lifetime is unknown, so no refresh is scheduled.
   /// [now] overrides the wall clock for testing.
   @visibleForTesting
   static Duration? computeRefreshDelay({
@@ -378,31 +401,22 @@ class AuthManager {
     required int leewaySeconds,
     DateTime? now,
   }) {
-    if (iat != null) {
-      final tokenValiditySeconds = exp - iat;
-      if (tokenValiditySeconds <= _minimumTokenValiditySeconds) {
-        return null;
-      }
-      var delayMs = (tokenValiditySeconds - leewaySeconds) * 1000;
-      final nowSeconds = (now ?? DateTime.now()).millisecondsSinceEpoch ~/ 1000;
-      final remainingDelayMs = (exp - nowSeconds - leewaySeconds) * 1000;
-      if (remainingDelayMs < delayMs) {
-        delayMs = remainingDelayMs;
-      }
-      if (delayMs < 0) {
-        delayMs = 0;
-      }
-      if (delayMs > _maximumRefreshDelayMs) {
-        delayMs = _maximumRefreshDelayMs;
-      }
-      return Duration(milliseconds: delayMs);
+    if (iat == null) {
+      return null;
     }
+    final tokenValiditySeconds = exp - iat;
+    if (tokenValiditySeconds <= _minimumTokenValiditySeconds) {
+      return null;
+    }
+    var delayMs = (tokenValiditySeconds - leewaySeconds) * 1000;
     final nowSeconds = (now ?? DateTime.now()).millisecondsSinceEpoch ~/ 1000;
-    var delaySeconds = exp - nowSeconds - leewaySeconds;
-    if (delaySeconds < 0) {
-      delaySeconds = 0;
+    final remainingDelayMs = (exp - nowSeconds - leewaySeconds) * 1000;
+    if (remainingDelayMs < delayMs) {
+      delayMs = remainingDelayMs;
     }
-    var delayMs = delaySeconds * 1000;
+    if (delayMs < 0) {
+      delayMs = 0;
+    }
     if (delayMs > _maximumRefreshDelayMs) {
       delayMs = _maximumRefreshDelayMs;
     }
@@ -464,14 +478,21 @@ class AuthManager {
             DartvexLogLevel.warn,
             'Scheduled auth refresh returned no token',
           );
-          _currentToken = null;
           _clearFailedAuthFlowAndEmitUnauthenticated();
           await sendAuth(null);
-        } else {
+        } else if (_isNewAuth(freshToken)) {
           _currentToken = freshToken;
-          _expectConfirmationForToken(freshToken);
+          _expectConfirmationForToken(
+            freshToken,
+            source: _AuthConfirmationSource.fresh,
+          );
           await sendAuth(freshToken);
           _log(DartvexLogLevel.debug, 'Scheduled auth refresh succeeded');
+        } else {
+          _log(
+            DartvexLogLevel.debug,
+            'Scheduled auth refresh returned the current token',
+          );
         }
       } catch (error, stackTrace) {
         if (!_isCurrentFlow(generation, fetchToken)) {
@@ -489,6 +510,52 @@ class AuthManager {
 
   bool _isCurrentFlow(int generation, AuthTokenFetcher fetchToken) {
     return generation == _authGeneration && identical(fetchToken, _fetchToken);
+  }
+
+  bool _isNewAuth(String token) => _currentToken != token;
+
+  Future<void> _refetchTokenAfterCachedConfirmation(
+    int generation,
+    AuthTokenFetcher fetchToken,
+  ) async {
+    try {
+      final freshToken = await fetchToken(forceRefresh: true);
+      if (!_isCurrentFlow(generation, fetchToken)) {
+        return;
+      }
+      if (freshToken == null) {
+        _log(
+          DartvexLogLevel.warn,
+          'Cached auth confirmation refresh returned no token',
+        );
+        _clearFailedAuthFlowAndEmitUnauthenticated();
+        await sendAuth(null);
+        return;
+      }
+      if (!_isNewAuth(freshToken)) {
+        _log(
+          DartvexLogLevel.debug,
+          'Cached auth confirmation refresh returned the current token',
+        );
+        return;
+      }
+      _currentToken = freshToken;
+      _expectConfirmationForToken(
+        freshToken,
+        source: _AuthConfirmationSource.fresh,
+      );
+      await sendAuth(freshToken);
+    } catch (error, stackTrace) {
+      if (!_isCurrentFlow(generation, fetchToken)) {
+        return;
+      }
+      _log(
+        DartvexLogLevel.error,
+        'Cached auth confirmation refresh failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
   }
 
   void _clearFailedAuthFlow() {
@@ -511,8 +578,11 @@ class AuthManager {
   void _expectConfirmationForToken(
     String? token, {
     bool resetAttempts = true,
+    _AuthConfirmationSource source = _AuthConfirmationSource.fixed,
   }) {
     _awaitingConfirmation = token != null;
+    _pendingConfirmationSource =
+        token == null ? _AuthConfirmationSource.none : source;
     if (resetAttempts) {
       _tokenConfirmationAttempts = 0;
     }
@@ -523,6 +593,7 @@ class AuthManager {
     _awaitingConfirmation = false;
     _tokenConfirmationAttempts = 0;
     _emitAuthenticatedOnConfirmation = false;
+    _pendingConfirmationSource = _AuthConfirmationSource.none;
   }
 
   Future<void> _invokePauseSocket() async {
