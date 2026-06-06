@@ -1011,6 +1011,30 @@ void main() {
       );
     });
 
+    test(
+      'replay does not treat local-prefixed user strings as local IDs',
+      () async {
+        remoteClient.queryResults['messages:listPublic'] = <dynamic>[];
+        await localClient.query('messages:listPublic');
+        await localClient.setNetworkMode(LocalNetworkMode.offline);
+
+        await localClient.mutate('messages:sendPublic', <String, dynamic>{
+          'author': 'User',
+          'text': 'local-cache',
+        });
+
+        remoteClient.mutationResults['messages:sendPublic'] = <Object?>[
+          'msg-id-2',
+        ];
+
+        await localClient.setNetworkMode(LocalNetworkMode.auto);
+        await pumpEventQueue();
+
+        expect(localClient.currentPendingMutations, isEmpty);
+        expect(remoteClient.mutationCalls.first.args['text'], 'local-cache');
+      },
+    );
+
     test('crash recovery: new client picks up persisted remaps', () async {
       await localClient.dispose();
       store = await SqliteLocalStore.openInMemory();

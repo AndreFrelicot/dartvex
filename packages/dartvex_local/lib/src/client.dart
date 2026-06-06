@@ -1066,7 +1066,7 @@ class ConvexLocalClient {
           final operationId = mutation.optimisticData?['operationId'];
           final serverId = _extractServerId(result);
           if (operationId is String &&
-              operationId.startsWith('local-') &&
+              _isGeneratedLocalId(operationId) &&
               serverId != null) {
             idRemaps[operationId] = serverId;
             await _mutationQueue.saveIdRemap(operationId, serverId);
@@ -1473,6 +1473,11 @@ class ConvexLocalClient {
     return value;
   }
 
+  static final RegExp _generatedLocalIdPattern = RegExp(r'^local-\d+-\d+$');
+
+  static bool _isGeneratedLocalId(String value) =>
+      _generatedLocalIdPattern.hasMatch(value);
+
   static List<String> _unresolvedLocalIds(
     dynamic value,
     Map<String, String> idMap,
@@ -1481,7 +1486,7 @@ class ConvexLocalClient {
 
     void visit(dynamic item) {
       if (item is String) {
-        if (item.startsWith('local-') && !idMap.containsKey(item)) {
+        if (_isGeneratedLocalId(item) && !idMap.containsKey(item)) {
           ids.add(item);
         }
         return;
