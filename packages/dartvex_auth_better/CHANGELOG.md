@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   document that cookie fallback is native-only.
 - Do not reject successful 200 Better Auth responses merely because they
   include informational `message` or `error` fields.
+- `ConvexBetterAuthProvider.login()` now reuses the session created by
+  `signUp()` when the credentials still match, avoiding an unnecessary
+  duplicate sign-in request after account creation.
+- `ConvexBetterAuthProvider.logout()` now clears cached session state even if
+  the Better Auth sign-out request fails.
 - Removes diagnostic prints that could expose Better Auth URLs, headers,
   cookies, request bodies, or tokens.
 

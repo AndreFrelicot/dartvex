@@ -123,8 +123,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reactive paginated queries now seed their first page synchronously from the
   current local/cache result when available, avoiding a loading flash on warm
   remounts.
+- Reactive paginated queries now seed split-half pages synchronously from warm
+  local/cache results when available, avoiding a loading flash after an
+  oversized page is re-split.
+- Reactive paginated queries now cancel in-flight split-half subscriptions when
+  the original page returns to loading or changes before the split completes,
+  preventing stale split results from replacing fresh data.
 - Mutations whose optimistic update throws now cancel their tracked request
   immediately, preventing the failed mutation from being sent by a later flush.
+- `ConvexClientWithAuth.logout()` now clears local auth state even if the
+  provider logout call fails, preventing a stale authenticated wrapper after a
+  best-effort sign-out.
 - `AuthLoading` documentation now matches the emitted auth states: it covers
   login/cache restore, while background token refreshes remain exposed via
   `authRefreshing`.
