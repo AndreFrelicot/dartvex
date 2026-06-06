@@ -10,6 +10,28 @@ import 'package:dartvex_flutter_demo/src/features/auth/data/demo_auth_provider.d
 import 'package:dartvex_flutter_demo/src/features/auth/presentation/auth_panel.dart';
 
 void main() {
+  test('DemoAuthProvider rejects login when no token is configured', () async {
+    final demoAuthProvider = DemoAuthProvider(
+      preferredToken: null,
+      tokenLabel: 'missing token',
+    );
+    var tokenCalls = 0;
+
+    expect(demoAuthProvider.hasConfiguredToken, isFalse);
+    await expectLater(
+      demoAuthProvider.login(
+        onIdToken: (_) {
+          tokenCalls += 1;
+        },
+      ),
+      throwsA(isA<StateError>()),
+    );
+
+    expect(tokenCalls, 0);
+    expect(demoAuthProvider.loginCalls, 1);
+    expect(demoAuthProvider.eventLog.first, contains('blocked'));
+  });
+
   Widget buildHarness({
     required FakeDemoAuthClient authClient,
     required DemoAuthProvider demoAuthProvider,
@@ -127,6 +149,50 @@ void main() {
           .enabled,
       isTrue,
     );
+  });
+
+  testWidgets('AuthPanel disables demo login when no token is configured', (
+    tester,
+  ) async {
+    final demoAuthProvider = DemoAuthProvider(
+      preferredToken: null,
+      tokenLabel: 'missing token',
+    );
+    final authClient = FakeDemoAuthClient(
+      const convex.AuthUnauthenticated<DemoUserSession>(),
+    );
+    var loginCalls = 0;
+
+    await tester.pumpWidget(
+      buildHarness(
+        authClient: authClient,
+        demoAuthProvider: demoAuthProvider,
+        onLogin: () async {
+          loginCalls += 1;
+        },
+        onLoginFromCache: () async {},
+        onLogout: () async {},
+        onForceReconnect: () async {},
+      ),
+    );
+
+    expect(find.text('Demo token missing'), findsOneWidget);
+    expect(find.text('Demo auth setup required'), findsOneWidget);
+    expect(
+      find.textContaining('no CONVEX_DEMO_AUTH_TOKEN was provided'),
+      findsOneWidget,
+    );
+    expect(find.text('Generate local demo JWT material'), findsOneWidget);
+    expect(find.text('Configure Convex with the public JWKS'), findsOneWidget);
+    expect(find.text('Launch Flutter with a generated JWT'), findsOneWidget);
+    expect(
+      tester
+          .widget<ButtonStyleButton>(find.widgetWithText(FilledButton, 'Login'))
+          .enabled,
+      isFalse,
+    );
+
+    expect(loginCalls, 0);
   });
 
   testWidgets('AuthPanel wires login and reconnect actions', (tester) async {

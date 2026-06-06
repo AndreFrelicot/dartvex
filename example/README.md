@@ -40,12 +40,24 @@ npx convex dev
 
 ## Generate a demo JWT
 
+Demo auth uses a custom JWT provider. Better Auth and the public screens work
+without this step, but the Flutter app's Demo auth mode needs a token generated
+from local key material.
+
 ```bash
 cd example/convex-backend
-npm run token
+npm run demo:key
 ```
 
-The Flutter app also includes a bundled demo token for convenience.
+The script writes the private key to gitignored `.env` and prints the matching
+`npx convex env set DEMO_JWKS ...` command. Run that command once for your
+deployment, then generate a token when launching Flutter:
+
+```bash
+npm run -s token
+```
+
+Do not commit `.env`, generated JWTs, or real deployment URLs.
 
 ## Run the Flutter app
 
@@ -56,7 +68,7 @@ flutter run \
   --dart-define=CONVEX_DEMO_URL=https://your-deployment.convex.cloud
 ```
 
-Optional auth token at startup:
+Demo auth token at startup:
 
 ```bash
 flutter run \

@@ -8,7 +8,6 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../convex_api/api.dart';
-import 'core/bundled_demo_token.dart';
 import 'core/demo_reconnect_controller.dart';
 import 'core/local_store_path.dart';
 import 'core/local_runtime_client.dart';
@@ -96,15 +95,16 @@ class _ConvexFlutterDemoAppState extends State<ConvexFlutterDemoApp> {
   String get _deploymentUrl =>
       widget.deploymentUrlOverride ?? _deploymentDefine;
 
-  String get _preferredDemoToken {
+  String? get _preferredDemoToken {
     final overrideToken = widget.initialTokenOverride?.trim();
     if (overrideToken != null && overrideToken.isNotEmpty) {
       return overrideToken;
     }
-    if (_tokenDefine.isNotEmpty) {
-      return _tokenDefine;
+    final tokenDefine = _tokenDefine.trim();
+    if (tokenDefine.isNotEmpty) {
+      return tokenDefine;
     }
-    return bundledDemoJwt;
+    return null;
   }
 
   String get _preferredTokenLabel {
@@ -112,11 +112,16 @@ class _ConvexFlutterDemoAppState extends State<ConvexFlutterDemoApp> {
     if (overrideToken != null && overrideToken.isNotEmpty) {
       return 'override token';
     }
-    if (_tokenDefine.isNotEmpty) {
+    if (_tokenDefine.trim().isNotEmpty) {
       return 'startup token';
     }
-    return 'bundled demo token';
+    return 'missing CONVEX_DEMO_AUTH_TOKEN';
   }
+
+  String get _demoAuthReadyMessage => _demoAuthProvider.hasConfiguredToken
+      ? 'Demo auth ready. Login uses $_preferredTokenLabel.'
+      : 'Demo auth needs CONVEX_DEMO_AUTH_TOKEN. Generate a local token from '
+            'example/convex-backend and pass it with --dart-define.';
 
   @override
   void initState() {
@@ -406,9 +411,7 @@ class _ConvexFlutterDemoAppState extends State<ConvexFlutterDemoApp> {
       _api = api;
       _localClient = localClient;
       _localRuntime = localRuntime;
-      _authStatus = _authMode == AuthMode.demo
-          ? 'Demo auth ready. Login uses $_preferredTokenLabel.'
-          : null;
+      _authStatus = _authMode == AuthMode.demo ? _demoAuthReadyMessage : null;
       _localAvailabilityError = localAvailabilityError;
     });
   }

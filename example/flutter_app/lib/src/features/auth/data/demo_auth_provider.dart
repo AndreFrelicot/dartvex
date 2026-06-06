@@ -43,15 +43,19 @@ class DemoUserSession {
 class DemoAuthProvider extends ChangeNotifier
     implements AuthProvider<DemoUserSession> {
   DemoAuthProvider({
-    required String preferredToken,
+    required String? preferredToken,
     required this.tokenLabel,
     DateTime Function()? now,
   }) : _preferredToken = preferredToken,
        _now = now ?? DateTime.now {
-    _appendEvent('Demo auth ready. Login uses $tokenLabel.');
+    _appendEvent(
+      hasConfiguredToken
+          ? 'Demo auth ready. Login uses $tokenLabel.'
+          : 'Demo auth token missing. Set CONVEX_DEMO_AUTH_TOKEN.',
+    );
   }
 
-  final String _preferredToken;
+  final String? _preferredToken;
   final DateTime Function() _now;
   final String tokenLabel;
   final List<String> _eventLog = <String>[];
@@ -63,6 +67,7 @@ class DemoAuthProvider extends ChangeNotifier
 
   DemoUserSession? get cachedSession => _cachedSession;
   bool get hasCachedSession => _cachedSession != null;
+  bool get hasConfiguredToken => _preferredToken?.isNotEmpty ?? false;
   int get loginCalls => _loginCalls;
   int get loginFromCacheCalls => _loginFromCacheCalls;
   int get logoutCalls => _logoutCalls;
@@ -77,8 +82,19 @@ class DemoAuthProvider extends ChangeNotifier
     required void Function(String? token) onIdToken,
   }) async {
     _loginCalls += 1;
+    final token = _preferredToken;
+    if (token == null || token.isEmpty) {
+      _appendEvent('login(): blocked because CONVEX_DEMO_AUTH_TOKEN is unset.');
+      notifyListeners();
+      throw StateError(
+        'Demo auth token is not configured. Generate one with '
+        '`cd example/convex-backend && npm run -s token` after setting '
+        'DEMO_JWKS, then pass it with '
+        '--dart-define=CONVEX_DEMO_AUTH_TOKEN=...',
+      );
+    }
     final session = DemoUserSession(
-      token: _preferredToken,
+      token: token,
       userId: 'demo-user-1',
       displayName: 'Demo User',
       issuedAt: _now().toUtc(),

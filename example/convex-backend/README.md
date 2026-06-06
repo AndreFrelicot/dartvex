@@ -8,7 +8,8 @@ It exposes:
 - authenticated queries and mutations
 - a simple action
 - Better Auth backed by Convex
-- an optional custom JWT auth provider for integration tests
+- an optional custom JWT auth provider for the Flutter Demo auth mode and
+  integration tests
 
 ## Install
 
@@ -20,7 +21,8 @@ npm install
 ## Optional demo JWT provider
 
 Better Auth works without this step. Use the custom JWT provider only when you
-want to run the SDK auth integration tests with a static token.
+want to run the Flutter app's Demo auth mode or the SDK auth integration tests
+with a static token.
 
 Generate local demo JWT material:
 
@@ -36,7 +38,8 @@ deployment:
 npx convex env set DEMO_JWKS '<value printed by npm run demo:key>'
 ```
 
-Do not commit `.env`; it is gitignored.
+Do not commit `.env`; it is gitignored and contains the private key. Only the
+public `DEMO_JWKS` value belongs in the Convex deployment environment.
 If `.env` already exists and you want to replace the demo keypair, run
 `npm run demo:key -- --force`.
 
@@ -69,3 +72,12 @@ npm run token
 
 The generated token is valid for the custom JWT provider configured in
 `convex/auth.config.ts` when `DEMO_JWKS` is configured in Convex.
+
+Pass it to the Flutter demo with:
+
+```bash
+cd ../flutter_app
+flutter run \
+  --dart-define=CONVEX_DEMO_URL=https://your-deployment.convex.cloud \
+  --dart-define=CONVEX_DEMO_AUTH_TOKEN="$(cd ../convex-backend && npm run -s token)"
+```

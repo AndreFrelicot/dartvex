@@ -54,6 +54,10 @@ class AuthPanel extends StatelessWidget {
                 'Local demo provider. Reconnect drops the socket so silent '
                 'refresh becomes visible.',
           ),
+          if (!demoAuthProvider.hasConfiguredToken) ...<Widget>[
+            const SizedBox(height: 12),
+            const _DemoAuthSetupGuide(),
+          ],
           if (authStatus != null) ...<Widget>[
             const SizedBox(height: 12),
             InlineNotice(
@@ -133,6 +137,20 @@ class AuthPanel extends StatelessWidget {
                         AnimatedBuilder(
                           animation: demoAuthProvider,
                           builder: (context, _) => _StatusPill(
+                            label: demoAuthProvider.hasConfiguredToken
+                                ? 'Demo token ready'
+                                : 'Demo token missing',
+                            backgroundColor: demoAuthProvider.hasConfiguredToken
+                                ? const Color(0xFF0D3D37)
+                                : const Color(0xFF54340E),
+                            foregroundColor: demoAuthProvider.hasConfiguredToken
+                                ? ConciergeColors.success
+                                : ConciergeColors.warning,
+                          ),
+                        ),
+                        AnimatedBuilder(
+                          animation: demoAuthProvider,
+                          builder: (context, _) => _StatusPill(
                             label: demoAuthProvider.hasCachedSession
                                 ? 'Session cached'
                                 : 'No session cache',
@@ -149,11 +167,14 @@ class AuthPanel extends StatelessWidget {
                     const SizedBox(height: 16),
                     ConvexConnectionBuilder(
                       builder: (context, connectionState) {
+                        final canLogin =
+                            !isLoading && demoAuthProvider.hasConfiguredToken;
                         final canUseCache =
                             !isLoading && demoAuthProvider.hasCachedSession;
                         final canLogout = !isLoading && isAuthenticated;
                         final canForceReconnect =
                             !isLoading &&
+                            demoAuthProvider.hasConfiguredToken &&
                             connectionState == ConvexConnectionState.connected;
 
                         return Wrap(
@@ -161,7 +182,7 @@ class AuthPanel extends StatelessWidget {
                           runSpacing: 12,
                           children: <Widget>[
                             FilledButton(
-                              onPressed: isLoading ? null : onLogin,
+                              onPressed: canLogin ? onLogin : null,
                               child: Text(
                                 isLoading ? 'Logging in...' : 'Login',
                               ),
@@ -265,6 +286,205 @@ class AuthPanel extends StatelessWidget {
               ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _DemoAuthSetupGuide extends StatelessWidget {
+  const _DemoAuthSetupGuide();
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF54340E).withValues(alpha: 0.58),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: ConciergeColors.warning.withValues(alpha: 0.28),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const Icon(
+                Icons.key_off_rounded,
+                color: ConciergeColors.warning,
+                size: 20,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      'Demo auth setup required',
+                      style: textTheme.titleSmall?.copyWith(
+                        color: ConciergeColors.warning,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Login is disabled because no CONVEX_DEMO_AUTH_TOKEN was '
+                      'provided. Public tabs and Better Auth do not need this '
+                      'token.',
+                      style: textTheme.bodySmall?.copyWith(
+                        color: ConciergeColors.text,
+                        height: 1.35,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          const _SetupStep(
+            number: '1',
+            title: 'Generate local demo JWT material',
+            body:
+                'This creates a gitignored .env file containing the private '
+                'key and prints the public JWKS command.',
+            command: 'cd example/convex-backend && npm run demo:key',
+          ),
+          const SizedBox(height: 12),
+          const _SetupStep(
+            number: '2',
+            title: 'Configure Convex with the public JWKS',
+            body:
+                'Run the printed npx convex env set DEMO_JWKS ... command. '
+                'Only the public JWKS goes to Convex; the private key stays '
+                'local.',
+          ),
+          const SizedBox(height: 12),
+          const _SetupStep(
+            number: '3',
+            title: 'Launch Flutter with a generated JWT',
+            body:
+                'After restart, the Demo Login button enables and signs the '
+                'demo viewer with ConvexClientWithAuth.',
+            command:
+                'flutter run --dart-define=CONVEX_DEMO_URL=https://your-deployment.convex.cloud '
+                r'--dart-define=CONVEX_DEMO_AUTH_TOKEN="$(cd ../convex-backend && npm run -s token)"',
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'No default private key or bundled JWT is shipped with this repo.',
+            style: textTheme.bodySmall?.copyWith(
+              color: ConciergeColors.warning,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SetupStep extends StatelessWidget {
+  const _SetupStep({
+    required this.number,
+    required this.title,
+    required this.body,
+    this.command,
+  });
+
+  final String number;
+  final String title;
+  final String body;
+  final String? command;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Container(
+          width: 24,
+          height: 24,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: ConciergeColors.warning.withValues(alpha: 0.16),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: ConciergeColors.warning.withValues(alpha: 0.28),
+            ),
+          ),
+          child: Text(
+            number,
+            style: textTheme.labelSmall?.copyWith(
+              color: ConciergeColors.warning,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                title,
+                style: textTheme.bodyMedium?.copyWith(
+                  color: ConciergeColors.text,
+                  fontWeight: FontWeight.w800,
+                  height: 1.25,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                body,
+                style: textTheme.bodySmall?.copyWith(
+                  color: ConciergeColors.textMuted,
+                  height: 1.35,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (command != null) ...<Widget>[
+                const SizedBox(height: 8),
+                _CommandLine(command!),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CommandLine extends StatelessWidget {
+  const _CommandLine(this.command);
+
+  final String command;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: ConciergeColors.surfaceLowest.withValues(alpha: 0.52),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: ConciergeColors.warning.withValues(alpha: 0.16),
+        ),
+      ),
+      child: SelectableText(
+        command,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: ConciergeColors.cyanSoft,
+          fontFamily: 'monospace',
+          height: 1.35,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
