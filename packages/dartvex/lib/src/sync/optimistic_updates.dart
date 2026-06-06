@@ -224,13 +224,20 @@ class OptimisticQueryResults {
       ..addAll(optimisticTokens);
 
     // Shallow identity comparison: an unchanged server query keeps the same
-    // StoredQueryResult instance across transitions, so only genuinely changed
-    // (or newly optimistic) tokens are reported.
+    // StoredQueryResult instance across transitions, so only genuinely changed,
+    // newly optimistic, or removed optimistic-only tokens are reported.
     final changedQueries = <String>[];
-    for (final entry in _queryResults.entries) {
-      final oldQuery = oldQueryResults[entry.key];
-      if (oldQuery == null || !identical(oldQuery.result, entry.value.result)) {
-        changedQueries.add(entry.key);
+    final allTokens = <String>{
+      ...oldQueryResults.keys,
+      ..._queryResults.keys,
+    };
+    for (final token in allTokens) {
+      final oldQuery = oldQueryResults[token];
+      final newQuery = _queryResults[token];
+      if (oldQuery == null ||
+          newQuery == null ||
+          !identical(oldQuery.result, newQuery.result)) {
+        changedQueries.add(token);
       }
     }
     return changedQueries;

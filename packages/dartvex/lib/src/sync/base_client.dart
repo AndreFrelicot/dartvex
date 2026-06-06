@@ -590,9 +590,9 @@ class BaseClient {
 
   /// Maps changed overlay [tokens] to query-update events for their subscribers.
   ///
-  /// Tokens with no live subscription emit nothing. Tokens whose overlaid
-  /// result is explicitly loading produce [QueryLoadingEvent], the Dart
-  /// equivalent of the official client's `undefined` query result.
+  /// Tokens with no live subscription emit nothing. Tokens without an effective
+  /// overlaid result produce [QueryLoadingEvent], the Dart equivalent of the
+  /// official client's `undefined` query result.
   List<BaseClientEvent> _eventsForChangedTokens(List<String> tokens) {
     final events = <BaseClientEvent>[];
     for (final token in tokens) {
@@ -609,7 +609,7 @@ class BaseClient {
             hasPendingWrites: _optimistic.hasOptimisticUpdateForToken(token),
           ),
         );
-      } else if (_optimistic.isLoadingForToken(token)) {
+      } else {
         events.add(
           QueryLoadingEvent(
             queryId: queryId,

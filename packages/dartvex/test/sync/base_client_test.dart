@@ -816,6 +816,43 @@ void main() {
       await expectLater(request.future, throwsA(isA<ConvexException>()));
     });
 
+    test('rolls back optimistic-only value to loading when mutation fails',
+        () async {
+      final client = BaseClient();
+      final registration =
+          client.subscribe('messages:list', const <String, dynamic>{});
+      client.drainOutgoing();
+      final request = client.trackMutation(
+        'messages:send',
+        const <String, dynamic>{'body': 'b'},
+      );
+      client.drainOutgoing();
+
+      final optimistic = client.applyOptimisticUpdate(
+        append('b'),
+        request.requestId,
+      );
+      expect(
+        listOf(optimistic.whereType<QueryUpdateEvent>().single),
+        <String>['b'],
+      );
+
+      final expectation =
+          expectLater(request.future, throwsA(isA<ConvexException>()));
+      final result = client.receive(
+        MutationResponse(
+          requestId: request.requestId,
+          success: false,
+          errorMessage: 'rejected',
+        ),
+      );
+
+      final event = result.events.whereType<QueryLoadingEvent>().single;
+      expect(event.queryId, registration.queryId);
+      expect(event.hasPendingWrites, isFalse);
+      await expectation;
+    });
+
     test('rolls back the layer when its mutation is canceled', () async {
       final (client, queryId) = seeded(<String>['a']);
       final request = client.trackMutation(
