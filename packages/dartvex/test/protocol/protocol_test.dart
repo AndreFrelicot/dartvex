@@ -105,7 +105,11 @@ void main() {
         errorMessage: 'act failed',
       ),
       const Ping(),
-      const AuthError(error: 'bad token', baseVersion: 3),
+      const AuthError(
+        error: 'bad token',
+        baseVersion: 3,
+        authUpdateAttempted: true,
+      ),
       const FatalError(error: 'fatal'),
     ];
 
@@ -250,6 +254,75 @@ void main() {
         'name': 'Admin User',
       });
       expect(message.toJson(), json);
+    });
+
+    test('MutationResponse success requires a server timestamp on the wire',
+        () {
+      expect(
+        () => ServerMessage.fromJson(const <String, dynamic>{
+          'type': 'MutationResponse',
+          'requestId': 1,
+          'success': true,
+          'result': 'ok',
+          'logLines': <String>[],
+        }),
+        throwsFormatException,
+      );
+      expect(
+        () => const MutationResponse(
+          requestId: 1,
+          success: true,
+          result: 'ok',
+        ).toJson(),
+        throwsStateError,
+      );
+    });
+
+    test('MutationResponse failure rejects a server timestamp on the wire', () {
+      expect(
+        () => ServerMessage.fromJson(<String, dynamic>{
+          'type': 'MutationResponse',
+          'requestId': 1,
+          'success': false,
+          'result': 'boom',
+          'ts': encodeTs(1),
+          'logLines': const <String>[],
+        }),
+        throwsFormatException,
+      );
+      expect(
+        () => MutationResponse(
+          requestId: 1,
+          success: false,
+          errorMessage: 'boom',
+          ts: encodeTs(1),
+        ).toJson(),
+        throwsStateError,
+      );
+    });
+
+    test('AuthError requires authUpdateAttempted on the wire', () {
+      expect(
+        () => ServerMessage.fromJson(const <String, dynamic>{
+          'type': 'AuthError',
+          'error': 'bad token',
+          'baseVersion': 3,
+        }),
+        throwsFormatException,
+      );
+      expect(
+        const AuthError(
+          error: 'bad token',
+          baseVersion: 3,
+          authUpdateAttempted: false,
+        ).toJson(),
+        const <String, dynamic>{
+          'type': 'AuthError',
+          'error': 'bad token',
+          'baseVersion': 3,
+          'authUpdateAttempted': false,
+        },
+      );
     });
 
     test('new optional protocol fields are omitted when unset', () {

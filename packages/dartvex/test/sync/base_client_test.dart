@@ -362,7 +362,11 @@ void main() {
     test('auth error produces auth error event', () {
       final client = BaseClient();
       final result = client.receive(
-        const AuthError(error: 'expired', baseVersion: 0),
+        const AuthError(
+          error: 'expired',
+          baseVersion: 0,
+          authUpdateAttempted: true,
+        ),
       );
       expect(result.events.single, isA<AuthErrorEvent>());
     });

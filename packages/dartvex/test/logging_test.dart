@@ -122,7 +122,15 @@ void main() {
           requestId: mutation['requestId'] as int,
           success: true,
           result: const <String, dynamic>{'ok': true},
+          ts: encodeTs(4),
           logLines: const <String>['server log 1', 'server log 2'],
+        ).toJson(),
+      );
+      adapter.pushServerMessage(
+        Transition(
+          startVersion: const StateVersion.initial(),
+          endVersion: StateVersion(querySet: 0, identity: 0, ts: encodeTs(4)),
+          modifications: const <StateModification>[],
         ).toJson(),
       );
 
@@ -229,7 +237,15 @@ void main() {
           requestId: mutation['requestId'] as int,
           success: true,
           result: 'ok',
+          ts: encodeTs(4),
           logLines: const <String>['server log'],
+        ).toJson(),
+      );
+      adapter.pushServerMessage(
+        Transition(
+          startVersion: const StateVersion.initial(),
+          endVersion: StateVersion(querySet: 0, identity: 0, ts: encodeTs(4)),
+          modifications: const <StateModification>[],
         ).toJson(),
       );
 

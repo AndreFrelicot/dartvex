@@ -2176,6 +2176,14 @@ void main() {
             requestId: mutation['requestId'] as int,
             success: true,
             result: 'ok',
+            ts: encodeTs(4),
+          ).toJson(),
+        );
+        adapter.pushServerMessage(
+          Transition(
+            startVersion: const StateVersion.initial(),
+            endVersion: StateVersion(querySet: 0, identity: 0, ts: encodeTs(4)),
+            modifications: const <StateModification>[],
           ).toJson(),
         );
         adapter.pushServerMessage(

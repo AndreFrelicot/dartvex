@@ -707,6 +707,17 @@ class MutationResponse extends ResponseMessage {
   /// Deserializes a [MutationResponse] from JSON.
   factory MutationResponse.fromJson(Map<String, dynamic> json) {
     final success = json['success'] as bool;
+    final ts = json['ts'];
+    if (success && ts is! String) {
+      throw const FormatException(
+        'MutationResponse success is missing required string field "ts".',
+      );
+    }
+    if (!success && ts != null) {
+      throw const FormatException(
+        'MutationResponse failure must not include field "ts".',
+      );
+    }
     return MutationResponse(
       requestId: json['requestId'] as int,
       success: success,
@@ -719,12 +730,13 @@ class MutationResponse extends ResponseMessage {
           : null,
       logLines: (json['logLines'] as List<dynamic>? ?? const <dynamic>[])
           .cast<String>(),
-      ts: json['ts'] as String?,
+      ts: ts as String?,
     );
   }
 
   @override
   Map<String, dynamic> toJson() {
+    final ts = _validatedTsForJson();
     return <String, dynamic>{
       'type': 'MutationResponse',
       'requestId': requestId,
@@ -734,6 +746,22 @@ class MutationResponse extends ResponseMessage {
       if (errorData != null) 'errorData': convexToJson(errorData),
       'logLines': logLines,
     };
+  }
+
+  String? _validatedTsForJson() {
+    if (success) {
+      final value = ts;
+      if (value == null) {
+        throw StateError(
+          'MutationResponse success requires a server timestamp "ts".',
+        );
+      }
+      return value;
+    }
+    if (ts != null) {
+      throw StateError('MutationResponse failure must not include "ts".');
+    }
+    return null;
   }
 }
 
@@ -807,7 +835,7 @@ class AuthError extends ServerMessage {
   const AuthError({
     required this.error,
     required this.baseVersion,
-    this.authUpdateAttempted,
+    required this.authUpdateAttempted,
   });
 
   /// Human-readable description of the authentication error.
@@ -817,14 +845,20 @@ class AuthError extends ServerMessage {
   final int baseVersion;
 
   /// Whether the server attempted to apply an auth update before failing.
-  final bool? authUpdateAttempted;
+  final bool authUpdateAttempted;
 
   /// Deserializes an [AuthError] from JSON.
   factory AuthError.fromJson(Map<String, dynamic> json) {
+    final authUpdateAttempted = json['authUpdateAttempted'];
+    if (authUpdateAttempted is! bool) {
+      throw const FormatException(
+        'AuthError is missing required bool field "authUpdateAttempted".',
+      );
+    }
     return AuthError(
       error: json['error'] as String,
       baseVersion: json['baseVersion'] as int,
-      authUpdateAttempted: json['authUpdateAttempted'] as bool?,
+      authUpdateAttempted: authUpdateAttempted,
     );
   }
 
@@ -834,8 +868,7 @@ class AuthError extends ServerMessage {
       'type': 'AuthError',
       'error': error,
       'baseVersion': baseVersion,
-      if (authUpdateAttempted != null)
-        'authUpdateAttempted': authUpdateAttempted,
+      'authUpdateAttempted': authUpdateAttempted,
     };
   }
 }
