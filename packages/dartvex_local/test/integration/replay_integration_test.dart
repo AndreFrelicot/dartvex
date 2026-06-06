@@ -10,6 +10,7 @@
 //   CONVEX_DEPLOYMENT_URL=https://your.convex.cloud \
 //     dart test test/integration/replay_integration_test.dart
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:dartvex/dartvex.dart';
@@ -119,12 +120,25 @@ void main() {
       await localClient.setNetworkMode(LocalNetworkMode.auto);
       await waitForQueueToDrain(localClient);
 
-      // Both messages should exist on the server.
-      final messages = await fetchRemoteMessages(deploymentUrl!);
-      final hasFirst = messages.any((m) => m is Map && m['text'] == tag1);
-      final hasSecond = messages.any((m) => m is Map && m['text'] == tag2);
-      expect(hasFirst, isTrue, reason: 'First queued mutation should exist');
-      expect(hasSecond, isTrue, reason: 'Second queued mutation should exist');
+      // The demo backend lists newest messages first. Since the second queued
+      // mutation is replayed after the first, it should appear first remotely.
+      final messages = await waitForRemoteMessages(
+        deploymentUrl!,
+        (items) =>
+            _messageIndex(items, tag1) >= 0 && _messageIndex(items, tag2) >= 0,
+        reason: 'Both queued mutations should exist on the server.',
+      );
+      final firstIndex = _messageIndex(messages, tag1);
+      final secondIndex = _messageIndex(messages, tag2);
+      expect(firstIndex, isNonNegative);
+      expect(secondIndex, isNonNegative);
+      expect(
+        secondIndex,
+        lessThan(firstIndex),
+        reason:
+            'messages:listPublic returns newest messages first, so the '
+            'second replayed mutation should appear before the first.',
+      );
     });
   });
 }
@@ -155,6 +169,32 @@ Future<List<dynamic>> fetchRemoteMessages(String deploymentUrl) async {
   } finally {
     verificationClient.dispose();
   }
+}
+
+Future<List<dynamic>> waitForRemoteMessages(
+  String deploymentUrl,
+  bool Function(List<dynamic> messages) predicate, {
+  required String reason,
+}) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 30));
+  var lastMessages = <dynamic>[];
+
+  while (DateTime.now().isBefore(deadline)) {
+    final messages = await fetchRemoteMessages(deploymentUrl);
+    lastMessages = messages;
+    if (predicate(messages)) {
+      return messages;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+  }
+
+  throw StateError('$reason Last messages: $lastMessages');
+}
+
+int _messageIndex(List<dynamic> messages, String text) {
+  return messages.indexWhere((message) {
+    return message is Map && message['text'] == text;
+  });
 }
 
 class _SendPublicHandler extends LocalMutationHandler {
