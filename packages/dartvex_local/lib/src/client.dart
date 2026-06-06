@@ -720,7 +720,12 @@ class ConvexLocalClient {
       createdAt: context.queuedAt,
     );
 
-    await _applyOptimisticPatches(patches);
+    try {
+      await _applyOptimisticPatches(patches);
+    } catch (_) {
+      await _mutationQueue.remove(pendingMutation.id);
+      rethrow;
+    }
     _pendingMutations = await _mutationQueue.loadAll();
     _rebuildPendingWriteCounts();
     _pendingMutationsController.add(currentPendingMutations);
@@ -1304,16 +1309,52 @@ class ConvexLocalClient {
   }
 
   Future<void> _applyOptimisticPatches(List<LocalMutationPatch> patches) async {
-    for (final patch in patches) {
-      final cached = await _queryCache.read(
-        patch.target.name,
-        patch.target.args,
-      );
-      final nextValue = patch.apply(cached?.value);
+    final snapshots = <String, _CacheSnapshot>{};
+    final workingValues = <String, dynamic>{};
+    final updates = <String, _CacheUpdate>{};
+    try {
+      for (final patch in patches) {
+        final key = patch.target.key;
+        snapshots[key] ??= _CacheSnapshot(
+          target: patch.target,
+          entry: await _queryCache.read(patch.target.name, patch.target.args),
+        );
+        final currentValue = workingValues.containsKey(key)
+            ? workingValues[key]
+            : snapshots[key]?.entry?.value;
+        final nextValue = patch.apply(currentValue);
+        workingValues[key] = nextValue;
+        updates[key] = _CacheUpdate(target: patch.target, value: nextValue);
+      }
+      for (final update in updates.values) {
+        await _queryCache.write(
+          name: update.target.name,
+          args: update.target.args,
+          value: update.value,
+        );
+      }
+    } catch (_) {
+      await _restoreOptimisticPatchSnapshots(snapshots.values);
+      rethrow;
+    }
+  }
+
+  Future<void> _restoreOptimisticPatchSnapshots(
+    Iterable<_CacheSnapshot> snapshots,
+  ) async {
+    final maintenance = _config.cacheStorage is CacheStorageMaintenance
+        ? _config.cacheStorage as CacheStorageMaintenance
+        : null;
+    for (final snapshot in snapshots) {
+      final entry = snapshot.entry;
+      if (entry == null) {
+        await maintenance?.deleteCacheEntry(snapshot.target.key);
+        continue;
+      }
       await _queryCache.write(
-        name: patch.target.name,
-        args: patch.target.args,
-        value: nextValue,
+        name: snapshot.target.name,
+        args: snapshot.target.args,
+        value: entry.value,
       );
     }
   }
@@ -1575,6 +1616,20 @@ class _LocalQueryState {
   final Set<int> subscriberIds = <int>{};
   LocalRemoteSubscription? remoteSubscription;
   StreamSubscription<LocalRemoteQueryEvent>? remoteEventSubscription;
+}
+
+class _CacheSnapshot {
+  const _CacheSnapshot({required this.target, required this.entry});
+
+  final LocalQueryDescriptor target;
+  final CachedQueryEntry? entry;
+}
+
+class _CacheUpdate {
+  const _CacheUpdate({required this.target, required this.value});
+
+  final LocalQueryDescriptor target;
+  final dynamic value;
 }
 
 class _LocalSubscriptionState {

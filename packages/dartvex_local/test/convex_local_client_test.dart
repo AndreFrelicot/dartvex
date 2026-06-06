@@ -723,6 +723,60 @@ void main() {
       },
     );
 
+    test('patch failure removes the queued mutation', () async {
+      await localClient.dispose();
+      store = await SqliteLocalStore.openInMemory();
+      remoteClient = FakeRemoteClient();
+      localClient = await ConvexLocalClient.openWithRemote(
+        remoteClient: remoteClient,
+        config: LocalClientConfig(
+          cacheStorage: store,
+          queueStorage: store,
+          mutationHandlers: const <LocalMutationHandler>[
+            ThrowingPatchMutationHandler(),
+          ],
+        ),
+      );
+      await localClient.setNetworkMode(LocalNetworkMode.offline);
+
+      await expectLater(
+        localClient.mutate('tasks:throwPatch', <String, dynamic>{}),
+        throwsStateError,
+      );
+
+      expect(localClient.currentPendingMutations, isEmpty);
+      expect(await store.loadAll(), isEmpty);
+    });
+
+    test('patch failure rolls back earlier cache writes', () async {
+      await localClient.dispose();
+      store = await SqliteLocalStore.openInMemory();
+      remoteClient = FakeRemoteClient();
+      localClient = await ConvexLocalClient.openWithRemote(
+        remoteClient: remoteClient,
+        config: LocalClientConfig(
+          cacheStorage: store,
+          queueStorage: store,
+          mutationHandlers: const <LocalMutationHandler>[
+            PartiallyThrowingPatchMutationHandler(),
+          ],
+        ),
+      );
+      await localClient.setNetworkMode(LocalNetworkMode.offline);
+
+      await expectLater(
+        localClient.mutate('tasks:partialThrowPatch', <String, dynamic>{}),
+        throwsStateError,
+      );
+
+      expect(localClient.currentPendingMutations, isEmpty);
+      expect(await store.loadAll(), isEmpty);
+      expect(
+        await store.read(const LocalQueryDescriptor('tasks:list').key),
+        isNull,
+      );
+    });
+
     test('handler patch applies even when no cached query exists', () async {
       // No cache seeded — patch will get null as currentValue.
       await localClient.setNetworkMode(LocalNetworkMode.offline);
@@ -1714,6 +1768,50 @@ class AdvanceTaskHandler extends LocalMutationHandler {
       LocalMutationPatch(
         target: const LocalQueryDescriptor('tasks:list'),
         apply: (currentValue) => currentValue,
+      ),
+    ];
+  }
+}
+
+class ThrowingPatchMutationHandler extends LocalMutationHandler {
+  const ThrowingPatchMutationHandler();
+
+  @override
+  String get mutationName => 'tasks:throwPatch';
+
+  @override
+  List<LocalMutationPatch> buildPatches(
+    Map<String, dynamic> args,
+    LocalMutationContext context,
+  ) {
+    return <LocalMutationPatch>[
+      LocalMutationPatch(
+        target: const LocalQueryDescriptor('tasks:list'),
+        apply: (_) => throw StateError('patch failed'),
+      ),
+    ];
+  }
+}
+
+class PartiallyThrowingPatchMutationHandler extends LocalMutationHandler {
+  const PartiallyThrowingPatchMutationHandler();
+
+  @override
+  String get mutationName => 'tasks:partialThrowPatch';
+
+  @override
+  List<LocalMutationPatch> buildPatches(
+    Map<String, dynamic> args,
+    LocalMutationContext context,
+  ) {
+    return <LocalMutationPatch>[
+      LocalMutationPatch(
+        target: const LocalQueryDescriptor('tasks:list'),
+        apply: (_) => const <dynamic>['optimistic'],
+      ),
+      LocalMutationPatch(
+        target: const LocalQueryDescriptor('tasks:stats'),
+        apply: (_) => throw StateError('second patch failed'),
       ),
     ];
   }
