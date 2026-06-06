@@ -222,6 +222,53 @@ void main() {
       authClient.dispose();
     });
 
+    test('logout clears local auth even when the provider logout fails',
+        () async {
+      final adapter = MockWebSocketAdapter();
+      final provider = FakeAuthProvider(
+        loginSession: const FakeAuthSession(
+          userInfo: 'alice',
+          token: 'login-token',
+        ),
+        cachedSession: const FakeAuthSession(
+          userInfo: 'alice',
+          token: 'cached-token',
+        ),
+      );
+      final client = ConvexClient(
+        'https://demo.convex.cloud',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+      final authClient = client.withAuth<FakeAuthSession>(provider);
+
+      await authClient.login();
+      await waitForAuthMessage(
+        adapter,
+        where: (message) => message['value'] == 'login-token',
+        reason: 'initial auth message',
+      );
+      provider.throwOnLogout = true;
+
+      await expectLater(authClient.logout(), throwsStateError);
+      final resetMessage = await waitForAuthMessage(
+        adapter,
+        where: (message) => message['tokenType'] == 'None',
+        reason: 'logout auth reset after provider failure',
+      );
+
+      expect(provider.logoutCalls, 1);
+      expect(resetMessage['tokenType'], 'None');
+      expect(
+        authClient.currentAuthState,
+        isA<AuthUnauthenticated<FakeAuthSession>>(),
+      );
+
+      authClient.dispose();
+    });
+
     test('reconnect with provider auth forces one cached refresh', () async {
       final adapter = MockWebSocketAdapter();
       final provider = FakeAuthProvider(
@@ -345,12 +392,14 @@ class FakeAuthProvider implements AuthProvider<FakeAuthSession> {
     required this.cachedSession,
     this.throwOnLogin = false,
     this.throwOnLoginFromCache = false,
+    this.throwOnLogout = false,
   });
 
   final FakeAuthSession loginSession;
   final FakeAuthSession cachedSession;
   bool throwOnLogin;
   bool throwOnLoginFromCache;
+  bool throwOnLogout;
 
   int loginCalls = 0;
   int loginFromCacheCalls = 0;
@@ -386,6 +435,9 @@ class FakeAuthProvider implements AuthProvider<FakeAuthSession> {
   @override
   Future<void> logout() async {
     logoutCalls += 1;
+    if (throwOnLogout) {
+      throw StateError('logout failed');
+    }
   }
 
   void resetCacheCounters() {

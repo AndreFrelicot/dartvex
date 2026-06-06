@@ -120,9 +120,12 @@ class ConvexClientWithAuth<TUser>
   /// Logs out and clears auth state.
   Future<void> logout() async {
     _assertNotDisposed();
-    await _authProvider.logout();
-    await _resetBaseAuth();
-    _emitAuthState(AuthUnauthenticated<TUser>());
+    try {
+      await _authProvider.logout();
+    } finally {
+      await _resetBaseAuth();
+      _emitAuthState(AuthUnauthenticated<TUser>());
+    }
   }
 
   @override

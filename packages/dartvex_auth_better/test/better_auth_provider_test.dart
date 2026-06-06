@@ -15,6 +15,7 @@ void main() {
       String sessionToken = 'ses_mock',
       String convexToken = 'jwt_mock',
       bool sessionValid = true,
+      int signOutStatus = 200,
       void Function(http.Request request)? onRequest,
     }) {
       return MockClient((request) async {
@@ -61,7 +62,7 @@ void main() {
         }
 
         if (path == '/api/auth/sign-out' && request.method == 'POST') {
-          return http.Response('', 200);
+          return http.Response('', signOutStatus);
         }
 
         if (path == '/api/auth/get-session' && request.method == 'GET') {
@@ -187,6 +188,24 @@ void main() {
 
       await provider.logout();
       expect(provider.cachedSession, isNull);
+    });
+
+    test('logout clears cached session when sign-out fails', () async {
+      final mock = buildMock(signOutStatus: 500);
+      final client = BetterAuthClient(baseUrl: baseUrl, httpClient: mock);
+      final provider = ConvexBetterAuthProvider(client: client);
+
+      provider.email = 'alice@example.com';
+      provider.password = 'password123';
+      await provider.login(onIdToken: (_) {});
+      expect(provider.cachedSession, isNotNull);
+
+      await expectLater(provider.logout(), throwsA(isA<BetterAuthException>()));
+      expect(provider.cachedSession, isNull);
+      await expectLater(
+        provider.loginFromCache(onIdToken: (_) {}),
+        throwsA(isA<StateError>()),
+      );
     });
 
     test('logout is safe when no session exists', () async {

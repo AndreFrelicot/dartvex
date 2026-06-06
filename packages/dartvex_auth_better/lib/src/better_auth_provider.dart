@@ -88,12 +88,15 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
   /// Signs out the current Better Auth session and clears cached state.
   Future<void> logout() async {
     final sessionToken = _sessionToken;
-    if (sessionToken != null) {
-      await client.signOut(sessionToken: sessionToken);
+    try {
+      if (sessionToken != null) {
+        await client.signOut(sessionToken: sessionToken);
+      }
+    } finally {
+      _cachedSession = null;
+      _sessionToken = null;
+      _clearPendingLoginSession();
     }
-    _cachedSession = null;
-    _sessionToken = null;
-    _clearPendingLoginSession();
   }
 
   /// Sign up a new user. Sets credentials for future [login] calls.
