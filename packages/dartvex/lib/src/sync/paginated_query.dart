@@ -212,6 +212,10 @@ class ConvexPaginatedQuery {
   void _addPage({required String? cursor, required int numItems}) {
     final page = _openPage(cursor: cursor, numItems: numItems);
     _pages.add(page);
+    _consumeInitialResult(page);
+  }
+
+  void _consumeInitialResult(_Page page) {
     final initial = page.initialResult;
     if (initial != null) {
       page.initialResult = null;
@@ -362,7 +366,12 @@ class ConvexPaginatedQuery {
         bounded: true,
         endCursor: data.continueCursor,
       );
-      _splits.add(_Split(original: page, first: first, second: second));
+      final split = _Split(original: page, first: first, second: second);
+      _splits.add(split);
+      _consumeInitialResult(first);
+      if (_splits.contains(split)) {
+        _consumeInitialResult(second);
+      }
     }
   }
 

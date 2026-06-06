@@ -74,6 +74,25 @@ class _FakeSource {
   }
 }
 
+StoredQuerySuccess _pageSuccess(
+  List<dynamic> page, {
+  required String? continueCursor,
+  required bool isDone,
+  String? splitCursor,
+  String? pageStatus,
+}) {
+  return StoredQuerySuccess(
+    value: <String, dynamic>{
+      'page': page,
+      'continueCursor': continueCursor,
+      'isDone': isDone,
+      'splitCursor': splitCursor,
+      'pageStatus': pageStatus,
+    },
+    logLines: const <String>[],
+  );
+}
+
 void main() {
   group('ConvexPaginatedQuery', () {
     test('loads the first page with cursor null and aggregates results', () {
@@ -408,6 +427,51 @@ void main() {
       // Both halves loaded: the original is swapped out atomically, gaplessly.
       expect(query.current.results, <dynamic>['a', 'b', 'ba', 'bb', 'c']);
       expect(query.status, ConvexPaginationStatus.canLoadMore);
+      expect(source.pages[0].canceled, isTrue);
+
+      query.cancel();
+    });
+
+    test('seeds split halves synchronously from warm results', () {
+      final source = _FakeSource();
+      final query = ConvexPaginatedQuery(
+        subscribe: source.subscribe,
+        readInitialResult: (name, args) {
+          final paginationOpts = args['paginationOpts'] as Map<String, dynamic>;
+          if (paginationOpts['cursor'] == null &&
+              paginationOpts['endCursor'] == 'S') {
+            return _pageSuccess(
+              <dynamic>['a', 'b'],
+              continueCursor: 'S',
+              isDone: false,
+            );
+          }
+          if (paginationOpts['cursor'] == 'S' &&
+              paginationOpts['endCursor'] == 'C') {
+            return _pageSuccess(
+              <dynamic>['ba', 'bb', 'c'],
+              continueCursor: 'C',
+              isDone: false,
+            );
+          }
+          return null;
+        },
+        name: 'messages:list',
+        args: const <String, dynamic>{},
+        pageSize: 3,
+      );
+
+      source.pages[0].emitPage(
+        <dynamic>['a', 'b', 'ba', 'bb', 'c'],
+        continueCursor: 'C',
+        isDone: false,
+        splitCursor: 'S',
+        pageStatus: 'SplitRecommended',
+      );
+
+      expect(query.current.results, <dynamic>['a', 'b', 'ba', 'bb', 'c']);
+      expect(query.status, ConvexPaginationStatus.canLoadMore);
+      expect(source.pages, hasLength(3));
       expect(source.pages[0].canceled, isTrue);
 
       query.cancel();
