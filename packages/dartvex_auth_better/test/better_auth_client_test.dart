@@ -157,6 +157,24 @@ void main() {
       expect(session, isNull);
     });
 
+    test('throws typed exception when getSession 200 body is not an object',
+        () async {
+      for (final body in <String>[jsonEncode('OK'), '']) {
+        final mock = MockClient((request) async {
+          if (request.url.path == '/api/auth/get-session') {
+            return http.Response(body, 200);
+          }
+          return http.Response('Not found', 404);
+        });
+        final client = BetterAuthClient(baseUrl: baseUrl, httpClient: mock);
+
+        await expectLater(
+          () => client.getSession(sessionToken: 'ses_valid'),
+          throwsA(isA<BetterAuthException>()),
+        );
+      }
+    });
+
     test('converts .convex.cloud to .convex.site for HTTP requests', () async {
       final requestedHosts = <String>[];
       final mock = MockClient((request) async {

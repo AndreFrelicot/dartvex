@@ -51,9 +51,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Queues retryable auto-mode mutations when the remote client is unavailable.
 - Retains retryable replay failures for later retry instead of dropping queued
   mutations.
-- Rolls back failed optimistic patches against the previous local cache value,
-  so retryable or failed mutations do not leave stale optimistic query data
-  visible after the error path runs.
+- Rolls back failed optimistic patches and permanently rejected queued mutations
+  against the previous local cache value, so retryable or failed mutations do
+  not leave stale optimistic query data visible after the error path runs.
 - Falls back to cached query data on retryable remote failures.
 - Preserves structured remote query error data and server log lines in the
   local runtime adapter.

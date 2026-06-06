@@ -211,11 +211,9 @@ class BetterAuthClient {
 
     if (response.statusCode != 200) return null;
 
-    final decoded = jsonDecode(response.body);
-    if (decoded is! Map<String, dynamic>) return null;
-
-    final session = decoded['session'] as Map<String, dynamic>?;
-    final user = decoded['user'] as Map<String, dynamic>?;
+    final body = _decodeObjectBody('/api/auth/get-session', response);
+    final session = body['session'] as Map<String, dynamic>?;
+    final user = body['user'] as Map<String, dynamic>?;
     if (session == null || user == null) return null;
 
     final convexJwt = await _fetchConvexToken(sessionToken);

@@ -712,7 +712,8 @@ class ConvexLocalClient {
       queuedAt: DateTime.now().toUtc(),
     );
     final patches = _buildPatches(name, normalizedArgs, context);
-    final optimisticData = _optimisticMetadata(context, patches);
+    final snapshots = await _snapshotOptimisticPatchTargets(patches);
+    final optimisticData = _optimisticMetadata(context, patches, snapshots);
     final pendingMutation = await _mutationQueue.enqueue(
       mutationName: name,
       args: normalizedArgs,
@@ -721,7 +722,7 @@ class ConvexLocalClient {
     );
 
     try {
-      await _applyOptimisticPatches(patches);
+      await _applyOptimisticPatches(patches, snapshots: snapshots);
     } catch (_) {
       await _mutationQueue.remove(pendingMutation.id);
       rethrow;
@@ -1181,6 +1182,7 @@ class ConvexLocalClient {
     await _mutationQueue.remove(mutation.id);
     _pendingMutations = await _mutationQueue.loadAll();
     _rebuildPendingWriteCounts();
+    await _restoreMutationRollback(mutation);
     _pendingMutationsController.add(currentPendingMutations);
     try {
       onConflict?.call(
@@ -1308,20 +1310,43 @@ class ConvexLocalClient {
     return handler.buildPatches(args, context);
   }
 
-  Future<void> _applyOptimisticPatches(List<LocalMutationPatch> patches) async {
+  Future<List<_CacheSnapshot>> _snapshotOptimisticPatchTargets(
+    List<LocalMutationPatch> patches,
+  ) async {
     final snapshots = <String, _CacheSnapshot>{};
+    for (final patch in patches) {
+      final key = patch.target.key;
+      if (snapshots.containsKey(key)) {
+        continue;
+      }
+      snapshots[key] = _CacheSnapshot(
+        target: patch.target,
+        entry: await _queryCache.read(patch.target.name, patch.target.args),
+      );
+    }
+    return snapshots.values.toList(growable: false);
+  }
+
+  Future<void> _applyOptimisticPatches(
+    List<LocalMutationPatch> patches, {
+    Iterable<_CacheSnapshot>? snapshots,
+  }) async {
+    final snapshotByKey = <String, _CacheSnapshot>{
+      for (final snapshot in snapshots ?? const <_CacheSnapshot>[])
+        snapshot.target.key: snapshot,
+    };
     final workingValues = <String, dynamic>{};
     final updates = <String, _CacheUpdate>{};
     try {
       for (final patch in patches) {
         final key = patch.target.key;
-        snapshots[key] ??= _CacheSnapshot(
+        snapshotByKey[key] ??= _CacheSnapshot(
           target: patch.target,
           entry: await _queryCache.read(patch.target.name, patch.target.args),
         );
         final currentValue = workingValues.containsKey(key)
             ? workingValues[key]
-            : snapshots[key]?.entry?.value;
+            : snapshotByKey[key]?.entry?.value;
         final nextValue = patch.apply(currentValue);
         workingValues[key] = nextValue;
         updates[key] = _CacheUpdate(target: patch.target, value: nextValue);
@@ -1334,7 +1359,7 @@ class ConvexLocalClient {
         );
       }
     } catch (_) {
-      await _restoreOptimisticPatchSnapshots(snapshots.values);
+      await _restoreOptimisticPatchSnapshots(snapshotByKey.values);
       rethrow;
     }
   }
@@ -1370,6 +1395,48 @@ class ConvexLocalClient {
     }
   }
 
+  Future<void> _restoreMutationRollback(PendingMutation mutation) async {
+    final snapshots = _rollbackSnapshotsFromMutation(mutation);
+    if (snapshots.isEmpty) {
+      return;
+    }
+    try {
+      await _restoreOptimisticPatchSnapshots(snapshots);
+    } catch (error, stackTrace) {
+      _log('replay:rollback-error', '$error\n$stackTrace');
+      return;
+    }
+    for (final snapshot in snapshots) {
+      _emitRestoredSnapshot(snapshot);
+    }
+  }
+
+  void _emitRestoredSnapshot(_CacheSnapshot snapshot) {
+    final key = snapshot.target.key;
+    final entry = snapshot.entry;
+    if (entry == null) {
+      _emitToQueryKey(
+        key,
+        LocalQueryError(
+          StateError(
+            'No cached query value remains after rolling back failed mutation',
+          ),
+          source: LocalQuerySource.cache,
+          hasPendingWrites: _hasPendingWrites(key),
+        ),
+      );
+      return;
+    }
+    _emitToQueryKey(
+      key,
+      LocalQuerySuccess(
+        entry.value,
+        source: LocalQuerySource.cache,
+        hasPendingWrites: _hasPendingWrites(key),
+      ),
+    );
+  }
+
   Future<void> _emitCachedSnapshot(LocalQueryDescriptor descriptor) async {
     final cached = await _queryCache.read(descriptor.name, descriptor.args);
     if (cached == null) {
@@ -1388,12 +1455,25 @@ class ConvexLocalClient {
   Map<String, dynamic> _optimisticMetadata(
     LocalMutationContext context,
     List<LocalMutationPatch> patches,
+    Iterable<_CacheSnapshot> rollbackSnapshots,
   ) {
     return <String, dynamic>{
       'operationId': context.operationId,
       'targets': patches
           .map((patch) => patch.target.toJson())
           .toList(growable: false),
+      'rollback': rollbackSnapshots
+          .map(_cacheSnapshotToJson)
+          .toList(growable: false),
+    };
+  }
+
+  Map<String, dynamic> _cacheSnapshotToJson(_CacheSnapshot snapshot) {
+    final entry = snapshot.entry;
+    return <String, dynamic>{
+      'target': snapshot.target.toJson(),
+      'hasEntry': entry != null,
+      if (entry != null) 'value': entry.value,
     };
   }
 
@@ -1415,6 +1495,48 @@ class ConvexLocalClient {
               LocalQueryDescriptor.fromJson(entry.cast<String, dynamic>()),
         )
         .toList(growable: false);
+  }
+
+  List<_CacheSnapshot> _rollbackSnapshotsFromMutation(
+    PendingMutation mutation,
+  ) {
+    final optimisticData = mutation.optimisticData;
+    if (optimisticData == null) {
+      return const <_CacheSnapshot>[];
+    }
+    final rollback = optimisticData['rollback'];
+    if (rollback is! List) {
+      return const <_CacheSnapshot>[];
+    }
+    final snapshots = <_CacheSnapshot>[];
+    for (final rawSnapshot in rollback.whereType<Map>()) {
+      final rawTarget = rawSnapshot['target'];
+      if (rawTarget is! Map) {
+        continue;
+      }
+      final target = LocalQueryDescriptor.fromJson(
+        rawTarget.cast<String, dynamic>(),
+      );
+      final hasEntry = rawSnapshot['hasEntry'] == true;
+      snapshots.add(
+        _CacheSnapshot(
+          target: target,
+          entry: hasEntry
+              ? CachedQueryEntry(
+                  key: target.key,
+                  queryName: target.name,
+                  args: target.args,
+                  value: rawSnapshot['value'],
+                  updatedAt: DateTime.fromMillisecondsSinceEpoch(
+                    0,
+                    isUtc: true,
+                  ),
+                )
+              : null,
+        ),
+      );
+    }
+    return snapshots;
   }
 
   void _rebuildPendingWriteCounts() {

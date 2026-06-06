@@ -586,6 +586,45 @@ void main() {
       },
     );
 
+    test(
+      'replay rollback restores cache when a failed mutation refresh fails',
+      () async {
+        remoteClient.queryResults['messages:listPublic'] = <dynamic>[];
+        await localClient.query('messages:listPublic');
+        await localClient.setNetworkMode(LocalNetworkMode.offline);
+
+        await localClient.mutate('messages:sendPublic', <String, dynamic>{
+          'author': 'A',
+          'text': 'WillFail',
+        });
+
+        final optimistic =
+            await localClient.query('messages:listPublic') as List<dynamic>;
+        expect(optimistic, hasLength(1));
+        expect(optimistic.single['text'], 'WillFail');
+
+        remoteClient.mutationResults['messages:sendPublic'] = <Object?>[
+          const ConvexException('Validation failed', retryable: false),
+        ];
+        remoteClient.subscriptionStreams['messages:listPublic'] =
+            Stream<LocalRemoteQueryEvent>.value(
+              const LocalRemoteQueryError(
+                ConvexException('Refresh failed', retryable: false),
+              ),
+            );
+
+        await localClient.setNetworkMode(LocalNetworkMode.auto);
+        await pumpEventQueue();
+
+        expect(localClient.currentPendingMutations, isEmpty);
+
+        await localClient.setNetworkMode(LocalNetworkMode.offline);
+        final restored =
+            await localClient.query('messages:listPublic') as List<dynamic>;
+        expect(restored, isEmpty);
+      },
+    );
+
     test('onConflict exceptions do not stop replay cleanup', () async {
       remoteClient.queryResults['messages:listPublic'] = <dynamic>[];
       await localClient.query('messages:listPublic');
