@@ -17,6 +17,9 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
 
   BetterAuthSession? _cachedSession;
   String? _sessionToken;
+  BetterAuthSession? _pendingLoginSession;
+  String? _pendingLoginEmail;
+  String? _pendingLoginPassword;
 
   /// Set credentials before calling [login].
   String? email;
@@ -42,6 +45,16 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
         'Set email and password on ConvexBetterAuthProvider before login().',
       );
     }
+    final pendingSession = _takePendingLoginSession(
+      email: e,
+      password: p,
+    );
+    if (pendingSession != null) {
+      _cachedSession = pendingSession;
+      _sessionToken = pendingSession.sessionToken;
+      onIdToken(pendingSession.token);
+      return pendingSession;
+    }
     final session = await client.signIn(email: e, password: p);
     _cachedSession = session;
     _sessionToken = session.sessionToken;
@@ -63,6 +76,7 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
     if (refreshed == null) {
       throw StateError('Better Auth session expired.');
     }
+    _clearPendingLoginSession();
     _cachedSession = refreshed;
     _sessionToken = refreshed.sessionToken;
     onIdToken(refreshed.token);
@@ -79,6 +93,7 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
     }
     _cachedSession = null;
     _sessionToken = null;
+    _clearPendingLoginSession();
   }
 
   /// Sign up a new user. Sets credentials for future [login] calls.
@@ -95,6 +110,9 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
     );
     _cachedSession = session;
     _sessionToken = session.sessionToken;
+    _pendingLoginSession = session;
+    _pendingLoginEmail = email;
+    _pendingLoginPassword = password;
     this.email = email;
     this.password = password;
     onIdToken(session.token);
@@ -103,4 +121,26 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
 
   /// The currently cached session, if any.
   BetterAuthSession? get cachedSession => _cachedSession;
+
+  BetterAuthSession? _takePendingLoginSession({
+    required String email,
+    required String password,
+  }) {
+    final session = _pendingLoginSession;
+    if (session == null) {
+      return null;
+    }
+    if (_pendingLoginEmail == email && _pendingLoginPassword == password) {
+      _clearPendingLoginSession();
+      return session;
+    }
+    _clearPendingLoginSession();
+    return null;
+  }
+
+  void _clearPendingLoginSession() {
+    _pendingLoginSession = null;
+    _pendingLoginEmail = null;
+    _pendingLoginPassword = null;
+  }
 }

@@ -15,8 +15,10 @@ void main() {
       String sessionToken = 'ses_mock',
       String convexToken = 'jwt_mock',
       bool sessionValid = true,
+      void Function(http.Request request)? onRequest,
     }) {
       return MockClient((request) async {
+        onRequest?.call(request);
         final path = request.url.path;
 
         if (path == '/api/auth/sign-in/email' && request.method == 'POST') {
@@ -216,6 +218,74 @@ void main() {
       expect(provider.email, 'alice@example.com');
       expect(provider.password, 'password123');
       expect(provider.cachedSession, isNotNull);
+    });
+
+    test('login reuses session created by signUp', () async {
+      final requests = <String>[];
+      final mock = buildMock(
+        convexToken: 'jwt_signup',
+        onRequest: (request) {
+          requests.add('${request.method} ${request.url.path}');
+        },
+      );
+      final client = BetterAuthClient(baseUrl: baseUrl, httpClient: mock);
+      final provider = ConvexBetterAuthProvider(client: client);
+
+      final signUpSession = await provider.signUp(
+        name: 'Alice',
+        email: 'alice@example.com',
+        password: 'password123',
+        onIdToken: (_) {},
+      );
+
+      String? receivedToken;
+      final loginSession = await provider.login(
+        onIdToken: (token) => receivedToken = token,
+      );
+
+      expect(loginSession, same(signUpSession));
+      expect(receivedToken, 'jwt_signup');
+      expect(
+        requests.where((request) => request == 'POST /api/auth/sign-up/email'),
+        hasLength(1),
+      );
+      expect(
+        requests.where((request) => request == 'POST /api/auth/sign-in/email'),
+        isEmpty,
+      );
+    });
+
+    test('login ignores signUp session when credentials change', () async {
+      final requests = <String>[];
+      final mock = buildMock(
+        convexToken: 'jwt_login',
+        onRequest: (request) {
+          requests.add('${request.method} ${request.url.path}');
+        },
+      );
+      final client = BetterAuthClient(baseUrl: baseUrl, httpClient: mock);
+      final provider = ConvexBetterAuthProvider(client: client);
+
+      await provider.signUp(
+        name: 'Alice',
+        email: 'alice@example.com',
+        password: 'password123',
+        onIdToken: (_) {},
+      );
+      provider.email = 'bob@example.com';
+      provider.password = 'different123';
+
+      String? receivedToken;
+      final session = await provider.login(
+        onIdToken: (token) => receivedToken = token,
+      );
+
+      expect(session.email, 'bob@example.com');
+      expect(receivedToken, 'jwt_login');
+      expect(
+        requests.where((request) => request == 'POST /api/auth/sign-in/email'),
+        hasLength(1),
+      );
     });
 
     test('extractIdToken returns the JWT', () {

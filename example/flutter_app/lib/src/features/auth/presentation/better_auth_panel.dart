@@ -47,14 +47,16 @@ class _BetterAuthPanelState extends State<BetterAuthPanel>
     });
 
     try {
-      widget.provider.email = widget.emailController.text.trim();
-      widget.provider.password = widget.passwordController.text;
+      final email = widget.emailController.text.trim();
+      final password = widget.passwordController.text;
+      widget.provider.email = email;
+      widget.provider.password = password;
       if (_isSignUp) {
-        // Register via HTTP, then authenticate the Convex WebSocket.
-        await widget.provider.client.signUp(
+        await widget.provider.signUp(
           name: widget.nameController.text.trim(),
-          email: widget.emailController.text.trim(),
-          password: widget.passwordController.text,
+          email: email,
+          password: password,
+          onIdToken: (_) {},
         );
       }
       await authClient.login();
