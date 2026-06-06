@@ -625,6 +625,59 @@ void main() {
       },
     );
 
+    test(
+      'replay rollback deletes optimistic-only cache through custom storage',
+      () async {
+        await localClient.dispose();
+        store = await SqliteLocalStore.openInMemory();
+        remoteClient = FakeRemoteClient();
+        final cacheStorage = DelayedReadCacheStorage(
+          store,
+          delayAfterRead: Future<void>.value(),
+        );
+        localClient = await ConvexLocalClient.openWithRemote(
+          remoteClient: remoteClient,
+          config: LocalClientConfig(
+            cacheStorage: cacheStorage,
+            queueStorage: store,
+            mutationHandlers: const <LocalMutationHandler>[
+              PublicMessageMutationHandler(),
+            ],
+          ),
+        );
+        await localClient.setNetworkMode(LocalNetworkMode.offline);
+
+        await localClient.mutate('messages:sendPublic', <String, dynamic>{
+          'author': 'A',
+          'text': 'OptimisticOnly',
+        });
+        final optimistic =
+            await localClient.query('messages:listPublic') as List<dynamic>;
+        expect(optimistic.single['text'], 'OptimisticOnly');
+
+        remoteClient.mutationResults['messages:sendPublic'] = <Object?>[
+          const ConvexException('Validation failed', retryable: false),
+        ];
+        remoteClient.subscriptionStreams['messages:listPublic'] =
+            Stream<LocalRemoteQueryEvent>.value(
+              const LocalRemoteQueryError(
+                ConvexException('Refresh failed', retryable: false),
+              ),
+            );
+
+        await localClient.setNetworkMode(LocalNetworkMode.auto);
+        await pumpEventQueue();
+
+        expect(localClient.currentPendingMutations, isEmpty);
+        expect(
+          await store.read(
+            const LocalQueryDescriptor('messages:listPublic').key,
+          ),
+          isNull,
+        );
+      },
+    );
+
     test('onConflict exceptions do not stop replay cleanup', () async {
       remoteClient.queryResults['messages:listPublic'] = <dynamic>[];
       await localClient.query('messages:listPublic');
@@ -1611,6 +1664,11 @@ class DelayedReadCacheStorage implements CacheStorage {
   @override
   Future<void> clearCache() {
     return _delegate.clearCache();
+  }
+
+  @override
+  Future<void> deleteCacheEntry(String key, {int? updatedAtMillis}) {
+    return _delegate.deleteCacheEntry(key, updatedAtMillis: updatedAtMillis);
   }
 
   @override

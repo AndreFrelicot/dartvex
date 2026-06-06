@@ -42,6 +42,14 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
 
   @override
   /// Throws because SQLite storage is unavailable on this platform.
+  Future<void> deleteCacheEntry(String key, {int? updatedAtMillis}) {
+    throw UnsupportedError(
+      'SqliteLocalStore is not available on this platform',
+    );
+  }
+
+  @override
+  /// Throws because SQLite storage is unavailable on this platform.
   Future<StoredPendingMutation> enqueue({
     required String mutationName,
     required String argsJson,

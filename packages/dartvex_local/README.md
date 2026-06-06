@@ -56,7 +56,8 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 > The bundled `SqliteLocalStore` is native-only (`dart:io`). To run
 > `ConvexLocalClient` on the web, implement the `CacheStorage` and
 > `QueueStorage` interfaces yourself (for example over IndexedDB) and pass them
-> in `LocalClientConfig`.
+> in `LocalClientConfig`. `CacheStorage.deleteCacheEntry` must physically remove
+> a single entry so optimistic rollback and cache expiry stay correct.
 
 ## Installation
 

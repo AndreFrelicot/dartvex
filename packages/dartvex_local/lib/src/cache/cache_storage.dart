@@ -63,6 +63,13 @@ abstract class CacheStorage {
   /// Inserts or updates a stored cache [entry].
   Future<void> upsert(StoredCacheEntry entry);
 
+  /// Deletes a single cached query entry by its canonical [key].
+  ///
+  /// When [updatedAtMillis] is provided, implementations should only delete the
+  /// row if it still has that timestamp, avoiding deletion of a fresh value
+  /// written concurrently after the stale read.
+  Future<void> deleteCacheEntry(String key, {int? updatedAtMillis});
+
   /// Removes all cached query results.
   Future<void> clearCache();
 
@@ -72,18 +79,10 @@ abstract class CacheStorage {
 
 /// Optional maintenance operations for cache storage implementations.
 ///
-/// [QueryCache] uses these hooks when a query cache policy requests physical
-/// deletion of expired entries or pruning to a maximum entry count. Custom
-/// [CacheStorage] implementations may omit this interface and still work; in
-/// that case stale entries are ignored on read but not deleted automatically.
+/// [QueryCache] uses this hook when a query cache policy requests pruning to a
+/// maximum entry count. Single-entry deletion is part of [CacheStorage] because
+/// optimistic rollback correctness depends on it.
 abstract interface class CacheStorageMaintenance {
-  /// Deletes a single cached query entry by its canonical [key].
-  ///
-  /// When [updatedAtMillis] is provided, implementations should only delete the
-  /// row if it still has that timestamp, avoiding deletion of a fresh value
-  /// written concurrently after the stale read.
-  Future<void> deleteCacheEntry(String key, {int? updatedAtMillis});
-
   /// Keeps only the newest [maxEntries] cache entries.
   Future<void> pruneCacheToSize(int maxEntries);
 }

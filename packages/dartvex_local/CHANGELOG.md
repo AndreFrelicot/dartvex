@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Require `dartvex` `^0.2.0`.
 - Require Dart `^3.10.0` to align with the SQLite 3.x runtime dependency.
+- `CacheStorage` implementations must now provide `deleteCacheEntry`, because
+  single-entry deletion is required for correct optimistic rollback. The
+  optional `CacheStorageMaintenance` interface now only covers maximum-entry
+  pruning.
 
 ### Fixed
 
@@ -54,6 +58,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rolls back failed optimistic patches and permanently rejected queued mutations
   against the previous local cache value, so retryable or failed mutations do
   not leave stale optimistic query data visible after the error path runs.
+- Rollback now deletes optimistic-only cache entries through every
+  `CacheStorage` implementation, including custom stores that do not implement
+  `CacheStorageMaintenance`.
 - Falls back to cached query data on retryable remote failures.
 - Preserves structured remote query error data and server log lines in the
   local runtime adapter.

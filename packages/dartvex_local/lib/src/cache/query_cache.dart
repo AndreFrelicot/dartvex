@@ -20,8 +20,7 @@ class QueryCachePolicy {
 
   /// Maximum age for a cached entry to be returned by [QueryCache.read].
   ///
-  /// Expired entries are treated as cache misses. If the storage implements
-  /// [CacheStorageMaintenance], expired entries are also deleted after read.
+  /// Expired entries are treated as cache misses and deleted after read.
   final Duration? maxEntryAge;
 
   bool _isExpired(DateTime updatedAt, DateTime now) {
@@ -63,15 +62,10 @@ class QueryCache {
       isUtc: true,
     );
     if (_policy._isExpired(updatedAt, DateTime.now().toUtc())) {
-      final maintenance = _storage is CacheStorageMaintenance
-          ? _storage as CacheStorageMaintenance
-          : null;
-      if (maintenance != null) {
-        await maintenance.deleteCacheEntry(
-          stored.key,
-          updatedAtMillis: stored.updatedAtMillis,
-        );
-      }
+      await _storage.deleteCacheEntry(
+        stored.key,
+        updatedAtMillis: stored.updatedAtMillis,
+      );
       return null;
     }
     return CachedQueryEntry(

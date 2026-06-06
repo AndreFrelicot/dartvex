@@ -1367,13 +1367,10 @@ class ConvexLocalClient {
   Future<void> _restoreOptimisticPatchSnapshots(
     Iterable<_CacheSnapshot> snapshots,
   ) async {
-    final maintenance = _config.cacheStorage is CacheStorageMaintenance
-        ? _config.cacheStorage as CacheStorageMaintenance
-        : null;
     for (final snapshot in snapshots) {
       final entry = snapshot.entry;
       if (entry == null) {
-        await maintenance?.deleteCacheEntry(snapshot.target.key);
+        await _config.cacheStorage.deleteCacheEntry(snapshot.target.key);
         continue;
       }
       await _queryCache.write(
