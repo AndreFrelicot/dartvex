@@ -14,6 +14,24 @@ import '../test_helpers/mock_web_socket_adapter.dart';
 
 void main() {
   group('WebSocketManager', () {
+    Future<List<Map<String, dynamic>>> waitForConnectMessages(
+      MockWebSocketAdapter adapter,
+      int expectedCount,
+    ) async {
+      final stopwatch = Stopwatch()..start();
+      while (stopwatch.elapsed < const Duration(seconds: 1)) {
+        final messages = adapter.decodedSentMessages
+            .where((message) => message['type'] == 'Connect')
+            .toList(growable: false);
+        if (messages.length >= expectedCount) {
+          return messages;
+        }
+        await pumpEventQueue();
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      }
+      fail('Timed out waiting for $expectedCount Connect messages');
+    }
+
     test('sends connect only after adapter connect completes', () async {
       final adapter = MockWebSocketAdapter();
       final manager = WebSocketManager(
@@ -372,13 +390,10 @@ void main() {
 
       await manager.start();
       adapter.disconnect(reason: 'first close');
-      await Future<void>.delayed(const Duration(milliseconds: 10));
+      await waitForConnectMessages(adapter, 2);
       adapter.disconnect(code: 1006);
-      await Future<void>.delayed(const Duration(milliseconds: 10));
+      final connectMessages = await waitForConnectMessages(adapter, 3);
 
-      final connectMessages = adapter.decodedSentMessages
-          .where((message) => message['type'] == 'Connect')
-          .toList(growable: false);
       expect(connectMessages, hasLength(3));
       expect(
         connectMessages.last['lastCloseReason'],

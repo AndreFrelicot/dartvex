@@ -1931,7 +1931,12 @@ void main() {
       final future = subscription.stream.first;
       await settle();
       adapter.disconnect();
-      await settle();
+      await waitForStatus(
+        client,
+        (status) =>
+            status.state == ConnectionState.connected &&
+            status.connectionCount >= 2,
+      );
 
       final connectMessages = adapter.decodedSentMessages
           .where((message) => message['type'] == 'Connect')
