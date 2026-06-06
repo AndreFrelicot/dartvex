@@ -229,8 +229,8 @@ class WebSocketManager {
 
   /// The number of times the socket has reconnected, as carried by [Connect].
   ///
-  /// Incremented on each disconnect; a high value signals an unstable
-  /// connection.
+  /// Incremented after each successful socket open; a high value signals
+  /// repeated connection churn.
   int get connectionCount => _connectionCount;
 
   /// The current reconnect-backoff retry index.
