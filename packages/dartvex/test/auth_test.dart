@@ -10,8 +10,45 @@ import 'test_helpers/mock_web_socket_adapter.dart';
 
 void main() {
   group('ConvexClientWithAuth', () {
-    Future<void> settle() async {
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+    Future<void> waitUntil(
+      bool Function() condition, {
+      required String reason,
+      Duration timeout = const Duration(seconds: 2),
+    }) async {
+      final stopwatch = Stopwatch()..start();
+      while (!condition()) {
+        if (stopwatch.elapsed >= timeout) {
+          fail('Timed out waiting for $reason');
+        }
+        await pumpEventQueue();
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      }
+    }
+
+    Iterable<Map<String, dynamic>> authMessages(
+      MockWebSocketAdapter adapter, {
+      int skip = 0,
+    }) {
+      return adapter.decodedSentMessages
+          .skip(skip)
+          .where((message) => message['type'] == 'Authenticate');
+    }
+
+    Future<Map<String, dynamic>> waitForAuthMessage(
+      MockWebSocketAdapter adapter, {
+      int skip = 0,
+      bool Function(Map<String, dynamic> message)? where,
+      String reason = 'auth message',
+    }) async {
+      bool matches(Map<String, dynamic> message) {
+        return where == null || where(message);
+      }
+
+      await waitUntil(
+        () => authMessages(adapter, skip: skip).any(matches),
+        reason: reason,
+      );
+      return authMessages(adapter, skip: skip).firstWhere(matches);
     }
 
     void confirmAuth(MockWebSocketAdapter adapter) {
@@ -48,19 +85,17 @@ void main() {
       final subscription = authClient.authState.listen(states.add);
 
       final session = await authClient.login();
-      await settle();
-
-      final authMessages = adapter.decodedSentMessages
-          .where((message) => message['type'] == 'Authenticate')
-          .toList(growable: false);
-      final lastAuthMessage = authMessages.last;
+      final lastAuthMessage = await waitForAuthMessage(adapter);
 
       expect(session.userInfo, 'alice');
       expect(states.first, isA<AuthLoading<FakeAuthSession>>());
       expect(states.last, isA<AuthLoading<FakeAuthSession>>());
       expect(authClient.currentAuthState, isA<AuthLoading<FakeAuthSession>>());
       confirmAuth(adapter);
-      await settle();
+      await waitUntil(
+        () => states.lastOrNull is AuthAuthenticated<FakeAuthSession>,
+        reason: 'authenticated state',
+      );
       expect(states.last, isA<AuthAuthenticated<FakeAuthSession>>());
       expect(authClient.currentAuthState,
           isA<AuthAuthenticated<FakeAuthSession>>());
@@ -95,7 +130,10 @@ void main() {
       final subscription = authClient.authState.listen(states.add);
 
       await expectLater(authClient.login(), throwsStateError);
-      await settle();
+      await waitUntil(
+        () => states.lastOrNull is AuthUnauthenticated<FakeAuthSession>,
+        reason: 'unauthenticated state after failed login',
+      );
 
       expect(states.first, isA<AuthLoading<FakeAuthSession>>());
       expect(states.last, isA<AuthUnauthenticated<FakeAuthSession>>());
@@ -130,11 +168,7 @@ void main() {
       final authClient = client.withAuth<FakeAuthSession>(provider);
 
       final session = await authClient.loginFromCache();
-      await settle();
-
-      final lastAuthMessage = adapter.decodedSentMessages
-          .where((message) => message['type'] == 'Authenticate')
-          .last;
+      final lastAuthMessage = await waitForAuthMessage(adapter);
 
       expect(provider.loginCalls, 0);
       expect(provider.loginFromCacheCalls, 1);
@@ -166,13 +200,17 @@ void main() {
       final authClient = client.withAuth<FakeAuthSession>(provider);
 
       await authClient.login();
-      await settle();
+      await waitForAuthMessage(
+        adapter,
+        where: (message) => message['value'] == 'login-token',
+        reason: 'initial auth message',
+      );
       await authClient.logout();
-      await settle();
-
-      final lastAuthMessage = adapter.decodedSentMessages
-          .where((message) => message['type'] == 'Authenticate')
-          .last;
+      final lastAuthMessage = await waitForAuthMessage(
+        adapter,
+        where: (message) => message['tokenType'] == 'None',
+        reason: 'logout auth reset',
+      );
 
       expect(provider.logoutCalls, 1);
       expect(lastAuthMessage['tokenType'], 'None');
@@ -206,22 +244,33 @@ void main() {
       final authClient = client.withAuth<FakeAuthSession>(provider);
 
       await authClient.login();
-      await settle();
+      await waitForAuthMessage(
+        adapter,
+        where: (message) => message['value'] == 'login-token',
+        reason: 'initial auth message',
+      );
       provider.resetCacheCounters();
       final sentMessageCountBeforeDisconnect =
           adapter.decodedSentMessages.length;
 
       adapter.disconnect();
-      await settle();
-
-      final authMessages = adapter.decodedSentMessages
-          .skip(sentMessageCountBeforeDisconnect)
-          .where((message) => message['type'] == 'Authenticate')
-          .toList(growable: false);
+      await waitUntil(
+        () => provider.loginFromCacheCalls == 1,
+        reason: 'cached auth refresh',
+      );
+      final refreshAuthMessage = await waitForAuthMessage(
+        adapter,
+        skip: sentMessageCountBeforeDisconnect,
+        where: (message) => message['value'] == 'refresh-token',
+        reason: 'refresh auth message',
+      );
+      final authMessagesAfterDisconnect =
+          authMessages(adapter, skip: sentMessageCountBeforeDisconnect)
+              .toList(growable: false);
 
       expect(provider.loginFromCacheCalls, 1);
-      expect(authMessages, hasLength(1));
-      expect(authMessages.last['value'], 'refresh-token');
+      expect(authMessagesAfterDisconnect, hasLength(1));
+      expect(refreshAuthMessage['value'], 'refresh-token');
 
       authClient.dispose();
     });
@@ -250,13 +299,22 @@ void main() {
       final subscription = authClient.authState.listen(states.add);
 
       await authClient.login();
-      await settle();
+      await waitForAuthMessage(
+        adapter,
+        where: (message) => message['value'] == 'login-token',
+        reason: 'initial auth message',
+      );
       provider
         ..throwOnLoginFromCache = true
         ..resetCacheCounters();
 
       adapter.disconnect();
-      await settle();
+      await waitUntil(
+        () =>
+            provider.loginFromCacheCalls == 1 &&
+            states.lastOrNull is AuthUnauthenticated<FakeAuthSession>,
+        reason: 'unauthenticated state after reconnect failure',
+      );
 
       expect(provider.loginFromCacheCalls, 1);
       expect(states.last, isA<AuthUnauthenticated<FakeAuthSession>>());
