@@ -42,6 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Requires `dartvex` `^0.2.0` so web consumers resolve the current
+  JavaScript-compatible value codec.
 - Clarifies in the README and API docs that disk-backed file/image cache
   helpers (`ConvexAssetCache`, `ConvexCachedImage`, `ConvexOfflineImage`, and
   progress-download image helpers) are native-only; web apps should render
@@ -60,13 +62,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and avoiding implicit retries when unchanged failed loads rebuild.
 - `FakeConvexClient` now broadcasts duplicate query subscriptions and paginated
   queries with the same name to every live handle instead of only the latest.
-
-## [0.1.5] - 2026-05-13
-
-### Fixed
-
-- Requires `dartvex` 0.1.5 so web consumers do not resolve the older
-  JavaScript-incompatible value codec.
 - Closes file-download HTTP clients and rejects non-success responses instead
   of returning error bodies as image bytes.
 - Ignores stale async image/cache loads after widget inputs change.
@@ -76,7 +71,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Preserves structured query error data and server log lines in runtime errors.
 - Supports action-based storage URL resolvers in `ConvexImage` and
   `ConvexCachedImage`.
-- Clarifies that `PaginatedQueryBuilder` performs one-shot page fetches.
 - Excludes build artifacts from the package archive.
 
 ## [0.1.4] - 2026-04-30

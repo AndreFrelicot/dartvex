@@ -65,6 +65,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Exported `WebSocketAdapter`, `WebSocketCloseEvent`, and
   `WebSocketAdapterFactory`, so the existing `ConvexClientConfig.adapterFactory`
   customization point can be supplied with a custom transport implementation.
+- `ConvexClientConfig.queryTimeout`.
+- `ConvexStorage.getFileUrl(..., useAction: true)` for action-based URL
+  resolvers.
 
 ### Changed
 
@@ -194,11 +197,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The after-unsubscribe query-result seed cache is now bounded (evicting the
   least-recently-written entry), so a long-lived client that subscribes to many
   distinct queries no longer grows it without bound.
-
-## [0.1.5] - 2026-05-13
-
-### Fixed
-
 - Throws a clear error when a storage URL resolver returns `null` for a
   missing storage object.
 - Aligns `TransitionChunk` handling with the current Convex protocol, including
@@ -211,12 +209,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Adds one-shot query timeout cleanup and safer disposal of temporary
   subscriptions.
 - Rejects invalid Convex JSON field names and finite `$float` encodings.
-
-### Added
-
-- `ConvexClientConfig.queryTimeout`.
-- `ConvexStorage.getFileUrl(..., useAction: true)` for action-based URL
-  resolvers.
 
 ## [0.1.4] - 2026-04-30
 
