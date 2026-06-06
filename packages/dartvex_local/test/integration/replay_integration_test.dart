@@ -83,19 +83,10 @@ void main() {
       // 5. Wait for the queue to drain. The replay runs asynchronously after
       //    setNetworkMode returns. A 15-second timeout gives ample room for
       //    one mutation round-trip even on slow connections.
-      await localClient.pendingMutations
-          .firstWhere((list) => list.isEmpty)
-          .timeout(
-            const Duration(seconds: 15),
-            onTimeout: () => throw StateError(
-              'Mutation queue did not drain within 15 seconds. '
-              'The remote may be unreachable or the mutation may have failed.',
-            ),
-          );
+      await waitForQueueToDrain(localClient);
 
       // 6. Verify the mutation reached the server by querying directly.
-      final after = await baseClient.query('messages:listPublic');
-      final messages = after as List<dynamic>;
+      final messages = await fetchRemoteMessages(deploymentUrl!);
       final found = messages.any((m) => m is Map && m['text'] == tag);
       expect(
         found,
@@ -126,19 +117,44 @@ void main() {
 
       // Resume and wait for drain.
       await localClient.setNetworkMode(LocalNetworkMode.auto);
-      await localClient.pendingMutations
-          .firstWhere((list) => list.isEmpty)
-          .timeout(const Duration(seconds: 15));
+      await waitForQueueToDrain(localClient);
 
       // Both messages should exist on the server.
-      final after = await baseClient.query('messages:listPublic');
-      final messages = after as List<dynamic>;
+      final messages = await fetchRemoteMessages(deploymentUrl!);
       final hasFirst = messages.any((m) => m is Map && m['text'] == tag1);
       final hasSecond = messages.any((m) => m is Map && m['text'] == tag2);
       expect(hasFirst, isTrue, reason: 'First queued mutation should exist');
       expect(hasSecond, isTrue, reason: 'Second queued mutation should exist');
     });
   });
+}
+
+Future<void> waitForQueueToDrain(ConvexLocalClient client) async {
+  if (client.currentPendingMutations.isEmpty) {
+    return;
+  }
+  await client.pendingMutations
+      .firstWhere((list) => list.isEmpty)
+      .timeout(
+        const Duration(seconds: 15),
+        onTimeout: () => throw StateError(
+          'Mutation queue did not drain within 15 seconds. '
+          'The remote may be unreachable or the mutation may have failed. '
+          'Still pending: ${client.currentPendingMutations.length}',
+        ),
+      );
+}
+
+Future<List<dynamic>> fetchRemoteMessages(String deploymentUrl) async {
+  final verificationClient = ConvexClient(deploymentUrl);
+  try {
+    final result = await verificationClient
+        .query('messages:listPublic')
+        .timeout(const Duration(seconds: 10));
+    return result as List<dynamic>;
+  } finally {
+    verificationClient.dispose();
+  }
 }
 
 class _SendPublicHandler extends LocalMutationHandler {
