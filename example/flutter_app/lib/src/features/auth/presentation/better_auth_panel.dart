@@ -366,7 +366,7 @@ class BetterAuthSetupPanel extends StatelessWidget {
             number: '1',
             title: 'Install the component',
             detail:
-                'cd demo/convex-backend\n'
+                'cd example/convex-backend\n'
                 'npm install better-auth@1.5.3 @convex-dev/better-auth',
           ),
           const SizedBox(height: 8),

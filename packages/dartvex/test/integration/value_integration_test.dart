@@ -5,7 +5,7 @@
 //
 // The demo backend must include `convex/testing.ts` with the
 // `specialValuesSnapshot` query and `echoValues` action. Deploy with:
-//   cd demo/convex-backend && npx convex deploy
+//   cd example/convex-backend && npx convex deploy
 //
 // Run:
 //   CONVEX_DEPLOYMENT_URL=https://your.convex.cloud \
