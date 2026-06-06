@@ -295,8 +295,8 @@ class WebSocketManager {
   /// the connected transition. Sets [hasEverConnected] on the first success.
   void _markConnected() {
     _hasEverConnected = true;
-    onConnectionStateChanged(true, false);
     _connectionCount += 1;
+    onConnectionStateChanged(true, false);
   }
 
   /// Forces a reconnect using [reason] as the last close reason.

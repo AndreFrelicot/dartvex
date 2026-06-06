@@ -237,6 +237,38 @@ void main() {
       await manager.dispose();
     });
 
+    test('increments connectionCount before publishing connected state',
+        () async {
+      final adapter = MockWebSocketAdapter();
+      final countsAtConnected = <int>[];
+      late final WebSocketManager manager;
+      manager = WebSocketManager(
+        adapter: adapter,
+        deploymentUrl: 'https://demo.convex.cloud',
+        apiVersion: '0.1.0',
+        onConnected: () => const <ClientMessage>[],
+        onMessage: (_) => const <ClientMessage>[],
+        onDisconnected: (_) async {},
+        onConnectionStateChanged: (connected, _) {
+          if (connected) {
+            countsAtConnected.add(manager.connectionCount);
+          }
+        },
+        maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => false,
+        reconnectBackoff: const <Duration>[],
+        initialBackoff: Duration.zero,
+        backoffJitter: 0,
+        inactivityTimeout: const Duration(seconds: 30),
+      );
+
+      await manager.start();
+
+      expect(countsAtConnected, <int>[1]);
+
+      await manager.dispose();
+    });
+
     test('connectionRetries resets once synced past the last reconnect',
         () async {
       final adapter = MockWebSocketAdapter();
