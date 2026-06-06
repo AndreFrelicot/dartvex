@@ -56,11 +56,11 @@ echo "🔎 Extracting JS message types..."
 # Server message types (top-level only, from parseServerMessage + encodeClientMessage)
 JS_SERVER_TYPES=$(echo "$LATEST_PROTOCOL" | \
   awk '/function parseServerMessage|function encodeClientMessage/,/^}/' | \
-  grep -oP "case ['\"](\w+)['\"]" | sed "s/case ['\"]//;s/['\"]$//" | sort -u)
+  perl -ne "while (/case [\\\"'](\\w+)[\\\"']/g) { print \"\$1\\n\" }" | sort -u)
 echo "$JS_SERVER_TYPES" > "$CACHE_DIR/js-message-types.txt"
 
 # Extract all exported types
-JS_EXPORTED_TYPES=$(echo "$LATEST_PROTOCOL" | grep -oP "^export type (\w+)" | sed 's/^export type //' | sort -u)
+JS_EXPORTED_TYPES=$(echo "$LATEST_PROTOCOL" | perl -ne "print \"\$1\\n\" if /^export type (\\w+)/" | sort -u)
 echo "$JS_EXPORTED_TYPES" > "$CACHE_DIR/js-exported-types.txt"
 
 # --- 3. Extract message types from our Dart ---
@@ -68,10 +68,10 @@ echo "🔎 Extracting Dart message types..."
 
 # Top-level message types only (from ServerMessage.fromJson + ClientMessage.fromJson)
 DART_SERVER_TYPES=$(awk '/factory ServerMessage\.fromJson|factory ClientMessage\.fromJson/,/^  \}/' "$OUR_MESSAGES" | \
-  grep -oP "case '(\w+)'" | sed "s/case '//;s/'$//" | sort -u)
+  perl -ne "while (/case '(\\w+)'/g) { print \"\$1\\n\" }" | sort -u)
 echo "$DART_SERVER_TYPES" > "$CACHE_DIR/dart-message-types.txt"
 
-DART_CLASSES=$(grep -oP "^class (\w+)" "$OUR_MESSAGES" | sed 's/^class //' | sort -u)
+DART_CLASSES=$(perl -ne "print \"\$1\\n\" if /^class (\\w+)/" "$OUR_MESSAGES" | sort -u)
 echo "$DART_CLASSES" > "$CACHE_DIR/dart-classes.txt"
 
 # --- 4. Compare ---
@@ -272,7 +272,7 @@ done
 # --- 6. Check Rust SDK version ---
 echo ""
 echo "📦 Checking Rust SDK latest version..."
-RS_LATEST=$(curl -s "https://api.github.com/repos/$CONVEX_RS_REPO/tags?per_page=1" | grep -oP '"name": "convex-rs/([^"]+)"' | head -1 | sed 's/"name": "convex-rs\///' | sed 's/"//')
+RS_LATEST=$(curl -s "https://api.github.com/repos/$CONVEX_RS_REPO/tags?per_page=1" | perl -ne "if (/\"name\": \"convex-rs\\/([^\"]+)\"/) { print \"\$1\\n\"; exit }")
 echo "  Latest Rust SDK: $RS_LATEST"
 
 # Check our tracked version

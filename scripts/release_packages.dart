@@ -824,6 +824,14 @@ void _printPlan({
       '${baselines.values.any((baseline) => baseline == null) && !selectAll ? ' --since-ref=<git-ref>' : ''}'
       '${includeDependents ? ' --include-dependents' : ''}',
     );
+    if (publishOrder.any(
+      (package) => package.internalDependencies.isNotEmpty,
+    )) {
+      stdout.writeln(
+        '  after publishing internal dependencies: rerun affected dependent '
+        'dry-runs with --no-internal-overrides',
+      );
+    }
   }
 }
 

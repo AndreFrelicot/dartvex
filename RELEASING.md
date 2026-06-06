@@ -87,6 +87,24 @@ Before committing, verify package docs:
 - examples use current public APIs (`mutate`, `ConvexQuery`,
   `ConvexLocalClient.open`, and `dartvex_codegen generate --spec-file`)
 
+## Run the Live Convex Gate
+
+The hermetic unit tests are not enough for a publication. Before publishing,
+run the live gate against a real Convex deployment of `example/convex-backend`:
+
+```sh
+export CONVEX_DEPLOYMENT_URL=https://your-deployment.convex.cloud
+export CONVEX_TEST_QUERY=messages:listPublic
+export CONVEX_TEST_MUTATION=messages:sendPublic
+export CONVEX_TEST_AUTH_TOKEN="$(cd example/convex-backend && npm run -s token)"
+
+scripts/release_live_gate.sh
+```
+
+This script fails when the environment is missing instead of letting the live
+tests self-skip. It runs the `dartvex` live integration/conformance suite and
+the `dartvex_local` replay integration test.
+
 ## Run pub.dev Dry-Runs
 
 Dry-run only the directly changed packages:
@@ -120,6 +138,16 @@ pub.dev users will get:
 ```sh
 dart scripts/release_packages.dart dry-run --include-dependents --no-internal-overrides
 ```
+
+For releases where `dartvex` itself changes, this is a two-phase gate:
+
+1. before publishing `dartvex`, run the dry-run with internal overrides so the
+   unpublished package set can be checked together
+2. publish `dartvex`
+3. wait for pub.dev to resolve the new `dartvex` version
+4. rerun the dependent package dry-runs with `--no-internal-overrides`
+
+Do not publish dependent packages until the no-overrides dry-run is green.
 
 When you are preparing on one machine and publishing on another:
 
