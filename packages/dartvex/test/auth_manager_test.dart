@@ -81,6 +81,61 @@ void main() {
       expect(zoneErrors, isEmpty);
     });
 
+    test('scheduled refresh returning no token clears the refresh flow',
+        () async {
+      final events = <String>[];
+      final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final manager = AuthManager(
+        config: const ConvexClientConfig(
+          connectImmediately: false,
+          refreshTokenLeewaySeconds: 60,
+        ),
+        sendAuth: (token) async => events.add('sendAuth:${token ?? 'null'}'),
+        emitAuthState: (authenticated) =>
+            events.add('authState:$authenticated'),
+        stopSocket: () async => events.add('stop'),
+        restartSocket: () async => events.add('restart'),
+      );
+
+      await manager.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) async {
+          events.add('fetch:$forceRefresh');
+          return forceRefresh
+              ? null
+              : _jwt(
+                  subject: 'cached',
+                  issuedAt: nowSeconds,
+                  expiresAt: nowSeconds + 30,
+                );
+        },
+      );
+      manager.handleAuthConfirmed();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(
+        events.where((event) => event.startsWith('fetch:')),
+        <String>['fetch:false', 'fetch:true'],
+      );
+      expect(
+        events.where((event) => event.startsWith('sendAuth:')).map(
+            (event) => event == 'sendAuth:null' ? event : 'sendAuth:token'),
+        <String>['sendAuth:token', 'sendAuth:null'],
+      );
+      expect(events, contains('authState:false'));
+      events.clear();
+
+      await manager.handleAuthError(
+        const AuthError(
+          error: 'expired',
+          baseVersion: 0,
+          authUpdateAttempted: true,
+        ),
+        currentAuthVersion: 1,
+      );
+
+      expect(events, <String>['authState:false', 'sendAuth:null']);
+      await manager.stopRefreshing();
+    });
+
     test('scheduled refresh only requires token expiration', () async {
       final sentTokens = <String?>[];
       final forceRefreshCalls = <bool>[];
@@ -156,6 +211,45 @@ void main() {
         ),
       );
       await reconnect;
+      await manager.stopRefreshing();
+    });
+
+    test('reconnect refresh failure clears the refresh flow', () async {
+      final events = <String>[];
+      final manager = AuthManager(
+        config: const ConvexClientConfig(connectImmediately: false),
+        sendAuth: (token) async => events.add('sendAuth:${token ?? 'null'}'),
+        emitAuthState: (authenticated) =>
+            events.add('authState:$authenticated'),
+      );
+
+      await manager.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) async {
+          events.add('fetch:$forceRefresh');
+          if (forceRefresh) {
+            throw StateError('refresh failed');
+          }
+          return 'cached-token';
+        },
+      );
+      events.clear();
+
+      await manager.refreshAuthForReconnect();
+
+      expect(manager.currentToken, isNull);
+      expect(events, <String>['fetch:true', 'authState:false']);
+      events.clear();
+
+      await manager.handleAuthError(
+        const AuthError(
+          error: 'expired',
+          baseVersion: 0,
+          authUpdateAttempted: true,
+        ),
+        currentAuthVersion: 1,
+      );
+
+      expect(events, <String>['authState:false', 'sendAuth:null']);
       await manager.stopRefreshing();
     });
 
@@ -420,6 +514,34 @@ void main() {
       expect(
         events,
         <String>['pause', 'fetch:false', 'sendAuth:token-abc', 'resume'],
+      );
+    });
+
+    test('setAuthWithRefresh force-refreshes when the cached token is missing',
+        () async {
+      final events = <String>[];
+      final manager = managerRecording(
+        events,
+        fetchToken: ({required bool forceRefresh}) async => 'unused',
+      );
+
+      await manager.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) async {
+          events.add('fetch:$forceRefresh');
+          return forceRefresh ? 'fresh-token' : null;
+        },
+      );
+      await manager.stopRefreshing();
+
+      expect(
+        events,
+        <String>[
+          'pause',
+          'fetch:false',
+          'fetch:true',
+          'sendAuth:fresh-token',
+          'resume'
+        ],
       );
     });
 

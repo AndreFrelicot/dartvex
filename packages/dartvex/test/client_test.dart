@@ -1758,6 +1758,8 @@ void main() {
       );
       await settle();
 
+      final sentMessageCountBeforeDisconnect =
+          adapter.decodedSentMessages.length;
       adapter.disconnect(reason: 'network drop');
       await settle();
 
@@ -1766,12 +1768,12 @@ void main() {
         (status) => status.state == ConnectionState.connected,
       );
       final authMessages = adapter.decodedSentMessages
+          .skip(sentMessageCountBeforeDisconnect)
           .where((message) => message['type'] == 'Authenticate')
           .toList(growable: false);
 
       expect(forcedRefreshCalls, 1);
-      expect(authMessages.last['tokenType'], 'User');
-      expect(authMessages.last['value'], 'cached-token');
+      expect(authMessages, isEmpty);
 
       client.dispose();
     });

@@ -77,6 +77,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and a reauth triggered by an `AuthError` stops the socket, fetches a fresh
   token, and restarts so it is replayed on a clean connection. Mirrors the
   official client's pause/resume and stop/restart auth gating.
+- Auth setup now mirrors the official client's initial-refetch behavior: when
+  the cached token fetch returns no token, the client immediately retries with a
+  forced refresh before reporting unauthenticated state.
 - Auth token refresh is now scheduled from the token's own lifetime
   (`exp - iat`) minus `refreshTokenLeewaySeconds`, instead of from the device
   wall clock (`exp - now - 60`). Refresh timing is now immune to device clock
@@ -114,6 +117,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Auth confirmations are now ignored unless a token update is actually pending,
   and reauth confirmations no longer re-emit an already-authenticated public
   state.
+- Auth refresh flows now reset to unauthenticated state when a scheduled or
+  reconnect refresh returns no token, or when a reconnect refresh fails,
+  preventing stale refresh callbacks from resurrecting a failed auth flow.
 - Query subscriptions now emit `QueryLoading` when an optimistic update clears a
   live query, and one-shot queries ignore that loading state until a concrete
   success or error arrives.

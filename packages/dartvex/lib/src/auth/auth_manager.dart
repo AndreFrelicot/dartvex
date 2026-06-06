@@ -119,17 +119,29 @@ class AuthManager {
     await _invokePauseSocket();
     var shouldResumeSocket = false;
     try {
-      final token = await fetchToken(forceRefresh: false);
+      var token = await fetchToken(forceRefresh: false);
       if (!_isCurrentFlow(generation, fetchToken)) {
         // A newer auth flow superseded this one; it now owns the socket gating.
         return _StaleAuthHandle();
       }
+      if (token == null) {
+        _log(
+          DartvexLogLevel.debug,
+          'Cached auth token unavailable; forcing initial refresh',
+        );
+        token = await fetchToken(forceRefresh: true);
+        if (!_isCurrentFlow(generation, fetchToken)) {
+          return _StaleAuthHandle();
+        }
+      }
       shouldResumeSocket = true;
       _currentToken = token;
       _expectConfirmationForToken(token);
-      await sendAuth(token);
       if (token == null) {
-        _emit(false);
+        _clearFailedAuthFlowAndEmitUnauthenticated();
+        await sendAuth(null);
+      } else {
+        await sendAuth(token);
       }
       return _RefreshAuthHandle(this);
     } catch (error, stackTrace) {
@@ -141,13 +153,8 @@ class AuthManager {
           error: error,
           stackTrace: stackTrace,
         );
-        _fetchToken = null;
-        _onAuthChange = null;
-        _currentToken = null;
-        _clearPendingConfirmation();
-        _setRefreshing(false);
+        _clearFailedAuthFlowAndEmitUnauthenticated();
         await sendAuth(null);
-        _emit(false);
       }
       rethrow;
     } finally {
@@ -180,15 +187,29 @@ class AuthManager {
     _log(DartvexLogLevel.debug, 'Refreshing auth token for reconnect');
     _cancelRefreshTimer();
     final generation = ++_authGeneration;
-    final freshToken = await fetchToken(forceRefresh: true);
-    if (!_isCurrentFlow(generation, fetchToken)) {
-      return;
-    }
-    _currentToken = freshToken;
-    _expectConfirmationForToken(freshToken);
-    if (freshToken == null) {
-      _log(DartvexLogLevel.warn, 'Reconnect auth refresh returned no token');
-      _emit(false);
+    try {
+      final freshToken = await fetchToken(forceRefresh: true);
+      if (!_isCurrentFlow(generation, fetchToken)) {
+        return;
+      }
+      _currentToken = freshToken;
+      if (freshToken == null) {
+        _log(DartvexLogLevel.warn, 'Reconnect auth refresh returned no token');
+        _clearFailedAuthFlowAndEmitUnauthenticated();
+        return;
+      }
+      _expectConfirmationForToken(freshToken);
+    } catch (error, stackTrace) {
+      if (!_isCurrentFlow(generation, fetchToken)) {
+        return;
+      }
+      _log(
+        DartvexLogLevel.error,
+        'Reconnect auth refresh failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      _clearFailedAuthFlowAndEmitUnauthenticated();
     }
   }
 
@@ -276,15 +297,13 @@ class AuthManager {
     }
     final fetchToken = _fetchToken;
     if (fetchToken == null) {
-      _clearFailedAuthFlow();
-      _emit(false);
+      _clearFailedAuthFlowAndEmitUnauthenticated();
       await sendAuth(null);
       return;
     }
     if (_tokenConfirmationAttempts >= _maxTokenConfirmationAttempts) {
       _log(DartvexLogLevel.error, 'Auth confirmation retries exhausted');
-      _clearFailedAuthFlow();
-      _emit(false);
+      _clearFailedAuthFlowAndEmitUnauthenticated();
       await sendAuth(null);
       return;
     }
@@ -300,12 +319,13 @@ class AuthManager {
       if (_isCurrentFlow(generation, fetchToken)) {
         _currentToken = freshToken;
         _expectConfirmationForToken(freshToken, resetAttempts: false);
-        await sendAuth(freshToken);
         if (freshToken == null) {
           _log(DartvexLogLevel.warn, 'Forced auth refresh returned no token');
           // The refresh could not produce a token; the reauth is over.
-          _clearFailedAuthFlow();
-          _emit(false);
+          _clearFailedAuthFlowAndEmitUnauthenticated();
+          await sendAuth(null);
+        } else {
+          await sendAuth(freshToken);
         }
       }
     } catch (error, stackTrace) {
@@ -316,9 +336,8 @@ class AuthManager {
           error: error,
           stackTrace: stackTrace,
         );
-        _clearFailedAuthFlow();
+        _clearFailedAuthFlowAndEmitUnauthenticated();
         await sendAuth(null);
-        _emit(false);
       }
     } finally {
       // Always restart, even on a superseded flow, so the socket is never left
@@ -440,16 +459,18 @@ class AuthManager {
         if (!_isCurrentFlow(generation, fetchToken)) {
           return;
         }
-        _currentToken = freshToken;
-        _expectConfirmationForToken(freshToken);
-        await sendAuth(freshToken);
         if (freshToken == null) {
           _log(
             DartvexLogLevel.warn,
             'Scheduled auth refresh returned no token',
           );
-          _emit(false);
+          _currentToken = null;
+          _clearFailedAuthFlowAndEmitUnauthenticated();
+          await sendAuth(null);
         } else {
+          _currentToken = freshToken;
+          _expectConfirmationForToken(freshToken);
+          await sendAuth(freshToken);
           _log(DartvexLogLevel.debug, 'Scheduled auth refresh succeeded');
         }
       } catch (error, stackTrace) {
@@ -477,6 +498,14 @@ class AuthManager {
     _currentToken = null;
     _clearPendingConfirmation();
     _setRefreshing(false);
+  }
+
+  void _clearFailedAuthFlowAndEmitUnauthenticated() {
+    final onAuthChange = _onAuthChange;
+    _clearFailedAuthFlow();
+    _backendAuthenticated = false;
+    emitAuthState(false);
+    onAuthChange?.call(false);
   }
 
   void _expectConfirmationForToken(
