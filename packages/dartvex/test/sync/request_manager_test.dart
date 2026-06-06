@@ -266,10 +266,11 @@ void main() {
     });
 
     test(
-        'a mutation awaiting its transition still counts but is excluded from '
-        'the oldest time', () {
+        'a mutation awaiting its transition still counts and reports now when '
+        'it is the only inflight request', () {
       final manager = RequestManager();
       manager.trackMutation(mutation(0), sent: true);
+      final beforeParkedOnly = DateTime.now();
 
       // Parked for read-your-writes: completed on the server, awaiting the
       // transition that carries its ts.
@@ -283,10 +284,14 @@ void main() {
         appliedTransitionTs: encodeTs(1),
       );
 
-      // Still in flight by count, but no longer waiting on the network.
+      // Still in flight by count. The official client reports the current time
+      // when every in-flight request is already parked behind a transition.
       expect(manager.inflightMutations, 1);
       expect(manager.hasInflightRequests, isTrue);
-      expect(manager.timeOfOldestInflightRequest(), isNull);
+      final parkedOldest = manager.timeOfOldestInflightRequest();
+      expect(parkedOldest, isNotNull);
+      expect(parkedOldest!.isBefore(beforeParkedOnly), isFalse);
+      expect(parkedOldest.isAfter(DateTime.now()), isFalse);
 
       // A genuinely pending action becomes the oldest waiting request.
       manager.trackAction(action(1), sent: true);

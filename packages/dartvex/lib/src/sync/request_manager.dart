@@ -370,12 +370,9 @@ class RequestManager {
   /// The time the oldest still-pending request was first tracked, or `null`
   /// when nothing is in flight.
   ///
-  /// Mutations that have completed on the server and are only awaiting their
-  /// read-your-writes transition are excluded: they are no longer waiting on the
-  /// network even though they still count toward [inflightMutations].
-  ///
-  /// This differs from the official client, which returns the current time when
-  /// every in-flight request is already parked behind a transition.
+  /// When every in-flight request is a mutation that has completed on the server
+  /// and is only awaiting its read-your-writes transition, this matches the
+  /// official client and returns the current time.
   DateTime? timeOfOldestInflightRequest() {
     DateTime? oldest;
     for (final pending in _pendingMutations.values) {
@@ -391,6 +388,9 @@ class RequestManager {
       if (oldest == null || pending.requestedAt.isBefore(oldest)) {
         oldest = pending.requestedAt;
       }
+    }
+    if (oldest == null && _pendingMutations.isNotEmpty) {
+      return DateTime.now();
     }
     return oldest;
   }
