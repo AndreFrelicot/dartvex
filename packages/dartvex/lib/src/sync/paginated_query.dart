@@ -252,6 +252,7 @@ class ConvexPaginatedQuery {
     if (_disposed) {
       return;
     }
+    _cancelSplitsForOriginal(page);
     switch (result) {
       case StoredQuerySuccess(:final value):
         final parsed = _parsePage(value);
@@ -274,6 +275,17 @@ class ConvexPaginatedQuery {
     }
     _reconcileSplits();
     _emit();
+  }
+
+  void _cancelSplitsForOriginal(_Page page) {
+    final staleSplits = _splits
+        .where((split) => split.original == page)
+        .toList(growable: false);
+    for (final split in staleSplits) {
+      split.first.dispose();
+      split.second.dispose();
+      _splits.remove(split);
+    }
   }
 
   void _reconcileSplits() {
