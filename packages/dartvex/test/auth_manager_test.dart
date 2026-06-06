@@ -266,7 +266,7 @@ void main() {
 
       expect(authStates, contains(false));
       expect(sentTokens.last, isNull);
-      expect(fetchCount, lessThan(7));
+      expect(fetchCount, 3);
       await manager.stopRefreshing();
     });
 
@@ -303,6 +303,7 @@ void main() {
       await manager.refreshAuthForReconnect();
 
       expect(authStates, contains(false));
+      expect(terminalFetchCount, 3);
       expect(fetchCount, terminalFetchCount);
       expect(manager.currentToken, isNull);
       await manager.stopRefreshing();

@@ -75,7 +75,7 @@ class AuthManager {
   bool _awaitingConfirmation = false;
   bool _emitAuthenticatedOnConfirmation = false;
 
-  static const int _maxTokenConfirmationAttempts = 3;
+  static const int _maxTokenConfirmationAttempts = 2;
 
   /// Upper bound on the refresh delay, mirroring the official client's 20-day
   /// cap (`setTimeout` uses a 32-bit integer and overflows beyond ~24 days).
