@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.5] - 2026-06-04
+## [0.1.4] - 2026-06-04
 
 ### Fixed
 
@@ -17,19 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   document that cookie fallback is native-only.
 - Do not reject successful 200 Better Auth responses merely because they
   include informational `message` or `error` fields.
+- Removes diagnostic prints that could expose Better Auth URLs, headers,
+  cookies, request bodies, or tokens.
 
 ### Changed
 
 - Require `dartvex` `^0.2.0`.
-
-## [0.1.4] - 2026-05-13
-
-### Fixed
-
-- Requires `dartvex` 0.1.5 so web consumers do not resolve the older
-  JavaScript-incompatible value codec.
-- Removes diagnostic prints that could expose Better Auth URLs, headers,
-  cookies, request bodies, or tokens.
 
 ## [0.1.3] - 2026-04-30
 

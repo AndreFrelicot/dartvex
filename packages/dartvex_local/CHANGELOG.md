@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.4] - 2026-06-04
+## [0.1.3] - 2026-06-04
 
 ### Changed
 
@@ -43,11 +43,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "Cannot fire new event" state error.
 - `SqliteLocalStore.close()` no longer deletes the database file's parent
   directory, which could remove unrelated files placed alongside it.
-
-## [0.1.3] - 2026-05-13
-
-### Fixed
-
 - Queues auto-mode mutations immediately while the remote client is
   disconnected, and waits for a connected remote before replaying queued
   mutations.

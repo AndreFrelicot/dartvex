@@ -63,7 +63,7 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 ```yaml
 dependencies:
   dartvex: ^0.2.0
-  dartvex_local: ^0.1.4
+  dartvex_local: ^0.1.3
 ```
 
 ## Quick Start
