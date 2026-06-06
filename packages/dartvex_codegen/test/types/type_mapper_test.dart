@@ -186,6 +186,154 @@ void main() {
       expect(definitions, contains('Tried:'));
     });
 
+    test('maps unions containing any to dynamic', () {
+      final context = TypeRenderContext();
+      final mapper = TypeMapper();
+
+      final mapped = mapper.mapType(
+        const ConvexUnionType(
+          <ConvexType>[
+            ConvexAnyType(),
+            ConvexStringType(),
+          ],
+        ),
+        suggestedName: 'Anything',
+        context: context,
+      );
+
+      expect(mapped.annotation, 'dynamic');
+      expect(mapped.encode('value'), 'value');
+      expect(mapped.decode('raw'), 'raw');
+      expect(context.renderDefinitions(), isEmpty);
+    });
+
+    test('collapses literals covered by broader scalar union members', () {
+      final context = TypeRenderContext();
+      final mapper = TypeMapper();
+
+      final mapped = mapper.mapType(
+        const ConvexUnionType(
+          <ConvexType>[
+            ConvexLiteralType(1),
+            ConvexNumberType(),
+          ],
+        ),
+        suggestedName: 'Count',
+        context: context,
+      );
+
+      expect(mapped.annotation, 'double');
+      expect(mapped.decode('raw'), contains('expectDouble'));
+      expect(context.renderDefinitions(), isEmpty);
+    });
+
+    test('maps object unions with a required literal discriminator', () {
+      final context = TypeRenderContext();
+      final mapper = TypeMapper();
+
+      final mapped = mapper.mapType(
+        const ConvexUnionType(
+          <ConvexType>[
+            ConvexObjectType(
+              <String, ConvexField>{
+                'kind': ConvexField(
+                  fieldType: ConvexLiteralType('text'),
+                  optional: false,
+                ),
+                'body': ConvexField(
+                  fieldType: ConvexStringType(),
+                  optional: false,
+                ),
+              },
+            ),
+            ConvexObjectType(
+              <String, ConvexField>{
+                'kind': ConvexField(
+                  fieldType: ConvexLiteralType('image'),
+                  optional: false,
+                ),
+                'url': ConvexField(
+                  fieldType: ConvexStringType(),
+                  optional: false,
+                ),
+              },
+            ),
+          ],
+        ),
+        suggestedName: 'MessagePayload',
+        context: context,
+      );
+
+      expect(mapped.annotation, 'MessagePayload');
+      expect(
+        context.renderDefinitions(),
+        contains('sealed class MessagePayload'),
+      );
+    });
+
+    test('throws on object unions without a discriminator', () {
+      final context = TypeRenderContext();
+      final mapper = TypeMapper();
+
+      expect(
+        () => mapper.mapType(
+          const ConvexUnionType(
+            <ConvexType>[
+              ConvexObjectType(
+                <String, ConvexField>{
+                  'body': ConvexField(
+                    fieldType: ConvexStringType(),
+                    optional: false,
+                  ),
+                },
+              ),
+              ConvexObjectType(
+                <String, ConvexField>{
+                  'url': ConvexField(
+                    fieldType: ConvexStringType(),
+                    optional: false,
+                  ),
+                },
+              ),
+            ],
+          ),
+          suggestedName: 'AmbiguousPayload',
+          context: context,
+        ),
+        throwsA(isA<TypeMapperException>().having(
+          (e) => e.message,
+          'message',
+          allOf(
+            contains('Ambiguous union "AmbiguousPayload"'),
+            contains('required literal discriminator'),
+          ),
+        )),
+      );
+    });
+
+    test('throws on runtime-overlapping array unions', () {
+      final context = TypeRenderContext();
+      final mapper = TypeMapper();
+
+      expect(
+        () => mapper.mapType(
+          const ConvexUnionType(
+            <ConvexType>[
+              ConvexArrayType(ConvexStringType()),
+              ConvexArrayType(ConvexNumberType()),
+            ],
+          ),
+          suggestedName: 'AmbiguousList',
+          context: context,
+        ),
+        throwsA(isA<TypeMapperException>().having(
+          (e) => e.message,
+          'message',
+          contains('Ambiguous union "AmbiguousList"'),
+        )),
+      );
+    });
+
     test('throws on field name collision in objects', () {
       final context = TypeRenderContext();
       final mapper = TypeMapper();

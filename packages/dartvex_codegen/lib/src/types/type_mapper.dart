@@ -5,6 +5,8 @@ import 'dart_type.dart';
 /// Renders encode and decode expressions for a generated value.
 typedef ExpressionRenderer = String Function(String expression);
 
+String _identityExpression(String expression) => expression;
+
 /// Thrown when Convex types cannot be mapped to valid Dart representations.
 class TypeMapperException implements Exception {
   /// Creates a type-mapping failure.
@@ -347,6 +349,15 @@ class TypeMapper {
     final nullable = union.value.any((type) => type is ConvexNullType);
     final nonNull =
         union.value.where((type) => type is! ConvexNullType).toList();
+
+    if (nonNull.any((type) => type is ConvexAnyType)) {
+      return const MappedType(
+        dartType: DartPrimitiveType('dynamic'),
+        encode: _identityExpression,
+        decode: _identityExpression,
+      );
+    }
+
     if (nonNull.length == 1) {
       final inner = mapType(
         nonNull.single,
@@ -434,6 +445,21 @@ class TypeMapper {
             : '$typeName.fromJson($expression)',
       );
     }
+
+    final reducedNonNull = _removeRedundantLiteralMembers(nonNull);
+    if (reducedNonNull.length != nonNull.length) {
+      return _mapUnion(
+        ConvexUnionType(
+          nullable
+              ? <ConvexType>[...reducedNonNull, const ConvexNullType()]
+              : reducedNonNull,
+        ),
+        suggestedName: suggestedName,
+        context: context,
+      );
+    }
+
+    _assertUnionCanBeDecoded(nonNull, suggestedName);
 
     final typeName = context.reserveTypeName(suggestedName);
     final cases = <_UnionCase>[];
@@ -525,6 +551,170 @@ class TypeMapper {
       )
       ..write('}');
     return buffer.toString();
+  }
+
+  List<ConvexType> _removeRedundantLiteralMembers(List<ConvexType> members) {
+    final coveredScalarTags = members
+        .where((type) => type is! ConvexLiteralType)
+        .map(_scalarLiteralCoverageTag)
+        .whereType<String>()
+        .toSet();
+    if (coveredScalarTags.isEmpty) {
+      return members;
+    }
+    return members
+        .where(
+          (type) =>
+              type is! ConvexLiteralType ||
+              !coveredScalarTags.contains(_runtimeTag(type)),
+        )
+        .toList();
+  }
+
+  void _assertUnionCanBeDecoded(
+    List<ConvexType> members,
+    String suggestedName,
+  ) {
+    for (var leftIndex = 0; leftIndex < members.length; leftIndex += 1) {
+      for (var rightIndex = leftIndex + 1;
+          rightIndex < members.length;
+          rightIndex += 1) {
+        final left = members[leftIndex];
+        final right = members[rightIndex];
+        final leftTag = _runtimeTag(left);
+        if (leftTag != _runtimeTag(right)) {
+          continue;
+        }
+        if (left is ConvexObjectType &&
+            right is ConvexObjectType &&
+            _hasDistinctRequiredLiteralDiscriminator(left, right)) {
+          continue;
+        }
+        throw TypeMapperException(
+          'Ambiguous union "$suggestedName": '
+          '${_describeConvexType(left)} and ${_describeConvexType(right)} '
+          'both decode from ${_runtimeTagDescription(leftTag)}. Dart cannot '
+          'select a safe union case at runtime. Use a broader non-union '
+          'validator, or for object unions add a shared required literal '
+          'discriminator with distinct values.',
+        );
+      }
+    }
+  }
+
+  bool _hasDistinctRequiredLiteralDiscriminator(
+    ConvexObjectType left,
+    ConvexObjectType right,
+  ) {
+    for (final entry in left.value.entries) {
+      final rightField = right.value[entry.key];
+      if (rightField == null || entry.value.optional || rightField.optional) {
+        continue;
+      }
+      final leftType = entry.value.fieldType;
+      final rightType = rightField.fieldType;
+      if (leftType is ConvexLiteralType &&
+          rightType is ConvexLiteralType &&
+          !_literalValuesEqual(leftType.value, rightType.value)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool _literalValuesEqual(Object? left, Object? right) {
+    if (left is num && right is num) {
+      return left.toDouble() == right.toDouble();
+    }
+    return left == right;
+  }
+
+  String? _scalarLiteralCoverageTag(ConvexType type) {
+    if (type is ConvexBooleanType ||
+        type is ConvexNumberType ||
+        type is ConvexStringType) {
+      return _runtimeTag(type);
+    }
+    return null;
+  }
+
+  String _runtimeTag(ConvexType type) {
+    if (type is ConvexNullType) {
+      return 'null';
+    }
+    if (type is ConvexBooleanType) {
+      return 'boolean';
+    }
+    if (type is ConvexNumberType) {
+      return 'number';
+    }
+    if (type is ConvexBigIntType) {
+      return 'bigint';
+    }
+    if (type is ConvexStringType || type is ConvexIdType) {
+      return 'string';
+    }
+    if (type is ConvexBytesType) {
+      return 'bytes';
+    }
+    if (type is ConvexArrayType) {
+      return 'array';
+    }
+    if (type is ConvexObjectType || type is ConvexRecordType) {
+      return 'map';
+    }
+    if (type is ConvexLiteralType) {
+      final value = type.value;
+      if (value == null) {
+        return 'null';
+      }
+      if (value is bool) {
+        return 'boolean';
+      }
+      if (value is num) {
+        return 'number';
+      }
+      if (value is String) {
+        return 'string';
+      }
+      return value.runtimeType.toString();
+    }
+    if (type is ConvexAnyType) {
+      return 'any';
+    }
+    return type.type;
+  }
+
+  String _runtimeTagDescription(String tag) {
+    return switch (tag) {
+      'array' => 'a Dart List',
+      'bigint' => 'a Dart BigInt',
+      'boolean' => 'a Dart bool',
+      'bytes' => 'Uint8List bytes',
+      'map' => 'a Dart Map',
+      'number' => 'a Dart num',
+      'string' => 'a Dart String',
+      _ => 'the same Dart runtime shape "$tag"',
+    };
+  }
+
+  String _describeConvexType(ConvexType type) {
+    if (type is ConvexLiteralType) {
+      return 'literal(${_literalMessage(type.value)})';
+    }
+    if (type is ConvexIdType) {
+      return 'id(${type.tableName})';
+    }
+    if (type is ConvexArrayType) {
+      return 'array';
+    }
+    if (type is ConvexRecordType) {
+      return 'record';
+    }
+    if (type is ConvexObjectType) {
+      return 'object';
+    }
+    return type.type;
   }
 
   DartType _literalDartType(Object? value) {
