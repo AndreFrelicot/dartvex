@@ -190,7 +190,7 @@ class GenerateCommand {
 
     final subscription = stream.listen((event) {
       final rawPath = event.path;
-      if (_shouldIgnore(rawPath, config)) {
+      if (shouldIgnoreWatchEvent(rawPath, config)) {
         return;
       }
       debounce?.cancel();
@@ -207,22 +207,22 @@ class GenerateCommand {
     yield* controller.stream;
   }
 
-  bool _shouldIgnore(String eventPath, GenerateConfig config) {
-    final normalized = path.normalize(eventPath);
-    if (normalized.contains('.dart_tool')) {
-      return true;
-    }
-    if (normalized.contains('node_modules')) {
-      return true;
-    }
-    if (normalized.startsWith(config.outputDirectory)) {
-      return true;
-    }
-    return false;
-  }
-
   void _printUsage() {
     _log('Usage: dart run dartvex_codegen generate [options]');
     _log(buildParser().usage);
   }
+}
+
+/// Returns whether a filesystem event should be ignored by watch mode.
+bool shouldIgnoreWatchEvent(String eventPath, GenerateConfig config) {
+  final normalized = path.normalize(path.absolute(eventPath));
+  if (path.split(normalized).contains('.dart_tool')) {
+    return true;
+  }
+  if (path.split(normalized).contains('node_modules')) {
+    return true;
+  }
+  final outputDirectory = path.normalize(path.absolute(config.outputDirectory));
+  return path.equals(normalized, outputDirectory) ||
+      path.isWithin(outputDirectory, normalized);
 }

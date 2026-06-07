@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:dartvex_codegen/dartvex_codegen.dart';
+import 'package:dartvex_codegen/src/cli/generate_command.dart' as internal;
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
@@ -116,6 +117,47 @@ void main() {
 
       expect(exitCode, 64);
       expect(logs.single, contains('--output is required'));
+    });
+
+    test('watch ignore filter treats output path as a directory boundary', () {
+      final tempRoot = path.normalize(path.absolute('tmp', 'dartvex_codegen'));
+      final config = GenerateConfig(
+        projectDirectory: path.join(tempRoot, 'project'),
+        outputDirectory: path.join(tempRoot, 'build'),
+        clientImport: 'package:dartvex/dartvex.dart',
+        dryRun: false,
+        verbose: false,
+        watch: true,
+      ).normalize();
+
+      expect(
+        internal.shouldIgnoreWatchEvent(
+          path.join(config.outputDirectory, 'api.dart'),
+          config,
+        ),
+        isTrue,
+      );
+      expect(
+        internal.shouldIgnoreWatchEvent(
+          '${config.outputDirectory}-cache/source.ts',
+          config,
+        ),
+        isFalse,
+      );
+      expect(
+        internal.shouldIgnoreWatchEvent(
+          path.join(tempRoot, 'project', 'node_modules', 'convex', 'index.ts'),
+          config,
+        ),
+        isTrue,
+      );
+      expect(
+        internal.shouldIgnoreWatchEvent(
+          path.join(tempRoot, 'project', '.dart_tool', 'package_config.json'),
+          config,
+        ),
+        isTrue,
+      );
     });
   });
 }
