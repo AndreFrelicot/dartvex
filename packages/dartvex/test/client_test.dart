@@ -1187,6 +1187,34 @@ void main() {
       client.dispose();
     });
 
+    test('close fails a pending one-shot query', () async {
+      final adapter = MockWebSocketAdapter();
+      final client = ConvexClient(
+        'https://demo.convex.cloud',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+      await settle();
+
+      final future = client.query('messages:list');
+      final expectation = expectLater(
+        future.timeout(const Duration(milliseconds: 50)),
+        throwsA(
+          isA<ConvexException>().having(
+            (error) => error.message,
+            'message',
+            'ConvexClient has been disposed',
+          ),
+        ),
+      );
+
+      await client.close();
+
+      await expectation;
+    });
+
     test('mutation timeout completes caller future', () async {
       final adapter = MockWebSocketAdapter();
       final client = ConvexClient(

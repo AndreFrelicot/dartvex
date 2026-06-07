@@ -594,45 +594,73 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     final subscription = subscribe(name, args);
     final completer = Completer<dynamic>();
     late final StreamSubscription<QueryResult> streamSubscription;
-    Future<void> cancelQuerySubscription() async {
+    Object? closeError;
+    StackTrace? closeStackTrace;
+    Future<void> cancelQuerySubscription({
+      Object? error,
+      StackTrace? stackTrace,
+    }) async {
+      closeError = error;
+      closeStackTrace = stackTrace;
       await streamSubscription.cancel();
       subscription.cancel();
     }
 
-    streamSubscription = subscription.stream.listen((event) {
-      if (completer.isCompleted) {
-        return;
-      }
-      switch (event) {
-        case QuerySuccess(:final value):
-          _log(
-            DartvexLogLevel.debug,
-            'Query succeeded',
-            data: <String, Object?>{
-              ..._requestData(name, args),
-              'resultType': value.runtimeType.toString(),
-            },
-          );
-          completer.complete(value);
-        case QueryError(:final message, :final data, :final logLines):
-          _log(
-            DartvexLogLevel.error,
-            'Query failed',
-            data: <String, Object?>{
-              ..._requestData(name, args),
-              'errorMessage': message,
-            },
-          );
-          completer.completeError(
-            ConvexException(message, data: data, logLines: logLines),
-          );
-        case QueryLoading():
-          // Keep waiting; one-shot queries resolve only on concrete success or
-          // error, matching the official client's undefined/loading semantics.
+    streamSubscription = subscription.stream.listen(
+      (event) {
+        if (completer.isCompleted) {
           return;
-      }
-      unawaited(cancelQuerySubscription());
-    });
+        }
+        switch (event) {
+          case QuerySuccess(:final value):
+            _log(
+              DartvexLogLevel.debug,
+              'Query succeeded',
+              data: <String, Object?>{
+                ..._requestData(name, args),
+                'resultType': value.runtimeType.toString(),
+              },
+            );
+            completer.complete(value);
+          case QueryError(:final message, :final data, :final logLines):
+            _log(
+              DartvexLogLevel.error,
+              'Query failed',
+              data: <String, Object?>{
+                ..._requestData(name, args),
+                'errorMessage': message,
+              },
+            );
+            completer.completeError(
+              ConvexException(message, data: data, logLines: logLines),
+            );
+          case QueryLoading():
+            // Keep waiting; one-shot queries resolve only on concrete success or
+            // error, matching the official client's undefined/loading semantics.
+            return;
+        }
+        unawaited(cancelQuerySubscription());
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        if (completer.isCompleted) {
+          return;
+        }
+        completer.completeError(error, stackTrace);
+      },
+      onDone: () {
+        if (completer.isCompleted) {
+          return;
+        }
+        final error = closeError ??
+            const ConvexException('ConvexClient has been disposed');
+        final stackTrace = closeStackTrace;
+        if (stackTrace == null) {
+          completer.completeError(error);
+        } else {
+          completer.completeError(error, stackTrace);
+        }
+      },
+    );
     final timeout = _config.queryTimeout;
     if (timeout == null) {
       return completer.future;
@@ -640,11 +668,12 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     return completer.future.timeout(
       timeout,
       onTimeout: () {
-        unawaited(cancelQuerySubscription());
-        throw TimeoutException(
+        final error = TimeoutException(
           'Convex query "$name" timed out after $timeout',
           timeout,
         );
+        unawaited(cancelQuerySubscription(error: error));
+        throw error;
       },
     );
   }
