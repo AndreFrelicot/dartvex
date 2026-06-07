@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:dartvex/dartvex.dart' show ConvexStorageException;
 import 'package:flutter/widgets.dart';
 
 import 'file_downloader.dart';
@@ -163,7 +164,9 @@ class _ConvexImageState extends State<ConvexImage> {
 
       final urlStr = url as String?;
       if (urlStr == null || urlStr.isEmpty) {
-        throw StateError('No URL returned for storageId $storageId');
+        throw ConvexStorageException(
+          'No URL returned for storageId $storageId',
+        );
       }
 
       // Step 2: download with progress tracking

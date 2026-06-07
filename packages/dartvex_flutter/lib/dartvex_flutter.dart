@@ -8,6 +8,7 @@ export 'package:dartvex/dartvex.dart'
         ConnectionStatus,
         ConvexPaginatedResult,
         ConvexPaginationStatus,
+        ConvexStorageException,
         OptimisticLocalStore,
         OptimisticQueryEntry,
         OptimisticUpdate;

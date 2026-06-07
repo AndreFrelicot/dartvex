@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:dartvex/dartvex.dart' show ConvexStorageException;
 import 'package:flutter/widgets.dart';
 
 import 'asset_cache.dart';
@@ -176,7 +177,9 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
 
       final urlStr = url as String?;
       if (urlStr == null || urlStr.isEmpty) {
-        throw StateError('No URL returned for storageId $storageId');
+        throw ConvexStorageException(
+          'No URL returned for storageId $storageId',
+        );
       }
 
       final file = await _cache.prefetch(
