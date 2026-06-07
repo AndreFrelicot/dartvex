@@ -200,6 +200,24 @@ void main() {
       expect(state.authVersion, 1);
     });
 
+    test('auth clear while paused is emitted on resume', () {
+      final state = LocalSyncState();
+      state.setAuth(tokenType: 'User', value: 'tok');
+      expect(state.authVersion, 1);
+
+      state.pause();
+      state.setAuth(tokenType: 'None');
+      state.setAuth(tokenType: 'None');
+      expect(state.authVersion, 1);
+
+      final (querySet, authenticate) = state.resume();
+      expect(querySet, isNull);
+      expect(authenticate, isNotNull);
+      expect(authenticate!.tokenType, 'None');
+      expect(authenticate.baseVersion, 1);
+      expect(state.authVersion, 2);
+    });
+
     test('unsubscribing while paused cancels a buffered subscription', () {
       final state = LocalSyncState();
       state.pause();

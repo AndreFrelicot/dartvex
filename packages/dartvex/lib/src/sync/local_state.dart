@@ -116,6 +116,7 @@ class LocalSyncState {
   bool _outstandingAuthOlderThanRestart = false;
 
   bool _paused = false;
+  bool _pendingAuthModification = false;
   final Map<int, QuerySetOperation> _pendingQuerySetModifications =
       <int, QuerySetOperation>{};
 
@@ -289,6 +290,7 @@ class LocalSyncState {
   /// Advances the identity version unless paused, in which case the new version
   /// is only emitted by [resume]. Mirrors the official client's `setAuth`.
   Authenticate setAuth({required String tokenType, String? value}) {
+    final hadAuth = _authState != null;
     restoreAuth(tokenType: tokenType, value: value);
     if (_authState == null) {
       // Clearing auth resolves any auth outstanding since the last reconnect.
@@ -297,7 +299,12 @@ class LocalSyncState {
     final baseVersion = authVersion;
     // While paused the auth is captured but not yet on the wire, so the identity
     // version is only advanced when [resume] actually emits the Authenticate.
-    if (!_paused) {
+    if (_paused) {
+      _pendingAuthModification = _pendingAuthModification ||
+          _authState != null ||
+          hadAuth ||
+          _outstandingAuthOlderThanRestart;
+    } else {
       authVersion += 1;
     }
     return Authenticate(
@@ -319,8 +326,9 @@ class LocalSyncState {
   /// Replays everything buffered while paused and clears the paused state.
   ///
   /// Returns the coalesced query-set modification (if any subscriptions changed
-  /// while paused) and an [Authenticate] re-affirming the current auth (if any),
-  /// each advancing its version. Both are `null` when there is nothing to send.
+  /// while paused) and an [Authenticate] for the current auth or explicit auth
+  /// clear, each advancing its version. Both are `null` when there is nothing
+  /// to send.
   /// Mirrors the official client's `resume`.
   (ModifyQuerySet?, Authenticate?) resume() {
     if (!_paused) {
@@ -339,12 +347,14 @@ class LocalSyncState {
     }
     Authenticate? authenticate;
     final auth = _authState;
-    if (auth != null) {
+    if (_pendingAuthModification || auth != null) {
       final baseVersion = authVersion;
       authVersion += 1;
-      authenticate = auth.toAuthenticate(baseVersion);
+      authenticate = auth?.toAuthenticate(baseVersion) ??
+          Authenticate(tokenType: 'None', baseVersion: baseVersion);
     }
     _paused = false;
+    _pendingAuthModification = false;
     _pendingQuerySetModifications.clear();
     return (querySet, authenticate);
   }
@@ -367,7 +377,9 @@ class LocalSyncState {
       impersonating: impersonating,
     );
     final baseVersion = authVersion;
-    if (!_paused) {
+    if (_paused) {
+      _pendingAuthModification = true;
+    } else {
       authVersion += 1;
     }
     return Authenticate(
@@ -483,6 +495,7 @@ class LocalSyncState {
     // from scratch below, so the buffered modifications are discarded.
     _paused = false;
     _pendingQuerySetModifications.clear();
+    _pendingAuthModification = false;
     querySetVersion = 0;
     authVersion = 0;
     _outstandingQueriesOlderThanRestart.clear();

@@ -580,6 +580,24 @@ void main() {
       expect(resumeMessages[2], isA<Mutation>());
     });
 
+    test('pause emits an auth clear before queued mutations on resume', () {
+      final client = BaseClient();
+      client.setAuth(tokenType: 'User', token: 'tok');
+      client.drainOutgoing();
+
+      client.pause();
+      client.clearAuth();
+      client.mutate('messages:send', const <String, dynamic>{'body': 'hi'});
+      final queuedWhilePaused = client.drainOutgoing();
+      expect(queuedWhilePaused.single, isA<Mutation>());
+
+      client.mutate('messages:send', const <String, dynamic>{'body': 'hi'});
+      final resumeMessages = client.resume();
+      expect(resumeMessages[0], isA<Authenticate>());
+      expect((resumeMessages[0] as Authenticate).tokenType, 'None');
+      expect(resumeMessages[1], isA<Mutation>());
+    });
+
     test('a stale auth transition does not confirm auth', () {
       final client = BaseClient();
       client.setAuth(tokenType: 'User', token: 'a'); // authVersion -> 1

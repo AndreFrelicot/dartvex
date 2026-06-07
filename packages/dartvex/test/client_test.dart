@@ -1872,6 +1872,38 @@ void main() {
       client.dispose();
     });
 
+    test('failed initial refresh clears previous auth after paused resume',
+        () async {
+      final adapter = MockWebSocketAdapter();
+      final client = ConvexClient(
+        'https://demo.convex.cloud',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+      await settle();
+
+      await client.setAuth('previous-token');
+      await settle();
+
+      await expectLater(
+        client.setAuthWithRefresh(
+          fetchToken: ({required bool forceRefresh}) async => null,
+        ),
+        completes,
+      );
+      await settle();
+
+      final authMessages = adapter.decodedSentMessages
+          .where((message) => message['type'] == 'Authenticate')
+          .toList(growable: false);
+      expect(authMessages.last['tokenType'], 'None');
+      expect(authMessages.last.containsKey('value'), isFalse);
+
+      client.dispose();
+    });
+
     test('connection state emits reconnecting during reconnect attempts',
         () async {
       final adapter = MockWebSocketAdapter();
