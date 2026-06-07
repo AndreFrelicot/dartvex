@@ -149,6 +149,23 @@ void main() {
       );
     });
 
+    test('emit helpers are no-ops after dispose', () {
+      final client = FakeConvexClient();
+      client.dispose();
+
+      expect(
+        () => client.emitConnectionState(ConvexConnectionState.disconnected),
+        returnsNormally,
+      );
+      expect(
+        () => client.emitConnectionStatus(
+          ConnectionStatus.fromState(ConvexConnectionState.connected),
+        ),
+        returnsNormally,
+      );
+      expect(() => client.emitAuthRefreshing(true), returnsNormally);
+    });
+
     testWidgets('works with ConvexQuery widget', (tester) async {
       final client = FakeConvexClient()
         ..whenQuery('messages:list', returns: 'hello from fake');

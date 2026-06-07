@@ -144,8 +144,13 @@ class FakeConvexClient implements ConvexRuntimeClient {
   /// from [state]; use [emitConnectionStatus] to drive the rich status with full
   /// inflight/retry detail.
   void emitConnectionState(ConvexConnectionState state) {
+    if (_disposed) {
+      return;
+    }
     _currentConnectionState = state;
-    _connectionController.add(state);
+    if (!_connectionController.isClosed) {
+      _connectionController.add(state);
+    }
     _currentConnectionStatus = ConnectionStatus.fromState(state);
     if (!_connectionStatusController.isClosed) {
       _connectionStatusController.add(_currentConnectionStatus);
@@ -154,6 +159,9 @@ class FakeConvexClient implements ConvexRuntimeClient {
 
   /// Update the fake rich connection status, also syncing the coarse state.
   void emitConnectionStatus(ConnectionStatus status) {
+    if (_disposed) {
+      return;
+    }
     _currentConnectionStatus = status;
     _currentConnectionState = status.state;
     if (!_connectionStatusController.isClosed) {
@@ -163,8 +171,13 @@ class FakeConvexClient implements ConvexRuntimeClient {
 
   /// Update the fake auth-refreshing state.
   void emitAuthRefreshing(bool isRefreshing) {
+    if (_disposed) {
+      return;
+    }
     _currentAuthRefreshing = isRefreshing;
-    _authRefreshingController.add(isRefreshing);
+    if (!_authRefreshingController.isClosed) {
+      _authRefreshingController.add(isRefreshing);
+    }
   }
 
   @override
