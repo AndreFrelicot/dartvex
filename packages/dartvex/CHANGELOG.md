@@ -109,6 +109,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   closing socket's trailing frames can no longer reach the sync layer, where a
   stale transition would mismatch the reset version and force a spurious
   reconnect.
+- Auth reauth now matches the official client's retry budget: only a rejected
+  *fresh* token counts toward the give-up limit, so a single cached-token
+  rejection no longer shortens the number of fresh-token retries before the
+  client falls back to unauthenticated.
 - The default WebSocket inactivity timeout now matches the official Convex
   client's 60-second threshold, reducing false reconnects while large messages
   are in flight.

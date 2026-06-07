@@ -285,13 +285,26 @@ class AuthManager {
       await sendAuth(null);
       return;
     }
-    if (_tokenConfirmationAttempts >= _maxTokenConfirmationAttempts) {
+    // Mirror the official client: only a rejected *fresh* token counts toward
+    // the give-up budget (official tracks this in the
+    // `waitingForServerConfirmationOfFreshToken` state). A rejected cached token
+    // — or an error arriving outside a pending fresh confirmation — is "free":
+    // it transitions to a fresh fetch without consuming a retry, so a single
+    // cached-token rejection never shortens the fresh-token retry budget. The
+    // budget therefore stays bounded (each fresh rejection increments; the
+    // counter only reaches the cap via fresh rejections), with no infinite loop.
+    final isFreshConfirmation =
+        _pendingConfirmationSource == _AuthConfirmationSource.fresh;
+    if (isFreshConfirmation &&
+        _tokenConfirmationAttempts >= _maxTokenConfirmationAttempts) {
       _log(DartvexLogLevel.error, 'Auth confirmation retries exhausted');
       _clearFailedAuthFlowAndEmitUnauthenticated();
       await sendAuth(null);
       return;
     }
-    _tokenConfirmationAttempts += 1;
+    if (isFreshConfirmation) {
+      _tokenConfirmationAttempts += 1;
+    }
 
     final generation = _authGeneration;
     // Stop the socket so in-flight messages cannot retry with the stale token,

@@ -438,6 +438,51 @@ void main() {
       expect(manager.currentToken, isNull);
       await manager.stopRefreshing();
     });
+
+    test('a rejected cached token does not consume the fresh retry budget',
+        () async {
+      var fetchCount = 0;
+      final authStates = <bool>[];
+      final manager = AuthManager(
+        config: const ConvexClientConfig(connectImmediately: false),
+        sendAuth: (_) async {},
+        emitAuthState: authStates.add,
+      );
+
+      // Configure with a cached token that is never confirmed, so the first
+      // rejection lands on a cached token (confirmation source == cached).
+      await manager.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) async {
+          fetchCount += 1;
+          return forceRefresh ? 'fresh-$fetchCount' : 'cached-token';
+        },
+      );
+      authStates.clear();
+
+      Future<void> reject(int version) {
+        return manager.handleAuthError(
+          AuthError(
+            error: 'rejected $version',
+            baseVersion: version,
+            authUpdateAttempted: true,
+          ),
+          currentAuthVersion: version + 1,
+        );
+      }
+
+      // Mirrors the official client: a rejected cached token is "free" — it
+      // transitions to a fresh fetch without consuming a fresh-token retry. So
+      // after one cached + two fresh rejections the budget is not yet spent.
+      await reject(0); // cached -> fresh fetch, no retry consumed
+      await reject(1); // fresh  -> attempt 1
+      await reject(2); // fresh  -> attempt 2
+      expect(authStates, isNot(contains(false)));
+
+      await reject(3); // fresh  -> budget exhausted, give up
+      expect(authStates, contains(false));
+      expect(manager.currentToken, isNull);
+      await manager.stopRefreshing();
+    });
   });
 
   group('AuthManager.computeRefreshDelay', () {
