@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:dartvex/dartvex.dart';
 import 'package:dartvex/src/protocol/encoding.dart';
@@ -100,6 +101,172 @@ void main() {
       expect(authClient.currentAuthState,
           isA<AuthAuthenticated<FakeAuthSession>>());
       expect(lastAuthMessage['value'], 'login-token');
+
+      await subscription.cancel();
+      authClient.dispose();
+    });
+
+    test('fast auth confirmation during login still publishes authenticated',
+        () async {
+      final adapter = _ImmediateAuthConfirmingAdapter();
+      final provider = FakeAuthProvider(
+        loginSession: const FakeAuthSession(
+          userInfo: 'alice',
+          token: 'login-token',
+        ),
+        cachedSession: const FakeAuthSession(
+          userInfo: 'alice',
+          token: 'login-token',
+        ),
+      );
+      final client = ConvexClient(
+        'https://demo.convex.cloud',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+      final authClient = client.withAuth<FakeAuthSession>(provider);
+      final states = <AuthState<FakeAuthSession>>[];
+      final subscription = authClient.authState.listen(states.add);
+
+      final session = await authClient.login();
+      await waitUntil(
+        () => authClient.currentAuthState is AuthAuthenticated<FakeAuthSession>,
+        reason: 'authenticated state after immediate confirmation',
+      );
+
+      expect(session.userInfo, 'alice');
+      expect(states.first, isA<AuthLoading<FakeAuthSession>>());
+      expect(states.last, isA<AuthAuthenticated<FakeAuthSession>>());
+      expect(adapter.confirmedAuthMessages, 1);
+
+      await subscription.cancel();
+      authClient.dispose();
+    });
+
+    test('superseded login cannot overwrite a newer auth flow', () async {
+      final adapter = _ImmediateAuthConfirmingAdapter();
+      final provider = _ControllableAuthProvider();
+      final client = ConvexClient(
+        'https://demo.convex.cloud',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+      final authClient = client.withAuth<FakeAuthSession>(provider);
+      final states = <AuthState<FakeAuthSession>>[];
+      final subscription = authClient.authState.listen(states.add);
+
+      final firstLogin = authClient.login();
+      await waitUntil(
+        () => provider.loginCalls == 1,
+        reason: 'first login callback capture',
+      );
+      final firstCallback = provider.loginCallbacks.single;
+
+      final secondLogin = authClient.login();
+      await waitUntil(
+        () => provider.loginCalls == 2,
+        reason: 'second login callback capture',
+      );
+
+      provider.completeLogin(
+        1,
+        const FakeAuthSession(userInfo: 'new-user', token: 'new-token'),
+      );
+      await secondLogin;
+      await waitForAuthMessage(
+        adapter,
+        where: (message) => message['value'] == 'new-token',
+        reason: 'new auth token',
+      );
+      await waitUntil(
+        () => authClient.currentAuthState is AuthAuthenticated<FakeAuthSession>,
+        reason: 'new login authenticated',
+      );
+
+      firstCallback('old-token');
+      provider.completeLogin(
+        0,
+        const FakeAuthSession(userInfo: 'old-user', token: 'old-token'),
+      );
+      await firstLogin;
+      await pumpEventQueue();
+
+      expect(
+        authMessages(adapter)
+            .where((message) => message['value'] == 'old-token'),
+        isEmpty,
+      );
+      final authenticated =
+          authClient.currentAuthState as AuthAuthenticated<FakeAuthSession>;
+      expect(authenticated.userInfo.userInfo, 'new-user');
+
+      await subscription.cancel();
+      authClient.dispose();
+    });
+
+    test('stale token clear cannot cancel a newer login', () async {
+      final adapter = _ImmediateAuthConfirmingAdapter();
+      final provider = _ControllableAuthProvider();
+      final client = ConvexClient(
+        'https://demo.convex.cloud',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+      final authClient = client.withAuth<FakeAuthSession>(provider);
+      final subscription = authClient.authState.listen((_) {});
+
+      final firstLogin = authClient.login();
+      await waitUntil(
+        () => provider.loginCalls == 1,
+        reason: 'first login callback capture',
+      );
+      final firstCallback = provider.loginCallbacks.single;
+      provider.completeLogin(
+        0,
+        const FakeAuthSession(userInfo: 'old-user', token: 'old-token'),
+      );
+      await firstLogin;
+      await waitUntil(
+        () => authClient.currentAuthState is AuthAuthenticated<FakeAuthSession>,
+        reason: 'first login authenticated',
+      );
+
+      final messagesBeforeClear = adapter.decodedSentMessages.length;
+      firstCallback(null);
+      final secondLogin = authClient.login();
+      await waitUntil(
+        () => provider.loginCalls == 2,
+        reason: 'second login callback capture',
+      );
+      provider.completeLogin(
+        1,
+        const FakeAuthSession(userInfo: 'new-user', token: 'new-token'),
+      );
+      await secondLogin;
+      await waitForAuthMessage(
+        adapter,
+        skip: messagesBeforeClear,
+        where: (message) => message['value'] == 'new-token',
+        reason: 'new auth token after stale clear',
+      );
+      await waitUntil(
+        () => authClient.currentAuthState is AuthAuthenticated<FakeAuthSession>,
+        reason: 'second login authenticated after stale clear',
+      );
+
+      final staleClearMessages =
+          authMessages(adapter, skip: messagesBeforeClear)
+              .where((message) => message['tokenType'] == 'None');
+      expect(staleClearMessages, isEmpty);
+      final authenticated =
+          authClient.currentAuthState as AuthAuthenticated<FakeAuthSession>;
+      expect(authenticated.userInfo.userInfo, 'new-user');
 
       await subscription.cancel();
       authClient.dispose();
@@ -472,5 +639,83 @@ class FakeAuthProvider implements AuthProvider<FakeAuthSession> {
 
   void resetCacheCounters() {
     loginFromCacheCalls = 0;
+  }
+}
+
+class _ControllableAuthProvider implements AuthProvider<FakeAuthSession> {
+  final List<void Function(String? token)> loginCallbacks =
+      <void Function(String? token)>[];
+  final List<Completer<FakeAuthSession>> _loginCompleters =
+      <Completer<FakeAuthSession>>[];
+  FakeAuthSession? _cachedSession;
+
+  int loginCalls = 0;
+
+  @override
+  String extractIdToken(FakeAuthSession authResult) => authResult.token;
+
+  @override
+  Future<FakeAuthSession> login({
+    required void Function(String? token) onIdToken,
+  }) {
+    loginCalls += 1;
+    loginCallbacks.add(onIdToken);
+    final completer = Completer<FakeAuthSession>();
+    _loginCompleters.add(completer);
+    return completer.future;
+  }
+
+  void completeLogin(int index, FakeAuthSession session) {
+    _cachedSession = session;
+    loginCallbacks[index](session.token);
+    _loginCompleters[index].complete(session);
+  }
+
+  @override
+  Future<FakeAuthSession> loginFromCache({
+    required void Function(String? token) onIdToken,
+  }) async {
+    final session = _cachedSession;
+    if (session == null) {
+      throw StateError('cache is empty');
+    }
+    onIdToken(session.token);
+    return session;
+  }
+
+  @override
+  Future<void> logout() async {}
+}
+
+class _ImmediateAuthConfirmingAdapter extends MockWebSocketAdapter {
+  int confirmedAuthMessages = 0;
+  int _serverTs = 0;
+
+  @override
+  void send(String message) {
+    super.send(message);
+    final decoded = jsonDecode(message) as Map<String, dynamic>;
+    if (decoded['type'] != 'Authenticate' || decoded['tokenType'] == 'None') {
+      return;
+    }
+    confirmedAuthMessages += 1;
+    final baseVersion = decoded['baseVersion'] as int;
+    final startTs = _serverTs;
+    _serverTs += 1;
+    pushServerMessage(
+      Transition(
+        startVersion: StateVersion(
+          querySet: 0,
+          identity: baseVersion,
+          ts: encodeTs(startTs),
+        ),
+        endVersion: StateVersion(
+          querySet: 0,
+          identity: baseVersion + 1,
+          ts: encodeTs(_serverTs),
+        ),
+        modifications: const <StateModification>[],
+      ).toJson(),
+    );
   }
 }

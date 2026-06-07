@@ -237,6 +237,7 @@ class AuthManager {
       _emit(true);
     } else {
       _backendAuthenticated = true;
+      _onAuthChange?.call(true);
     }
     if (confirmationSource == _AuthConfirmationSource.cached &&
         fetchToken != null) {

@@ -33,6 +33,7 @@ class ConvexClientWithAuth<TUser>
   AuthTokenBridge<TUser>? _authBridge;
   AuthHandle? _authHandle;
   AuthAuthenticated<TUser>? _pendingAuthenticatedState;
+  int _authFlowGeneration = 0;
   bool _disposed = false;
 
   @override
@@ -83,6 +84,7 @@ class ConvexClientWithAuth<TUser>
       return;
     }
     _disposed = true;
+    _authFlowGeneration += 1;
     _authBridge = null;
     final handle = _authHandle;
     _authHandle = null;
@@ -123,8 +125,11 @@ class ConvexClientWithAuth<TUser>
     try {
       await _authProvider.logout();
     } finally {
-      await _resetBaseAuth();
-      _emitAuthState(AuthUnauthenticated<TUser>());
+      final resetGeneration = ++_authFlowGeneration;
+      final didReset = await _resetBaseAuth(generation: resetGeneration);
+      if (didReset) {
+        _emitAuthState(AuthUnauthenticated<TUser>());
+      }
     }
   }
 
@@ -174,34 +179,56 @@ class ConvexClientWithAuth<TUser>
     Future<TUser> Function(void Function(String? token) onIdToken) strategy,
   ) async {
     _assertNotDisposed();
+    final generation = ++_authFlowGeneration;
+    void onIdToken(String? token) {
+      _onIdTokenForGeneration(generation, token);
+    }
+
     _emitAuthState(AuthLoading<TUser>());
 
     try {
-      final authResult = await strategy(_onIdToken);
+      final authResult = await strategy(onIdToken);
+      if (!_isCurrentAuthFlow(generation)) {
+        return authResult;
+      }
       final token = _authProvider.extractIdToken(authResult);
       final bridge = AuthTokenBridge<TUser>(
         authProvider: _authProvider,
-        onIdToken: _onIdToken,
+        onIdToken: onIdToken,
         initialToken: token,
       );
+      final authenticatedState = AuthAuthenticated<TUser>(authResult);
 
       final previousHandle = _authHandle;
       _authHandle = null;
       if (previousHandle != null) {
         await previousHandle.cancel();
       }
+      if (!_isCurrentAuthFlow(generation)) {
+        return authResult;
+      }
 
       _authBridge = bridge;
-      _authHandle = await _client.setAuthWithRefresh(
+      _pendingAuthenticatedState = authenticatedState;
+      final authHandle = await _client.setAuthWithRefresh(
         fetchToken: ({required bool forceRefresh}) =>
             bridge.fetchToken(forceRefresh: forceRefresh),
         onAuthChange: _handleBaseAuthStateChanged,
       );
-      _pendingAuthenticatedState = AuthAuthenticated<TUser>(authResult);
+      if (!_isCurrentAuthFlow(generation) || !identical(_authBridge, bridge)) {
+        await authHandle.cancel();
+        return authResult;
+      }
+      _authHandle = authHandle;
       return authResult;
     } catch (_) {
-      await _resetBaseAuth();
-      _emitAuthState(AuthUnauthenticated<TUser>());
+      if (_isCurrentAuthFlow(generation)) {
+        final resetGeneration = ++_authFlowGeneration;
+        final didReset = await _resetBaseAuth(generation: resetGeneration);
+        if (didReset) {
+          _emitAuthState(AuthUnauthenticated<TUser>());
+        }
+      }
       rethrow;
     }
   }
@@ -221,6 +248,7 @@ class ConvexClientWithAuth<TUser>
 
   void _handleBaseAuthStateChanged(bool isAuthenticated) {
     if (!isAuthenticated) {
+      _authFlowGeneration += 1;
       _authBridge = null;
       _pendingAuthenticatedState = null;
       _emitAuthState(AuthUnauthenticated<TUser>());
@@ -233,14 +261,27 @@ class ConvexClientWithAuth<TUser>
     }
   }
 
-  void _onIdToken(String? token) {
-    unawaited(_handleTokenUpdate(token));
+  bool _isCurrentAuthFlow(int generation) {
+    return !_disposed && generation == _authFlowGeneration;
   }
 
-  Future<void> _handleTokenUpdate(String? token) async {
+  void _onIdTokenForGeneration(int generation, String? token) {
+    unawaited(_handleTokenUpdateForGeneration(generation, token));
+  }
+
+  Future<void> _handleTokenUpdateForGeneration(
+    int generation,
+    String? token,
+  ) async {
+    if (!_isCurrentAuthFlow(generation)) {
+      return;
+    }
     if (token == null) {
-      await _resetBaseAuth();
-      _emitAuthState(AuthUnauthenticated<TUser>());
+      final resetGeneration = ++_authFlowGeneration;
+      final didReset = await _resetBaseAuth(generation: resetGeneration);
+      if (didReset) {
+        _emitAuthState(AuthUnauthenticated<TUser>());
+      }
       return;
     }
 
@@ -249,10 +290,13 @@ class ConvexClientWithAuth<TUser>
       return;
     }
     await bridge.updateToken(token);
+    if (!_isCurrentAuthFlow(generation) || !identical(_authBridge, bridge)) {
+      return;
+    }
     await _client.updateAuthToken(token);
   }
 
-  Future<void> _resetBaseAuth() async {
+  Future<bool> _resetBaseAuth({int? generation}) async {
     _authBridge = null;
     _pendingAuthenticatedState = null;
     final handle = _authHandle;
@@ -260,6 +304,10 @@ class ConvexClientWithAuth<TUser>
     if (handle != null) {
       await handle.cancel();
     }
+    if (generation != null && !_isCurrentAuthFlow(generation)) {
+      return false;
+    }
     await _client.clearAuth();
+    return true;
   }
 }

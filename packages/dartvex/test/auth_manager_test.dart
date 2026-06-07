@@ -726,6 +726,7 @@ void main() {
     test('reauth confirmation does not re-emit an authenticated state',
         () async {
       final authStates = <bool>[];
+      final authChanges = <bool>[];
       final refreshing = <bool>[];
       final manager = AuthManager(
         config: const ConvexClientConfig(connectImmediately: false),
@@ -740,10 +741,13 @@ void main() {
       await manager.setAuthWithRefresh(
         fetchToken: ({required bool forceRefresh}) async =>
             forceRefresh ? 'fresh-${++forceRefreshCount}' : null,
+        onAuthChange: authChanges.add,
       );
       manager.handleAuthConfirmed();
       expect(authStates, <bool>[true]);
+      expect(authChanges, <bool>[true]);
       authStates.clear();
+      authChanges.clear();
 
       await manager.handleAuthError(
         const AuthError(
@@ -757,6 +761,7 @@ void main() {
 
       expect(refreshing, <bool>[true, false]);
       expect(authStates, isEmpty);
+      expect(authChanges, <bool>[true]);
       await manager.stopRefreshing();
     });
 
