@@ -358,6 +358,46 @@ void main() {
       expect((refreshed as List<dynamic>).length, 2);
     });
 
+    test('serializes concurrent online mutations to preserve call order', () async {
+      // Online + connected + empty queue: the first mutation takes the direct
+      // "send to remote" fast path. Gate its remote call so it stays in flight
+      // while a second mutation is fired concurrently.
+      final firstRemote = Completer<Object?>();
+      remoteClient.mutationResults['messages:sendPublic'] = <Object?>[
+        firstRemote.future,
+        const ConvexException('drop', retryable: true),
+      ];
+
+      final first = localClient.mutate('messages:sendPublic', <String, dynamic>{
+        'author': 'A',
+        'text': 'First',
+      });
+      final second = localClient.mutate(
+        'messages:sendPublic',
+        <String, dynamic>{'author': 'B', 'text': 'Second'},
+      );
+      await pumpEventQueue();
+
+      // FIFO serialization: the second mutation has not started yet, so only the
+      // first has reached the remote. Without serialization both would race the
+      // empty-queue fast path and the second could enqueue ahead of the first.
+      expect(remoteClient.mutationCalls, hasLength(1));
+      expect(remoteClient.mutationCalls.single.args['text'], 'First');
+
+      // Fail the first so it falls back to the queue; the second then sees a
+      // non-empty queue and enqueues behind it, preserving call order.
+      firstRemote.completeError(const ConvexException('drop', retryable: true));
+      await first;
+      await second;
+
+      expect(
+        localClient.currentPendingMutations
+            .map((mutation) => mutation.args['text'])
+            .toList(),
+        <String>['First', 'Second'],
+      );
+    });
+
     test('does not replay queued mutations until remote connects', () async {
       await localClient.setNetworkMode(LocalNetworkMode.offline);
       await localClient.mutate('messages:sendPublic', <String, dynamic>{

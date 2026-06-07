@@ -539,6 +539,11 @@ class ConvexLocalClient {
   int _nextSubscriptionId = 0;
   int _operationCounter = 0;
 
+  // Serializes mutate() calls so concurrent mutations are applied in FIFO call
+  // order and cannot race the "send directly while the queue is empty" fast
+  // path into committing out of order.
+  Future<void> _mutateChain = Future<void>.value();
+
   /// Callback invoked when replay drops a permanently failed queued mutation.
   void Function(LocalMutationConflict conflict)? onConflict;
 
@@ -666,7 +671,23 @@ class ConvexLocalClient {
   /// replay may call the mutation again. Design queued Convex mutations to be
   /// idempotent when the operation can have external side effects.
   ///
+  /// Calls are serialized in FIFO order: a mutation does not start until the
+  /// previous one has settled (sent directly or queued). This keeps concurrent
+  /// mutations from racing the empty-queue fast path and committing out of
+  /// order; mutations awaited sequentially are unaffected.
   Future<LocalMutationResult> mutate(
+    String name, [
+    Map<String, dynamic> args = const <String, dynamic>{},
+  ]) {
+    _assertNotDisposed();
+    final result = _mutateChain.then((_) => _mutateInternal(name, args));
+    // Keep the chain alive across failures without leaking a prior call's error
+    // to the next caller.
+    _mutateChain = result.then((_) {}, onError: (_) {});
+    return result;
+  }
+
+  Future<LocalMutationResult> _mutateInternal(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) async {

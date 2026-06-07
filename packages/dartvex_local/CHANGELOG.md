@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `ConvexLocalClient.mutate` now serializes calls in FIFO order, so concurrent
+  mutations can no longer race the "send directly while the queue is empty"
+  fast path and commit (or queue) out of call order. Mutations awaited
+  sequentially are unaffected.
 - The offline replay retry backoff now clamps its exponent before shifting, so
   it stays monotonic and never wraps after many consecutive failures (web uses
   32-bit left shifts).
