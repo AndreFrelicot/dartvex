@@ -60,6 +60,14 @@ class NativeWebSocketAdapter implements WebSocketAdapter {
 
     socket.listen(
       (dynamic event) {
+        // Drop messages from a socket that a later connect() or close() has
+        // already superseded: once `_socket` is null or points at a newer
+        // socket, this one's trailing frames must not reach the sync layer,
+        // where a stale Transition would mismatch the reset version and force a
+        // spurious reconnect. Mirrors the web adapter's `isCurrentSocket` guard.
+        if (!identical(_socket, socket)) {
+          return;
+        }
         if (event is String) {
           if (!_messagesController.isClosed) {
             _messagesController.add(event);

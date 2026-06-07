@@ -104,6 +104,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The native WebSocket adapter now drops messages from a socket that a later
+  `connect()` or `close()` has already superseded, matching the web adapter. A
+  closing socket's trailing frames can no longer reach the sync layer, where a
+  stale transition would mismatch the reset version and force a spurious
+  reconnect.
 - The default WebSocket inactivity timeout now matches the official Convex
   client's 60-second threshold, reducing false reconnects while large messages
   are in flight.
