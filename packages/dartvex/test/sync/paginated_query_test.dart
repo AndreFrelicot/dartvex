@@ -477,7 +477,7 @@ void main() {
       query.cancel();
     });
 
-    test('cleans up split halves and surfaces errors', () {
+    test('cleans up split halves and falls back to the un-split page', () {
       final source = _FakeSource();
       final query = ConvexPaginatedQuery(
         subscribe: source.subscribe,
@@ -502,12 +502,28 @@ void main() {
           .emitPage(<dynamic>['a', 'b'], continueCursor: 'S', isDone: false);
       secondHalf.emitError('split failed');
 
-      expect(query.status, ConvexPaginationStatus.error);
-      expect(query.current.error, isA<ConvexException>());
-      expect((query.current.error! as ConvexException).message, 'split failed');
+      // A failed split is only a lost optimization: both halves are torn down
+      // and the query falls back to the original un-split page (which covers the
+      // same range) instead of surfacing an error.
+      expect(query.status, ConvexPaginationStatus.canLoadMore);
+      expect(query.current.error, isNull);
+      expect(query.current.results, <dynamic>['a', 'b', 'ba', 'bb', 'c']);
       expect(firstHalf.canceled, isTrue);
       expect(secondHalf.canceled, isTrue);
       expect(source.pages[0].canceled, isFalse);
+
+      // The split is not retried until the original emits a fresh result.
+      expect(source.pages, hasLength(3));
+
+      // A fresh result for the original page re-opens the split.
+      source.pages[0].emitPage(
+        <dynamic>['a', 'b', 'ba', 'bb', 'c'],
+        continueCursor: 'C',
+        isDone: false,
+        splitCursor: 'S',
+        pageStatus: 'SplitRecommended',
+      );
+      expect(source.pages, hasLength(5));
 
       query.cancel();
       expect(source.pages.every((page) => page.canceled), isTrue);

@@ -269,6 +269,9 @@ class ConvexPaginatedQuery {
         } else {
           page.data = parsed;
           page.error = null;
+          // A fresh successful result clears any prior split failure so an
+          // oversized page can be re-split once its data settles again.
+          page.splitFailed = false;
         }
       case StoredQueryLoading():
         page.data = null;
@@ -293,15 +296,17 @@ class ConvexPaginatedQuery {
   }
 
   void _reconcileSplits() {
-    // If either split half fails, tear down both halves and report the failure
-    // through the original page. The original remains active so a fresh server
-    // result can clear the error and retry the split later.
+    // A split is only an internal optimization to keep page queries small; the
+    // original page covers the same range. If either half fails, tear both
+    // halves down and fall back to the original (un-split) page instead of
+    // surfacing an error, and mark it so the split is not retried until the
+    // original produces a fresh successful result.
     final failed = _splits
         .where(
             (split) => split.first.error != null || split.second.error != null)
         .toList(growable: false);
     for (final split in failed) {
-      split.original.error = split.first.error ?? split.second.error;
+      split.original.splitFailed = true;
       split.first.dispose();
       split.second.dispose();
       _splits.remove(split);
@@ -334,7 +339,7 @@ class ConvexPaginatedQuery {
       if (_splits.any((split) => split.original == page)) {
         continue;
       }
-      if (page.error != null) {
+      if (page.error != null || page.splitFailed) {
         continue;
       }
       final data = page.data;
@@ -470,6 +475,12 @@ class _Page {
 
   /// The latest error, or `null` while loading or successful.
   Object? error;
+
+  /// Set when an attempt to split this page failed. Suppresses immediate
+  /// re-splitting until the page produces a fresh successful result, so a
+  /// transient split-half failure falls back to this (un-split) page instead
+  /// of looping or pinning the whole query to an error.
+  bool splitFailed = false;
 
   void dispose() {
     streamSub.cancel();
