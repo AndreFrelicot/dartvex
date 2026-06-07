@@ -133,6 +133,105 @@ void main() {
       );
     });
 
+    test('uploadFile throws typed exception when resolver returns non-string',
+        () async {
+      final caller = _FakeCaller()
+        ..mutations['files:generateUploadUrl'] = (_) => <String, dynamic>{
+              'url': 'https://upload.convex.cloud/abc',
+            };
+
+      final storage = ConvexStorage(
+        caller,
+        httpClient: http_testing.MockClient((_) async {
+          fail('HTTP upload should not start for an invalid resolver result');
+        }),
+      );
+
+      await expectLater(
+        () => storage.uploadFile(
+          uploadUrlAction: 'files:generateUploadUrl',
+          bytes: Uint8List(0),
+          filename: 'photo.jpg',
+          contentType: 'image/jpeg',
+        ),
+        throwsA(
+          isA<ConvexStorageException>().having(
+            (error) => error.message,
+            'message',
+            contains('must return a non-empty string'),
+          ),
+        ),
+      );
+    });
+
+    test('uploadFile throws typed exception when resolver URL is invalid',
+        () async {
+      final caller = _FakeCaller()
+        ..mutations['files:generateUploadUrl'] =
+            (_) => 'https://upload.convex.cloud/abc';
+
+      for (final uploadUrl in <String>[
+        'ftp://upload.convex.cloud/abc',
+        'https:///missing-host',
+      ]) {
+        caller.mutations['files:generateUploadUrl'] = (_) => uploadUrl;
+        final storage = ConvexStorage(
+          caller,
+          httpClient: http_testing.MockClient((_) async {
+            fail('HTTP upload should not start for $uploadUrl');
+          }),
+        );
+
+        await expectLater(
+          () => storage.uploadFile(
+            uploadUrlAction: 'files:generateUploadUrl',
+            bytes: Uint8List(0),
+            filename: 'photo.jpg',
+            contentType: 'image/jpeg',
+          ),
+          throwsA(isA<ConvexStorageException>()),
+        );
+      }
+    });
+
+    test('uploadFile throws typed exception on malformed success body',
+        () async {
+      final caller = _FakeCaller()
+        ..mutations['files:generateUploadUrl'] =
+            (_) => 'https://upload.convex.cloud/abc';
+
+      for (final body in <String>[
+        '',
+        jsonEncode(<String>[]),
+        jsonEncode(<String, dynamic>{}),
+        jsonEncode(<String, dynamic>{'storageId': 42}),
+        jsonEncode(<String, dynamic>{'storageId': ''}),
+      ]) {
+        final storage = ConvexStorage(
+          caller,
+          httpClient: http_testing.MockClient((_) async {
+            return http.Response(body, 200);
+          }),
+        );
+
+        await expectLater(
+          () => storage.uploadFile(
+            uploadUrlAction: 'files:generateUploadUrl',
+            bytes: Uint8List(0),
+            filename: 'photo.jpg',
+            contentType: 'image/jpeg',
+          ),
+          throwsA(
+            isA<ConvexFileUploadException>().having(
+              (error) => error.statusCode,
+              'statusCode',
+              200,
+            ),
+          ),
+        );
+      }
+    });
+
     test('getFileUrl returns URL from query', () async {
       final caller = _FakeCaller()
         ..queries['files:getUrl'] = (args) {

@@ -63,16 +63,25 @@ class ConvexStorage {
       uploadUrlArgs ?? const <String, dynamic>{},
     );
 
-    final uri = Uri.parse(uploadUrl as String);
+    final uri = _parseUploadUri(uploadUrlAction, uploadUrl);
     if (uri.scheme != 'https' && uri.scheme != 'http') {
       _log(
         DartvexLogLevel.error,
         'Upload URL has invalid scheme',
         data: <String, Object?>{'scheme': uri.scheme},
       );
-      throw ConvexFileUploadException(
-        400,
-        'Invalid upload URL scheme: ${uri.scheme}',
+      throw ConvexStorageException(
+        'Upload URL resolver returned an unsupported URL scheme: ${uri.scheme}',
+      );
+    }
+    if (uri.host.isEmpty) {
+      _log(
+        DartvexLogLevel.error,
+        'Upload URL has no host',
+        data: <String, Object?>{'url': uri.toString()},
+      );
+      throw const ConvexStorageException(
+        'Upload URL resolver returned a URL with no host',
       );
     }
 
@@ -93,9 +102,9 @@ class ConvexStorage {
         throw ConvexFileUploadException(response.statusCode, response.body);
       }
 
-      final result = jsonDecode(response.body) as Map<String, dynamic>;
+      final result = _decodeUploadResponse(response);
       _log(DartvexLogLevel.debug, 'File upload succeeded');
-      return result['storageId'] as String;
+      return result;
     } finally {
       if (_httpClient == null) {
         client.close();
@@ -148,5 +157,47 @@ class ConvexStorage {
       );
       return;
     }
+  }
+
+  Uri _parseUploadUri(String uploadUrlAction, Object? uploadUrl) {
+    if (uploadUrl is! String || uploadUrl.isEmpty) {
+      throw ConvexStorageException(
+        'Upload URL resolver "$uploadUrlAction" must return a non-empty string',
+      );
+    }
+    try {
+      return Uri.parse(uploadUrl);
+    } on FormatException catch (error) {
+      throw ConvexStorageException(
+        'Upload URL resolver "$uploadUrlAction" returned an invalid URL: '
+        '${error.message}',
+      );
+    }
+  }
+
+  String _decodeUploadResponse(http.Response response) {
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(response.body);
+    } on FormatException {
+      throw ConvexFileUploadException(
+        response.statusCode,
+        'Upload endpoint returned invalid JSON: ${response.body}',
+      );
+    }
+    if (decoded is! Map<String, dynamic>) {
+      throw ConvexFileUploadException(
+        response.statusCode,
+        'Upload endpoint returned a non-object JSON response',
+      );
+    }
+    final storageId = decoded['storageId'];
+    if (storageId is! String || storageId.isEmpty) {
+      throw ConvexFileUploadException(
+        response.statusCode,
+        'Upload endpoint response is missing a non-empty string storageId',
+      );
+    }
+    return storageId;
   }
 }
