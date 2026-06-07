@@ -69,6 +69,29 @@ void main() {
       expect(received, containsAll(<String>['first', 'second']));
     });
 
+    test('detached cache seed errors are logged instead of escaping', () async {
+      await localClient.dispose();
+      final queueStore = await SqliteLocalStore.openInMemory();
+      remoteClient = FakeRemoteClient();
+      final logs = <DartvexLogEvent>[];
+      localClient = await ConvexLocalClient.openWithRemote(
+        remoteClient: remoteClient,
+        config: LocalClientConfig(
+          cacheStorage: const ThrowingCacheStorage(),
+          queueStorage: queueStore,
+          logLevel: DartvexLogLevel.debug,
+          logger: logs.add,
+        ),
+      );
+
+      final subscription = localClient.subscribe('messages:listPublic');
+      addTearDown(subscription.cancel);
+
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(logs.map((event) => event.tag), contains('local.seed:error'));
+    });
+
     // ---------------------------------------------------------------
     // Cache behavior
     // ---------------------------------------------------------------
@@ -1918,6 +1941,27 @@ class DelayedReadCacheStorage implements CacheStorage {
   Future<void> upsert(StoredCacheEntry entry) {
     return _delegate.upsert(entry);
   }
+}
+
+class ThrowingCacheStorage implements CacheStorage {
+  const ThrowingCacheStorage();
+
+  @override
+  Future<void> clearCache() async {}
+
+  @override
+  Future<void> close() async {}
+
+  @override
+  Future<void> deleteCacheEntry(String key, {int? updatedAtMillis}) async {}
+
+  @override
+  Future<StoredCacheEntry?> read(String key) async {
+    throw StateError('cache read failed');
+  }
+
+  @override
+  Future<void> upsert(StoredCacheEntry entry) async {}
 }
 
 class FakeRemoteClient implements LocalRemoteClient {

@@ -583,7 +583,7 @@ class ConvexLocalClient {
     _networkModeController.add(_networkMode);
     _pendingMutationsController.add(currentPendingMutations);
     _updateConnectionState();
-    unawaited(_startReplayIfPossible());
+    _runDetached(_startReplayIfPossible(), 'replay');
   }
 
   /// Executes a query, falling back to cache when possible.
@@ -651,7 +651,7 @@ class ConvexLocalClient {
     );
     queryState.subscriberIds.add(subscriptionId);
 
-    unawaited(_seedSubscriptionFromCache(state));
+    _runDetached(_seedSubscriptionFromCache(state), 'seed');
     if (_networkMode == LocalNetworkMode.auto) {
       _ensureRemoteSubscription(queryState);
     }
@@ -912,7 +912,7 @@ class ConvexLocalClient {
         state == LocalRemoteConnectionState.connected) {
       _replayRetryCount = 0;
       _resumeRemoteSubscriptions();
-      unawaited(_startReplayIfPossible());
+      _runDetached(_startReplayIfPossible(), 'replay');
     }
     _updateConnectionState();
   }
@@ -929,7 +929,10 @@ class ConvexLocalClient {
     queryState.remoteSubscription = subscription;
     queryState.remoteEventSubscription = subscription.stream.listen(
       (event) {
-        unawaited(_handleRemoteQueryEvent(queryState, event));
+        _runDetached(
+          _handleRemoteQueryEvent(queryState, event),
+          'remote-query',
+        );
       },
       onError: (Object error, StackTrace stackTrace) {
         _emitToQueryKey(
@@ -1108,7 +1111,7 @@ class ConvexLocalClient {
           // live Transition updates, so blocking the replay loop for a cache
           // refresh is unnecessary; the widget tree subscriptions already get
           // live updates through the normal Transition flow.
-          unawaited(_refreshTargetsFromMutation(mutation));
+          _runDetached(_refreshTargetsFromMutation(mutation), 'refresh');
           _replayRetryCount = 0;
         } on ConvexException catch (error) {
           if (_disposed) {
@@ -1185,7 +1188,7 @@ class ConvexLocalClient {
       _replayRetryTimer = null;
       if (!_disposed && _networkMode == LocalNetworkMode.auto) {
         _log('replay:retry', 'retry timer fired, starting replay');
-        unawaited(_startReplayIfPossible());
+        _runDetached(_startReplayIfPossible(), 'replay');
       }
     });
   }
@@ -1484,7 +1487,7 @@ class ConvexLocalClient {
       if (queryState == null) {
         continue;
       }
-      unawaited(_emitCachedSnapshot(queryState.descriptor));
+      _runDetached(_emitCachedSnapshot(queryState.descriptor), 'cache-emit');
     }
   }
 
@@ -1872,6 +1875,17 @@ class ConvexLocalClient {
         message: message,
         tag: 'local.$tag',
       ),
+    );
+  }
+
+  void _runDetached(Future<void> future, String tag) {
+    unawaited(
+      future.catchError((Object error, StackTrace stackTrace) {
+        if (_disposed) {
+          return;
+        }
+        _log('$tag:error', '$error\n$stackTrace');
+      }),
     );
   }
 
