@@ -237,6 +237,39 @@ void main() {
       expect(find.text('img-b'), findsOneWidget);
     });
 
+    testWidgets('reloads when cache instance changes', (tester) async {
+      final firstCacheManager = FakeCacheManager();
+      final secondCacheManager = FakeCacheManager()..putInCache('img-shared');
+      final firstCache = ConvexAssetCache.custom(firstCacheManager);
+      final secondCache = ConvexAssetCache.custom(secondCacheManager);
+
+      Widget build(ConvexAssetCache cache) {
+        return Directionality(
+          textDirection: TextDirection.ltr,
+          child: ConvexOfflineImage(
+            cacheKey: 'img-shared',
+            url: null,
+            cache: cache,
+            builder: (context, snapshot) {
+              if (snapshot.isLoading) return const Text('loading');
+              if (snapshot.hasFile) return const Text('loaded');
+              return const Text('missing');
+            },
+          ),
+        );
+      }
+
+      await tester.pumpWidget(build(firstCache));
+      await tester.pumpAndSettle();
+
+      expect(find.text('missing'), findsOneWidget);
+
+      await tester.pumpWidget(build(secondCache));
+      await tester.pumpAndSettle();
+
+      expect(find.text('loaded'), findsOneWidget);
+    });
+
     testWidgets('ignores stale async cache results after cacheKey changes', (
       tester,
     ) async {
@@ -444,6 +477,48 @@ void main() {
         'https://example.com/b.png',
       );
       expect(find.text('loaded'), findsOneWidget);
+    });
+
+    testWidgets('reloads when the cache instance changes after load',
+        (tester) async {
+      final firstCacheManager = FakeCacheManager()..putInCache('img-1');
+      final secondCacheManager = FakeCacheManager();
+      final firstCache = ConvexAssetCache.custom(firstCacheManager);
+      final secondCache = ConvexAssetCache.custom(secondCacheManager);
+      final client = FakeRuntimeClient(
+        initialConnectionState: ConvexConnectionState.connected,
+      );
+      client.onQuery = (name, args) async => 'https://example.com/fresh.png';
+
+      Widget build(ConvexAssetCache cache) {
+        return Directionality(
+          textDirection: TextDirection.ltr,
+          child: ConvexCachedImage(
+            storageId: 'img-1',
+            getUrlAction: 'files:getUrl',
+            cache: cache,
+            client: client,
+            placeholder: const Text('loading'),
+            builder: (context, image) => const Text('loaded'),
+          ),
+        );
+      }
+
+      await tester.pumpWidget(build(firstCache));
+      await tester.pumpAndSettle();
+
+      expect(find.text('loaded'), findsOneWidget);
+      expect(client.queryCalls, isEmpty);
+
+      await tester.pumpWidget(build(secondCache));
+      await tester.pumpAndSettle();
+
+      expect(client.queryCalls, hasLength(1));
+      expect(secondCacheManager.getSingleFileCalls, hasLength(1));
+      expect(
+        secondCacheManager.getSingleFileCalls.single.url,
+        'https://example.com/fresh.png',
+      );
     });
   });
 }

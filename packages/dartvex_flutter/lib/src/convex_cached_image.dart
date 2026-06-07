@@ -77,6 +77,7 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
   String? _loadedStorageId;
   String? _loadedGetUrlAction;
   bool? _loadedUseAction;
+  ConvexAssetCache? _loadedCache;
   ConvexRuntimeClient? _loadedClient;
   int _requestGeneration = 0;
 
@@ -94,19 +95,23 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
     if (oldWidget.storageId != widget.storageId ||
         oldWidget.getUrlAction != widget.getUrlAction ||
         oldWidget.useAction != widget.useAction ||
-        oldWidget.client != widget.client) {
+        oldWidget.client != widget.client ||
+        oldWidget.cache != widget.cache) {
       _loadIfNeeded();
     }
   }
 
   void _loadIfNeeded() {
     final client = widget.client ?? ConvexProvider.of(context);
+    final cache = _cache;
     final loadedGetUrlAction = _loadedGetUrlAction;
     final loadedUseAction = _loadedUseAction;
+    final loadedCache = _loadedCache;
     final loadedClient = _loadedClient;
     if (_loadedStorageId == widget.storageId &&
         loadedGetUrlAction == widget.getUrlAction &&
         loadedUseAction == widget.useAction &&
+        identical(loadedCache, cache) &&
         identical(loadedClient, client) &&
         (_loading || _file != null || _error != null)) {
       return;
@@ -118,10 +123,12 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
     _loadedStorageId = widget.storageId;
     _loadedGetUrlAction = widget.getUrlAction;
     _loadedUseAction = widget.useAction;
+    _loadedCache = cache;
     _loadedClient = client;
     _fetchAndCache(
       ++_requestGeneration,
       client,
+      cache: cache,
       bypassCache: shouldBypassCache,
     );
   }
@@ -129,6 +136,7 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
   Future<void> _fetchAndCache(
     int generation,
     ConvexRuntimeClient client, {
+    required ConvexAssetCache cache,
     bool bypassCache = false,
   }) async {
     final storageId = widget.storageId;
@@ -142,7 +150,7 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
 
     try {
       if (!bypassCache) {
-        final cached = await _cache.get(storageId);
+        final cached = await cache.get(storageId);
         if (cached != null) {
           if (!_isCurrentRequest(
             generation,
@@ -150,6 +158,7 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
             getUrlAction,
             useAction,
             client,
+            cache,
           )) {
             return;
           }
@@ -171,6 +180,7 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
         getUrlAction,
         useAction,
         client,
+        cache,
       )) {
         return;
       }
@@ -182,7 +192,7 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
         );
       }
 
-      final file = await _cache.prefetch(
+      final file = await cache.prefetch(
         storageId,
         urlStr,
         force: bypassCache,
@@ -193,6 +203,7 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
         getUrlAction,
         useAction,
         client,
+        cache,
       )) {
         return;
       }
@@ -207,6 +218,7 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
         getUrlAction,
         useAction,
         client,
+        cache,
       )) {
         return;
       }
@@ -223,13 +235,15 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
     String getUrlAction,
     bool useAction,
     ConvexRuntimeClient client,
+    ConvexAssetCache cache,
   ) {
     return mounted &&
         generation == _requestGeneration &&
         widget.storageId == storageId &&
         widget.getUrlAction == getUrlAction &&
         widget.useAction == useAction &&
-        identical(_loadedClient, client);
+        identical(_loadedClient, client) &&
+        identical(_loadedCache, cache);
   }
 
   @override
