@@ -160,12 +160,12 @@ class BetterAuthClient {
       );
     }
 
-    final sessionToken = _extractSessionToken(response);
     final body = _decodeObjectBody(
       '/api/auth/magic-link/verify',
       response,
     );
     final user = body['user'] as Map<String, dynamic>?;
+    final sessionToken = _extractSessionToken(response, body);
 
     final cookieJwt = _extractCookieValue(response, 'better-auth.convex_jwt');
     if (cookieJwt != null) {
@@ -238,7 +238,7 @@ class BetterAuthClient {
     final user = body['user'] as Map<String, dynamic>?;
 
     // Always extract the session token for persistence.
-    final sessionToken = _extractSessionToken(response);
+    final sessionToken = _extractSessionToken(response, body);
 
     // Try the Convex JWT from cookies first (avoids a second round-trip).
     final cookieJwt = _extractCookieValue(
@@ -298,12 +298,20 @@ class BetterAuthClient {
     return token;
   }
 
-  String _extractSessionToken(http.Response response) {
+  String _extractSessionToken(
+    http.Response response, [
+    Map<String, dynamic>? body,
+  ]) {
     // Prefer the `set-auth-token` header (set by the Bearer plugin).
     // This is the official approach for mobile/API clients.
     final header = response.headers['set-auth-token'];
     if (header != null && header.isNotEmpty) {
       return header;
+    }
+
+    final bodyToken = body?['token'];
+    if (bodyToken is String && bodyToken.isNotEmpty) {
+      return bodyToken;
     }
 
     // Fallback: extract from set-cookie. Browsers never expose Set-Cookie to
@@ -322,7 +330,8 @@ class BetterAuthClient {
       'Mobile and desktop clients need the bearer() plugin to expose '
       'set-auth-token. Flutter web clients must also configure CORS with '
       'Access-Control-Expose-Headers: set-auth-token; browsers cannot read '
-      'Set-Cookie.',
+      'Set-Cookie. If your endpoint returns a JSON token, it must be a '
+      'non-empty string field named "token".',
     );
   }
 

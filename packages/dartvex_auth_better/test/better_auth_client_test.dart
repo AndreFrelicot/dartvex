@@ -324,7 +324,32 @@ void main() {
       }
     });
 
-    test('throws when set-auth-token header is missing', () async {
+    test('uses JSON token when set-auth-token header is missing', () async {
+      final mock = MockClient((request) async {
+        if (request.url.path == '/api/auth/sign-in/email') {
+          return http.Response(
+            jsonEncode({
+              ..._defaultSignInResponse,
+              'token': 'ses_body_tok',
+            }),
+            200,
+          );
+        }
+        if (request.url.path == '/api/auth/convex/token') {
+          expect(request.headers['Authorization'], 'Bearer ses_body_tok');
+          return http.Response(jsonEncode({'token': 'jwt_body'}), 200);
+        }
+        return http.Response('Not found', 404);
+      });
+      final client = BetterAuthClient(baseUrl: baseUrl, httpClient: mock);
+
+      final session = await client.signIn(email: 'a@b.com', password: 'p');
+
+      expect(session.sessionToken, 'ses_body_tok');
+      expect(session.token, 'jwt_body');
+    });
+
+    test('throws when no session token is available', () async {
       final mock = MockClient((request) async {
         return http.Response(
           jsonEncode(_defaultSignInResponse),
@@ -342,6 +367,11 @@ void main() {
                 (error) => error.message,
                 'message',
                 contains('Access-Control-Expose-Headers: set-auth-token'),
+              )
+              .having(
+                (error) => error.message,
+                'message',
+                contains('JSON token'),
               )
               .having(
                 (error) => error.message,
@@ -425,6 +455,31 @@ void main() {
           throwsA(isA<BetterAuthException>()),
         );
       }
+    });
+
+    test('verifyMagicLink uses JSON token when header is missing', () async {
+      final mock = MockClient((request) async {
+        if (request.url.path == '/api/auth/magic-link/verify') {
+          return http.Response(
+            jsonEncode({
+              ..._defaultSignInResponse,
+              'token': 'ses_magic_body',
+            }),
+            200,
+          );
+        }
+        if (request.url.path == '/api/auth/convex/token') {
+          expect(request.headers['Authorization'], 'Bearer ses_magic_body');
+          return http.Response(jsonEncode({'token': 'jwt_magic'}), 200);
+        }
+        return http.Response('Not found', 404);
+      });
+      final client = BetterAuthClient(baseUrl: baseUrl, httpClient: mock);
+
+      final session = await client.verifyMagicLink(token: 'magic-token');
+
+      expect(session.sessionToken, 'ses_magic_body');
+      expect(session.token, 'jwt_magic');
     });
 
     test('preserves baseUrl when not .convex.cloud', () async {

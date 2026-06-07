@@ -65,7 +65,9 @@ Access-Control-Expose-Headers: set-auth-token
 ```
 
 Browsers do not expose `Set-Cookie` to Dart or JavaScript, so the cookie fallback
-is native-only. Web sign-in and sign-up require the `set-auth-token` header.
+is native-only. Web sign-in and sign-up need either the exposed
+`set-auth-token` header or a non-empty JSON `token` field in the Better Auth
+response body.
 
 ## Usage
 
