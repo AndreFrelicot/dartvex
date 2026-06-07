@@ -417,9 +417,9 @@ class _FilesPanelState extends State<FilesPanel> {
       eyebrow: 'IMAGE WIDGETS',
       title: 'Three ways to render one stored image',
       subtitle:
-          'The newest upload rendered by each dartvex_flutter image widget: a '
-          'streaming download with progress, a disk-cached image, and the '
-          'offline fallback (url: null, cache-only).',
+          'Same storageId, three behaviors: ConvexImage streams the signed URL, '
+          'ConvexCachedImage writes a disk copy, and ConvexOfflineImage is '
+          'shown with url: null so it can only read the cache.',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -434,8 +434,8 @@ class _FilesPanelState extends State<FilesPanel> {
               runSpacing: 16,
               children: <Widget>[
                 _variantColumn(
-                  title: 'ConvexImage',
-                  subtitle: 'stream + progress',
+                  title: 'Network',
+                  subtitle: 'progress',
                   image: buildDownloadStorageImage(
                     storageId: storageId,
                     getUrlAction: _getImageUrl,
@@ -443,8 +443,8 @@ class _FilesPanelState extends State<FilesPanel> {
                   ),
                 ),
                 _variantColumn(
-                  title: 'ConvexCachedImage',
-                  subtitle: 'disk cache',
+                  title: 'Disk cache',
+                  subtitle: 'persists',
                   image: buildCachedStorageImage(
                     storageId: storageId,
                     getUrlAction: _getImageUrl,
@@ -452,8 +452,8 @@ class _FilesPanelState extends State<FilesPanel> {
                   ),
                 ),
                 _variantColumn(
-                  title: 'ConvexOfflineImage',
-                  subtitle: 'offline · url=null',
+                  title: 'Cache-only',
+                  subtitle: 'url = null',
                   image: buildOfflineStorageImage(
                     storageId: storageId,
                     size: _variantTile,
@@ -465,10 +465,9 @@ class _FilesPanelState extends State<FilesPanel> {
           _buildCacheRow(),
           const SizedBox(height: 14),
           const _WatchHint(
-            'ConvexImage re-downloads into memory (watch the ring); '
-            'ConvexCachedImage persists to disk by storageId; '
-            'ConvexOfflineImage shows the cached copy only — clear the cache '
-            'and it falls back to "Not cached yet".',
+            'Network fetches the signed URL into memory. Disk cache stores the '
+            'file by storageId. Cache-only receives no URL; it shows the cached '
+            'file or "Not cached yet" after Clear cache.',
           ),
         ],
       ),
@@ -577,6 +576,9 @@ class _FilesPanelState extends State<FilesPanel> {
         children: <Widget>[
           Text(
             title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            softWrap: false,
             textAlign: TextAlign.center,
             style: const TextStyle(
               color: ConciergeColors.cyanSoft,
@@ -586,6 +588,9 @@ class _FilesPanelState extends State<FilesPanel> {
           ),
           Text(
             subtitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            softWrap: false,
             textAlign: TextAlign.center,
             style: const TextStyle(
               color: ConciergeColors.textDim,
