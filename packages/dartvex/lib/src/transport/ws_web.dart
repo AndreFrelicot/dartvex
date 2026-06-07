@@ -21,20 +21,33 @@ class WebPlatformWebSocketAdapter implements WebSocketAdapter {
       StreamController<WebSocketCloseEvent>.broadcast();
 
   web.WebSocket? _socket;
+  int _connectGeneration = 0;
+  int? _suppressedCloseGeneration;
 
   @override
   Future<void> connect(String url) async {
-    await close();
+    _closeCurrent(suppressCloseEvent: true);
+    final generation = ++_connectGeneration;
     final socket = web.WebSocket(url);
     final completer = Completer<void>();
     _socket = socket;
 
+    bool isCurrentSocket() =>
+        generation == _connectGeneration && identical(_socket, socket);
+
     socket.onopen = ((web.Event _) {
+      if (!isCurrentSocket()) {
+        socket.close();
+        return;
+      }
       if (!completer.isCompleted) {
         completer.complete();
       }
     }).toJS;
     socket.onmessage = ((web.MessageEvent event) {
+      if (!isCurrentSocket()) {
+        return;
+      }
       final data = event.data;
       final stringValue = (data as JSString?)?.toDart;
       if (stringValue != null && !_messagesController.isClosed) {
@@ -42,14 +55,28 @@ class WebPlatformWebSocketAdapter implements WebSocketAdapter {
       }
     }).toJS;
     socket.onerror = ((web.Event _) {
+      if (!isCurrentSocket()) {
+        return;
+      }
       if (!completer.isCompleted) {
         completer.completeError(StateError('WebSocket failed to open'));
       }
     }).toJS;
     socket.onclose = ((web.CloseEvent event) {
-      _socket = null;
-      if (!completer.isCompleted) {
+      final suppressed = _suppressedCloseGeneration == generation;
+      if (suppressed) {
+        _suppressedCloseGeneration = null;
+      }
+      final currentGeneration = generation == _connectGeneration;
+      final currentSocket = identical(_socket, socket);
+      if (currentSocket) {
+        _socket = null;
+      }
+      if (!suppressed && currentGeneration && !completer.isCompleted) {
         completer.completeError(StateError('WebSocket closed during connect'));
+      }
+      if (suppressed || !currentGeneration) {
+        return;
       }
       if (!_closeController.isClosed) {
         _closeController.add(
@@ -82,8 +109,15 @@ class WebPlatformWebSocketAdapter implements WebSocketAdapter {
 
   @override
   Future<void> close() async {
+    _closeCurrent(suppressCloseEvent: false);
+  }
+
+  void _closeCurrent({required bool suppressCloseEvent}) {
     final socket = _socket;
     _socket = null;
+    if (socket != null && suppressCloseEvent) {
+      _suppressedCloseGeneration = _connectGeneration;
+    }
     socket?.close();
   }
 
