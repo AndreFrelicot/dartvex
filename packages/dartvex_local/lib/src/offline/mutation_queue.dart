@@ -57,6 +57,15 @@ class MutationQueue {
   Future<void> updateArgs(int id, Map<String, dynamic> args) =>
       _storage.updateArgs(id, _codec.encode(args));
 
+  /// Replaces the queued mutation optimistic metadata for [id].
+  Future<void> updateOptimisticData(
+    int id,
+    Map<String, dynamic>? optimisticData,
+  ) => _storage.updateOptimisticData(
+    id,
+    optimisticData == null ? null : _codec.encode(optimisticData),
+  );
+
   /// Persists a local-to-server document ID mapping.
   Future<void> saveIdRemap(String localId, String serverId) =>
       _storage.saveIdRemap(localId, serverId);

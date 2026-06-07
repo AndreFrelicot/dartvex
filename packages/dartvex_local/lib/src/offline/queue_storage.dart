@@ -61,6 +61,9 @@ abstract class QueueStorage {
   /// Replaces the encoded argument payload for the mutation with [id].
   Future<void> updateArgs(int id, String argsJson);
 
+  /// Replaces the encoded optimistic metadata for the mutation with [id].
+  Future<void> updateOptimisticData(int id, String? optimisticJson);
+
   /// Persists a mapping from a locally generated ID to a server-issued ID.
   Future<void> saveIdRemap(String localId, String serverId);
 

@@ -586,6 +586,10 @@ class ConvexLocalClient {
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) async {
     _assertNotDisposed();
+    final descriptor = LocalQueryDescriptor(
+      name,
+      Map<String, dynamic>.from(args),
+    );
     if (_networkMode == LocalNetworkMode.offline) {
       final cached = await _queryCache.read(name, args);
       if (cached != null) {
@@ -595,9 +599,8 @@ class ConvexLocalClient {
     }
 
     try {
-      final value = await _remoteClient.query(name, args);
-      await _queryCache.write(name: name, args: args, value: value);
-      return value;
+      final value = await _remoteClient.query(descriptor.name, descriptor.args);
+      return _writeRemoteSnapshotAndRebasePending(descriptor, value);
     } on ConvexException catch (error) {
       if (!error.retryable) {
         rethrow;
@@ -925,18 +928,10 @@ class ConvexLocalClient {
     switch (event) {
       case LocalRemoteQuerySuccess(:final value):
         _markRemoteEventSeen(queryState);
-        await _queryCache.write(
-          name: queryState.descriptor.name,
-          args: queryState.descriptor.args,
-          value: value,
-        );
-        _emitToQueryKey(
-          queryState.descriptor.key,
-          LocalQuerySuccess(
-            value,
-            source: LocalQuerySource.remote,
-            hasPendingWrites: _hasPendingWrites(queryState.descriptor.key),
-          ),
+        await _writeRemoteSnapshotAndRebasePending(
+          queryState.descriptor,
+          value,
+          emit: true,
         );
       case LocalRemoteQueryError(:final error):
         _markRemoteEventSeen(queryState);
@@ -1218,19 +1213,7 @@ class ConvexLocalClient {
           timeout: _config.refreshQueryTimeout,
         );
         _log('refresh:query-ok', '${target.name} returned');
-        await _queryCache.write(
-          name: target.name,
-          args: target.args,
-          value: value,
-        );
-        _emitToQueryKey(
-          target.key,
-          LocalQuerySuccess(
-            value,
-            source: LocalQuerySource.remote,
-            hasPendingWrites: _hasPendingWrites(target.key),
-          ),
-        );
+        await _writeRemoteSnapshotAndRebasePending(target, value, emit: true);
       } catch (error) {
         _log('refresh:query-error', '${target.name}: $error');
       }
@@ -1242,6 +1225,90 @@ class ConvexLocalClient {
     for (final subscriptionId in queryState.subscriberIds) {
       _subscriptionStates[subscriptionId]?.hasRemoteEvent = true;
     }
+  }
+
+  Future<dynamic> _writeRemoteSnapshotAndRebasePending(
+    LocalQueryDescriptor target,
+    dynamic value, {
+    bool emit = false,
+  }) async {
+    await _queryCache.write(name: target.name, args: target.args, value: value);
+    final effectiveValue = await _rebasePendingOptimisticPatchesForTarget(
+      target,
+      baseValue: value,
+    );
+    if (emit) {
+      _emitToQueryKey(
+        target.key,
+        LocalQuerySuccess(
+          effectiveValue,
+          source: LocalQuerySource.remote,
+          hasPendingWrites: _hasPendingWrites(target.key),
+        ),
+      );
+    }
+    return effectiveValue;
+  }
+
+  Future<dynamic> _rebasePendingOptimisticPatchesForTarget(
+    LocalQueryDescriptor target, {
+    required dynamic baseValue,
+  }) async {
+    if (!_hasPendingWrites(target.key) || _pendingMutations.isEmpty) {
+      return baseValue;
+    }
+
+    var currentValue = baseValue;
+    var updatedMutationMetadata = false;
+    for (final pendingMutation in _pendingMutations) {
+      final optimisticData = pendingMutation.optimisticData;
+      final operationId = optimisticData?['operationId'];
+      if (optimisticData == null || operationId is! String) {
+        continue;
+      }
+      final context = LocalMutationContext(
+        operationId: operationId,
+        queuedAt: pendingMutation.createdAt,
+      );
+      final patches =
+          _buildPatches(
+                pendingMutation.mutationName,
+                pendingMutation.args,
+                context,
+              )
+              .where((patch) => patch.target.key == target.key)
+              .toList(growable: false);
+      if (patches.isEmpty) {
+        continue;
+      }
+
+      await _mutationQueue.updateOptimisticData(
+        pendingMutation.id,
+        _replaceRollbackSnapshot(optimisticData, target, value: currentValue),
+      );
+      updatedMutationMetadata = true;
+
+      try {
+        var nextValue = currentValue;
+        for (final patch in patches) {
+          nextValue = patch.apply(nextValue);
+        }
+        currentValue = nextValue;
+      } catch (error, stackTrace) {
+        _log('remote:optimistic-rebase-error', '$error\n$stackTrace');
+      }
+    }
+
+    await _queryCache.write(
+      name: target.name,
+      args: target.args,
+      value: currentValue,
+    );
+    if (updatedMutationMetadata) {
+      _pendingMutations = await _mutationQueue.loadAll();
+      _rebuildPendingWriteCounts();
+    }
+    return currentValue;
   }
 
   Future<dynamic> _remoteQueryOnce(
@@ -1521,6 +1588,51 @@ class ConvexLocalClient {
       'hasEntry': entry != null,
       if (entry != null) 'value': entry.value,
     };
+  }
+
+  Map<String, dynamic> _replaceRollbackSnapshot(
+    Map<String, dynamic> optimisticData,
+    LocalQueryDescriptor target, {
+    required dynamic value,
+  }) {
+    final replacement = _cacheSnapshotToJson(
+      _CacheSnapshot(
+        target: target,
+        entry: CachedQueryEntry(
+          key: target.key,
+          queryName: target.name,
+          args: target.args,
+          value: value,
+          updatedAt: DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+        ),
+      ),
+    );
+    final rawRollback = optimisticData['rollback'];
+    final rollback = rawRollback is List
+        ? rawRollback.toList(growable: true)
+        : <dynamic>[];
+    var replaced = false;
+    for (var index = 0; index < rollback.length; index++) {
+      final rawSnapshot = rollback[index];
+      if (rawSnapshot is! Map) {
+        continue;
+      }
+      final rawTarget = rawSnapshot['target'];
+      if (rawTarget is! Map) {
+        continue;
+      }
+      final snapshotTarget = LocalQueryDescriptor.fromJson(
+        rawTarget.cast<String, dynamic>(),
+      );
+      if (snapshotTarget.key == target.key) {
+        rollback[index] = replacement;
+        replaced = true;
+      }
+    }
+    if (!replaced) {
+      rollback.add(replacement);
+    }
+    return <String, dynamic>{...optimisticData, 'rollback': rollback};
   }
 
   Iterable<LocalQueryDescriptor> _targetsFromMutation(

@@ -111,6 +111,14 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
 
   @override
   /// Throws because SQLite storage is unavailable on this platform.
+  Future<void> updateOptimisticData(int id, String? optimisticJson) {
+    throw UnsupportedError(
+      'SqliteLocalStore is not available on this platform',
+    );
+  }
+
+  @override
+  /// Throws because SQLite storage is unavailable on this platform.
   Future<void> saveIdRemap(String localId, String serverId) {
     throw UnsupportedError(
       'SqliteLocalStore is not available on this platform',

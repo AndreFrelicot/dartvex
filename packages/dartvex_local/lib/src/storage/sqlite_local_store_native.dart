@@ -237,6 +237,16 @@ class SqliteLocalStore
   }
 
   @override
+  /// Replaces the encoded optimistic metadata for the mutation with [id].
+  Future<void> updateOptimisticData(int id, String? optimisticJson) async {
+    final database = _assertOpen();
+    database.execute(
+      'UPDATE mutation_queue SET optimistic_json = ? WHERE id = ?;',
+      <Object?>[optimisticJson, id],
+    );
+  }
+
+  @override
   /// Persists a local document ID remap.
   Future<void> saveIdRemap(String localId, String serverId) async {
     final database = _assertOpen();
