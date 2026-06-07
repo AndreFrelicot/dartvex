@@ -113,6 +113,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   *fresh* token counts toward the give-up limit, so a single cached-token
   rejection no longer shortens the number of fresh-token retries before the
   client falls back to unauthenticated.
+- A transient auth-provider failure during a scheduled token refresh no longer
+  logs the user out. The internal auth token bridge now lets provider errors
+  propagate (the auth manager already handles them per context) instead of
+  collapsing every failure to a null token that read as a definitive logout, so
+  a network blip while a token is still valid no longer ends the session — a
+  genuine logout still flows through a server `AuthError`. Matches the official
+  client, where a throwing token fetcher does not by itself log the user out.
 - The default WebSocket inactivity timeout now matches the official Convex
   client's 60-second threshold, reducing false reconnects while large messages
   are in flight.
