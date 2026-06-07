@@ -110,6 +110,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An inactivity-timeout close that throws now falls back to a synthetic
   disconnect, so the client still reconnects instead of sitting idle on a dead
   socket when no close event arrives.
+- `ConvexStorage.getFileUrl` now throws a `ConvexStorageException` instead of a
+  `StateError` when the resolver returns no URL (e.g. a missing or deleted
+  file), so a normal runtime condition is no longer reported as API misuse.
 - Reactive pagination now rejects malformed `PaginationResult` objects whose
   `continueCursor` is missing or non-string, preventing duplicate page loads or
   load loops.

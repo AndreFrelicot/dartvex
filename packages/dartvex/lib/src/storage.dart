@@ -129,7 +129,7 @@ class ConvexStorage {
     if (url is String && url.isNotEmpty) {
       return url;
     }
-    throw StateError('No URL returned for storageId $storageId');
+    throw ConvexStorageException('No URL returned for storageId $storageId');
   }
 
   void _log(

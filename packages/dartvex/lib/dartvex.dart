@@ -19,7 +19,8 @@ export 'src/client.dart'
         QueryResult,
         QuerySuccess;
 export 'src/config.dart' show ConvexClientConfig, WebSocketAdapterFactory;
-export 'src/exceptions.dart' show ConvexException, ConvexFileUploadException;
+export 'src/exceptions.dart'
+    show ConvexException, ConvexFileUploadException, ConvexStorageException;
 export 'src/logging.dart' show DartvexLogEvent, DartvexLogger, DartvexLogLevel;
 export 'src/storage.dart' show ConvexStorage;
 export 'src/sync/optimistic_updates.dart'

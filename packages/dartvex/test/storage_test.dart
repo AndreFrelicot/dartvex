@@ -166,7 +166,8 @@ void main() {
       expect(url, 'https://cdn.convex.cloud/file/kg2abc123');
     });
 
-    test('getFileUrl throws StateError when resolver returns null', () async {
+    test('getFileUrl throws ConvexStorageException when resolver returns null',
+        () async {
       final caller = _FakeCaller()..queries['files:getUrl'] = (_) => null;
 
       final storage = ConvexStorage(caller);
@@ -177,7 +178,7 @@ void main() {
           storageId: 'missing',
         ),
         throwsA(
-          isA<StateError>().having(
+          isA<ConvexStorageException>().having(
             (error) => error.message,
             'message',
             contains('No URL returned for storageId missing'),
