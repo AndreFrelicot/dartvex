@@ -54,7 +54,7 @@ a real backend (the demo lives in `example/convex-backend`, runnable with
 
 ```sh
 CONVEX_DEPLOYMENT_URL=https://your.convex.cloud \
-CONVEX_TEST_QUERY=messages:list \
-CONVEX_TEST_MUTATION=messages:send \
+CONVEX_TEST_QUERY=messages:listPublic \
+CONVEX_TEST_MUTATION=messages:sendPublic \
 dart test -t integration
 ```

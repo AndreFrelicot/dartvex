@@ -16,7 +16,7 @@ import 'package:test/test.dart';
 ///
 /// ```sh
 /// CONVEX_DEPLOYMENT_URL=https://your.convex.cloud \
-/// CONVEX_TEST_QUERY=messages:list \
+/// CONVEX_TEST_QUERY=messages:listPublic \
 /// dart test test/conformance/live_backend_conformance_test.dart
 /// ```
 void main() {
