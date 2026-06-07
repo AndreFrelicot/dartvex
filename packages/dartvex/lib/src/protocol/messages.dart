@@ -708,14 +708,13 @@ class MutationResponse extends ResponseMessage {
   factory MutationResponse.fromJson(Map<String, dynamic> json) {
     final success = json['success'] as bool;
     final ts = json['ts'];
+    // A successful mutation always carries a string `ts` (read-your-writes
+    // depends on it; the official client likewise breaks without it). A failed
+    // mutation has no `ts`; an unexpected one is ignored rather than rejected,
+    // matching the official runtime parser, which never validates this field.
     if (success && ts is! String) {
       throw const FormatException(
         'MutationResponse success is missing required string field "ts".',
-      );
-    }
-    if (!success && ts != null) {
-      throw const FormatException(
-        'MutationResponse failure must not include field "ts".',
       );
     }
     return MutationResponse(
@@ -730,7 +729,7 @@ class MutationResponse extends ResponseMessage {
           : null,
       logLines: (json['logLines'] as List<dynamic>? ?? const <dynamic>[])
           .cast<String>(),
-      ts: ts as String?,
+      ts: success ? ts as String : null,
     );
   }
 
@@ -758,9 +757,8 @@ class MutationResponse extends ResponseMessage {
       }
       return value;
     }
-    if (ts != null) {
-      throw StateError('MutationResponse failure must not include "ts".');
-    }
+    // A failure never carries a `ts` on the wire; ignore any value rather than
+    // serializing it (matches the lenient decode path).
     return null;
   }
 }
@@ -835,7 +833,7 @@ class AuthError extends ServerMessage {
   const AuthError({
     required this.error,
     required this.baseVersion,
-    required this.authUpdateAttempted,
+    this.authUpdateAttempted,
   });
 
   /// Human-readable description of the authentication error.
@@ -844,21 +842,24 @@ class AuthError extends ServerMessage {
   /// Identity version associated with the rejected authentication.
   final int baseVersion;
 
-  /// Whether the server attempted to apply an auth update before failing.
-  final bool authUpdateAttempted;
+  /// Whether the server attempted to apply an auth update before failing, or
+  /// `null` when the server did not report it.
+  ///
+  /// The official client treats a missing value as "not explicitly false" (its
+  /// `authUpdateAttempted === false` guard is false for `undefined`), so a
+  /// backend that omits the field still drives a reauth rather than a rejected
+  /// message. Decoding mirrors that: an absent or non-bool value becomes `null`
+  /// instead of being rejected.
+  final bool? authUpdateAttempted;
 
   /// Deserializes an [AuthError] from JSON.
   factory AuthError.fromJson(Map<String, dynamic> json) {
     final authUpdateAttempted = json['authUpdateAttempted'];
-    if (authUpdateAttempted is! bool) {
-      throw const FormatException(
-        'AuthError is missing required bool field "authUpdateAttempted".',
-      );
-    }
     return AuthError(
       error: json['error'] as String,
       baseVersion: json['baseVersion'] as int,
-      authUpdateAttempted: authUpdateAttempted,
+      authUpdateAttempted:
+          authUpdateAttempted is bool ? authUpdateAttempted : null,
     );
   }
 
@@ -868,7 +869,8 @@ class AuthError extends ServerMessage {
       'type': 'AuthError',
       'error': error,
       'baseVersion': baseVersion,
-      'authUpdateAttempted': authUpdateAttempted,
+      if (authUpdateAttempted != null)
+        'authUpdateAttempted': authUpdateAttempted,
     };
   }
 }

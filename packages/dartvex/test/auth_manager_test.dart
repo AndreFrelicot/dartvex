@@ -390,6 +390,48 @@ void main() {
       await manager.stopRefreshing();
     });
 
+    test('an AuthError with a null authUpdateAttempted still drives a reauth',
+        () async {
+      // P1 parity: the official client treats a missing `authUpdateAttempted`
+      // as not-explicitly-false, so a spontaneous AuthError that omits the
+      // field must trigger a reauth fetch rather than being ignored. Guards
+      // against a regression that would coalesce a null field to `false`.
+      var fetchCount = 0;
+      final sentTokens = <String?>[];
+      final manager = AuthManager(
+        config: const ConvexClientConfig(connectImmediately: false),
+        sendAuth: (token) async {
+          sentTokens.add(token);
+        },
+        emitAuthState: (_) {},
+      );
+
+      await manager.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) async {
+          fetchCount += 1;
+          return forceRefresh ? 'fresh-$fetchCount' : 'cached-token';
+        },
+      );
+      manager.handleAuthConfirmed();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      final fetchCountBefore = fetchCount;
+      sentTokens.clear();
+
+      await manager.handleAuthError(
+        const AuthError(
+          error: 'spontaneous auth expiry',
+          baseVersion: 0,
+          authUpdateAttempted: null,
+        ),
+        currentAuthVersion: 1,
+      );
+
+      // A reauth was attempted: a fresh token was fetched and sent, not ignored.
+      expect(fetchCount, greaterThan(fetchCountBefore));
+      expect(sentTokens.last, startsWith('fresh-'));
+      await manager.stopRefreshing();
+    });
+
     test('terminal auth rejection gives up and clears the token', () async {
       var fetchCount = 0;
       final authStates = <bool>[];

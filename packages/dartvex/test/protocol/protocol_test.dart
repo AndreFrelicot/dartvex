@@ -278,38 +278,43 @@ void main() {
       );
     });
 
-    test('MutationResponse failure rejects a server timestamp on the wire', () {
+    test('MutationResponse failure ignores a server timestamp on the wire', () {
+      // The official runtime parser never validates a failure's `ts`; dartvex
+      // matches it by dropping any unexpected value instead of rejecting.
+      final decoded = ServerMessage.fromJson(<String, dynamic>{
+        'type': 'MutationResponse',
+        'requestId': 1,
+        'success': false,
+        'result': 'boom',
+        'ts': encodeTs(1),
+        'logLines': const <String>[],
+      });
+      expect(decoded, isA<MutationResponse>());
+      expect((decoded as MutationResponse).success, isFalse);
+      expect(decoded.ts, isNull);
       expect(
-        () => ServerMessage.fromJson(<String, dynamic>{
-          'type': 'MutationResponse',
-          'requestId': 1,
-          'success': false,
-          'result': 'boom',
-          'ts': encodeTs(1),
-          'logLines': const <String>[],
-        }),
-        throwsFormatException,
-      );
-      expect(
-        () => MutationResponse(
+        MutationResponse(
           requestId: 1,
           success: false,
           errorMessage: 'boom',
           ts: encodeTs(1),
         ).toJson(),
-        throwsStateError,
+        isNot(contains('ts')),
       );
     });
 
-    test('AuthError requires authUpdateAttempted on the wire', () {
-      expect(
-        () => ServerMessage.fromJson(const <String, dynamic>{
-          'type': 'AuthError',
-          'error': 'bad token',
-          'baseVersion': 3,
-        }),
-        throwsFormatException,
-      );
+    test('AuthError tolerates a missing authUpdateAttempted on the wire', () {
+      // The official client treats a missing `authUpdateAttempted` as not
+      // explicitly false (it never rejects the message); dartvex decodes it to
+      // `null` so a backend that omits the field still drives a reauth.
+      final decoded = ServerMessage.fromJson(const <String, dynamic>{
+        'type': 'AuthError',
+        'error': 'bad token',
+        'baseVersion': 3,
+      });
+      expect(decoded, isA<AuthError>());
+      expect((decoded as AuthError).authUpdateAttempted, isNull);
+      expect(decoded.toJson(), isNot(contains('authUpdateAttempted')));
       expect(
         const AuthError(
           error: 'bad token',
