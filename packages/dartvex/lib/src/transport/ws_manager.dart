@@ -874,6 +874,10 @@ class WebSocketManager {
           error: error,
           stackTrace: stackTrace,
         );
+        // The close failed, so no close event will arrive to drive the
+        // reconnect. Fall back to a synthetic disconnect so the client still
+        // reconnects instead of sitting idle on a dead socket.
+        await _handleSyntheticDisconnect(_lastCloseReason, immediate: true);
       }
     });
   }

@@ -107,6 +107,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The default WebSocket inactivity timeout now matches the official Convex
   client's 60-second threshold, reducing false reconnects while large messages
   are in flight.
+- An inactivity-timeout close that throws now falls back to a synthetic
+  disconnect, so the client still reconnects instead of sitting idle on a dead
+  socket when no close event arrives.
 - Reactive pagination now rejects malformed `PaginationResult` objects whose
   `continueCursor` is missing or non-string, preventing duplicate page loads or
   load loops.

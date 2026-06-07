@@ -1810,6 +1810,35 @@ void main() {
       client.dispose();
     });
 
+    test('inactivity timeout still reconnects when closing the socket throws',
+        () async {
+      final adapter = MockWebSocketAdapter();
+      final client = ConvexClient(
+        'https://demo.convex.cloud',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          inactivityTimeout: const Duration(milliseconds: 60),
+          reconnectBackoff: const <Duration>[],
+          initialBackoff: Duration.zero,
+          backoffJitter: 0,
+        ),
+      );
+      await settle();
+      expect(client.currentConnectionStatus.connectionCount, 1);
+
+      // The socket fails to close when the inactivity timeout fires, so no
+      // close event arrives; the manager must still reconnect through a
+      // synthetic disconnect rather than sitting idle on a dead socket.
+      adapter.throwOnClose = true;
+      await waitForStatus(
+        client,
+        (status) => status.connectionCount >= 2 && status.isWebSocketConnected,
+      );
+
+      adapter.throwOnClose = false;
+      client.dispose();
+    });
+
     test('stale auth error is ignored after newer auth update', () async {
       final adapter = MockWebSocketAdapter();
       final client = ConvexClient(

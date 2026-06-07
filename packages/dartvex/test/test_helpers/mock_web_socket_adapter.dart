@@ -13,6 +13,10 @@ class MockWebSocketAdapter implements WebSocketAdapter {
   final List<String> connectedUrls = <String>[];
   bool _connected = false;
 
+  /// When true, [close] throws without emitting a close event, simulating a
+  /// socket that fails to close cleanly (e.g. on an inactivity timeout).
+  bool throwOnClose = false;
+
   @override
   Future<void> connect(String url) async {
     connectedUrls.add(url);
@@ -62,6 +66,9 @@ class MockWebSocketAdapter implements WebSocketAdapter {
 
   @override
   Future<void> close() async {
+    if (throwOnClose) {
+      throw StateError('Mock socket failed to close');
+    }
     if (!_connected) {
       return;
     }
