@@ -802,14 +802,10 @@ void main() {
           transitionId: 'chunk-1',
         ).toJson(),
       );
-      await Future<void>.delayed(const Duration(milliseconds: 10));
+      final connectMessages = await _waitForConnectMessages(adapter, 2);
 
       expect(disconnectReasons, contains('InvalidServerMessage'));
-      expect(
-        adapter.decodedSentMessages
-            .where((message) => message['type'] == 'Connect'),
-        hasLength(2),
-      );
+      expect(connectMessages, hasLength(2));
 
       await manager.dispose();
     });
