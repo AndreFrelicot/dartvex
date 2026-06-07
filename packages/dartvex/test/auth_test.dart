@@ -269,7 +269,8 @@ void main() {
       authClient.dispose();
     });
 
-    test('reconnect with provider auth forces one cached refresh', () async {
+    test('reconnect replays the cached token without calling the provider',
+        () async {
       final adapter = MockWebSocketAdapter();
       final provider = FakeAuthProvider(
         loginSession: const FakeAuthSession(
@@ -301,28 +302,28 @@ void main() {
           adapter.decodedSentMessages.length;
 
       adapter.disconnect();
-      await waitUntil(
-        () => provider.loginFromCacheCalls == 1,
-        reason: 'cached auth refresh',
-      );
-      final refreshAuthMessage = await waitForAuthMessage(
+      // The official client never re-fetches auth on reconnect; it replays the
+      // cached token from local state. So the provider is not called and the
+      // original token is re-sent verbatim.
+      final replayedAuthMessage = await waitForAuthMessage(
         adapter,
         skip: sentMessageCountBeforeDisconnect,
-        where: (message) => message['value'] == 'refresh-token',
-        reason: 'refresh auth message',
+        where: (message) => message['value'] == 'login-token',
+        reason: 'replayed auth message',
       );
       final authMessagesAfterDisconnect =
           authMessages(adapter, skip: sentMessageCountBeforeDisconnect)
               .toList(growable: false);
 
-      expect(provider.loginFromCacheCalls, 1);
+      expect(provider.loginFromCacheCalls, 0);
       expect(authMessagesAfterDisconnect, hasLength(1));
-      expect(refreshAuthMessage['value'], 'refresh-token');
+      expect(replayedAuthMessage['value'], 'login-token');
 
       authClient.dispose();
     });
 
-    test('reconnect failure moves wrapper back to unauthenticated', () async {
+    test('reconnect stays authenticated even if the provider would fail',
+        () async {
       final adapter = MockWebSocketAdapter();
       final provider = FakeAuthProvider(
         loginSession: const FakeAuthSession(
@@ -351,23 +352,52 @@ void main() {
         where: (message) => message['value'] == 'login-token',
         reason: 'initial auth message',
       );
+      // Confirm the cached token: the wrapper becomes authenticated and the
+      // post-confirmation refetch settles the active token to the refresh token.
+      adapter.pushServerMessage(
+        Transition(
+          startVersion: const StateVersion.initial(),
+          endVersion: StateVersion(querySet: 0, identity: 1, ts: encodeTs(1)),
+          modifications: const <StateModification>[],
+        ).toJson(),
+      );
+      await waitForAuthMessage(
+        adapter,
+        where: (message) => message['value'] == 'refresh-token',
+        reason: 'settled token after confirmation',
+      );
+      await waitUntil(
+        () => authClient.currentAuthState is AuthAuthenticated<FakeAuthSession>,
+        reason: 'authenticated after confirmation',
+      );
       provider
         ..throwOnLoginFromCache = true
         ..resetCacheCounters();
+      final sentMessageCountBeforeDisconnect =
+          adapter.decodedSentMessages.length;
+      states.clear();
 
       adapter.disconnect();
-      await waitUntil(
-        () =>
-            provider.loginFromCacheCalls == 1 &&
-            states.lastOrNull is AuthUnauthenticated<FakeAuthSession>,
-        reason: 'unauthenticated state after reconnect failure',
+      // A reconnect replays the active token from local state without touching
+      // the provider, so a provider that would throw on refresh cannot silently
+      // log the user out.
+      final replayedAuthMessage = await waitForAuthMessage(
+        adapter,
+        skip: sentMessageCountBeforeDisconnect,
+        where: (message) => message['value'] == 'refresh-token',
+        reason: 'replayed auth message',
       );
 
-      expect(provider.loginFromCacheCalls, 1);
-      expect(states.last, isA<AuthUnauthenticated<FakeAuthSession>>());
+      expect(provider.loginFromCacheCalls, 0);
+      expect(replayedAuthMessage['value'], 'refresh-token');
+      expect(
+        states.whereType<AuthUnauthenticated<FakeAuthSession>>(),
+        isEmpty,
+        reason: 'reconnect must not move the wrapper to unauthenticated',
+      );
       expect(
         authClient.currentAuthState,
-        isA<AuthUnauthenticated<FakeAuthSession>>(),
+        isA<AuthAuthenticated<FakeAuthSession>>(),
       );
 
       await subscription.cancel();

@@ -184,44 +184,6 @@ class AuthManager {
     _emit(false);
   }
 
-  /// Refreshes auth before replaying subscriptions after reconnect.
-  Future<void> refreshAuthForReconnect() async {
-    final fetchToken = _fetchToken;
-    if (fetchToken == null) {
-      return;
-    }
-    _log(DartvexLogLevel.debug, 'Refreshing auth token for reconnect');
-    _cancelRefreshTimer();
-    final generation = ++_authGeneration;
-    try {
-      final freshToken = await fetchToken(forceRefresh: true);
-      if (!_isCurrentFlow(generation, fetchToken)) {
-        return;
-      }
-      _currentToken = freshToken;
-      if (freshToken == null) {
-        _log(DartvexLogLevel.warn, 'Reconnect auth refresh returned no token');
-        _clearFailedAuthFlowAndEmitUnauthenticated();
-        return;
-      }
-      _expectConfirmationForToken(
-        freshToken,
-        source: _AuthConfirmationSource.fresh,
-      );
-    } catch (error, stackTrace) {
-      if (!_isCurrentFlow(generation, fetchToken)) {
-        return;
-      }
-      _log(
-        DartvexLogLevel.error,
-        'Reconnect auth refresh failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      _clearFailedAuthFlowAndEmitUnauthenticated();
-    }
-  }
-
   /// The most recently applied auth token, if any.
   String? get currentToken => _currentToken;
 

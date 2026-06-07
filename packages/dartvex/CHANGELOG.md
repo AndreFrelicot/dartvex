@@ -80,6 +80,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Auth setup now mirrors the official client's initial-refetch behavior: when
   the cached token fetch returns no token, the client immediately retries with a
   forced refresh before reporting unauthenticated state.
+- A reconnect now replays the cached auth token from local state instead of
+  re-fetching it from the auth provider, matching the official client. Token
+  freshness on reconnect is driven by the scheduled refresh and by server
+  `AuthError`s, so a transient auth-provider failure during a reconnect can no
+  longer silently sign the user out.
 - Auth token refresh is now scheduled from the token's own lifetime
   (`exp - iat`) minus `refreshTokenLeewaySeconds`, instead of from the device
   wall clock (`exp - now - 60`). Refresh timing is now immune to device clock
@@ -117,9 +122,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Auth confirmations are now ignored unless a token update is actually pending,
   and reauth confirmations no longer re-emit an already-authenticated public
   state.
-- Auth refresh flows now reset to unauthenticated state when a scheduled or
-  reconnect refresh returns no token, or when a reconnect refresh fails,
-  preventing stale refresh callbacks from resurrecting a failed auth flow.
+- Auth refresh flows now reset to unauthenticated state when a scheduled refresh
+  returns no token, preventing stale refresh callbacks from resurrecting a
+  failed auth flow.
 - Query subscriptions now emit `QueryLoading` when an optimistic update clears a
   live query, and one-shot queries ignore that loading state until a concrete
   success or error arrives.
@@ -162,8 +167,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - WebSocket `connectionCount` now advances only after a successful socket open,
   so failed pre-open connection attempts no longer inflate the next `Connect`
   frame.
-- Reconnect-time auth refresh now cancels any scheduled token refresh timer,
-  avoiding redundant concurrent forced token fetches around reconnects.
 - Resume after auth gating now sends `Authenticate` before replaying query-set
   changes, matching reconnect ordering and avoiding auth-gated queries racing
   ahead of the refreshed identity.
@@ -178,12 +181,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   forced token refresh.
 - Optimistic updates that throw no longer leave behind poison layers that can
   wedge future server transitions into a reconnect loop.
-- Terminal auth failures now clear the refresh callback, preventing later
-  reconnects from refetching and reapplying a rejected token.
+- Terminal auth failures now clear the refresh callback, so a rejected token is
+  not refetched and reapplied by a later `AuthError`.
 - Cached token refresh scheduling now clamps to the token's remaining lifetime so
   aged cached tokens are refreshed before their actual expiration.
-- Reconnect-time auth refresh failures no longer abort the WebSocket handshake
-  and trigger tight reconnect loops.
 - The default Convex sync API version now uses a currently supported Convex
   client version, fixing browser WebSocket handshakes that cannot send the
   native `Convex-Client` header.

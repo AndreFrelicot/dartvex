@@ -342,13 +342,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
         _baseClient.pause();
       },
       resumeSocket: _resumeSocketForAuth,
-      stopSocket: () async {
-        // The reauth fetches a fresh token itself, so the reconnect it triggers
-        // must not also run a redundant reconnect-time auth refresh.
-        _refreshAuthOnNextConnect = false;
-        _skipNextReconnectAuthRefresh = true;
-        await _wsManager.stop();
-      },
+      stopSocket: () => _wsManager.stop(),
       restartSocket: () => _wsManager.restart(),
       onRefreshingChange: (isRefreshing) {
         _currentAuthRefreshing = isRefreshing;
@@ -387,8 +381,6 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   bool _currentAuthRefreshing = false;
   Future<void>? _startFuture;
   Future<void>? _closeFuture;
-  bool _refreshAuthOnNextConnect = false;
-  bool _skipNextReconnectAuthRefresh = false;
   bool _disposed = false;
 
   static String _normalizeDeploymentUrl(String deploymentUrl) {
@@ -1085,29 +1077,11 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     return _startFuture = _wsManager.start();
   }
 
-  Future<List<ClientMessage>> _handleConnected() async {
-    final refreshAuth =
-        _refreshAuthOnNextConnect && !_skipNextReconnectAuthRefresh;
-    _refreshAuthOnNextConnect = false;
-    _skipNextReconnectAuthRefresh = false;
-    if (refreshAuth) {
-      try {
-        await _authManager.refreshAuthForReconnect();
-      } catch (error, stackTrace) {
-        _log(
-          DartvexLogLevel.warn,
-          'Reconnect auth refresh failed; continuing with current auth state',
-          error: error,
-          stackTrace: stackTrace,
-        );
-      }
-      final token = _authManager.currentToken;
-      if (token == null) {
-        _baseClient.restoreAuth(tokenType: 'None');
-      } else {
-        _baseClient.restoreAuth(tokenType: _config.authTokenType, token: token);
-      }
-    }
+  // Matches the official client: a reconnect replays the cached auth token from
+  // local state (via prepareReconnect) and never re-fetches it. Token freshness
+  // is driven by the scheduled refresh timer and by server AuthErrors, so a
+  // transient auth-provider failure during a reconnect cannot log the user out.
+  List<ClientMessage> _handleConnected() {
     return _baseClient.prepareReconnect();
   }
 
@@ -1237,7 +1211,6 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       final nextState = _currentConnectionState == ConnectionState.connecting
           ? ConnectionState.connecting
           : ConnectionState.reconnecting;
-      _refreshAuthOnNextConnect = nextState == ConnectionState.reconnecting;
       _emitConnectionState(
         nextState,
       );

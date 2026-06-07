@@ -373,12 +373,6 @@ class BaseClient {
     return drainOutgoing(assumeSent: false);
   }
 
-  /// Restores the auth token of [tokenType] to [token] without emitting a new
-  /// [Authenticate] message, used to re-seed local state after a refresh.
-  void restoreAuth({required String tokenType, String? token}) {
-    _localState.restoreAuth(tokenType: tokenType, value: token);
-  }
-
   /// Handles a socket disconnect for [reason], dropping queued outgoing
   /// messages, failing already-sent in-flight actions (non-idempotent, not
   /// retryable), and leaving in-flight mutations pending for replay on

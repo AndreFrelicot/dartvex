@@ -195,59 +195,6 @@ void main() {
       await manager.stopRefreshing();
     });
 
-    test('reconnect refresh cancels the scheduled refresh timer', () async {
-      final forceRefreshCalls = <bool>[];
-      final reconnectToken = Completer<String?>();
-      final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-      final manager = AuthManager(
-        // The confirmed token schedules an immediate refresh. Starting a
-        // reconnect refresh before the timer fires must cancel that timer so
-        // only the reconnect fetch runs.
-        config: const ConvexClientConfig(
-          connectImmediately: false,
-          refreshTokenLeewaySeconds: 60,
-        ),
-        sendAuth: (_) async {},
-        emitAuthState: (_) {},
-      );
-
-      var forceRefreshCount = 0;
-      await manager.setAuthWithRefresh(
-        fetchToken: ({required bool forceRefresh}) {
-          forceRefreshCalls.add(forceRefresh);
-          if (!forceRefresh) {
-            return Future<String?>.value(null);
-          }
-          forceRefreshCount += 1;
-          if (forceRefreshCount == 1) {
-            return Future<String?>.value(
-              _jwt(
-                subject: 'fresh-initial',
-                issuedAt: nowSeconds,
-                expiresAt: nowSeconds + 60,
-              ),
-            );
-          }
-          return reconnectToken.future;
-        },
-      );
-      manager.handleAuthConfirmed();
-
-      final reconnect = manager.refreshAuthForReconnect();
-      await Future<void>.delayed(const Duration(milliseconds: 10));
-
-      expect(forceRefreshCalls, <bool>[false, true, true]);
-      reconnectToken.complete(
-        _jwt(
-          subject: 'fresh',
-          issuedAt: nowSeconds + 1,
-          expiresAt: nowSeconds + 3600,
-        ),
-      );
-      await reconnect;
-      await manager.stopRefreshing();
-    });
-
     test('auth rejection clears auth when forced refresh returns same token',
         () async {
       final events = <String>[];
@@ -286,45 +233,6 @@ void main() {
         'sendAuth:null',
         'restart',
       ]);
-      await manager.stopRefreshing();
-    });
-
-    test('reconnect refresh failure clears the refresh flow', () async {
-      final events = <String>[];
-      final manager = AuthManager(
-        config: const ConvexClientConfig(connectImmediately: false),
-        sendAuth: (token) async => events.add('sendAuth:${token ?? 'null'}'),
-        emitAuthState: (authenticated) =>
-            events.add('authState:$authenticated'),
-      );
-
-      await manager.setAuthWithRefresh(
-        fetchToken: ({required bool forceRefresh}) async {
-          events.add('fetch:$forceRefresh');
-          if (forceRefresh) {
-            throw StateError('refresh failed');
-          }
-          return 'cached-token';
-        },
-      );
-      events.clear();
-
-      await manager.refreshAuthForReconnect();
-
-      expect(manager.currentToken, isNull);
-      expect(events, <String>['fetch:true', 'authState:false']);
-      events.clear();
-
-      await manager.handleAuthError(
-        const AuthError(
-          error: 'expired',
-          baseVersion: 0,
-          authUpdateAttempted: true,
-        ),
-        currentAuthVersion: 1,
-      );
-
-      expect(events, <String>['authState:false', 'sendAuth:null']);
       await manager.stopRefreshing();
     });
 
@@ -440,7 +348,7 @@ void main() {
       await manager.stopRefreshing();
     });
 
-    test('terminal auth rejection disables reconnect refresh', () async {
+    test('terminal auth rejection gives up and clears the token', () async {
       var fetchCount = 0;
       final authStates = <bool>[];
       final manager = AuthManager(
@@ -471,7 +379,16 @@ void main() {
       }
       final terminalFetchCount = fetchCount;
 
-      await manager.refreshAuthForReconnect();
+      // After the give-up the dead token is cleared; a later AuthError must not
+      // resurrect it with another fetch (the refresh flow stays disabled).
+      await manager.handleAuthError(
+        const AuthError(
+          error: 'token rejected again',
+          baseVersion: 99,
+          authUpdateAttempted: true,
+        ),
+        currentAuthVersion: 100,
+      );
 
       expect(authStates, contains(false));
       expect(terminalFetchCount, 4);

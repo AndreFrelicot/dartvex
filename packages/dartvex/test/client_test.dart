@@ -1763,7 +1763,7 @@ void main() {
       client.dispose();
     });
 
-    test('reconnect auth refresh failure does not abort handshake', () async {
+    test('reconnect replays the cached token without re-fetching', () async {
       final adapter = MockWebSocketAdapter();
       final client = ConvexClient(
         'https://example.com',
@@ -1779,7 +1779,7 @@ void main() {
         fetchToken: ({required bool forceRefresh}) async {
           if (forceRefresh) {
             forcedRefreshCalls += 1;
-            throw StateError('refresh failed');
+            throw StateError('the provider must not be called on reconnect');
           }
           return 'cached-token';
         },
@@ -1800,8 +1800,12 @@ void main() {
           .where((message) => message['type'] == 'Authenticate')
           .toList(growable: false);
 
-      expect(forcedRefreshCalls, 1);
-      expect(authMessages, isEmpty);
+      // Official parity: a reconnect replays the cached token from local state
+      // and never calls the fetcher, so a failing forceRefresh provider can
+      // neither break the handshake nor de-authenticate the client.
+      expect(forcedRefreshCalls, 0);
+      expect(authMessages, hasLength(1));
+      expect(authMessages.single['value'], 'cached-token');
 
       client.dispose();
     });
