@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Convert malformed 200 sign-in, sign-up, get-session, and magic-link response
   bodies into typed Better Auth errors instead of raw cast or decode exceptions.
+- Guard the nested `user`/`session` fields of a 200 response: a non-object
+  value now surfaces as a null session (or empty user fields) instead of a raw
+  `TypeError`.
 - Convert malformed Convex token endpoint responses into typed session-expired
   errors instead of raw cast or decode exceptions.
 - Clarify missing session-token errors with Flutter web CORS guidance and

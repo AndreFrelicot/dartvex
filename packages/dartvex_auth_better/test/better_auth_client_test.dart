@@ -157,6 +157,22 @@ void main() {
       expect(session, isNull);
     });
 
+    test('getSession returns null when session or user is not an object',
+        () async {
+      final mock = buildMock(
+        sessionToken: 'ses_valid',
+        getSessionResponse: {
+          'session': 'not-an-object',
+          'user': <String, dynamic>{'id': 'user_123'},
+        },
+      );
+      final client = BetterAuthClient(baseUrl: baseUrl, httpClient: mock);
+
+      // A malformed nested field must surface as null, not a raw TypeError.
+      final session = await client.getSession(sessionToken: 'ses_valid');
+      expect(session, isNull);
+    });
+
     test('throws typed exception when getSession 200 body is not an object',
         () async {
       for (final body in <String>[jsonEncode('OK'), '']) {

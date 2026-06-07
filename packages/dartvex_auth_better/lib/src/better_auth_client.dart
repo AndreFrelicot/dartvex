@@ -164,7 +164,7 @@ class BetterAuthClient {
       '/api/auth/magic-link/verify',
       response,
     );
-    final user = body['user'] as Map<String, dynamic>?;
+    final user = _asObject(body['user']);
     final sessionToken = _extractSessionToken(response, body);
 
     final cookieJwt = _extractCookieValue(response, 'better-auth.convex_jwt');
@@ -212,8 +212,8 @@ class BetterAuthClient {
     if (response.statusCode != 200) return null;
 
     final body = _decodeObjectBody('/api/auth/get-session', response);
-    final session = body['session'] as Map<String, dynamic>?;
-    final user = body['user'] as Map<String, dynamic>?;
+    final session = _asObject(body['session']);
+    final user = _asObject(body['user']);
     if (session == null || user == null) return null;
 
     final convexJwt = await _fetchConvexToken(sessionToken);
@@ -235,7 +235,7 @@ class BetterAuthClient {
     final response = await _post(path, requestBody);
 
     final body = _decodeObjectBody(path, response);
-    final user = body['user'] as Map<String, dynamic>?;
+    final user = _asObject(body['user']);
 
     // Always extract the session token for persistence.
     final sessionToken = _extractSessionToken(response, body);
@@ -422,6 +422,19 @@ class BetterAuthClient {
     } on FormatException {
       return;
     }
+  }
+
+  /// Returns [value] as a string-keyed map, or `null` when it is absent or not
+  /// a JSON object. Keeps a malformed nested `user`/`session` field from
+  /// throwing a raw `TypeError` instead of a [BetterAuthException].
+  static Map<String, dynamic>? _asObject(Object? value) {
+    if (value is Map<String, dynamic>) {
+      return value;
+    }
+    if (value is Map) {
+      return value.cast<String, dynamic>();
+    }
+    return null;
   }
 
   Map<String, dynamic> _decodeObjectBody(String path, http.Response response) {
