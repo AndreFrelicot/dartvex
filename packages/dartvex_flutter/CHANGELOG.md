@@ -64,6 +64,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   queries with the same name to every live handle instead of only the latest.
 - Closes file-download HTTP clients and rejects non-success responses instead
   of returning error bodies as image bytes.
+- `ConvexFileDownloader.download` now applies a configurable `idleTimeout`
+  (default 30s) to connecting, awaiting response headers, and the gap between
+  body chunks, so a stalled server fails with a `TimeoutException` instead of
+  leaving `ConvexImage` loading forever with an open HTTP client. It is an idle
+  (inter-event) bound, so large downloads that keep progressing are never cut
+  off.
 - Ignores stale async image/cache loads after widget inputs change.
 - Resets paginated queries when query inputs or client instances change.
 - Returns failed futures for overlapping action/mutation requests instead of

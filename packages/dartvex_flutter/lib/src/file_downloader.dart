@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -54,15 +55,23 @@ class ConvexFileDownloader {
   /// [onProgress] is called as bytes are received with a
   /// [ConvexDownloadProgress] containing received bytes, total bytes,
   /// and progress ratio.
+  ///
+  /// [idleTimeout] bounds how long the download may stall without progress: it
+  /// applies to establishing the connection, awaiting the response headers, and
+  /// the gap between received body chunks. It is an idle (inter-event) bound,
+  /// not a total budget, so an arbitrarily large download that keeps making
+  /// progress is never cut off, while a stalled connection fails with a
+  /// [TimeoutException] instead of leaving the request hanging open.
   static Future<Uint8List> download(
     String url, {
     ConvexDownloadProgressCallback? onProgress,
+    Duration idleTimeout = const Duration(seconds: 30),
   }) async {
     final uri = Uri.parse(url);
-    final client = HttpClient();
+    final client = HttpClient()..connectionTimeout = idleTimeout;
     try {
       final request = await client.getUrl(uri);
-      final response = await request.close();
+      final response = await request.close().timeout(idleTimeout);
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
         await response.drain<void>();
@@ -78,7 +87,7 @@ class ConvexFileDownloader {
 
       final builder = BytesBuilder(copy: false);
 
-      await for (final chunk in response) {
+      await for (final chunk in response.timeout(idleTimeout)) {
         builder.add(chunk);
         received += chunk.length;
         onProgress?.call(ConvexDownloadProgress(
