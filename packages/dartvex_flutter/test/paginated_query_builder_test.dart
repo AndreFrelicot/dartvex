@@ -204,6 +204,44 @@ void main() {
     expect(capturedStatus, PaginationStatus.error);
   });
 
+  testWidgets('maps item decode failures to error status without throwing', (
+    tester,
+  ) async {
+    final client = connectedClient();
+    PaginationStatus? capturedStatus;
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: ConvexProvider(
+          client: client,
+          child: PaginatedQueryBuilder<int>(
+            query: 'items:list',
+            fromJson: (_) => throw const FormatException('bad item'),
+            builder: (context, items, loadMore, status) {
+              capturedStatus = status;
+              return Text('status:$status items:${items.length}');
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      () => client.paginatedQueryCalls.single.query.emitPage(
+        <dynamic>[
+          <String, dynamic>{'id': 'bad'},
+        ],
+        status: ConvexPaginationStatus.canLoadMore,
+      ),
+      returnsNormally,
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(capturedStatus, PaginationStatus.error);
+  });
+
   testWidgets('updates a loaded page reactively without duplicates',
       (tester) async {
     final client = connectedClient();

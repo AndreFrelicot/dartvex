@@ -138,8 +138,13 @@ class _PaginatedQueryBuilderState<T> extends State<PaginatedQueryBuilder<T>> {
     // Seed synchronously from the current snapshot (a build is already pending
     // from this lifecycle callback), then update reactively from the stream.
     final initial = query.current;
-    _items = _mapItems(initial);
-    _status = _mapStatus(initial.status);
+    try {
+      _items = _mapItems(initial);
+      _status = _mapStatus(initial.status);
+    } catch (_) {
+      _items = const <Never>[];
+      _status = PaginationStatus.error;
+    }
     _subscription = query.stream.listen(_apply);
   }
 
@@ -147,9 +152,18 @@ class _PaginatedQueryBuilderState<T> extends State<PaginatedQueryBuilder<T>> {
     if (!mounted) {
       return;
     }
+    late final List<T> items;
+    late final PaginationStatus status;
+    try {
+      items = _mapItems(result);
+      status = _mapStatus(result.status);
+    } catch (_) {
+      items = _items;
+      status = PaginationStatus.error;
+    }
     setState(() {
-      _items = _mapItems(result);
-      _status = _mapStatus(result.status);
+      _items = items;
+      _status = status;
     });
   }
 
