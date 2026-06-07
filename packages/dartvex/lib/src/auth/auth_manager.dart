@@ -297,7 +297,16 @@ class AuthManager {
     // Stop the socket so in-flight messages cannot retry with the stale token,
     // fetch a fresh one, then restart so it is replayed on a clean connection.
     _setRefreshing(true);
-    await _invokeStopSocket();
+    try {
+      await _invokeStopSocket();
+    } catch (error, stackTrace) {
+      _log(
+        DartvexLogLevel.error,
+        'Failed to stop socket for auth refresh',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
     try {
       final freshToken = await fetchToken(forceRefresh: true);
       if (_isCurrentFlow(generation, fetchToken)) {

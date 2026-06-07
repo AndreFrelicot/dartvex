@@ -273,11 +273,7 @@ class WebSocketManager {
         error: error,
         stackTrace: stackTrace,
       );
-      if (adapter.isConnected) {
-        await adapter.close();
-      } else {
-        await _handleSyntheticDisconnect(_lastCloseReason, immediate: true);
-      }
+      await _closeOrSyntheticDisconnect(_lastCloseReason, immediate: true);
       return sentMessages;
     }
     _notifyMessagesSent(sentMessages);
@@ -310,7 +306,7 @@ class WebSocketManager {
     );
     if (adapter.isConnected) {
       _pendingCloseReason = reason;
-      await adapter.close();
+      await _closeOrSyntheticDisconnect(reason, immediate: true);
       return;
     }
     if (_connecting) {
@@ -369,7 +365,9 @@ class WebSocketManager {
     _chunkBuffer = null;
     await _messageSubscription?.cancel();
     await _closeSubscription?.cancel();
-    await adapter.close();
+    await _closeAdapterBestEffort(
+      'Failed to close WebSocket during shutdown',
+    );
   }
 
   void _attachListeners() {
@@ -409,7 +407,9 @@ class WebSocketManager {
       await adapter.connect(_buildWebSocketUrl()).timeout(connectTimeout);
       if (_disposed || _stopped) {
         _connecting = false;
-        await adapter.close();
+        await _closeAdapterBestEffort(
+          'Failed to close WebSocket after cancelled connect',
+        );
         return;
       }
       _connecting = false;
@@ -438,11 +438,9 @@ class WebSocketManager {
       if (timedOut) {
         // Abort the half-open connect so it cannot open in the background after
         // we have already moved on to scheduling a reconnect.
-        try {
-          await adapter.close();
-        } catch (_) {
-          // Best effort; the socket is being discarded regardless.
-        }
+        await _closeAdapterBestEffort(
+          'Failed to close timed-out WebSocket connect',
+        );
       }
       _log(
         DartvexLogLevel.error,
@@ -551,7 +549,9 @@ class WebSocketManager {
     if (adapter.isConnected) {
       // The close that follows is deliberate; _handleClosed sees _stopped and
       // skips its reconnect bookkeeping. restart() rebuilds the session.
-      await adapter.close();
+      await _closeAdapterBestEffort(
+        'Failed to close WebSocket while stopping for reauth',
+      );
     }
   }
 
@@ -641,11 +641,7 @@ class WebSocketManager {
         error: error,
         stackTrace: stackTrace,
       );
-      if (adapter.isConnected) {
-        await adapter.close();
-      } else {
-        await _handleSyntheticDisconnect(_lastCloseReason, immediate: true);
-      }
+      await _closeOrSyntheticDisconnect(_lastCloseReason, immediate: true);
     }
   }
 
@@ -796,6 +792,40 @@ class WebSocketManager {
     await onDisconnected(reason);
     _lastCloseReason = reason;
     _scheduleReconnect(immediate: immediate);
+  }
+
+  Future<void> _closeOrSyntheticDisconnect(
+    String reason, {
+    required bool immediate,
+  }) async {
+    if (!adapter.isConnected) {
+      await _handleSyntheticDisconnect(reason, immediate: immediate);
+      return;
+    }
+    try {
+      await adapter.close();
+    } catch (error, stackTrace) {
+      _log(
+        DartvexLogLevel.error,
+        'Failed to close WebSocket before reconnect',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      await _handleSyntheticDisconnect(reason, immediate: immediate);
+    }
+  }
+
+  Future<void> _closeAdapterBestEffort(String message) async {
+    try {
+      await adapter.close();
+    } catch (error, stackTrace) {
+      _log(
+        DartvexLogLevel.error,
+        message,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
   }
 
   void _scheduleReconnect({bool immediate = false}) {

@@ -236,6 +236,48 @@ void main() {
       await manager.stopRefreshing();
     });
 
+    test('auth rejection still refreshes when stopping the socket throws',
+        () async {
+      final events = <String>[];
+      final manager = AuthManager(
+        config: const ConvexClientConfig(connectImmediately: false),
+        sendAuth: (token) async => events.add('sendAuth:${token ?? 'null'}'),
+        emitAuthState: (authenticated) =>
+            events.add('authState:$authenticated'),
+        stopSocket: () async {
+          events.add('stop');
+          throw StateError('stop failed');
+        },
+        restartSocket: () async => events.add('restart'),
+      );
+
+      await manager.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) async {
+          events.add('fetch:$forceRefresh');
+          return forceRefresh ? 'fresh-token' : 'cached-token';
+        },
+      );
+      events.clear();
+
+      await manager.handleAuthError(
+        const AuthError(
+          error: 'expired',
+          baseVersion: 0,
+          authUpdateAttempted: true,
+        ),
+        currentAuthVersion: 1,
+      );
+
+      expect(manager.currentToken, 'fresh-token');
+      expect(events, <String>[
+        'stop',
+        'fetch:true',
+        'sendAuth:fresh-token',
+        'restart',
+      ]);
+      await manager.stopRefreshing();
+    });
+
     test('stale initial token fetch cannot resurrect auth after clear',
         () async {
       final sentTokens = <String?>[];

@@ -56,6 +56,28 @@ void main() {
       await manager.dispose();
     });
 
+    test('dispose ignores adapter close failures', () async {
+      final adapter = MockWebSocketAdapter();
+      final manager = WebSocketManager(
+        adapter: adapter,
+        deploymentUrl: 'https://demo.convex.cloud',
+        apiVersion: '0.1.0',
+        onConnected: () => const <ClientMessage>[],
+        onMessage: (_) => const <ClientMessage>[],
+        onDisconnected: (_) async {},
+        onConnectionStateChanged: (_, __) {},
+        maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => false,
+        reconnectBackoff: const <Duration>[Duration.zero],
+        inactivityTimeout: const Duration(seconds: 30),
+      );
+
+      await manager.start();
+      adapter.throwOnClose = true;
+
+      await manager.dispose();
+    });
+
     test('sendMessages reports no sent messages while disconnected', () async {
       final adapter = MockWebSocketAdapter();
       final manager = WebSocketManager(
@@ -180,6 +202,56 @@ void main() {
         hasLength(1),
       );
 
+      await manager.dispose();
+    });
+
+    test('send failure still reconnects when closing the socket throws',
+        () async {
+      final adapter = _OnceThrowingSendAdapter(failAtSentCount: 2)
+        ..throwOnClose = true;
+      final disconnectReasons = <String>[];
+      final manager = WebSocketManager(
+        adapter: adapter,
+        deploymentUrl: 'https://demo.convex.cloud',
+        apiVersion: '0.1.0',
+        onConnected: () => const <ClientMessage>[],
+        onMessage: (_) => const <ClientMessage>[],
+        onDisconnected: (reason) async {
+          disconnectReasons.add(reason);
+        },
+        onConnectionStateChanged: (_, __) {},
+        maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => false,
+        reconnectBackoff: const <Duration>[Duration.zero],
+        inactivityTimeout: const Duration(seconds: 30),
+      );
+
+      await manager.start();
+      final first = const Mutation(
+        requestId: 1,
+        udfPath: 'messages:send',
+        args: <dynamic>[
+          <String, dynamic>{'body': 'first'}
+        ],
+      );
+      final second = const Mutation(
+        requestId: 2,
+        udfPath: 'messages:send',
+        args: <dynamic>[
+          <String, dynamic>{'body': 'second'}
+        ],
+      );
+      final sentMessages = await manager.sendMessages(<ClientMessage>[
+        first,
+        second,
+      ]);
+      final connectMessages = await _waitForConnectMessages(adapter, 2);
+
+      expect(sentMessages, <ClientMessage>[first]);
+      expect(disconnectReasons, <String>['FailedToSendMessage']);
+      expect(connectMessages, hasLength(2));
+
+      adapter.throwOnClose = false;
       await manager.dispose();
     });
 
@@ -437,6 +509,38 @@ void main() {
         'WebSocket closed with code 1006',
       );
 
+      await manager.dispose();
+    });
+
+    test('reconnectNow still reconnects when closing the socket throws',
+        () async {
+      final adapter = MockWebSocketAdapter()..throwOnClose = true;
+      final disconnectReasons = <String>[];
+      final manager = WebSocketManager(
+        adapter: adapter,
+        deploymentUrl: 'https://demo.convex.cloud',
+        apiVersion: '0.1.0',
+        onConnected: () => const <ClientMessage>[],
+        onMessage: (_) => const <ClientMessage>[],
+        onDisconnected: (reason) async {
+          disconnectReasons.add(reason);
+        },
+        onConnectionStateChanged: (_, __) {},
+        maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => false,
+        reconnectBackoff: const <Duration>[Duration.zero],
+        inactivityTimeout: const Duration(seconds: 30),
+      );
+
+      await manager.start();
+      await manager.reconnectNow('AppResumed');
+      final connectMessages = await _waitForConnectMessages(adapter, 2);
+
+      expect(disconnectReasons, <String>['AppResumed']);
+      expect(connectMessages, hasLength(2));
+      expect(connectMessages.last['lastCloseReason'], 'AppResumed');
+
+      adapter.throwOnClose = false;
       await manager.dispose();
     });
 
@@ -810,6 +914,44 @@ void main() {
       await manager.dispose();
     });
 
+    test('invalid message still reconnects when closing the socket throws',
+        () async {
+      final adapter = MockWebSocketAdapter()..throwOnClose = true;
+      final disconnectReasons = <String>[];
+      final manager = WebSocketManager(
+        adapter: adapter,
+        deploymentUrl: 'https://demo.convex.cloud',
+        apiVersion: '0.1.0',
+        onConnected: () => const <ClientMessage>[],
+        onMessage: (_) => const <ClientMessage>[],
+        onDisconnected: (reason) async {
+          disconnectReasons.add(reason);
+        },
+        onConnectionStateChanged: (_, __) {},
+        maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => false,
+        reconnectBackoff: const <Duration>[Duration.zero],
+        inactivityTimeout: const Duration(seconds: 30),
+      );
+
+      await manager.start();
+      adapter.pushServerMessage(
+        const TransitionChunk(
+          chunk: '{}',
+          partNumber: 1,
+          totalParts: 2,
+          transitionId: 'chunk-1',
+        ).toJson(),
+      );
+      final connectMessages = await _waitForConnectMessages(adapter, 2);
+
+      expect(disconnectReasons, <String>['InvalidServerMessage']);
+      expect(connectMessages, hasLength(2));
+
+      adapter.throwOnClose = false;
+      await manager.dispose();
+    });
+
     test('invalid message after silent disconnect reports disconnect',
         () async {
       final adapter = _SilentDisconnectAdapter();
@@ -1115,6 +1257,46 @@ void main() {
 
       await manager.dispose();
     });
+
+    test('stop still allows restart when closing the socket throws', () async {
+      final adapter = MockWebSocketAdapter();
+      var connectedCalls = 0;
+      final manager = WebSocketManager(
+        adapter: adapter,
+        deploymentUrl: 'https://demo.convex.cloud',
+        apiVersion: '0.1.0',
+        onConnected: () {
+          connectedCalls += 1;
+          return const <ClientMessage>[];
+        },
+        onMessage: (_) => const <ClientMessage>[],
+        onDisconnected: (_) async {},
+        onConnectionStateChanged: (_, __) {},
+        maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => false,
+        reconnectBackoff: const <Duration>[Duration.zero],
+        inactivityTimeout: const Duration(seconds: 30),
+      );
+
+      await manager.start();
+      expect(connectedCalls, 1);
+      expect(adapter.isConnected, isTrue);
+
+      adapter.throwOnClose = true;
+      await manager.stop();
+
+      // A failing close must not leave the manager unable to restart after the
+      // auth flow finishes. The adapter can still report connected until the
+      // next connect replaces the socket, but the manager should be stopped.
+      adapter.throwOnClose = false;
+      await manager.restart();
+
+      expect(connectedCalls, 2);
+      final connectMessages = await _waitForConnectMessages(adapter, 2);
+      expect(connectMessages, hasLength(2));
+
+      await manager.dispose();
+    });
   });
 }
 
@@ -1145,6 +1327,22 @@ class _ThrowingSendAdapter extends MockWebSocketAdapter {
   @override
   void send(String message) {
     if (sentMessages.length == failAtSentCount) {
+      throw StateError('send failed');
+    }
+    super.send(message);
+  }
+}
+
+class _OnceThrowingSendAdapter extends MockWebSocketAdapter {
+  _OnceThrowingSendAdapter({required this.failAtSentCount});
+
+  final int failAtSentCount;
+  bool _failed = false;
+
+  @override
+  void send(String message) {
+    if (!_failed && sentMessages.length == failAtSentCount) {
+      _failed = true;
       throw StateError('send failed');
     }
     super.send(message);
