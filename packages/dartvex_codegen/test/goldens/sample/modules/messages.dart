@@ -34,26 +34,27 @@ class MessagesApi {
       'messages:list',
       _encodeListArgs((limit: limit, author: author, filters: filters)),
     );
-    final typedStream = subscription.stream.map(
-      (event) => switch (event) {
-        QuerySuccess(:final value) => TypedQuerySuccess<List<ListResultItem>>(
-          expectList(
-            value,
-            label: 'ListResult',
-          ).map((item) => _decodeListResultItem(item)).toList(),
-        ),
-        QueryLoading(:final hasPendingWrites) =>
-          TypedQueryLoading<List<ListResultItem>>(
+    final typedStream = subscription.stream.map((event) {
+      switch (event) {
+        case QuerySuccess(:final value):
+          return TypedQuerySuccess<List<ListResultItem>>(
+            expectList(
+              value,
+              label: 'ListResult',
+            ).map((item) => _decodeListResultItem(item)).toList(),
+          );
+        case QueryLoading(:final hasPendingWrites):
+          return TypedQueryLoading<List<ListResultItem>>(
             hasPendingWrites: hasPendingWrites,
-          ),
-        QueryError(:final message, :final data, :final logLines) =>
-          TypedQueryError<List<ListResultItem>>(
+          );
+        case QueryError(:final message, :final data, :final logLines):
+          return TypedQueryError<List<ListResultItem>>(
             message,
             data: data,
             logLines: logLines,
-          ),
-      },
-    );
+          );
+      }
+    });
     return TypedConvexSubscription<List<ListResultItem>>(
       subscription,
       typedStream,

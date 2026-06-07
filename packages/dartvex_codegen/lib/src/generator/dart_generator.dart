@@ -366,22 +366,32 @@ class DartGenerator {
           "'${function.convexFunctionName}', $requestArgsExpression);",
         )
         ..writeln(
-          '  final typedStream = subscription.stream.map((event) => switch (event) {',
+          '  final typedStream = subscription.stream.map((event) {',
         )
         ..writeln(
-          '    QuerySuccess(:final value) => '
-          'TypedQuerySuccess<${resultType.annotation}>(${resultType.decode('value')}),',
+          '    switch (event) {',
         )
         ..writeln(
-          '    QueryLoading(:final hasPendingWrites) => '
-          'TypedQueryLoading<${resultType.annotation}>('
-          'hasPendingWrites: hasPendingWrites),',
+          '      case QuerySuccess(:final value):',
         )
         ..writeln(
-          '    QueryError(:final message, :final data, :final logLines) => '
-          'TypedQueryError<${resultType.annotation}>('
-          'message, data: data, logLines: logLines),',
+          '        return TypedQuerySuccess<${resultType.annotation}>(${resultType.decode('value')});',
         )
+        ..writeln(
+          '      case QueryLoading(:final hasPendingWrites):',
+        )
+        ..writeln(
+          '        return TypedQueryLoading<${resultType.annotation}>('
+          'hasPendingWrites: hasPendingWrites);',
+        )
+        ..writeln(
+          '      case QueryError(:final message, :final data, :final logLines):',
+        )
+        ..writeln(
+          '        return TypedQueryError<${resultType.annotation}>('
+          'message, data: data, logLines: logLines);',
+        )
+        ..writeln('    }')
         ..writeln('  });')
         ..writeln(
           '  return TypedConvexSubscription<${resultType.annotation}>('

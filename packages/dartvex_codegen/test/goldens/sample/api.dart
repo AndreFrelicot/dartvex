@@ -27,21 +27,22 @@ class ConvexApi {
       'index:health',
       const <String, dynamic>{},
     );
-    final typedStream = subscription.stream.map(
-      (event) => switch (event) {
-        QuerySuccess(:final value) => TypedQuerySuccess<HealthResult>(
-          _decodeHealthResult(value),
-        ),
-        QueryLoading(:final hasPendingWrites) =>
-          TypedQueryLoading<HealthResult>(hasPendingWrites: hasPendingWrites),
-        QueryError(:final message, :final data, :final logLines) =>
-          TypedQueryError<HealthResult>(
+    final typedStream = subscription.stream.map((event) {
+      switch (event) {
+        case QuerySuccess(:final value):
+          return TypedQuerySuccess<HealthResult>(_decodeHealthResult(value));
+        case QueryLoading(:final hasPendingWrites):
+          return TypedQueryLoading<HealthResult>(
+            hasPendingWrites: hasPendingWrites,
+          );
+        case QueryError(:final message, :final data, :final logLines):
+          return TypedQueryError<HealthResult>(
             message,
             data: data,
             logLines: logLines,
-          ),
-      },
-    );
+          );
+      }
+    });
     return TypedConvexSubscription<HealthResult>(subscription, typedStream);
   }
 }
