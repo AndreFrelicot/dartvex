@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The offline replay retry backoff now clamps its exponent before shifting, so
+  it stays monotonic and never wraps after many consecutive failures (web uses
+  32-bit left shifts).
+- Replay no longer rewrites a queued mutation's args when id remapping leaves
+  them unchanged, avoiding a redundant SQLite write per replayed mutation.
 - Remote query loading events from `dartvex` are now handled explicitly by the
   local runtime adapter, keeping switches exhaustive while preserving cached
   local results until a remote success or error arrives.

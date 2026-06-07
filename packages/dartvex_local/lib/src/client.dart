@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:collection/collection.dart';
 import 'package:dartvex/dartvex.dart';
 
 import 'cache/cache_storage.dart';
@@ -664,6 +665,7 @@ class ConvexLocalClient {
   /// the backend commits a mutation but before the client observes the result,
   /// replay may call the mutation again. Design queued Convex mutations to be
   /// idempotent when the operation can have external side effects.
+  ///
   Future<LocalMutationResult> mutate(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
@@ -1045,7 +1047,10 @@ class ConvexLocalClient {
           await _dropFailedMutation(mutation, error);
           continue;
         }
-        if (!identical(remappedArgs, mutation.args)) {
+        if (!const DeepCollectionEquality().equals(
+          remappedArgs,
+          mutation.args,
+        )) {
           _log('replay:remap', '[$iteration] remapped args');
           await _mutationQueue.updateArgs(mutation.id, remappedArgs);
         }
@@ -1165,8 +1170,11 @@ class ConvexLocalClient {
   }
 
   static Duration _replayRetryDelay(int attempt) {
-    // Exponential backoff: 1s, 2s, 4s, 8s, capped at 15s.
-    final seconds = 1 << attempt;
+    // Exponential backoff: 1s, 2s, 4s, 8s, capped at 15s. The exponent is
+    // clamped before shifting so the backoff stays monotonic and never wraps
+    // (web uses 32-bit left shifts, which would wrap past ~32 retries).
+    final exponent = attempt.clamp(0, 4);
+    final seconds = 1 << exponent;
     return Duration(seconds: seconds.clamp(1, 15));
   }
 
