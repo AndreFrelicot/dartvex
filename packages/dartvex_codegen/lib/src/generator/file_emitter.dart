@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:path/path.dart' as path;
+
 import 'dart_generator.dart';
 
 /// Thrown when generated files cannot be written safely.
@@ -37,11 +39,12 @@ class FileEmitter {
 
     final directory = Directory(outputDirectory);
     await directory.create(recursive: true);
-    final manifestFile = File('${directory.path}/$manifestName');
+    final outputRoot = path.normalize(path.absolute(directory.path));
+    final manifestFile = File(path.join(outputRoot, manifestName));
     final previousFiles = await _readManifest(manifestFile);
 
     for (final entry in files.entries) {
-      final file = File('${directory.path}/${entry.key}');
+      final file = _fileFor(outputRoot, entry.key);
       if (await file.exists()) {
         final existing = await file.readAsString();
         if (!existing.startsWith(generatedFileHeader) &&
@@ -57,7 +60,7 @@ class FileEmitter {
       if (files.containsKey(previous)) {
         continue;
       }
-      final staleFile = File('${directory.path}/$previous');
+      final staleFile = _fileFor(outputRoot, previous);
       if (await staleFile.exists()) {
         final existing = await staleFile.readAsString();
         if (existing.startsWith(generatedFileHeader)) {
@@ -67,7 +70,7 @@ class FileEmitter {
     }
 
     for (final entry in files.entries) {
-      final file = File('${directory.path}/${entry.key}');
+      final file = _fileFor(outputRoot, entry.key);
       await file.parent.create(recursive: true);
       await file.writeAsString(entry.value);
     }
@@ -94,5 +97,35 @@ class FileEmitter {
       return const <String>[];
     }
     return files.whereType<String>().toList(growable: false);
+  }
+
+  File _fileFor(String outputRoot, String relativePath) =>
+      File(_safeJoin(outputRoot, relativePath));
+
+  String _safeJoin(String outputRoot, String relativePath) {
+    if (relativePath.isEmpty ||
+        relativePath.contains(r'\') ||
+        path.isAbsolute(relativePath)) {
+      throw FileEmitterException(
+        'Refusing to use unsafe generated file path "$relativePath"',
+      );
+    }
+
+    final normalizedRelative = path.normalize(relativePath);
+    if (normalizedRelative == '.' ||
+        normalizedRelative == '..' ||
+        path.split(normalizedRelative).contains('..')) {
+      throw FileEmitterException(
+        'Refusing to use unsafe generated file path "$relativePath"',
+      );
+    }
+
+    final filePath = path.normalize(path.join(outputRoot, normalizedRelative));
+    if (!path.isWithin(outputRoot, filePath)) {
+      throw FileEmitterException(
+        'Refusing to use unsafe generated file path "$relativePath"',
+      );
+    }
+    return filePath;
   }
 }

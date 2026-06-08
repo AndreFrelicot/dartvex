@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dollars, or control characters do not produce analyzer-broken bindings.
 - Deduplicates repeated literal union members before rendering enum decoders, so
   redundant validators cannot generate duplicate Dart `switch` cases.
+- Rejects unsafe generated file paths from malformed function specs or stale
+  manifests instead of writing or deleting files outside the configured output
+  directory.
 - Fails code generation when a generated Dart file cannot be formatted instead
   of emitting invalid source with only a warning.
 - Rejects Convex table names that would generate duplicate `ConvexTableId`

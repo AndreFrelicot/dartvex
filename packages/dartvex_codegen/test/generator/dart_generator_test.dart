@@ -225,6 +225,49 @@ void main() {
       );
     });
 
+    test('throws when module path segments are unsafe for file output', () {
+      final unsafeSpec = FunctionsSpec(
+        url: 'https://sample.convex.cloud',
+        functions: <BaseFunctionSpec>[
+          _function(identifier: '../escape.ts:list'),
+        ],
+      );
+
+      expect(
+        () => DartGenerator().generate(unsafeSpec),
+        throwsA(
+          isA<GenerationException>().having(
+            (error) => error.message,
+            'message',
+            allOf(
+              contains('Unsafe Convex module path segment ".."'),
+              contains('../escape.ts:list'),
+            ),
+          ),
+        ),
+      );
+    });
+
+    test('throws when module path segments contain platform separators', () {
+      final unsafeSpec = FunctionsSpec(
+        url: 'https://sample.convex.cloud',
+        functions: <BaseFunctionSpec>[
+          _function(identifier: r'admin\users.ts:list'),
+        ],
+      );
+
+      expect(
+        () => DartGenerator().generate(unsafeSpec),
+        throwsA(
+          isA<GenerationException>().having(
+            (error) => error.message,
+            'message',
+            contains(r'Unsafe Convex module path segment "admin\users"'),
+          ),
+        ),
+      );
+    });
+
     test('throws when generated Dart cannot be formatted', () {
       final invalidSpec = FunctionsSpec(
         url: 'https://example.com',

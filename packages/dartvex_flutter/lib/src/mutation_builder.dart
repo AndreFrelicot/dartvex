@@ -52,19 +52,40 @@ class _ConvexMutationState<T> extends State<ConvexMutation<T>> {
   ConvexRuntimeClient? _runtimeClient;
   ConvexRequestSnapshot<T> _snapshot = ConvexRequestSnapshot<T>.initial();
   Future<T>? _inFlight;
+  int _requestGeneration = 0;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _runtimeClient = widget.client ?? ConvexProvider.of(context);
+    final resolvedClient = widget.client ?? ConvexProvider.of(context);
+    if (_runtimeClient == null) {
+      _runtimeClient = resolvedClient;
+      return;
+    }
+    if (_runtimeClient != resolvedClient) {
+      _runtimeClient = resolvedClient;
+      _invalidateRequestState();
+    }
   }
 
   @override
   void didUpdateWidget(covariant ConvexMutation<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.client != widget.client) {
-      _runtimeClient = widget.client ?? ConvexProvider.of(context);
+    final resolvedClient = widget.client ?? ConvexProvider.of(context);
+    final identityChanged = oldWidget.mutation != widget.mutation ||
+        oldWidget.decode != widget.decode ||
+        oldWidget.optimisticUpdate != widget.optimisticUpdate ||
+        _runtimeClient != resolvedClient;
+    _runtimeClient = resolvedClient;
+    if (identityChanged) {
+      _invalidateRequestState();
     }
+  }
+
+  @override
+  void dispose() {
+    _requestGeneration += 1;
+    super.dispose();
   }
 
   @override
@@ -72,8 +93,7 @@ class _ConvexMutationState<T> extends State<ConvexMutation<T>> {
     return widget.builder(context, _mutate, _snapshot);
   }
 
-  T _decode(dynamic value) {
-    final decoder = widget.decode;
+  T _decode(dynamic value, ConvexDecoder<T>? decoder) {
     if (decoder != null) {
       return decoder(value);
     }
@@ -89,6 +109,11 @@ class _ConvexMutationState<T> extends State<ConvexMutation<T>> {
     }
     final completer = Completer<T>();
     _inFlight = completer.future;
+    final generation = ++_requestGeneration;
+    final runtimeClient = _runtimeClient!;
+    final mutationName = widget.mutation;
+    final decoder = widget.decode;
+    final optimisticUpdate = widget.optimisticUpdate;
     setState(() {
       _snapshot = _snapshot.copyWith(
         error: null,
@@ -99,13 +124,13 @@ class _ConvexMutationState<T> extends State<ConvexMutation<T>> {
 
     () async {
       try {
-        final raw = await _runtimeClient!.mutate(
-          widget.mutation,
+        final raw = await runtimeClient.mutate(
+          mutationName,
           args,
-          widget.optimisticUpdate,
+          optimisticUpdate,
         );
-        final decoded = _decode(raw);
-        if (mounted) {
+        final decoded = _decode(raw, decoder);
+        if (mounted && generation == _requestGeneration) {
           setState(() {
             _snapshot = ConvexRequestSnapshot<T>(
               data: decoded,
@@ -118,7 +143,7 @@ class _ConvexMutationState<T> extends State<ConvexMutation<T>> {
         }
         completer.complete(decoded);
       } catch (error, stackTrace) {
-        if (mounted) {
+        if (mounted && generation == _requestGeneration) {
           setState(() {
             _snapshot = _snapshot.copyWith(
               error: error,
@@ -129,10 +154,23 @@ class _ConvexMutationState<T> extends State<ConvexMutation<T>> {
         }
         completer.completeError(error, stackTrace);
       } finally {
-        _inFlight = null;
+        if (generation == _requestGeneration) {
+          _inFlight = null;
+        }
       }
     }();
 
     return completer.future;
+  }
+
+  void _invalidateRequestState() {
+    _requestGeneration += 1;
+    _inFlight = null;
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _snapshot = ConvexRequestSnapshot<T>.initial();
+    });
   }
 }

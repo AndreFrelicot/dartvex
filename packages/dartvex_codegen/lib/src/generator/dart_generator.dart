@@ -62,7 +62,7 @@ class DartGenerator {
         files['api.dart'] =
             _formatOrThrow(_renderNode(node, isRoot: true), 'api.dart');
       } else {
-        final filePath = 'modules/${node.pathSegments.join('/')}.dart';
+        final filePath = _moduleFilePath(node);
         files[filePath] =
             _formatOrThrow(_renderNode(node, isRoot: false), filePath);
       }
@@ -93,6 +93,7 @@ class DartGenerator {
     for (final function in publicFunctions) {
       var node = root;
       for (final segment in function.modulePathSegments) {
+        _validateModulePathSegment(segment, function.identifier);
         node = node.children.putIfAbsent(
           segment,
           () => _ModuleNode(
@@ -185,8 +186,7 @@ class DartGenerator {
   }
 
   String _renderNode(_ModuleNode node, {required bool isRoot}) {
-    final filePath =
-        isRoot ? 'api.dart' : 'modules/${node.pathSegments.join('/')}.dart';
+    final filePath = isRoot ? 'api.dart' : _moduleFilePath(node);
     final imports = ImportManager()
       ..add(clientImport)
       ..add(_naming.relativeImport(
@@ -200,7 +200,7 @@ class DartGenerator {
             left.pathSegments.last.compareTo(right.pathSegments.last),
       );
     for (final child in childNodes) {
-      final target = 'modules/${child.pathSegments.join('/')}.dart';
+      final target = _moduleFilePath(child);
       imports.add(
         _naming.relativeImport(fromFile: filePath, targetFile: target),
       );
@@ -644,6 +644,22 @@ String describeType(dynamic value) {
     } catch (e) {
       throw GenerationException(
         'Generated code for "$filePath" could not be formatted: $e',
+      );
+    }
+  }
+
+  String _moduleFilePath(_ModuleNode node) =>
+      'modules/${node.pathSegments.join('/')}.dart';
+
+  void _validateModulePathSegment(String segment, String identifier) {
+    if (segment.isEmpty ||
+        segment == '.' ||
+        segment == '..' ||
+        segment.contains('/') ||
+        segment.contains(r'\')) {
+      throw GenerationException(
+        'Unsafe Convex module path segment "$segment" in "$identifier"; '
+        'refusing to generate files outside the output directory.',
       );
     }
   }

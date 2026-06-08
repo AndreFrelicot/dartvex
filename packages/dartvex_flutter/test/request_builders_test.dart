@@ -121,6 +121,66 @@ void main() {
     await tester.pump();
   });
 
+  testWidgets('ConvexMutation ignores stale completions after widget changes', (
+    tester,
+  ) async {
+    final client = FakeRuntimeClient();
+    final firstCompleter = Completer<dynamic>();
+    final secondCompleter = Completer<dynamic>();
+    client.onMutate = (name, __) {
+      if (name == 'messages:first') {
+        return firstCompleter.future;
+      }
+      if (name == 'messages:second') {
+        return secondCompleter.future;
+      }
+      return Future<dynamic>.error(StateError('unexpected mutation $name'));
+    };
+
+    late ConvexRequestExecutor<String> mutate;
+    late ConvexRequestSnapshot<String> snapshot;
+
+    Widget build(String mutation) {
+      return wrapWithProvider(
+        client: client,
+        child: ConvexMutation<String>(
+          mutation: mutation,
+          builder: (context, execute, state) {
+            mutate = execute;
+            snapshot = state;
+            return const SizedBox();
+          },
+        ),
+      );
+    }
+
+    await tester.pumpWidget(build('messages:first'));
+    final firstFuture = mutate();
+    await tester.pump();
+    expect(snapshot.isLoading, isTrue);
+
+    await tester.pumpWidget(build('messages:second'));
+    expect(snapshot.isLoading, isFalse);
+    expect(snapshot.hasData, isFalse);
+
+    final secondFuture = mutate();
+    await tester.pump();
+    expect(client.mutateCalls.last.name, 'messages:second');
+    expect(snapshot.isLoading, isTrue);
+
+    firstCompleter.complete('stale');
+    expect(await firstFuture, 'stale');
+    await tester.pump();
+    expect(snapshot.isLoading, isTrue);
+    expect(snapshot.hasData, isFalse);
+
+    secondCompleter.complete('fresh');
+    expect(await secondFuture, 'fresh');
+    await tester.pump();
+    expect(snapshot.isLoading, isFalse);
+    expect(snapshot.data, 'fresh');
+  });
+
   testWidgets('ConvexMutation forwards its optimisticUpdate', (tester) async {
     final client = FakeRuntimeClient();
     client.onMutate = (_, __) async => 'ok';
@@ -222,5 +282,65 @@ void main() {
     expect(snapshot.isLoading, isFalse);
     expect(snapshot.hasError, isTrue);
     expect(snapshot.error, isA<StateError>());
+  });
+
+  testWidgets('ConvexAction ignores stale completions after widget changes', (
+    tester,
+  ) async {
+    final client = FakeRuntimeClient();
+    final firstCompleter = Completer<dynamic>();
+    final secondCompleter = Completer<dynamic>();
+    client.onAction = (name, __) {
+      if (name == 'messages:first') {
+        return firstCompleter.future;
+      }
+      if (name == 'messages:second') {
+        return secondCompleter.future;
+      }
+      return Future<dynamic>.error(StateError('unexpected action $name'));
+    };
+
+    late ConvexRequestExecutor<String> runAction;
+    late ConvexRequestSnapshot<String> snapshot;
+
+    Widget build(String action) {
+      return wrapWithProvider(
+        client: client,
+        child: ConvexAction<String>(
+          action: action,
+          builder: (context, execute, state) {
+            runAction = execute;
+            snapshot = state;
+            return const SizedBox();
+          },
+        ),
+      );
+    }
+
+    await tester.pumpWidget(build('messages:first'));
+    final firstFuture = runAction();
+    await tester.pump();
+    expect(snapshot.isLoading, isTrue);
+
+    await tester.pumpWidget(build('messages:second'));
+    expect(snapshot.isLoading, isFalse);
+    expect(snapshot.hasData, isFalse);
+
+    final secondFuture = runAction();
+    await tester.pump();
+    expect(client.actionCalls.last.name, 'messages:second');
+    expect(snapshot.isLoading, isTrue);
+
+    firstCompleter.complete('stale');
+    expect(await firstFuture, 'stale');
+    await tester.pump();
+    expect(snapshot.isLoading, isTrue);
+    expect(snapshot.hasData, isFalse);
+
+    secondCompleter.complete('fresh');
+    expect(await secondFuture, 'fresh');
+    await tester.pump();
+    expect(snapshot.isLoading, isFalse);
+    expect(snapshot.data, 'fresh');
   });
 }
