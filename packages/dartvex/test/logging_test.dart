@@ -212,6 +212,51 @@ void main() {
       client.dispose();
     });
 
+    test('emits failed mutation function log lines at info level', () async {
+      final adapter = MockWebSocketAdapter();
+      final events = <DartvexLogEvent>[];
+      final client = ConvexClient(
+        'https://example.com',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          reconnectBackoff: const <Duration>[Duration.zero],
+          logLevel: DartvexLogLevel.info,
+          logger: events.add,
+        ),
+      );
+      await settle();
+
+      final future = client.mutate('messages:send');
+      await settle();
+
+      final mutation = adapter.decodedSentMessages
+          .where((message) => message['type'] == 'Mutation')
+          .single;
+      adapter.pushServerMessage(
+        MutationResponse(
+          requestId: mutation['requestId'] as int,
+          success: false,
+          errorMessage: 'rejected',
+          logLines: const <String>['before failure'],
+        ).toJson(),
+      );
+
+      await expectLater(future, throwsA(isA<ConvexException>()));
+      await settle();
+
+      final functionLogs = events
+          .where((event) => event.tag == 'function')
+          .toList(growable: false);
+      expect(
+        functionLogs.map((event) => event.message),
+        <String>['before failure'],
+      );
+      expect(functionLogs.single.data, containsPair('requestType', 'mutation'));
+      expect(functionLogs.single.data, containsPair('name', 'messages:send'));
+
+      client.dispose();
+    });
+
     test('does not emit successful function log lines when logging is off',
         () async {
       final adapter = MockWebSocketAdapter();

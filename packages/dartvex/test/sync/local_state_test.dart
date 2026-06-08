@@ -159,6 +159,47 @@ void main() {
       state.transition(transitionUpdating(<int>[queryId]));
       expect(state.hasSyncedPastLastReconnect(), isTrue);
     });
+
+    test('transitions can clear a stored query journal', () {
+      final state = LocalSyncState();
+      final queryId =
+          state.subscribe('messages:list', const <String, dynamic>{}).queryId;
+
+      state.transition(
+        Transition(
+          startVersion: const StateVersion.initial(),
+          endVersion: StateVersion(querySet: 1, identity: 0, ts: encodeTs(1)),
+          modifications: <StateModification>[
+            QueryUpdated(
+              queryId: queryId,
+              value: const <String, dynamic>{'page': <String>['a']},
+              journal: 'cursor-a',
+            ),
+          ],
+        ),
+      );
+      var reconnect = state.prepareReconnect().whereType<ModifyQuerySet>();
+      var add = reconnect.single.modifications.single as Add;
+      expect(add.journal, 'cursor-a');
+
+      state.transition(
+        Transition(
+          startVersion: StateVersion(querySet: 1, identity: 0, ts: encodeTs(1)),
+          endVersion: StateVersion(querySet: 1, identity: 0, ts: encodeTs(2)),
+          modifications: <StateModification>[
+            QueryUpdated(
+              queryId: queryId,
+              value: const <String, dynamic>{'page': <String>[]},
+              journal: null,
+            ),
+          ],
+        ),
+      );
+
+      reconnect = state.prepareReconnect().whereType<ModifyQuerySet>();
+      add = reconnect.single.modifications.single as Add;
+      expect(add.journal, isNull);
+    });
   });
 
   group('LocalSyncState pause/resume', () {

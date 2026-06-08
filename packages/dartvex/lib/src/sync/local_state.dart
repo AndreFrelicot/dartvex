@@ -415,11 +415,10 @@ class LocalSyncState {
 
   /// Stores the latest [journal] token reported for the query [queryId].
   ///
-  /// No-ops when [journal] is `null` or the query is no longer subscribed.
+  /// A `null` journal is a real protocol value representing an empty journal,
+  /// so it clears any previously stored cursor. No-ops only when the query is
+  /// no longer subscribed.
   void updateJournal(int queryId, String? journal) {
-    if (journal == null) {
-      return;
-    }
     final token = _queryTokenByQueryId[queryId];
     if (token == null) {
       return;

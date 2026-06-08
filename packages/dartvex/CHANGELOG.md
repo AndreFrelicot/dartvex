@@ -110,6 +110,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Query journals now honor the protocol's explicit `null` journal as an empty
+  journal, clearing any previously stored cursor before the next reconnect
+  replay.
+- Mutation and action function log lines are now routed to the configured
+  logger for both successful and failed responses, matching the official
+  client's response log handling while keeping structured failure logs sanitized.
 - The native WebSocket adapter now drops messages from a socket that a later
   `connect()` or `close()` has already superseded, matching the web adapter. A
   closing socket's trailing frames can no longer reach the sync layer, where a

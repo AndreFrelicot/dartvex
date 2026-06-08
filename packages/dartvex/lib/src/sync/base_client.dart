@@ -696,7 +696,7 @@ class BaseClient {
           events.add(ReconnectRequiredEvent(reason: '$error'));
         }
       case MutationResponse():
-        _addSuccessfulFunctionLogs(
+        _addFunctionLogs(
           events,
           _requestManager.mutationLogContext(message.requestId),
           message,
@@ -717,7 +717,7 @@ class BaseClient {
           events.addAll(_emitOverlayChanges(droppedRequestIds));
         }
       case ActionResponse():
-        _addSuccessfulFunctionLogs(
+        _addFunctionLogs(
           events,
           _requestManager.actionLogContext(message.requestId),
           message,
@@ -783,12 +783,12 @@ class BaseClient {
     }
   }
 
-  void _addSuccessfulFunctionLogs(
+  void _addFunctionLogs(
     List<BaseClientEvent> events,
     RequestLogContext? context,
     ResponseMessage response,
   ) {
-    if (!response.success || context == null || response.logLines.isEmpty) {
+    if (context == null || response.logLines.isEmpty) {
       return;
     }
     for (final line in response.logLines) {
