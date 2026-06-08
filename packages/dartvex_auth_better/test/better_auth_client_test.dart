@@ -126,6 +126,29 @@ void main() {
       expect(capturedAuth, 'Bearer ses_logout');
     });
 
+    test('forgotPassword uses official request-password-reset endpoint',
+        () async {
+      Uri? requestedUri;
+      Map<String, dynamic>? requestedBody;
+      final mock = MockClient((request) async {
+        requestedUri = request.url;
+        requestedBody = jsonDecode(request.body) as Map<String, dynamic>;
+        return http.Response(jsonEncode({'status': true}), 200);
+      });
+      final client = BetterAuthClient(baseUrl: baseUrl, httpClient: mock);
+
+      await client.forgotPassword(
+        email: 'alice@example.com',
+        redirectTo: 'myapp://reset-password',
+      );
+
+      expect(requestedUri!.path, '/api/auth/request-password-reset');
+      expect(requestedBody, {
+        'email': 'alice@example.com',
+        'redirectTo': 'myapp://reset-password',
+      });
+    });
+
     test('getSession returns session when valid', () async {
       final mock = buildMock(
         sessionToken: 'ses_valid',

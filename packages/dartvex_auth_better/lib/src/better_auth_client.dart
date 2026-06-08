@@ -108,7 +108,7 @@ class BetterAuthClient {
     required String email,
     String? redirectTo,
   }) async {
-    await _post('/api/auth/forget-password', {
+    await _post('/api/auth/request-password-reset', {
       'email': email,
       if (redirectTo != null) 'redirectTo': redirectTo,
     });

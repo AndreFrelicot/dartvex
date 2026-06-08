@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `BetterAuthClient.getSession()` now treats 401/403 as an expired or absent
   session while preserving non-auth HTTP failures as typed Better Auth
   exceptions, so transient 5xx responses are not collapsed into "no session".
+- `BetterAuthClient.forgotPassword()` now calls Better Auth's official
+  `/request-password-reset` endpoint instead of the obsolete
+  `/forget-password` path.
 - `BetterAuthClient` now preserves transient `/api/auth/convex/token` HTTP
   failures as retryable Better Auth exceptions instead of collapsing them into
   expired-session errors.
