@@ -149,6 +149,29 @@ void main() {
       );
     });
 
+    test('emitConnectionStatus emits coarse state changes', () async {
+      final client = FakeConvexClient();
+      final states = <ConvexConnectionState>[];
+      client.connectionState.listen(states.add);
+
+      client.emitConnectionStatus(
+        ConnectionStatus.fromState(ConvexConnectionState.reconnecting),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(states, <ConvexConnectionState>[
+        ConvexConnectionState.reconnecting,
+      ]);
+      expect(
+        client.currentConnectionState,
+        ConvexConnectionState.reconnecting,
+      );
+      expect(
+        client.currentConnectionStatus.state,
+        ConvexConnectionState.reconnecting,
+      );
+    });
+
     test('emit helpers are no-ops after dispose', () {
       final client = FakeConvexClient();
       client.dispose();

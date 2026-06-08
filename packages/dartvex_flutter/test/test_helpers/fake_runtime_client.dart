@@ -106,8 +106,12 @@ class FakeRuntimeClient implements ConvexRuntimeClient {
   }
 
   void emitConnectionStatus(ConnectionStatus status) {
+    final previousState = _currentConnectionState;
     _currentConnectionStatus = status;
     _currentConnectionState = status.state;
+    if (status.state != previousState && !_connectionController.isClosed) {
+      _connectionController.add(status.state);
+    }
     if (!_connectionStatusController.isClosed) {
       _connectionStatusController.add(status);
     }
