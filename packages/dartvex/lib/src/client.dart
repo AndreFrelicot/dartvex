@@ -1144,6 +1144,8 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
           _emitConnectionState(ConnectionState.fatalError);
         case FunctionLogEvent():
           _logFunctionOutput(event);
+        case QueryLogEvent():
+          _logQueryOutput(event);
       }
     }
     _publishConnectionStatus();
@@ -1323,6 +1325,21 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
         'name': event.name,
         'requestId': event.requestId,
         if (event.componentPath != null) 'componentPath': event.componentPath,
+      },
+    );
+  }
+
+  void _logQueryOutput(QueryLogEvent event) {
+    emitDartvexLog(
+      configuredLevel: _config.logLevel,
+      logger: _config.logger,
+      eventLevel: DartvexLogLevel.info,
+      message: event.line,
+      tag: 'function',
+      data: <String, Object?>{
+        'requestType': 'query',
+        'name': event.name,
+        'queryId': event.queryId,
       },
     );
   }

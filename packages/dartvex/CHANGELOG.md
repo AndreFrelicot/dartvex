@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Query function log lines are now also written to the configured logger (tag
+  `function`, `requestType: query`) as each transition is applied, mirroring the
+  official client's per-transition `logForFunction`. They are emitted once per
+  transition from the raw query modifications — never re-emitted on a reactive
+  cache or optimistic-overlay update — and remain available on
+  `QuerySuccess.logLines` as before.
 - `QuerySuccess` now carries successful query log lines and whether optimistic
   writes are currently affecting the emitted value, so runtime adapters can
   surface pending-write state from the real client.

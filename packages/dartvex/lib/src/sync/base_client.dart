@@ -123,6 +123,32 @@ class FunctionLogEvent extends BaseClientEvent {
   final String? componentPath;
 }
 
+/// Emitted for a server-side log line produced by a query function while
+/// evaluating a transition.
+///
+/// The official client prints query logs via `logForFunction` as it applies a
+/// transition; this event is the dartvex equivalent, emitted exactly once per
+/// transition straight from the raw [QueryUpdated]/[QueryFailed] modifications
+/// (never from a cache re-emit or an optimistic-overlay replay), so query logs
+/// are not duplicated on reactive updates.
+class QueryLogEvent extends BaseClientEvent {
+  /// Creates a query log event for the query [queryId] at path [name].
+  const QueryLogEvent({
+    required this.queryId,
+    required this.name,
+    required this.line,
+  });
+
+  /// Identifier of the query whose function emitted the log line.
+  final int queryId;
+
+  /// Canonical `module:function` path of the query.
+  final String name;
+
+  /// The single log line emitted by the query function.
+  final String line;
+}
+
 /// The outcome of [BaseClient.receive]: events to surface and messages to send.
 class BaseClientReceiveResult {
   /// Creates a receive result with the given [events] and [outgoing] messages.
@@ -630,6 +656,11 @@ class BaseClient {
           final deltas = _remoteQuerySet.applyTransition(message);
           _localState.observeTimestamp(message.endVersion.ts);
           _localState.transition(message);
+          // Surface query-function logs once per transition, from the raw
+          // modifications, mirroring the official client's per-transition
+          // logForFunction. Done here (not in the public conversion or overlay
+          // re-emit) so reactive cache/optimistic updates never duplicate them.
+          _addQueryFunctionLogs(events, message);
           final completedRequestIds =
               _requestManager.resolveMutationsUpTo(message.endVersion.ts);
           for (final delta in deltas) {
@@ -709,6 +740,47 @@ class BaseClient {
     final outgoing = List<ClientMessage>.from(_outgoing);
     _outgoing.clear();
     return BaseClientReceiveResult(events: events, outgoing: outgoing);
+  }
+
+  /// Emits a [QueryLogEvent] for every log line carried by the [transition]'s
+  /// [QueryUpdated]/[QueryFailed] modifications whose query is still subscribed.
+  ///
+  /// Query failures log their lines at info level too, matching the official
+  /// client (the failure's error message is surfaced separately as a
+  /// [StoredQueryError]). Modifications for queries no longer in [localState]
+  /// (already unsubscribed) are skipped, mirroring the official `queryPath`
+  /// guard.
+  void _addQueryFunctionLogs(
+    List<BaseClientEvent> events,
+    Transition transition,
+  ) {
+    for (final modification in transition.modifications) {
+      final List<String> logLines;
+      switch (modification) {
+        case QueryUpdated():
+          logLines = modification.logLines;
+        case QueryFailed():
+          logLines = modification.logLines;
+        case QueryRemoved():
+          continue;
+      }
+      if (logLines.isEmpty) {
+        continue;
+      }
+      final name = _localState.queryStateForId(modification.queryId)?.udfPath;
+      if (name == null) {
+        continue;
+      }
+      for (final line in logLines) {
+        events.add(
+          QueryLogEvent(
+            queryId: modification.queryId,
+            name: name,
+            line: line,
+          ),
+        );
+      }
+    }
   }
 
   void _addSuccessfulFunctionLogs(

@@ -33,6 +33,104 @@ void main() {
       expect(result.events.single, isA<QueryUpdateEvent>());
     });
 
+    test('transition surfaces query function logs once, before the update', () {
+      final client = BaseClient();
+      final registration = client.subscribe('messages:list', <String, dynamic>{
+        'channel': 'general',
+      });
+      client.drainOutgoing();
+
+      final result = client.receive(
+        Transition(
+          startVersion: const StateVersion.initial(),
+          endVersion: StateVersion(querySet: 1, identity: 0, ts: encodeTs(1)),
+          modifications: <StateModification>[
+            QueryUpdated(
+              queryId: registration.queryId,
+              value: const <String, dynamic>{'body': 'hello'},
+              logLines: const <String>['first log', 'second log'],
+            ),
+          ],
+        ),
+      );
+
+      final logs = result.events.whereType<QueryLogEvent>().toList();
+      expect(logs.map((log) => log.line), <String>['first log', 'second log']);
+      expect(logs.every((log) => log.name == 'messages:list'), isTrue);
+      expect(
+        logs.every((log) => log.queryId == registration.queryId),
+        isTrue,
+      );
+      // Logs precede the value update, mirroring the official ordering.
+      final lastLogIndex =
+          result.events.lastIndexWhere((event) => event is QueryLogEvent);
+      final firstUpdateIndex =
+          result.events.indexWhere((event) => event is QueryUpdateEvent);
+      expect(lastLogIndex, lessThan(firstUpdateIndex));
+    });
+
+    test('failed query still surfaces its function logs', () {
+      final client = BaseClient();
+      final registration = client.subscribe('messages:list', <String, dynamic>{
+        'channel': 'general',
+      });
+      client.drainOutgoing();
+
+      final result = client.receive(
+        Transition(
+          startVersion: const StateVersion.initial(),
+          endVersion: StateVersion(querySet: 1, identity: 0, ts: encodeTs(1)),
+          modifications: <StateModification>[
+            QueryFailed(
+              queryId: registration.queryId,
+              errorMessage: 'boom',
+              logLines: const <String>['ran before throwing'],
+            ),
+          ],
+        ),
+      );
+
+      final logs = result.events.whereType<QueryLogEvent>().toList();
+      expect(logs.single.line, 'ran before throwing');
+      expect(logs.single.name, 'messages:list');
+    });
+
+    test('query logs are not re-emitted when an optimistic overlay replays',
+        () {
+      // A second, unrelated transition (no logs) must not resurface the logs
+      // from the first: query logs come from the raw modifications, once per
+      // transition, never from a cache/overlay re-emit.
+      final client = BaseClient();
+      final registration = client.subscribe('messages:list', <String, dynamic>{
+        'channel': 'general',
+      });
+      client.drainOutgoing();
+
+      client.receive(
+        Transition(
+          startVersion: const StateVersion.initial(),
+          endVersion: StateVersion(querySet: 1, identity: 0, ts: encodeTs(1)),
+          modifications: <StateModification>[
+            QueryUpdated(
+              queryId: registration.queryId,
+              value: const <String, dynamic>{'body': 'hello'},
+              logLines: const <String>['only once'],
+            ),
+          ],
+        ),
+      );
+
+      final second = client.receive(
+        Transition(
+          startVersion: StateVersion(querySet: 1, identity: 0, ts: encodeTs(1)),
+          endVersion: StateVersion(querySet: 1, identity: 0, ts: encodeTs(2)),
+          modifications: const <StateModification>[],
+        ),
+      );
+
+      expect(second.events.whereType<QueryLogEvent>(), isEmpty);
+    });
+
     test('mutation resolves only after qualifying transition', () async {
       final client = BaseClient();
       final future = client.mutate('messages:send', <String, dynamic>{
