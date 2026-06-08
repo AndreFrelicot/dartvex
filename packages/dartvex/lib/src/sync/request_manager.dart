@@ -121,10 +121,19 @@ class RequestManager {
     return completer.future;
   }
 
-  /// Returns safe logging metadata for a pending mutation response.
+  /// Returns safe logging metadata for a pending mutation response, or `null`
+  /// when the response's log lines should not be emitted.
+  ///
+  /// Mirrors the official client's `onResponse`, which skips function-log
+  /// emission for responses it will not act on: those whose request is no
+  /// longer tracked, and those whose mutation is already completed and only
+  /// awaiting its read-your-writes transition. The latter happens when a
+  /// reconnect replays such a mutation: the server re-sends the same response,
+  /// and re-logging its lines would duplicate output the app already saw.
   RequestLogContext? mutationLogContext(int requestId) {
     final pending = _pendingMutations[requestId];
-    if (pending == null) {
+    if (pending == null ||
+        pending.status == _RequestStatus.completedMutationAwaitingTransition) {
       return null;
     }
     return RequestLogContext(

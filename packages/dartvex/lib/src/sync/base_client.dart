@@ -96,7 +96,11 @@ class FatalErrorEvent extends BaseClientEvent {
   final String error;
 }
 
-/// Emitted for a server-side function log line from a successful request.
+/// Emitted for a server-side function log line from a mutation or action
+/// response, whether it succeeded or failed, matching the official client which
+/// logs a response's lines at info level regardless of outcome. Skipped for a
+/// duplicate response to an already-completed mutation (see
+/// [RequestManager.mutationLogContext]) so a reconnect replay never re-logs.
 class FunctionLogEvent extends BaseClientEvent {
   /// Creates a function log event.
   const FunctionLogEvent({

@@ -116,6 +116,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mutation and action function log lines are now routed to the configured
   logger for both successful and failed responses, matching the official
   client's response log handling while keeping structured failure logs sanitized.
+- A read-your-writes mutation replayed on reconnect no longer re-logs its
+  function output. When the server re-sends the response for a mutation that has
+  already completed and is only awaiting its transition, those duplicate log
+  lines are now suppressed, matching the official client which skips
+  already-completed requests before logging.
 - The native WebSocket adapter now drops messages from a socket that a later
   `connect()` or `close()` has already superseded, matching the web adapter. A
   closing socket's trailing frames can no longer reach the sync layer, where a

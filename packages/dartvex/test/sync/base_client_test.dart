@@ -164,6 +164,56 @@ void main() {
       expect(await future, <String, dynamic>{'ok': true});
     });
 
+    test('replayed read-your-writes mutation does not re-log its function lines',
+        () async {
+      final client = BaseClient();
+      final future = client.mutate('messages:send', <String, dynamic>{
+        'body': 'hello',
+      });
+      final mutation = client.drainOutgoing().single as Mutation;
+
+      // The first response carries a future ts, so the mutation parks awaiting
+      // its read-your-writes transition; its log lines are emitted once.
+      final first = client.receive(
+        MutationResponse(
+          requestId: mutation.requestId,
+          success: true,
+          result: const <String, dynamic>{'ok': true},
+          ts: encodeTs(4),
+          logLines: const <String>['mutation log'],
+        ),
+      );
+      expect(
+        first.events.whereType<FunctionLogEvent>().map((event) => event.line),
+        <String>['mutation log'],
+      );
+
+      // A reconnect replays the still-parked mutation and the server re-sends
+      // the same response. Its log lines must NOT be emitted again — the
+      // official client skips already-completed requests before logging.
+      client.prepareReconnect();
+      final replay = client.receive(
+        MutationResponse(
+          requestId: mutation.requestId,
+          success: true,
+          result: const <String, dynamic>{'ok': true},
+          ts: encodeTs(4),
+          logLines: const <String>['mutation log'],
+        ),
+      );
+      expect(replay.events.whereType<FunctionLogEvent>(), isEmpty);
+
+      // The mutation still resolves once its qualifying transition lands.
+      client.receive(
+        Transition(
+          startVersion: const StateVersion.initial(),
+          endVersion: StateVersion(querySet: 0, identity: 0, ts: encodeTs(4)),
+          modifications: const <StateModification>[],
+        ),
+      );
+      expect(await future, <String, dynamic>{'ok': true});
+    });
+
     test('mutation resolves when matching transition was already applied',
         () async {
       final client = BaseClient();
