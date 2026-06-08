@@ -213,16 +213,7 @@ class BetterAuthClient {
       return null;
     }
     if (response.statusCode != 200) {
-      var detail = '';
-      try {
-        final body = jsonDecode(response.body);
-        if (body is Map<String, dynamic>) {
-          final message = body['message'];
-          if (message is String && message.isNotEmpty) {
-            detail = ': $message';
-          }
-        }
-      } catch (_) {}
+      final detail = _responseMessageDetail(response.body);
       throw BetterAuthException(
         'Better Auth get-session failed '
         '(status ${response.statusCode})$detail',
@@ -293,9 +284,17 @@ class BetterAuthClient {
       'Authorization': 'Bearer $sessionToken',
     });
 
-    if (response.statusCode != 200) {
+    if (response.statusCode == 401 || response.statusCode == 403) {
       throw BetterAuthSessionExpiredException(
         'Failed to fetch Convex token (status ${response.statusCode}).',
+      );
+    }
+    if (response.statusCode != 200) {
+      final detail = _responseMessageDetail(response.body);
+      throw BetterAuthException(
+        'Failed to fetch Convex token '
+        '(status ${response.statusCode})$detail',
+        retryable: response.statusCode >= 500,
       );
     }
 
@@ -315,6 +314,19 @@ class BetterAuthClient {
       );
     }
     return token;
+  }
+
+  static String _responseMessageDetail(String bodyText) {
+    try {
+      final body = jsonDecode(bodyText);
+      if (body is Map<String, dynamic>) {
+        final message = body['message'];
+        if (message is String && message.isNotEmpty) {
+          return ': $message';
+        }
+      }
+    } catch (_) {}
+    return '';
   }
 
   String _extractSessionToken(

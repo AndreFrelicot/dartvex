@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `BetterAuthClient.getSession()` now treats 401/403 as an expired or absent
   session while preserving non-auth HTTP failures as typed Better Auth
   exceptions, so transient 5xx responses are not collapsed into "no session".
+- `BetterAuthClient` now preserves transient `/api/auth/convex/token` HTTP
+  failures as retryable Better Auth exceptions instead of collapsing them into
+  expired-session errors.
 - Convert malformed 200 sign-in, sign-up, get-session, and magic-link response
   bodies into typed Better Auth errors instead of raw cast or decode exceptions.
 - Guard the nested `user`/`session` fields of a 200 response: a non-object

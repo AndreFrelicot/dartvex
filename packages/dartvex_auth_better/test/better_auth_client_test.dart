@@ -183,6 +183,45 @@ void main() {
       );
     });
 
+    test('getSession throws retryable exception when Convex token fails',
+        () async {
+      final mock = MockClient((request) async {
+        if (request.url.path == '/api/auth/get-session') {
+          return http.Response(
+            jsonEncode({
+              'session': {'id': 's1', 'userId': 'user_123'},
+              'user': {
+                'id': 'user_123',
+                'email': 'alice@example.com',
+              },
+            }),
+            200,
+          );
+        }
+        if (request.url.path == '/api/auth/convex/token') {
+          return http.Response(
+            jsonEncode({'message': 'token service unavailable'}),
+            503,
+          );
+        }
+        return http.Response('Not found', 404);
+      });
+      final client = BetterAuthClient(baseUrl: baseUrl, httpClient: mock);
+
+      await expectLater(
+        () => client.getSession(sessionToken: 'ses_valid'),
+        throwsA(
+          isA<BetterAuthException>()
+              .having((error) => error.retryable, 'retryable', isTrue)
+              .having(
+                (error) => error.message,
+                'message',
+                contains('token service unavailable'),
+              ),
+        ),
+      );
+    });
+
     test('getSession returns null when session or user is not an object',
         () async {
       final mock = buildMock(

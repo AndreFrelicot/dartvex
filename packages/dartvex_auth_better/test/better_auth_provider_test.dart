@@ -193,6 +193,72 @@ void main() {
       expect(provider.cachedSession, same(originalSession));
     });
 
+    test('loginFromCache keeps cached session when Convex token refresh fails',
+        () async {
+      var tokenRequests = 0;
+      final mock = MockClient((request) async {
+        if (request.url.path == '/api/auth/sign-in/email') {
+          final body = jsonDecode(request.body) as Map<String, dynamic>;
+          return http.Response(
+            jsonEncode({
+              'user': {
+                'id': 'u1',
+                'email': body['email'],
+                'name': 'Test User',
+              },
+              'session': {'id': 's1', 'userId': 'u1'},
+            }),
+            200,
+            headers: {'set-auth-token': 'ses_mock'},
+          );
+        }
+        if (request.url.path == '/api/auth/get-session') {
+          return http.Response(
+            jsonEncode({
+              'session': {'id': 's1', 'userId': 'u1'},
+              'user': {
+                'id': 'u1',
+                'email': 'alice@example.com',
+                'name': 'Alice',
+              },
+            }),
+            200,
+          );
+        }
+        if (request.url.path == '/api/auth/convex/token') {
+          tokenRequests += 1;
+          if (tokenRequests == 1) {
+            return http.Response(jsonEncode({'token': 'jwt_login'}), 200);
+          }
+          return http.Response(
+            jsonEncode({'message': 'token service unavailable'}),
+            503,
+          );
+        }
+        return http.Response('Not found', 404);
+      });
+      final client = BetterAuthClient(baseUrl: baseUrl, httpClient: mock);
+      final provider = ConvexBetterAuthProvider(client: client);
+
+      provider.email = 'alice@example.com';
+      provider.password = 'password123';
+      final originalSession = await provider.login(onIdToken: (_) {});
+
+      await expectLater(
+        () => provider.loginFromCache(onIdToken: (_) {}),
+        throwsA(
+          isA<BetterAuthException>()
+              .having((error) => error.retryable, 'retryable', isTrue)
+              .having(
+                (error) => error.message,
+                'message',
+                contains('token service unavailable'),
+              ),
+        ),
+      );
+      expect(provider.cachedSession, same(originalSession));
+    });
+
     test('loginFromCache throws when session expired', () async {
       final mock = buildMock(sessionValid: false);
       final client = BetterAuthClient(baseUrl: baseUrl, httpClient: mock);
