@@ -50,6 +50,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   by a freshly-created document is replayed against the real server ID. The
   unresolved-ID drop guard likewise inspects keys, so a dependent keyed by a
   failed create is dropped instead of sent with a stale local ID.
+- Rolling back a dropped mutation now re-snapshots every surviving pending
+  mutation's rollback baseline to the restored cache value, so dropping a second
+  mutation that touches the same query can no longer resurface the first,
+  already-dropped mutation when the best-effort post-drop server refresh fails.
 - Stops in-flight replay cleanly during `dispose()`, preventing writes to closed
   SQLite stores or closed mutation streams after a delayed remote mutation
   returns.

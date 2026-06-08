@@ -757,6 +757,54 @@ void main() {
       ]);
     });
 
+    test(
+      'two consecutive dropped mutations do not resurface the first when the '
+      'post-drop refresh fails',
+      () async {
+        remoteClient.queryResults['messages:listPublic'] = <dynamic>[];
+        await localClient.query('messages:listPublic');
+        await localClient.setNetworkMode(LocalNetworkMode.offline);
+
+        await localClient.mutate('messages:sendPublic', <String, dynamic>{
+          'author': 'A',
+          'text': 'FirstFail',
+        });
+        await localClient.mutate('messages:sendPublic', <String, dynamic>{
+          'author': 'B',
+          'text': 'SecondFail',
+        });
+
+        // Both queued mutations are rejected non-retryably, so both are
+        // dropped in the same replay pass.
+        remoteClient.mutationResults['messages:sendPublic'] = <Object?>[
+          const ConvexException('Validation failed', retryable: false),
+          const ConvexException('Validation failed', retryable: false),
+        ];
+        // The post-drop refresh of the shared target keeps failing (a
+        // re-subscribable error stream), so a surviving mutation's rollback
+        // baseline is never rebased from the server between the two drops.
+        remoteClient.subscriptionStreams['messages:listPublic'] =
+            Stream<LocalRemoteQueryEvent>.multi((controller) {
+              controller.addError(
+                const ConvexException('Refresh failed', retryable: false),
+              );
+              controller.close();
+            });
+
+        await localClient.setNetworkMode(LocalNetworkMode.auto);
+        await pumpEventQueue();
+
+        expect(localClient.currentPendingMutations, isEmpty);
+
+        await localClient.setNetworkMode(LocalNetworkMode.offline);
+        final restored =
+            await localClient.query('messages:listPublic') as List<dynamic>;
+        // Dropping the second mutation must not restore a baseline that still
+        // contains the first, already-dropped mutation.
+        expect(restored, isEmpty);
+      },
+    );
+
     test('remote snapshots preserve pending optimistic writes', () async {
       remoteClient.queryResults['messages:listPublic'] = <dynamic>[];
       await localClient.query('messages:listPublic');

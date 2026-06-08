@@ -1562,6 +1562,7 @@ class ConvexLocalClient {
       return const <LocalMutationPatch>[];
     }
     final reapplied = <LocalMutationPatch>[];
+    var rebasedRollbackMetadata = false;
     for (final pendingMutation in _pendingMutations) {
       final operationId = pendingMutation.optimisticData?['operationId'];
       if (operationId is! String) {
@@ -1582,6 +1583,15 @@ class ConvexLocalClient {
       if (patches.isEmpty) {
         continue;
       }
+      // The restored baseline no longer contains the just-dropped mutation, so
+      // re-snapshot this surviving mutation's rollback for the restored targets
+      // to the current (pre-patch) cache value. Without this, a later rollback
+      // of this mutation would restore a baseline that still includes the
+      // already-dropped one. The post-drop network refresh does the same
+      // rebase, but it is best-effort and may fail.
+      if (await _rebaseRollbackSnapshotsForPatches(pendingMutation, patches)) {
+        rebasedRollbackMetadata = true;
+      }
       try {
         await _applyOptimisticPatches(patches);
         reapplied.addAll(patches);
@@ -1589,7 +1599,47 @@ class ConvexLocalClient {
         _log('replay:rollback-reapply-error', '$error\n$stackTrace');
       }
     }
+    if (rebasedRollbackMetadata) {
+      _pendingMutations = await _mutationQueue.loadAll();
+      _rebuildPendingWriteCounts();
+    }
     return reapplied;
+  }
+
+  /// Re-snapshots [mutation]'s persisted rollback baseline for every distinct
+  /// target in [patches] to the current cache value, returning whether the
+  /// metadata was rewritten.
+  ///
+  /// Used while reapplying surviving optimistic writes after an older mutation
+  /// is rolled back, so a later rollback of [mutation] restores the
+  /// post-rollback baseline rather than one that still includes the dropped
+  /// mutation.
+  Future<bool> _rebaseRollbackSnapshotsForPatches(
+    PendingMutation mutation,
+    List<LocalMutationPatch> patches,
+  ) async {
+    final optimisticData = mutation.optimisticData;
+    if (optimisticData == null) {
+      return false;
+    }
+    var updated = optimisticData;
+    final seenKeys = <String>{};
+    for (final patch in patches) {
+      final target = patch.target;
+      if (!seenKeys.add(target.key)) {
+        continue;
+      }
+      final entry = await _queryCache.read(target.name, target.args);
+      updated = _withRollbackSnapshot(
+        updated,
+        _CacheSnapshot(target: target, entry: entry),
+      );
+    }
+    if (identical(updated, optimisticData)) {
+      return false;
+    }
+    await _mutationQueue.updateOptimisticData(mutation.id, updated);
+    return true;
   }
 
   void _emitRestoredSnapshot(_CacheSnapshot snapshot) {
@@ -1663,7 +1713,8 @@ class ConvexLocalClient {
     LocalQueryDescriptor target, {
     required dynamic value,
   }) {
-    final replacement = _cacheSnapshotToJson(
+    return _withRollbackSnapshot(
+      optimisticData,
       _CacheSnapshot(
         target: target,
         entry: CachedQueryEntry(
@@ -1675,6 +1726,17 @@ class ConvexLocalClient {
         ),
       ),
     );
+  }
+
+  /// Replaces (or appends) the persisted rollback snapshot for
+  /// [snapshot.target] inside [optimisticData], leaving every other target's
+  /// snapshot untouched. A null [snapshot.entry] is preserved as an absent
+  /// baseline (`hasEntry: false`), matching the enqueue-time snapshot format.
+  Map<String, dynamic> _withRollbackSnapshot(
+    Map<String, dynamic> optimisticData,
+    _CacheSnapshot snapshot,
+  ) {
+    final replacement = _cacheSnapshotToJson(snapshot);
     final rawRollback = optimisticData['rollback'];
     final rollback = rawRollback is List
         ? rawRollback.toList(growable: true)
@@ -1692,7 +1754,7 @@ class ConvexLocalClient {
       final snapshotTarget = LocalQueryDescriptor.fromJson(
         rawTarget.cast<String, dynamic>(),
       );
-      if (snapshotTarget.key == target.key) {
+      if (snapshotTarget.key == snapshot.target.key) {
         rollback[index] = replacement;
         replaced = true;
       }
