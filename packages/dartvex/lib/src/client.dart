@@ -1009,11 +1009,13 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     );
   }
 
-  /// Forces an immediate reconnect of the WebSocket connection.
+  /// Forces a prompt reconnect of the WebSocket connection.
   ///
-  /// Use this when the app resumes from background to avoid waiting for the
-  /// automatic reconnect backoff timer. If already connected, this closes
-  /// and re-establishes the connection.
+  /// Use this when the app resumes from background: the reconnect uses the short
+  /// client-initiated backoff (a 100ms base, mirroring the official client)
+  /// rather than the longer server-disconnect backoff, so it does not wait out a
+  /// full server/network retry delay. If already connected, this closes and
+  /// re-establishes the connection.
   Future<void> reconnectNow(String reason) {
     _assertNotDisposed();
     if (_startFuture == null) {

@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:meta/meta.dart';
+
 import '../logging.dart';
 import '../protocol/messages.dart';
 import 'package:uuid/uuid.dart';
@@ -80,6 +82,19 @@ const Map<String, int> _serverDisconnectBackoffMs = <String, int>{
   'SearchIndexTooLarge': 3000,
   'TooManyWritesInTimePeriod': 3000,
 };
+
+/// Initial reconnect backoff (ms) for a *client-initiated* reconnect — one the
+/// client triggers itself: a forced [WebSocketManager.reconnectNow], a detected
+/// protocol error (`InvalidServerMessage`/`FailedToSendMessage`), or a
+/// server-inactivity timeout.
+///
+/// Mirrors the official client's `nextBackoff("client")`, which uses a 100ms
+/// base — a faster first retry than the 1s used for an unexpected,
+/// unclassified server/network close, since a client-initiated reconnect is not
+/// evidence of a struggling server. The usual exponential growth and jitter
+/// still apply on top, so a persistently failing reconnect still backs off
+/// rather than hot-looping.
+const int _clientReconnectInitialBackoffMs = 100;
 
 /// Pause sub-state of an open or connecting socket.
 ///
@@ -273,7 +288,8 @@ class WebSocketManager {
         error: error,
         stackTrace: stackTrace,
       );
-      await _closeOrSyntheticDisconnect(_lastCloseReason, immediate: true);
+      await _closeOrSyntheticDisconnect(_lastCloseReason,
+          clientInitiated: true);
       return sentMessages;
     }
     _notifyMessagesSent(sentMessages);
@@ -306,14 +322,14 @@ class WebSocketManager {
     );
     if (adapter.isConnected) {
       _pendingCloseReason = reason;
-      await _closeOrSyntheticDisconnect(reason, immediate: true);
+      await _closeOrSyntheticDisconnect(reason, clientInitiated: true);
       return;
     }
     if (_connecting) {
       _pendingCloseReason = reason;
       return;
     }
-    await _handleSyntheticDisconnect(reason, immediate: true);
+    await _handleSyntheticDisconnect(reason, clientInitiated: true);
   }
 
   /// Cancels any pending reconnect backoff and reconnects immediately, but only
@@ -641,7 +657,8 @@ class WebSocketManager {
         error: error,
         stackTrace: stackTrace,
       );
-      await _closeOrSyntheticDisconnect(_lastCloseReason, immediate: true);
+      await _closeOrSyntheticDisconnect(_lastCloseReason,
+          clientInitiated: true);
     }
   }
 
@@ -747,6 +764,12 @@ class WebSocketManager {
       return;
     }
     _closeHandled = true;
+    // A close the client itself initiated (reconnectNow, a detected
+    // protocol error, an inactivity timeout) sets _pendingCloseReason first; an
+    // unexpected server/network close leaves it null. Client-initiated
+    // reconnects back off from the official 100ms base, while a server/network
+    // close uses the reason-classified (overload table / 1s) base.
+    final clientInitiated = _pendingCloseReason != null;
     final reason = _pendingCloseReason ?? event.diagnosticReason;
     _pendingCloseReason = null;
     _log(
@@ -768,12 +791,17 @@ class WebSocketManager {
     onConnectionStateChanged(false, false);
     await onDisconnected(reason);
     _lastCloseReason = reason;
-    _scheduleReconnect();
+    _scheduleReconnect(clientInitiated: clientInitiated);
   }
 
+  /// Handles a disconnect with no real socket close event to drive it.
+  ///
+  /// Only ever reached on a client-initiated reconnect path (a forced
+  /// reconnect, a detected error, or an inactivity-timeout close that itself
+  /// failed), so the reconnect uses the client backoff base by default.
   Future<void> _handleSyntheticDisconnect(
     String reason, {
-    bool immediate = false,
+    bool clientInitiated = true,
   }) async {
     if (_disposed || _closeHandled || _stopped) {
       return;
@@ -791,15 +819,16 @@ class WebSocketManager {
     onConnectionStateChanged(false, false);
     await onDisconnected(reason);
     _lastCloseReason = reason;
-    _scheduleReconnect(immediate: immediate);
+    _scheduleReconnect(clientInitiated: clientInitiated);
   }
 
   Future<void> _closeOrSyntheticDisconnect(
     String reason, {
-    required bool immediate,
+    required bool clientInitiated,
   }) async {
     if (!adapter.isConnected) {
-      await _handleSyntheticDisconnect(reason, immediate: immediate);
+      await _handleSyntheticDisconnect(reason,
+          clientInitiated: clientInitiated);
       return;
     }
     try {
@@ -811,7 +840,8 @@ class WebSocketManager {
         error: error,
         stackTrace: stackTrace,
       );
-      await _handleSyntheticDisconnect(reason, immediate: immediate);
+      await _handleSyntheticDisconnect(reason,
+          clientInitiated: clientInitiated);
     }
   }
 
@@ -828,12 +858,18 @@ class WebSocketManager {
     }
   }
 
-  void _scheduleReconnect({bool immediate = false}) {
+  void _scheduleReconnect({
+    bool immediate = false,
+    bool clientInitiated = false,
+  }) {
     if (_disposed) {
       return;
     }
     _reconnectTimer?.cancel();
-    final delay = _nextReconnectDelay(immediate: immediate);
+    final delay = _nextReconnectDelay(
+      immediate: immediate,
+      clientInitiated: clientInitiated,
+    );
     _log(
       DartvexLogLevel.info,
       'Reconnect scheduled',
@@ -851,10 +887,16 @@ class WebSocketManager {
   /// Computes the next reconnect delay and advances the retry counter.
   ///
   /// A non-empty [reconnectBackoff] schedule is used verbatim (no jitter);
-  /// otherwise an exponential backoff with jitter is derived from
-  /// [initialBackoff], [maxBackoff], [backoffJitter], and the disconnect reason
-  /// classification.
-  Duration _nextReconnectDelay({required bool immediate}) {
+  /// otherwise an exponential backoff with jitter is derived from [maxBackoff],
+  /// [backoffJitter], and a base that depends on who triggered the reconnect:
+  /// the official 100ms client base when [clientInitiated] (a forced reconnect
+  /// or a client-detected error), otherwise the reason-classified server/unknown
+  /// base (the server-overload table, or [initialBackoff] for an unclassified
+  /// close).
+  Duration _nextReconnectDelay({
+    required bool immediate,
+    required bool clientInitiated,
+  }) {
     if (immediate) {
       return Duration.zero;
     }
@@ -867,12 +909,43 @@ class WebSocketManager {
       }
       return reconnectBackoff[index];
     }
-    final baseMs = _classifiedInitialBackoffMs(_lastCloseReason).toDouble();
-    final exponentialMs = baseMs * pow(2, _reconnectIndex).toDouble();
-    final cappedMs = min(exponentialMs, maxBackoff.inMilliseconds.toDouble());
+    final baseMs = clientInitiated
+        ? _clientReconnectInitialBackoffMs
+        : _classifiedInitialBackoffMs(_lastCloseReason);
+    final delay = computeExponentialBackoff(
+      retryIndex: _reconnectIndex,
+      baseBackoffMs: baseMs,
+      maxBackoffMs: maxBackoff.inMilliseconds,
+      jitter: backoffJitter,
+      randomUnit: _random.nextDouble(),
+    );
     _reconnectIndex += 1;
-    final jitterSpan =
-        cappedMs * backoffJitter * (_random.nextDouble() * 2 - 1);
+    return delay;
+  }
+
+  /// Computes the jittered exponential reconnect delay for [retryIndex].
+  ///
+  /// The delay grows as `baseBackoffMs * 2^retryIndex`, is capped at
+  /// [maxBackoffMs], then spread by ±[jitter] using [randomUnit] in `[0, 1)`.
+  /// [baseBackoffMs] is the official 100ms client base for a client-initiated
+  /// reconnect, otherwise the classified server/unknown base. Mirrors the
+  /// official client's `nextBackoff`: `min(base * 2^retries, max)` then
+  /// `+ actualBackoff * (random - 0.5)`. A double base (`pow(2.0, …)`) is used
+  /// deliberately: an int `pow(2, retryIndex)` wraps a 64-bit integer to 0 at
+  /// index 64 (and negative at 63), which would collapse the backoff to ~0 and
+  /// hot-loop after a long unbroken run of failed reconnects. With a double it
+  /// saturates to a finite (or `Infinity`) value, so the cap always holds.
+  @visibleForTesting
+  static Duration computeExponentialBackoff({
+    required int retryIndex,
+    required int baseBackoffMs,
+    required int maxBackoffMs,
+    required double jitter,
+    required double randomUnit,
+  }) {
+    final exponentialMs = baseBackoffMs * pow(2.0, retryIndex);
+    final cappedMs = min(exponentialMs, maxBackoffMs.toDouble());
+    final jitterSpan = cappedMs * jitter * (randomUnit * 2 - 1);
     final delayMs = (cappedMs + jitterSpan).clamp(0.0, double.infinity);
     return Duration(milliseconds: delayMs.round());
   }
@@ -907,7 +980,8 @@ class WebSocketManager {
         // The close failed, so no close event will arrive to drive the
         // reconnect. Fall back to a synthetic disconnect so the client still
         // reconnects instead of sitting idle on a dead socket.
-        await _handleSyntheticDisconnect(_lastCloseReason, immediate: true);
+        await _handleSyntheticDisconnect(_lastCloseReason,
+            clientInitiated: true);
       }
     });
   }

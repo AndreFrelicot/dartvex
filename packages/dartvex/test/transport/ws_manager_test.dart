@@ -1297,6 +1297,164 @@ void main() {
 
       await manager.dispose();
     });
+
+    // NF1: a client-initiated reconnect (reconnectNow, a detected protocol
+    // error, an inactivity timeout) must back off from the official 100ms
+    // client base, while an unexpected server/network close uses the
+    // reason-classified (overload table / 1s) base. Exercised in exponential
+    // mode (empty reconnectBackoff) with jitter disabled for determinism; the
+    // production default uses exponential mode, so the fixed-schedule tests
+    // elsewhere never cover this.
+    WebSocketManager buildExponentialManager(
+      MockWebSocketAdapter adapter,
+      List<DartvexLogEvent> events,
+    ) {
+      return WebSocketManager(
+        adapter: adapter,
+        deploymentUrl: 'https://demo.convex.cloud',
+        apiVersion: '0.1.0',
+        onConnected: () => const <ClientMessage>[],
+        onMessage: (_) => const <ClientMessage>[],
+        onDisconnected: (_) async {},
+        onConnectionStateChanged: (_, __) {},
+        maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => false,
+        reconnectBackoff: const <Duration>[],
+        backoffJitter: 0,
+        inactivityTimeout: const Duration(seconds: 30),
+        logLevel: DartvexLogLevel.info,
+        logger: events.add,
+      );
+    }
+
+    int? lastScheduledDelayMs(List<DartvexLogEvent> events) {
+      final schedules = events
+          .where((event) => event.message == 'Reconnect scheduled')
+          .toList(growable: false);
+      if (schedules.isEmpty) {
+        return null;
+      }
+      return schedules.last.data?['delayMs'] as int?;
+    }
+
+    test('reconnectNow backs off from the 100ms client base (NF1)', () async {
+      final adapter = MockWebSocketAdapter();
+      final events = <DartvexLogEvent>[];
+      final manager = buildExponentialManager(adapter, events);
+
+      await manager.start();
+      await manager.reconnectNow('AppResumed');
+      // Capture the scheduled delay before the (100ms) reconnect timer fires.
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(lastScheduledDelayMs(events), 100);
+
+      await manager.dispose();
+    });
+
+    test('an unexpected server close backs off from the 1s base (NF1)',
+        () async {
+      final adapter = MockWebSocketAdapter();
+      final events = <DartvexLogEvent>[];
+      final manager = buildExponentialManager(adapter, events);
+
+      await manager.start();
+      // A spontaneous server/network close: no _pendingCloseReason, so it is
+      // classified as server/unknown rather than client-initiated.
+      adapter.disconnect(code: 1006);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(lastScheduledDelayMs(events), 1000);
+
+      await manager.dispose();
+    });
+
+    test('a classified server-overload close uses the overload table (NF1)',
+        () async {
+      final adapter = MockWebSocketAdapter();
+      final events = <DartvexLogEvent>[];
+      final manager = buildExponentialManager(adapter, events);
+
+      await manager.start();
+      adapter.disconnect(reason: 'SubscriptionsWorkerFullError: overloaded');
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      // Server-overload base (3s), not the 100ms client base.
+      expect(lastScheduledDelayMs(events), 3000);
+
+      await manager.dispose();
+    });
+
+    group('computeExponentialBackoff', () {
+      test('starts at the base and doubles per retry index', () {
+        expect(
+          WebSocketManager.computeExponentialBackoff(
+            retryIndex: 0,
+            baseBackoffMs: 100,
+            maxBackoffMs: 16000,
+            jitter: 0,
+            randomUnit: 0.5,
+          ),
+          const Duration(milliseconds: 100),
+        );
+        expect(
+          WebSocketManager.computeExponentialBackoff(
+            retryIndex: 3,
+            baseBackoffMs: 100,
+            maxBackoffMs: 16000,
+            jitter: 0,
+            randomUnit: 0.5,
+          ),
+          const Duration(milliseconds: 800),
+        );
+        expect(
+          WebSocketManager.computeExponentialBackoff(
+            retryIndex: 0,
+            baseBackoffMs: 1000,
+            maxBackoffMs: 16000,
+            jitter: 0,
+            randomUnit: 0.5,
+          ),
+          const Duration(milliseconds: 1000),
+        );
+      });
+
+      test('caps at maxBackoff for a large retry index (no overflow wrap)', () {
+        expect(
+          WebSocketManager.computeExponentialBackoff(
+            retryIndex: 100,
+            baseBackoffMs: 1000,
+            maxBackoffMs: 16000,
+            jitter: 0,
+            randomUnit: 0.5,
+          ),
+          const Duration(milliseconds: 16000),
+        );
+      });
+
+      test('spreads the delay across +/- jitter without going negative', () {
+        expect(
+          WebSocketManager.computeExponentialBackoff(
+            retryIndex: 0,
+            baseBackoffMs: 1000,
+            maxBackoffMs: 16000,
+            jitter: 0.5,
+            randomUnit: 0,
+          ),
+          const Duration(milliseconds: 500),
+        );
+        expect(
+          WebSocketManager.computeExponentialBackoff(
+            retryIndex: 0,
+            baseBackoffMs: 1000,
+            maxBackoffMs: 16000,
+            jitter: 0.5,
+            randomUnit: 1,
+          ),
+          const Duration(milliseconds: 1500),
+        );
+      });
+    });
   });
 }
 
