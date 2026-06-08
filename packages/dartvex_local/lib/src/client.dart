@@ -1096,8 +1096,18 @@ class ConvexLocalClient {
         _pendingMutationsController.add(currentPendingMutations);
 
         // Remap any local IDs in args to server IDs.
-        final remappedArgs =
-            _remapIds(mutation.args, idRemaps) as Map<String, dynamic>;
+        late final Map<String, dynamic> remappedArgs;
+        try {
+          remappedArgs =
+              _remapIds(mutation.args, idRemaps) as Map<String, dynamic>;
+        } on _LocalIdRemapCollision catch (error) {
+          _log('replay:id-remap-collision', '[$iteration] ${error.message}');
+          final failedLocalId = await _dropFailedMutation(mutation, error);
+          if (failedLocalId != null) {
+            failedLocalIds.add(failedLocalId);
+          }
+          continue;
+        }
         final unresolvedLocalIds = _unresolvedLocalIds(
           remappedArgs,
           idRemaps,
@@ -1973,13 +1983,16 @@ class ConvexLocalClient {
       // freshly-created local ID as an object key (e.g. a per-document map),
       // not only as a value. A key that is a resolved local ID is rewritten to
       // its server ID; any other key passes through unchanged.
-      return <String, dynamic>{
-        for (final entry in value.entries)
-          (idMap[entry.key.toString()] ?? entry.key.toString()): _remapIds(
-            entry.value,
-            idMap,
-          ),
-      };
+      final result = <String, dynamic>{};
+      for (final entry in value.entries) {
+        final rawKey = entry.key.toString();
+        final remappedKey = idMap[rawKey] ?? rawKey;
+        if (result.containsKey(remappedKey)) {
+          throw _LocalIdRemapCollision(remappedKey);
+        }
+        result[remappedKey] = _remapIds(entry.value, idMap);
+      }
+      return result;
     }
     if (value is List) return value.map((i) => _remapIds(i, idMap)).toList();
     return value;
@@ -2095,6 +2108,19 @@ class ConvexLocalClient {
       _remoteClient.dispose();
     }
   }
+}
+
+class _LocalIdRemapCollision implements Exception {
+  const _LocalIdRemapCollision(this.key);
+
+  final String key;
+
+  String get message =>
+      'ID remap collision for key "$key"; refusing to replay mutation with '
+      'ambiguous map entries.';
+
+  @override
+  String toString() => message;
 }
 
 class _LocalQueryState {

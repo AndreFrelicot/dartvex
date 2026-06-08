@@ -49,6 +49,7 @@ class _ConvexQueryState<T> extends State<ConvexQuery<T>> {
   ConvexRuntimeSubscription? _runtimeSubscription;
   StreamSubscription<ConvexRuntimeQueryEvent>? _eventSubscription;
   ConvexQuerySnapshot<T> _snapshot = ConvexQuerySnapshot<T>.initial();
+  int _subscriptionGeneration = 0;
 
   @override
   void didChangeDependencies() {
@@ -84,6 +85,7 @@ class _ConvexQueryState<T> extends State<ConvexQuery<T>> {
   }
 
   void _cancelSubscription() {
+    _subscriptionGeneration += 1;
     unawaited(_eventSubscription?.cancel());
     _eventSubscription = null;
     _runtimeSubscription?.cancel();
@@ -182,8 +184,14 @@ class _ConvexQueryState<T> extends State<ConvexQuery<T>> {
       });
     }
     final subscription = resolvedClient.subscribe(widget.query, widget.args);
+    final generation = ++_subscriptionGeneration;
     _runtimeSubscription = subscription;
-    _eventSubscription = subscription.stream.listen(_handleEvent);
+    _eventSubscription = subscription.stream.listen((event) {
+      if (generation != _subscriptionGeneration) {
+        return;
+      }
+      _handleEvent(event);
+    });
   }
 }
 

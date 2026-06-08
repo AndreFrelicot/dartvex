@@ -4,6 +4,7 @@ import '../spec/function_spec.dart';
 import '../types/type_mapper.dart';
 import 'imports.dart';
 import 'naming.dart';
+import 'string_literals.dart';
 
 /// File header added to every generated Dart binding.
 const generatedFileHeader = '// GENERATED CODE - DO NOT MODIFY BY HAND.';
@@ -347,7 +348,8 @@ class DartGenerator {
       ..writeln(') async {')
       ..writeln(
         "  final raw = await _client.$operation("
-        "'${function.convexFunctionName}', $requestArgsExpression);",
+        '${dartSingleQuotedString(function.convexFunctionName)}, '
+        '$requestArgsExpression);',
       )
       ..writeln('  return ${resultType.decode('raw')};')
       ..writeln('}');
@@ -363,7 +365,8 @@ class DartGenerator {
         ..writeln(') {')
         ..writeln(
           "  final subscription = _client.subscribe("
-          "'${function.convexFunctionName}', $requestArgsExpression);",
+          '${dartSingleQuotedString(function.convexFunctionName)}, '
+          '$requestArgsExpression);',
         )
         ..writeln(
           '  final typedStream = subscription.stream.map((event) {',
@@ -434,7 +437,10 @@ class DartGenerator {
         ..writeln('class $typeName extends ConvexTableId {')
         ..writeln('  const $typeName(super.value);')
         ..writeln()
-        ..writeln("  static const String tableName = '$table';")
+        ..writeln(
+          '  static const String tableName = '
+          '${dartSingleQuotedString(table)};',
+        )
         ..writeln('}')
         ..writeln();
     }

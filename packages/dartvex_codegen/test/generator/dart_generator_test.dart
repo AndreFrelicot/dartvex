@@ -195,6 +195,36 @@ void main() {
       );
     });
 
+    test('escapes generated imports, function names, and table names', () {
+      final specialSpec = FunctionsSpec(
+        url: 'https://sample.convex.cloud',
+        functions: <BaseFunctionSpec>[
+          _function(
+            identifier: r"weird$module's.ts:send$public",
+            returns: const ConvexIdType(r"price$table's"),
+          ),
+        ],
+      );
+
+      final output = DartGenerator().generate(specialSpec);
+      final api = output.files['api.dart']!;
+      final module = output.files[r"modules/weird$module's.dart"]!;
+      final schema = output.files['schema.dart']!;
+
+      expect(
+        api,
+        contains(r"import './modules/weird\$module\'s.dart';"),
+      );
+      expect(
+        module,
+        contains(r"'weird\$module\'s:send\$public'"),
+      );
+      expect(
+        schema,
+        contains(r"static const String tableName = 'price\$table\'s';"),
+      );
+    });
+
     test('throws when generated Dart cannot be formatted', () {
       final invalidSpec = FunctionsSpec(
         url: 'https://example.com',

@@ -1,3 +1,5 @@
+import 'string_literals.dart';
+
 /// Collects and renders unique import statements for generated files.
 class ImportManager {
   final Set<String> _imports = <String>{};
@@ -10,6 +12,8 @@ class ImportManager {
   /// Renders the managed imports in sorted order.
   String render() {
     final sorted = _imports.toList()..sort();
-    return sorted.map((importPath) => "import '$importPath';").join('\n');
+    return sorted
+        .map((importPath) => 'import ${dartSingleQuotedString(importPath)};')
+        .join('\n');
   }
 }

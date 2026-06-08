@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   errors instead of leaking raw uncaught stack traces to callers.
 - Escapes literal-union enum `fromJson` error messages so literal values with
   quotes, dollars, or newlines do not generate invalid Dart source.
+- Escapes generated imports, Convex function names, and table names embedded in
+  Dart string literals, so unusual but valid identifiers containing quotes,
+  dollars, or control characters do not produce analyzer-broken bindings.
+- Deduplicates repeated literal union members before rendering enum decoders, so
+  redundant validators cannot generate duplicate Dart `switch` cases.
 - Fails code generation when a generated Dart file cannot be formatted instead
   of emitting invalid source with only a warning.
 - Rejects Convex table names that would generate duplicate `ConvexTableId`

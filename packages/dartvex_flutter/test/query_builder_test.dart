@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dartvex_flutter/dartvex_flutter.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -210,4 +212,83 @@ void main() {
 
     expect(subscription.isCanceled, isTrue);
   });
+
+  testWidgets('ConvexQuery ignores stale events from canceled subscriptions', (
+    tester,
+  ) async {
+    final client = _StaleEventRuntimeClient();
+    addTearDown(() async {
+      for (final subscription in client.subscriptions) {
+        await subscription.close();
+      }
+    });
+    late ConvexQuerySnapshot<String> snapshot;
+
+    Widget build(String channel) {
+      return Directionality(
+        textDirection: TextDirection.ltr,
+        child: ConvexProvider(
+          client: client,
+          child: ConvexQuery<String>(
+            query: 'messages:list',
+            args: <String, dynamic>{'channel': channel},
+            builder: (context, value) {
+              snapshot = value;
+              return Text(value.data ?? 'empty');
+            },
+          ),
+        ),
+      );
+    }
+
+    await tester.pumpWidget(build('general'));
+    final firstSubscription = client.subscriptions.single;
+
+    await tester.pumpWidget(build('random'));
+    final secondSubscription = client.subscriptions.last;
+    secondSubscription.emitSuccess('fresh');
+    await tester.pump();
+    expect(snapshot.data, 'fresh');
+
+    expect(firstSubscription.isCanceled, isTrue);
+    firstSubscription.emitSuccess('stale');
+    await tester.pump();
+
+    expect(snapshot.data, 'fresh');
+  });
+}
+
+class _StaleEventRuntimeClient extends FakeRuntimeClient {
+  final List<_StaleEventSubscription> subscriptions =
+      <_StaleEventSubscription>[];
+
+  @override
+  ConvexRuntimeSubscription subscribe(
+    String name, [
+    Map<String, dynamic> args = const <String, dynamic>{},
+  ]) {
+    final subscription = _StaleEventSubscription();
+    subscriptions.add(subscription);
+    return subscription;
+  }
+}
+
+class _StaleEventSubscription implements ConvexRuntimeSubscription {
+  final StreamController<ConvexRuntimeQueryEvent> _controller =
+      StreamController<ConvexRuntimeQueryEvent>.broadcast(sync: true);
+  bool isCanceled = false;
+
+  @override
+  Stream<ConvexRuntimeQueryEvent> get stream => _controller.stream;
+
+  void emitSuccess(String value) {
+    _controller.add(ConvexRuntimeQuerySuccess(value));
+  }
+
+  @override
+  void cancel() {
+    isCanceled = true;
+  }
+
+  Future<void> close() => _controller.close();
 }

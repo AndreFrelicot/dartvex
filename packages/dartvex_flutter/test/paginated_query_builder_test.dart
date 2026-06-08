@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dartvex_flutter/dartvex_flutter.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -312,4 +314,117 @@ void main() {
       const <String, dynamic>{'channel': 'b'},
     );
   });
+
+  testWidgets('ignores stale page events from canceled queries',
+      (tester) async {
+    final client = _StalePaginatedRuntimeClient(
+      initialConnectionState: ConvexConnectionState.connected,
+    );
+    addTearDown(() async {
+      for (final query in client.stalePaginatedQueries) {
+        await query.close();
+      }
+    });
+    List<Map<String, dynamic>>? capturedItems;
+
+    await tester.pumpWidget(
+      buildPaginated(
+        client: client,
+        args: const <String, dynamic>{'channel': 'a'},
+        onBuild: (items, _) => capturedItems = items,
+      ),
+    );
+    final firstQuery = client.stalePaginatedQueries.single;
+
+    await tester.pumpWidget(
+      buildPaginated(
+        client: client,
+        args: const <String, dynamic>{'channel': 'b'},
+        onBuild: (items, _) => capturedItems = items,
+      ),
+    );
+    final secondQuery = client.stalePaginatedQueries.last;
+    secondQuery.emitPage(
+      <dynamic>[
+        <String, dynamic>{'id': 'fresh'},
+      ],
+      status: ConvexPaginationStatus.canLoadMore,
+    );
+    await tester.pump();
+    expect(capturedItems!.map((item) => item['id']).toList(), <String>[
+      'fresh',
+    ]);
+
+    expect(firstQuery.isCanceled, isTrue);
+    firstQuery.emitPage(
+      <dynamic>[
+        <String, dynamic>{'id': 'stale'},
+      ],
+      status: ConvexPaginationStatus.canLoadMore,
+    );
+    await tester.pump();
+
+    expect(capturedItems!.map((item) => item['id']).toList(), <String>[
+      'fresh',
+    ]);
+  });
+}
+
+class _StalePaginatedRuntimeClient extends FakeRuntimeClient {
+  _StalePaginatedRuntimeClient({
+    required super.initialConnectionState,
+  });
+
+  final List<_StaleRuntimePaginatedQuery> stalePaginatedQueries =
+      <_StaleRuntimePaginatedQuery>[];
+
+  @override
+  ConvexRuntimePaginatedQuery paginatedQuery(
+    String name,
+    Map<String, dynamic> args, {
+    int pageSize = 20,
+  }) {
+    final query = _StaleRuntimePaginatedQuery();
+    stalePaginatedQueries.add(query);
+    return query;
+  }
+}
+
+class _StaleRuntimePaginatedQuery implements ConvexRuntimePaginatedQuery {
+  final StreamController<ConvexPaginatedResult> _controller =
+      StreamController<ConvexPaginatedResult>.broadcast(sync: true);
+  ConvexPaginatedResult _current = const ConvexPaginatedResult(
+    results: <dynamic>[],
+    status: ConvexPaginationStatus.loadingFirstPage,
+    isDone: false,
+  );
+  bool isCanceled = false;
+
+  @override
+  Stream<ConvexPaginatedResult> get stream => _controller.stream;
+
+  @override
+  ConvexPaginatedResult get current => _current;
+
+  @override
+  bool loadMore([int? numItems]) => true;
+
+  @override
+  void cancel() {
+    isCanceled = true;
+  }
+
+  void emitPage(
+    List<dynamic> results, {
+    required ConvexPaginationStatus status,
+  }) {
+    _current = ConvexPaginatedResult(
+      results: results,
+      status: status,
+      isDone: false,
+    );
+    _controller.add(_current);
+  }
+
+  Future<void> close() => _controller.close();
 }

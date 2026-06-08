@@ -60,6 +60,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ConvexImage` and `ConvexCachedImage` now treat a changed runtime client as a
   new load identity, preventing stale images from a previous provider/client
   and avoiding implicit retries when unchanged failed loads rebuild.
+- Reactive query and paginated-query widgets now ignore late events from
+  canceled subscriptions after inputs change, preventing stale results from
+  overwriting the newest subscription state.
 - `FakeConvexClient` now broadcasts duplicate query subscriptions and paginated
   queries with the same name to every live handle instead of only the latest.
 - Closes file-download HTTP clients and rejects non-success responses instead

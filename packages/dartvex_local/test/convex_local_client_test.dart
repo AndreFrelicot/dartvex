@@ -1374,6 +1374,61 @@ void main() {
       expect(byTask['server-task-keyed'], 10);
     });
 
+    test(
+      'replay drops map-key remaps that collide with existing keys',
+      () async {
+        await localClient.dispose();
+        store = await SqliteLocalStore.openInMemory();
+        remoteClient = FakeRemoteClient();
+        remoteClient.queryResults['tasks:list'] = <dynamic>[];
+        localClient = await ConvexLocalClient.openWithRemote(
+          remoteClient: remoteClient,
+          config: LocalClientConfig(
+            cacheStorage: store,
+            queueStorage: store,
+            mutationHandlers: const <LocalMutationHandler>[CreateTaskHandler()],
+          ),
+        );
+
+        await localClient.query('tasks:list');
+        await localClient.setNetworkMode(LocalNetworkMode.offline);
+
+        await localClient.mutate('tasks:create', <String, dynamic>{
+          'title': 'Key collision',
+        });
+        final createOpId =
+            localClient
+                    .currentPendingMutations
+                    .first
+                    .optimisticData!['operationId']
+                as String;
+        await localClient.mutate('scores:set', <String, dynamic>{
+          'byTask': <String, dynamic>{'server-task-keyed': 99, createOpId: 10},
+        });
+
+        final conflicts = <LocalMutationConflict>[];
+        localClient.onConflict = conflicts.add;
+        remoteClient.mutationResults['tasks:create'] = <Object?>[
+          'server-task-keyed',
+        ];
+        remoteClient.mutationResults['scores:set'] = <Object?>['ok'];
+
+        await localClient.setNetworkMode(LocalNetworkMode.auto);
+        await pumpEventQueue();
+
+        expect(localClient.currentPendingMutations, isEmpty);
+        expect(remoteClient.mutationCalls.map((call) => call.name), <String>[
+          'tasks:create',
+        ]);
+        expect(conflicts, hasLength(1));
+        expect(conflicts.single.mutationName, 'scores:set');
+        expect(
+          conflicts.single.error.toString(),
+          contains('ID remap collision'),
+        );
+      },
+    );
+
     test('replay drops dependents when producer local ID fails', () async {
       await localClient.dispose();
       store = await SqliteLocalStore.openInMemory();

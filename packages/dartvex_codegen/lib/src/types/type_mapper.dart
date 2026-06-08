@@ -1,4 +1,5 @@
 import '../generator/naming.dart';
+import '../generator/string_literals.dart';
 import '../spec/function_spec.dart';
 import 'dart_type.dart';
 
@@ -281,7 +282,7 @@ class TypeMapper {
 
       for (final entry in type.value.entries) {
         final rawName = entry.key;
-        final escapedName = _escapeStringLiteral(rawName);
+        final fieldKey = dartSingleQuotedString(rawName);
         final safeName = _naming.fieldName(rawName);
         final field = entry.value;
         final mappedField = mapType(
@@ -295,20 +296,20 @@ class TypeMapper {
         fields.add(DartRecordField(name: safeName, type: fieldType));
         if (field.optional) {
           encodeBuffer.write(
-            "if ($safeName.isDefined) '$escapedName': "
+            'if ($safeName.isDefined) $fieldKey: '
             "${mappedField.encode('$safeName.value')},",
           );
           decodeBuffer.writeln(
-            "    $safeName: map.containsKey('$escapedName')"
-            " ? Optional.of(${mappedField.decode("map['$escapedName']")})"
+            '    $safeName: map.containsKey($fieldKey)'
+            ' ? Optional.of(${mappedField.decode('map[$fieldKey]')})'
             " : const Optional.absent(),",
           );
         } else {
           encodeBuffer.write(
-            "'$escapedName': ${mappedField.encode(safeName)},",
+            '$fieldKey: ${mappedField.encode(safeName)},',
           );
           decodeBuffer.writeln(
-            "    $safeName: ${mappedField.decode("map['$escapedName']")},",
+            "    $safeName: ${mappedField.decode('map[$fieldKey]')},",
           );
         }
       }
@@ -355,6 +356,19 @@ class TypeMapper {
         dartType: DartPrimitiveType('dynamic'),
         encode: _identityExpression,
         decode: _identityExpression,
+      );
+    }
+
+    final uniqueNonNull = _removeDuplicateLiteralMembers(nonNull);
+    if (uniqueNonNull.length != nonNull.length) {
+      return _mapUnion(
+        ConvexUnionType(
+          nullable
+              ? <ConvexType>[...uniqueNonNull, const ConvexNullType()]
+              : uniqueNonNull,
+        ),
+        suggestedName: suggestedName,
+        context: context,
       );
     }
 
@@ -571,6 +585,23 @@ class TypeMapper {
         .toList();
   }
 
+  List<ConvexType> _removeDuplicateLiteralMembers(List<ConvexType> members) {
+    final result = <ConvexType>[];
+    for (final member in members) {
+      if (member is! ConvexLiteralType) {
+        result.add(member);
+        continue;
+      }
+      final alreadySeen = result.whereType<ConvexLiteralType>().any(
+            (existing) => _literalValuesEqual(existing.value, member.value),
+          );
+      if (!alreadySeen) {
+        result.add(member);
+      }
+    }
+    return result;
+  }
+
   void _assertUnionCanBeDecoded(
     List<ConvexType> members,
     String suggestedName,
@@ -738,7 +769,7 @@ class TypeMapper {
       return 'null';
     }
     if (value is String) {
-      return "'${_escapeStringLiteral(value)}'";
+      return dartSingleQuotedString(value);
     }
     if (value is num) {
       return value.toDouble().toString();
@@ -751,20 +782,9 @@ class TypeMapper {
 
   static String _literalMessage(Object? value) {
     if (value is String) {
-      return _escapeStringLiteral(value);
+      return escapeDartStringContent(value);
     }
     return value.toString();
-  }
-
-  static String _escapeStringLiteral(String value) {
-    return value
-        .replaceAll(r'\', r'\\')
-        .replaceAll("'", r"\'")
-        .replaceAll('\n', r'\n')
-        .replaceAll('\r', r'\r')
-        .replaceAll('\t', r'\t')
-        .replaceAll(r'$', r'\$')
-        .replaceAll('\x00', r'\0');
   }
 }
 

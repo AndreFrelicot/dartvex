@@ -98,6 +98,7 @@ class _PaginatedQueryBuilderState<T> extends State<PaginatedQueryBuilder<T>> {
   ConvexRuntimeClient? _client;
   ConvexRuntimePaginatedQuery? _query;
   StreamSubscription<convex.ConvexPaginatedResult>? _subscription;
+  int _queryGeneration = 0;
 
   List<T> _items = const <Never>[];
   PaginationStatus _status = PaginationStatus.loading;
@@ -127,6 +128,7 @@ class _PaginatedQueryBuilderState<T> extends State<PaginatedQueryBuilder<T>> {
   }
 
   void _start() {
+    final generation = ++_queryGeneration;
     _subscription?.cancel();
     _query?.cancel();
     final query = _client!.paginatedQuery(
@@ -145,7 +147,12 @@ class _PaginatedQueryBuilderState<T> extends State<PaginatedQueryBuilder<T>> {
       _items = const <Never>[];
       _status = PaginationStatus.error;
     }
-    _subscription = query.stream.listen(_apply);
+    _subscription = query.stream.listen((result) {
+      if (generation != _queryGeneration) {
+        return;
+      }
+      _apply(result);
+    });
   }
 
   void _apply(convex.ConvexPaginatedResult result) {
@@ -196,6 +203,7 @@ class _PaginatedQueryBuilderState<T> extends State<PaginatedQueryBuilder<T>> {
 
   @override
   void dispose() {
+    _queryGeneration += 1;
     _subscription?.cancel();
     _query?.cancel();
     super.dispose();

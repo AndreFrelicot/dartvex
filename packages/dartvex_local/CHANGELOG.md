@@ -62,6 +62,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `local-<digits>-<digits>` shaped user string as an unresolved local ID, while
   persisting failed local IDs so dependents are still dropped correctly after a
   crash.
+- Replay now rejects local-ID map-key remaps that would collide with an existing
+  key after resolution, reporting the queued mutation through `onConflict`
+  instead of silently dropping one of the map entries before sending to Convex.
 - Stops in-flight replay cleanly during `dispose()`, preventing writes to closed
   SQLite stores or closed mutation streams after a delayed remote mutation
   returns.

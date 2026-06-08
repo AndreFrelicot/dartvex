@@ -386,6 +386,27 @@ void main() {
       expect(definitions, contains('fooBarValue1'));
     });
 
+    test('deduplicates repeated literal union members', () {
+      final context = TypeRenderContext();
+      final mapper = TypeMapper();
+
+      mapper.mapType(
+        const ConvexUnionType(
+          <ConvexType>[
+            ConvexLiteralType('draft'),
+            ConvexLiteralType('sent'),
+            ConvexLiteralType('sent'),
+          ],
+        ),
+        suggestedName: 'DuplicateStatus',
+        context: context,
+      );
+
+      final definitions = context.renderDefinitions();
+      expect(RegExp(r"case 'draft':").allMatches(definitions), hasLength(1));
+      expect(RegExp(r"case 'sent':").allMatches(definitions), hasLength(1));
+    });
+
     test('escapes literal union enum error messages', () {
       final context = TypeRenderContext();
       final mapper = TypeMapper();
