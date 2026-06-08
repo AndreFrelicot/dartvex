@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Guard the nested `user`/`session` fields of a 200 response: a non-object
   value now surfaces as a null session (or empty user fields) instead of a raw
   `TypeError`.
+- Guard malformed nested Better Auth user scalar fields so non-string `id`,
+  `email`, or `name` values do not throw raw cast errors.
 - Convert malformed Convex token endpoint responses into typed session-expired
   errors instead of raw cast or decode exceptions.
 - Clarify missing session-token errors with Flutter web CORS guidance and

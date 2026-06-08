@@ -238,6 +238,30 @@ void main() {
       expect(session, isNull);
     });
 
+    test('getSession tolerates malformed user scalar fields', () async {
+      final mock = buildMock(
+        sessionToken: 'ses_valid',
+        convexToken: 'jwt_refreshed',
+        getSessionResponse: {
+          'session': {'id': 's1', 'userId': 'user_123'},
+          'user': {
+            'id': 123,
+            'email': false,
+            'name': <String>['Alice'],
+          },
+        },
+      );
+      final client = BetterAuthClient(baseUrl: baseUrl, httpClient: mock);
+
+      final session = await client.getSession(sessionToken: 'ses_valid');
+
+      expect(session, isNotNull);
+      expect(session!.token, 'jwt_refreshed');
+      expect(session.userId, '');
+      expect(session.email, '');
+      expect(session.name, isNull);
+    });
+
     test('throws typed exception when getSession 200 body is not an object',
         () async {
       for (final body in <String>[jsonEncode('OK'), '']) {
@@ -381,6 +405,32 @@ void main() {
 
       expect(session.token, 'jwt');
       expect(session.userId, 'user_123');
+    });
+
+    test('signIn tolerates malformed user scalar fields', () async {
+      final mock = buildMock(
+        sessionToken: 'ses_valid',
+        convexToken: 'jwt_refreshed',
+        signInResponse: {
+          'user': {
+            'id': 123,
+            'email': false,
+            'name': <String>['Alice'],
+          },
+          'session': {'id': 'ses_123', 'userId': 'user_123'},
+        },
+      );
+      final client = BetterAuthClient(baseUrl: baseUrl, httpClient: mock);
+
+      final session = await client.signIn(
+        email: 'alice@example.com',
+        password: 'password123',
+      );
+
+      expect(session.token, 'jwt_refreshed');
+      expect(session.userId, '');
+      expect(session.email, 'alice@example.com');
+      expect(session.name, isNull);
     });
 
     test('throws typed exception when sign-in 200 body is not an object',

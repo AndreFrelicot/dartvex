@@ -172,9 +172,9 @@ class BetterAuthClient {
       return BetterAuthSession(
         token: cookieJwt,
         sessionToken: sessionToken,
-        userId: (user?['id'] as String?) ?? '',
-        email: (user?['email'] as String?) ?? '',
-        name: user?['name'] as String?,
+        userId: _stringField(user, 'id'),
+        email: _stringField(user, 'email'),
+        name: _nullableStringField(user, 'name'),
       );
     }
 
@@ -182,9 +182,9 @@ class BetterAuthClient {
     return BetterAuthSession(
       token: convexJwt,
       sessionToken: sessionToken,
-      userId: (user?['id'] as String?) ?? '',
-      email: (user?['email'] as String?) ?? '',
-      name: user?['name'] as String?,
+      userId: _stringField(user, 'id'),
+      email: _stringField(user, 'email'),
+      name: _nullableStringField(user, 'name'),
     );
   }
 
@@ -230,9 +230,9 @@ class BetterAuthClient {
     return BetterAuthSession(
       token: convexJwt,
       sessionToken: sessionToken,
-      userId: (user['id'] as String?) ?? '',
-      email: (user['email'] as String?) ?? '',
-      name: user['name'] as String?,
+      userId: _stringField(user, 'id'),
+      email: _stringField(user, 'email'),
+      name: _nullableStringField(user, 'name'),
     );
   }
 
@@ -259,9 +259,9 @@ class BetterAuthClient {
       return BetterAuthSession(
         token: cookieJwt,
         sessionToken: sessionToken,
-        userId: (user?['id'] as String?) ?? '',
-        email: (user?['email'] as String?) ?? fallbackEmail,
-        name: user?['name'] as String?,
+        userId: _stringField(user, 'id'),
+        email: _stringField(user, 'email', fallback: fallbackEmail),
+        name: _nullableStringField(user, 'name'),
       );
     }
 
@@ -271,9 +271,9 @@ class BetterAuthClient {
     return BetterAuthSession(
       token: convexJwt,
       sessionToken: sessionToken,
-      userId: (user?['id'] as String?) ?? '',
-      email: (user?['email'] as String?) ?? fallbackEmail,
-      name: user?['name'] as String?,
+      userId: _stringField(user, 'id'),
+      email: _stringField(user, 'email', fallback: fallbackEmail),
+      name: _nullableStringField(user, 'name'),
     );
   }
 
@@ -466,6 +466,20 @@ class BetterAuthClient {
       return value.cast<String, dynamic>();
     }
     return null;
+  }
+
+  static String _stringField(
+    Map<String, dynamic>? value,
+    String key, {
+    String fallback = '',
+  }) {
+    final field = value?[key];
+    return field is String ? field : fallback;
+  }
+
+  static String? _nullableStringField(Map<String, dynamic>? value, String key) {
+    final field = value?[key];
+    return field is String ? field : null;
   }
 
   Map<String, dynamic> _decodeObjectBody(String path, http.Response response) {
