@@ -114,6 +114,18 @@ Map<String, dynamic> _encodeListResultItem(ListResultItem value) {
 
 ListResultItem _decodeListResultItem(dynamic raw) {
   final map = expectMap(raw, label: 'ListResultItem');
+  if (!map.containsKey('_id')) {
+    throw FormatException('Missing required field "_id" for ListResultItem');
+  }
+  if (!map.containsKey('author')) {
+    throw FormatException('Missing required field "author" for ListResultItem');
+  }
+  if (!map.containsKey('text')) {
+    throw FormatException('Missing required field "text" for ListResultItem');
+  }
+  if (!map.containsKey('status')) {
+    throw FormatException('Missing required field "status" for ListResultItem');
+  }
   return (
     id: MessagesId(expectString(map['_id'], label: 'ListResultItemId')),
     author: expectString(map['author'], label: 'ListResultItemAuthor'),
@@ -189,6 +201,12 @@ Map<String, dynamic> _encodeSendArgs(SendArgs value) {
 
 SendArgs _decodeSendArgs(dynamic raw) {
   final map = expectMap(raw, label: 'SendArgs');
+  if (!map.containsKey('author')) {
+    throw FormatException('Missing required field "author" for SendArgs');
+  }
+  if (!map.containsKey('text')) {
+    throw FormatException('Missing required field "text" for SendArgs');
+  }
   return (
     author: expectString(map['author'], label: 'SendArgsAuthor'),
     text: expectString(map['text'], label: 'SendArgsText'),

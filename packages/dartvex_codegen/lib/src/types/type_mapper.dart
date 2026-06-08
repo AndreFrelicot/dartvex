@@ -273,12 +273,11 @@ class TypeMapper {
       }
 
       final fields = <DartRecordField>[];
+      final fieldDecodeLines = <String>[];
       final encodeBuffer = StringBuffer('<String, dynamic>{');
-      final decodeBuffer = StringBuffer(
-        '$typeName _decode$typeName(dynamic raw) {\n'
-        "  final map = expectMap(raw, label: '$typeName');\n"
-        '  return (\n',
-      );
+      final decodeBuffer =
+          StringBuffer('$typeName _decode$typeName(dynamic raw) {\n'
+              "  final map = expectMap(raw, label: '$typeName');\n");
 
       for (final entry in type.value.entries) {
         final rawName = entry.key;
@@ -299,22 +298,34 @@ class TypeMapper {
             'if ($safeName.isDefined) $fieldKey: '
             "${mappedField.encode('$safeName.value')},",
           );
-          decodeBuffer.writeln(
+          fieldDecodeLines.add(
             '    $safeName: map.containsKey($fieldKey)'
             ' ? Optional.of(${mappedField.decode('map[$fieldKey]')})'
             " : const Optional.absent(),",
           );
         } else {
+          decodeBuffer
+            ..writeln('  if (!map.containsKey($fieldKey)) {')
+            ..writeln(
+              '    throw FormatException('
+              '${dartSingleQuotedString('Missing required field "$rawName" for $typeName')}'
+              ');',
+            )
+            ..writeln('  }');
           encodeBuffer.write(
             '$fieldKey: ${mappedField.encode(safeName)},',
           );
-          decodeBuffer.writeln(
+          fieldDecodeLines.add(
             "    $safeName: ${mappedField.decode('map[$fieldKey]')},",
           );
         }
       }
 
       encodeBuffer.write('}');
+      decodeBuffer.writeln('  return (');
+      for (final line in fieldDecodeLines) {
+        decodeBuffer.writeln(line);
+      }
       decodeBuffer
         ..writeln('  );')
         ..write('}');

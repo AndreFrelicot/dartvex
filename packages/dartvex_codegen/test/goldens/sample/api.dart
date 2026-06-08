@@ -56,5 +56,8 @@ Map<String, dynamic> _encodeHealthResult(HealthResult value) {
 
 HealthResult _decodeHealthResult(dynamic raw) {
   final map = expectMap(raw, label: 'HealthResult');
+  if (!map.containsKey('ok')) {
+    throw FormatException('Missing required field "ok" for HealthResult');
+  }
   return (ok: expectBool(map['ok'], label: 'HealthResultOk'));
 }

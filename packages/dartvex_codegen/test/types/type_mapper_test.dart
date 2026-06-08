@@ -364,6 +364,44 @@ void main() {
       );
     });
 
+    test('generated object decoders require fields that decode to null', () {
+      final context = TypeRenderContext();
+      final mapper = TypeMapper();
+
+      mapper.mapType(
+        const ConvexObjectType(
+          <String, ConvexField>{
+            'deletedAt': ConvexField(
+              fieldType: ConvexNullType(),
+              optional: false,
+            ),
+            'archivedAt': ConvexField(
+              fieldType: ConvexNullType(),
+              optional: true,
+            ),
+          },
+        ),
+        suggestedName: 'Tombstone',
+        context: context,
+      );
+
+      final definitions = context.renderDefinitions();
+      expect(
+        definitions,
+        contains("if (!map.containsKey('deletedAt'))"),
+      );
+      expect(
+        definitions,
+        contains(
+          "throw FormatException('Missing required field \"deletedAt\" for Tombstone')",
+        ),
+      );
+      expect(
+        definitions,
+        isNot(contains("if (!map.containsKey('archivedAt'))")),
+      );
+    });
+
     test('deduplicates colliding enum value names', () {
       final context = TypeRenderContext();
       final mapper = TypeMapper();

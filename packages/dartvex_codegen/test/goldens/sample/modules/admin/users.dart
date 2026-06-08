@@ -30,6 +30,14 @@ Map<String, dynamic> _encodeSyncTypeResult(SyncTypeResult value) {
 
 SyncTypeResult _decodeSyncTypeResult(dynamic raw) {
   final map = expectMap(raw, label: 'SyncTypeResult');
+  if (!map.containsKey('success')) {
+    throw FormatException(
+      'Missing required field "success" for SyncTypeResult',
+    );
+  }
+  if (!map.containsKey('count')) {
+    throw FormatException('Missing required field "count" for SyncTypeResult');
+  }
   return (
     success: expectBool(map['success'], label: 'SyncTypeResultSuccess'),
     count: expectBigInt(map['count'], label: 'SyncTypeResultCount'),
@@ -119,6 +127,12 @@ Map<String, dynamic> _encodeSyncTypeArgs(SyncTypeArgs value) {
 
 SyncTypeArgs _decodeSyncTypeArgs(dynamic raw) {
   final map = expectMap(raw, label: 'SyncTypeArgs');
+  if (!map.containsKey('payload')) {
+    throw FormatException('Missing required field "payload" for SyncTypeArgs');
+  }
+  if (!map.containsKey('mode')) {
+    throw FormatException('Missing required field "mode" for SyncTypeArgs');
+  }
   return (
     payload: expectMap(map['payload'], label: 'SyncTypeArgsPayload').map(
       (key, value) => MapEntry(key, _decodeSyncTypeArgsPayloadValue(value)),
