@@ -432,6 +432,59 @@ void main() {
       query.cancel();
     });
 
+    test('a non-first page split starts its first half at the page cursor', () {
+      final source = _FakeSource();
+      final query = ConvexPaginatedQuery(
+        subscribe: source.subscribe,
+        name: 'messages:list',
+        args: const <String, dynamic>{},
+        pageSize: 3,
+      );
+
+      // First page loads normally and reports more data is available.
+      source.pages[0]
+          .emitPage(<dynamic>['a', 'b', 'c'], continueCursor: 'C1', isDone: false);
+      expect(query.loadMore(), isTrue);
+
+      // The second page begins at the first page's continueCursor.
+      expect(source.pages, hasLength(2));
+      final secondPage = source.pages[1];
+      expect(secondPage.cursor, 'C1');
+
+      // It comes back oversized with a split recommendation.
+      secondPage.emitPage(
+        <dynamic>['d', 'e', 'de', 'ee', 'f'],
+        continueCursor: 'C2',
+        isDone: false,
+        splitCursor: 'S2',
+        pageStatus: 'SplitRecommended',
+      );
+
+      // The first split half must start at the page's OWN start cursor ('C1'),
+      // not null. The official client hardcodes `cursor: null`, which is only
+      // correct for the first page; for a later page that would re-read from the
+      // beginning and overlap every earlier page. dartvex keeps the page's start
+      // cursor so the two halves cover exactly the original page's range.
+      expect(source.pages, hasLength(4));
+      final firstHalf = source.pages[2];
+      final secondHalf = source.pages[3];
+      expect(firstHalf.cursor, 'C1');
+      expect(firstHalf.endCursor, 'S2');
+      expect(secondHalf.cursor, 'S2');
+      expect(secondHalf.endCursor, 'C2');
+
+      // No gap or duplicate while the split loads, or after it swaps in.
+      const aggregated = <dynamic>['a', 'b', 'c', 'd', 'e', 'de', 'ee', 'f'];
+      expect(query.current.results, aggregated);
+      firstHalf.emitPage(<dynamic>['d', 'e'], continueCursor: 'S2', isDone: false);
+      secondHalf
+          .emitPage(<dynamic>['de', 'ee', 'f'], continueCursor: 'C2', isDone: false);
+      expect(query.current.results, aggregated);
+      expect(secondPage.canceled, isTrue);
+
+      query.cancel();
+    });
+
     test('seeds split halves synchronously from warm results', () {
       final source = _FakeSource();
       final query = ConvexPaginatedQuery(
