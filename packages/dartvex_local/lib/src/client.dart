@@ -1853,9 +1853,16 @@ class ConvexLocalClient {
     if (idMap.isEmpty) return value;
     if (value is String) return idMap[value] ?? value;
     if (value is Map) {
+      // Remap both keys and values: an offline mutation can reference a
+      // freshly-created local ID as an object key (e.g. a per-document map),
+      // not only as a value. A key that is a resolved local ID is rewritten to
+      // its server ID; any other key passes through unchanged.
       return <String, dynamic>{
         for (final entry in value.entries)
-          entry.key.toString(): _remapIds(entry.value, idMap),
+          (idMap[entry.key.toString()] ?? entry.key.toString()): _remapIds(
+            entry.value,
+            idMap,
+          ),
       };
     }
     if (value is List) return value.map((i) => _remapIds(i, idMap)).toList();
@@ -1881,8 +1888,11 @@ class ConvexLocalClient {
         return;
       }
       if (item is Map) {
-        for (final entry in item.values) {
-          visit(entry);
+        // Keys can carry local IDs too (see _remapIds), so an unresolved local
+        // ID used as a key must also block replay of the dependent mutation.
+        for (final entry in item.entries) {
+          visit(entry.key);
+          visit(entry.value);
         }
         return;
       }

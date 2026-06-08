@@ -45,6 +45,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of being sent to the backend with stale local IDs.
 - Local ID replay remaps can now be captured from create mutations returning
   either a string id or an object containing `_id`/`id`.
+- Local ID replay remaps now also rewrite `local-*` IDs used as object **keys**
+  in a queued mutation's args, not just as values, so an offline mutation keyed
+  by a freshly-created document is replayed against the real server ID. The
+  unresolved-ID drop guard likewise inspects keys, so a dependent keyed by a
+  failed create is dropped instead of sent with a stale local ID.
 - Stops in-flight replay cleanly during `dispose()`, preventing writes to closed
   SQLite stores or closed mutation streams after a delayed remote mutation
   returns.

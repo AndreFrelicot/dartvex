@@ -1275,6 +1275,57 @@ void main() {
       expect(advanceCall.args['taskId'], 'server-task-object');
     });
 
+    test('replay remaps local IDs used as map keys', () async {
+      await localClient.dispose();
+      store = await SqliteLocalStore.openInMemory();
+      remoteClient = FakeRemoteClient();
+      remoteClient.queryResults['tasks:list'] = <dynamic>[];
+      localClient = await ConvexLocalClient.openWithRemote(
+        remoteClient: remoteClient,
+        config: LocalClientConfig(
+          cacheStorage: store,
+          queueStorage: store,
+          mutationHandlers: const <LocalMutationHandler>[CreateTaskHandler()],
+        ),
+      );
+
+      await localClient.query('tasks:list');
+      await localClient.setNetworkMode(LocalNetworkMode.offline);
+
+      await localClient.mutate('tasks:create', <String, dynamic>{
+        'title': 'Keyed',
+      });
+      final createOpId =
+          localClient
+                  .currentPendingMutations
+                  .first
+                  .optimisticData!['operationId']
+              as String;
+      // Use the freshly-created local operationId as a MAP KEY (not just a
+      // value) in the next offline mutation's args.
+      await localClient.mutate('scores:set', <String, dynamic>{
+        'byTask': <String, dynamic>{createOpId: 10},
+      });
+
+      remoteClient.mutationResults['tasks:create'] = <Object?>[
+        'server-task-keyed',
+      ];
+      remoteClient.mutationResults['scores:set'] = <Object?>['ok'];
+
+      await localClient.setNetworkMode(LocalNetworkMode.auto);
+      await pumpEventQueue();
+
+      expect(localClient.currentPendingMutations, isEmpty);
+      expect(remoteClient.mutationCalls, hasLength(2));
+      final setCall = remoteClient.mutationCalls[1];
+      expect(setCall.name, 'scores:set');
+      final byTask = (setCall.args['byTask'] as Map).cast<String, dynamic>();
+      // The local-ID key must be remapped to the server ID, not left stale.
+      expect(byTask.containsKey('server-task-keyed'), isTrue);
+      expect(byTask.containsKey(createOpId), isFalse);
+      expect(byTask['server-task-keyed'], 10);
+    });
+
     test('replay drops dependents when producer local ID fails', () async {
       await localClient.dispose();
       store = await SqliteLocalStore.openInMemory();
