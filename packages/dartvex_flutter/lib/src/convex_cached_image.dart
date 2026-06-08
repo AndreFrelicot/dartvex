@@ -1,11 +1,11 @@
 import 'dart:io';
 
-import 'package:dartvex/dartvex.dart' show ConvexStorageException;
 import 'package:flutter/widgets.dart';
 
 import 'asset_cache.dart';
 import 'provider.dart';
 import 'runtime_client.dart';
+import 'storage_url.dart';
 
 /// Widget that displays an image from Convex storage using a disk cache.
 ///
@@ -185,12 +185,7 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
         return;
       }
 
-      final urlStr = url as String?;
-      if (urlStr == null || urlStr.isEmpty) {
-        throw ConvexStorageException(
-          'No URL returned for storageId $storageId',
-        );
-      }
+      final urlStr = requireStorageUrl(url, storageId);
 
       final file = await cache.prefetch(
         storageId,

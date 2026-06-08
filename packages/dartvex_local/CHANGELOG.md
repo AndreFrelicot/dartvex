@@ -75,6 +75,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Falls back to cached query data on retryable remote failures.
 - Preserves structured remote query error data and server log lines in the
   local runtime adapter.
+- `ConvexLocalClient.openWithRemote` now respects
+  `LocalClientConfig.disposeRemoteClient`, leaving caller-owned custom remotes
+  alive by default and disposing them only when explicitly configured.
 
 ## [0.1.2] - 2026-04-30
 

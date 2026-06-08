@@ -460,7 +460,13 @@ class LocalClientConfig {
   /// Maximum time spent waiting for a remote cache refresh after replay.
   final Duration refreshQueryTimeout;
 
-  /// Whether a wrapped remote client should be disposed automatically.
+  /// Whether the caller-supplied remote client should be disposed automatically.
+  ///
+  /// With [ConvexLocalClient.open], this controls whether the wrapped
+  /// [ConvexClient] is disposed when the local client closes. The internal
+  /// adapter is always disposed so remote subscriptions are released. With
+  /// [ConvexLocalClient.openWithRemote], this controls whether the supplied
+  /// [LocalRemoteClient] is disposed when the local client closes.
   final bool disposeRemoteClient;
 
   /// Minimum log level emitted by Dartvex Local internals.
@@ -477,6 +483,7 @@ class ConvexLocalClient {
     this._config,
     this._queryCache,
     this._mutationQueue,
+    this._disposeRemoteClient,
   ) : _networkMode = _config.initialNetworkMode,
       _currentConnectionState = LocalConnectionState.online,
       _lastRemoteConnectionState = _remoteClient.currentConnectionState;
@@ -486,12 +493,13 @@ class ConvexLocalClient {
     required ConvexClient client,
     required LocalClientConfig config,
   }) {
-    return openWithRemote(
+    return _openWithRemote(
       remoteClient: ConvexRemoteClientAdapter(
         client,
         disposeClient: config.disposeRemoteClient,
       ),
       config: config,
+      disposeRemoteClient: true,
     );
   }
 
@@ -499,6 +507,18 @@ class ConvexLocalClient {
   static Future<ConvexLocalClient> openWithRemote({
     required LocalRemoteClient remoteClient,
     required LocalClientConfig config,
+  }) {
+    return _openWithRemote(
+      remoteClient: remoteClient,
+      config: config,
+      disposeRemoteClient: config.disposeRemoteClient,
+    );
+  }
+
+  static Future<ConvexLocalClient> _openWithRemote({
+    required LocalRemoteClient remoteClient,
+    required LocalClientConfig config,
+    required bool disposeRemoteClient,
   }) async {
     final queryCache = QueryCache(
       storage: config.cacheStorage,
@@ -514,6 +534,7 @@ class ConvexLocalClient {
       config,
       queryCache,
       mutationQueue,
+      disposeRemoteClient,
     );
     await client._initialize();
     return client;
@@ -523,6 +544,7 @@ class ConvexLocalClient {
   final LocalClientConfig _config;
   final QueryCache _queryCache;
   final MutationQueue _mutationQueue;
+  final bool _disposeRemoteClient;
 
   final StreamController<LocalConnectionState> _connectionStateController =
       StreamController<LocalConnectionState>.broadcast(sync: true);
@@ -1942,7 +1964,9 @@ class ConvexLocalClient {
       await _config.queueStorage.close();
     }
 
-    _remoteClient.dispose();
+    if (_disposeRemoteClient) {
+      _remoteClient.dispose();
+    }
   }
 }
 

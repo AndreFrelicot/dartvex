@@ -77,6 +77,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Preserves structured query error data and server log lines in runtime errors.
 - Supports action-based storage URL resolvers in `ConvexImage` and
   `ConvexCachedImage`.
+- Normalizes malformed storage URL resolver results in `ConvexImage` and
+  `ConvexCachedImage` to `ConvexStorageException`, instead of surfacing raw
+  cast errors for non-string values.
 - Excludes build artifacts from the package archive.
 
 ## [0.1.4] - 2026-04-30

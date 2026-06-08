@@ -57,6 +57,7 @@ void main() {
 
     tearDown(() async {
       await localClient.dispose();
+      remoteClient.dispose();
     });
 
     test('synchronous cancel while delivering an event does not throw '
@@ -1649,6 +1650,36 @@ void main() {
       expect(() => localClient.mutate('test:m'), throwsA(isA<StateError>()));
       expect(() => localClient.action('test:a'), throwsA(isA<StateError>()));
     });
+
+    test(
+      'openWithRemote leaves caller-owned remote alive by default',
+      () async {
+        await localClient.dispose();
+
+        expect(remoteClient.disposed, isFalse);
+      },
+    );
+
+    test(
+      'openWithRemote disposes caller-owned remote when configured',
+      () async {
+        await localClient.dispose();
+        store = await SqliteLocalStore.openInMemory();
+        remoteClient = FakeRemoteClient();
+        localClient = await ConvexLocalClient.openWithRemote(
+          remoteClient: remoteClient,
+          config: LocalClientConfig(
+            cacheStorage: store,
+            queueStorage: store,
+            disposeRemoteClient: true,
+          ),
+        );
+
+        await localClient.dispose();
+
+        expect(remoteClient.disposed, isTrue);
+      },
+    );
   });
 
   group('SqliteLocalStore', () {
@@ -2002,6 +2033,7 @@ class FakeRemoteClient implements LocalRemoteClient {
       StreamController<LocalRemoteConnectionState>.broadcast(sync: true);
   LocalRemoteConnectionState _currentConnectionState =
       LocalRemoteConnectionState.connected;
+  bool disposed = false;
 
   @override
   Stream<LocalRemoteConnectionState> get connectionState =>
@@ -2021,6 +2053,10 @@ class FakeRemoteClient implements LocalRemoteClient {
 
   @override
   void dispose() {
+    if (disposed) {
+      return;
+    }
+    disposed = true;
     unawaited(_connectionStateController.close());
   }
 
