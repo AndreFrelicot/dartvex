@@ -157,6 +157,32 @@ void main() {
       expect(session, isNull);
     });
 
+    test('getSession throws retryable exception on server errors', () async {
+      final mock = MockClient((request) async {
+        if (request.url.path == '/api/auth/get-session') {
+          return http.Response(
+            jsonEncode({'message': 'temporary outage'}),
+            503,
+          );
+        }
+        return http.Response('Not found', 404);
+      });
+      final client = BetterAuthClient(baseUrl: baseUrl, httpClient: mock);
+
+      await expectLater(
+        () => client.getSession(sessionToken: 'ses_valid'),
+        throwsA(
+          isA<BetterAuthException>()
+              .having((error) => error.retryable, 'retryable', isTrue)
+              .having(
+                (error) => error.message,
+                'message',
+                contains('temporary outage'),
+              ),
+        ),
+      );
+    });
+
     test('getSession returns null when session or user is not an object',
         () async {
       final mock = buildMock(

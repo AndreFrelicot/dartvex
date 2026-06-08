@@ -209,7 +209,26 @@ class BetterAuthClient {
       'Authorization': 'Bearer $sessionToken',
     });
 
-    if (response.statusCode != 200) return null;
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      return null;
+    }
+    if (response.statusCode != 200) {
+      var detail = '';
+      try {
+        final body = jsonDecode(response.body);
+        if (body is Map<String, dynamic>) {
+          final message = body['message'];
+          if (message is String && message.isNotEmpty) {
+            detail = ': $message';
+          }
+        }
+      } catch (_) {}
+      throw BetterAuthException(
+        'Better Auth get-session failed '
+        '(status ${response.statusCode})$detail',
+        retryable: response.statusCode >= 500,
+      );
+    }
 
     final body = _decodeObjectBody('/api/auth/get-session', response);
     final session = _asObject(body['session']);

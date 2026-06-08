@@ -15,6 +15,8 @@ void main() {
       String sessionToken = 'ses_mock',
       String convexToken = 'jwt_mock',
       bool sessionValid = true,
+      int? getSessionStatus,
+      Object? getSessionBody,
       int signOutStatus = 200,
       void Function(http.Request request)? onRequest,
     }) {
@@ -66,6 +68,14 @@ void main() {
         }
 
         if (path == '/api/auth/get-session' && request.method == 'GET') {
+          final status = getSessionStatus;
+          if (status != null) {
+            final body = getSessionBody;
+            return http.Response(
+              body is String ? body : jsonEncode(body ?? {}),
+              status,
+            );
+          }
           if (sessionValid) {
             return http.Response(
               jsonEncode({
@@ -152,6 +162,35 @@ void main() {
           contains('No cached'),
         )),
       );
+    });
+
+    test('loginFromCache propagates server errors and keeps cached session',
+        () async {
+      final mock = buildMock(
+        convexToken: 'jwt_login',
+        getSessionStatus: 503,
+        getSessionBody: {'message': 'temporary outage'},
+      );
+      final client = BetterAuthClient(baseUrl: baseUrl, httpClient: mock);
+      final provider = ConvexBetterAuthProvider(client: client);
+
+      provider.email = 'alice@example.com';
+      provider.password = 'password123';
+      final originalSession = await provider.login(onIdToken: (_) {});
+
+      await expectLater(
+        () => provider.loginFromCache(onIdToken: (_) {}),
+        throwsA(
+          isA<BetterAuthException>()
+              .having((error) => error.retryable, 'retryable', isTrue)
+              .having(
+                (error) => error.message,
+                'message',
+                contains('temporary outage'),
+              ),
+        ),
+      );
+      expect(provider.cachedSession, same(originalSession));
     });
 
     test('loginFromCache throws when session expired', () async {
