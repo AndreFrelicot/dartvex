@@ -442,8 +442,8 @@ void main() {
       );
 
       // First page loads normally and reports more data is available.
-      source.pages[0]
-          .emitPage(<dynamic>['a', 'b', 'c'], continueCursor: 'C1', isDone: false);
+      source.pages[0].emitPage(<dynamic>['a', 'b', 'c'],
+          continueCursor: 'C1', isDone: false);
       expect(query.loadMore(), isTrue);
 
       // The second page begins at the first page's continueCursor.
@@ -476,9 +476,10 @@ void main() {
       // No gap or duplicate while the split loads, or after it swaps in.
       const aggregated = <dynamic>['a', 'b', 'c', 'd', 'e', 'de', 'ee', 'f'];
       expect(query.current.results, aggregated);
-      firstHalf.emitPage(<dynamic>['d', 'e'], continueCursor: 'S2', isDone: false);
-      secondHalf
-          .emitPage(<dynamic>['de', 'ee', 'f'], continueCursor: 'C2', isDone: false);
+      firstHalf
+          .emitPage(<dynamic>['d', 'e'], continueCursor: 'S2', isDone: false);
+      secondHalf.emitPage(<dynamic>['de', 'ee', 'f'],
+          continueCursor: 'C2', isDone: false);
       expect(query.current.results, aggregated);
       expect(secondPage.canceled, isTrue);
 

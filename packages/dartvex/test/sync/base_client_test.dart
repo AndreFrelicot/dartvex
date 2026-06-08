@@ -164,7 +164,8 @@ void main() {
       expect(await future, <String, dynamic>{'ok': true});
     });
 
-    test('replayed read-your-writes mutation does not re-log its function lines',
+    test(
+        'replayed read-your-writes mutation does not re-log its function lines',
         () async {
       final client = BaseClient();
       final future = client.mutate('messages:send', <String, dynamic>{

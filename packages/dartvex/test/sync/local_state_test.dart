@@ -172,7 +172,9 @@ void main() {
           modifications: <StateModification>[
             QueryUpdated(
               queryId: queryId,
-              value: const <String, dynamic>{'page': <String>['a']},
+              value: const <String, dynamic>{
+                'page': <String>['a']
+              },
               journal: 'cursor-a',
             ),
           ],
