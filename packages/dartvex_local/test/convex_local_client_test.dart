@@ -10,6 +10,31 @@ import 'package:sqlite3/sqlite3.dart' as sqlite;
 import 'package:test/test.dart';
 
 void main() {
+  group('PendingMutation', () {
+    test('copyWith can preserve, replace, and clear error messages', () {
+      final mutation = PendingMutation(
+        id: 1,
+        mutationName: 'messages:send',
+        args: const <String, dynamic>{'body': 'hello'},
+        createdAt: DateTime.utc(2026),
+        status: PendingMutationStatus.pending,
+        errorMessage: 'retry later',
+      );
+
+      expect(mutation.copyWith().errorMessage, 'retry later');
+      expect(
+        mutation.copyWith(errorMessage: 'offline').errorMessage,
+        'offline',
+      );
+      expect(mutation.copyWith(clearErrorMessage: true).errorMessage, isNull);
+      expect(
+        () =>
+            mutation.copyWith(errorMessage: 'offline', clearErrorMessage: true),
+        throwsArgumentError,
+      );
+    });
+  });
+
   group('ConvexLocalClient', () {
     late SqliteLocalStore store;
     late FakeRemoteClient remoteClient;

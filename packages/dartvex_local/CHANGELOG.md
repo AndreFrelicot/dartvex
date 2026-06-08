@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `PendingMutation.copyWith` can now clear replay error metadata explicitly via
+  `clearErrorMessage`, avoiding stale errors when callers reset queue state.
 - `ConvexLocalClient.mutate` now serializes calls in FIFO order, so concurrent
   mutations can no longer race the "send directly while the queue is empty"
   fast path and commit (or queue) out of call order. Mutations awaited

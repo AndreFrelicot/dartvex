@@ -290,10 +290,22 @@ class PendingMutation {
   final String? errorMessage;
 
   /// Returns a copy with selected queue fields replaced.
+  ///
+  /// Use [clearErrorMessage] to intentionally set [errorMessage] back to null;
+  /// a nullable named parameter cannot distinguish "not passed" from null.
   PendingMutation copyWith({
     PendingMutationStatus? status,
     String? errorMessage,
+    bool clearErrorMessage = false,
   }) {
+    if (clearErrorMessage && errorMessage != null) {
+      throw ArgumentError.value(
+        errorMessage,
+        'errorMessage',
+        'Cannot provide an error message while clearing it.',
+      );
+    }
+
     return PendingMutation(
       id: id,
       mutationName: mutationName,
@@ -301,7 +313,9 @@ class PendingMutation {
       optimisticData: optimisticData,
       createdAt: createdAt,
       status: status ?? this.status,
-      errorMessage: errorMessage ?? this.errorMessage,
+      errorMessage: clearErrorMessage
+          ? null
+          : errorMessage ?? this.errorMessage,
     );
   }
 }
