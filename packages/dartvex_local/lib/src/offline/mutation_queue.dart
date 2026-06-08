@@ -76,6 +76,16 @@ class MutationQueue {
   /// Clears all persisted ID mappings.
   Future<void> clearIdRemaps() => _storage.clearIdRemaps();
 
+  /// Persists a locally generated ID whose producing mutation failed.
+  Future<void> saveFailedLocalId(String localId) =>
+      _storage.saveFailedLocalId(localId);
+
+  /// Loads locally generated IDs whose producing mutations failed.
+  Future<Set<String>> loadFailedLocalIds() => _storage.loadFailedLocalIds();
+
+  /// Clears all persisted failed local IDs.
+  Future<void> clearFailedLocalIds() => _storage.clearFailedLocalIds();
+
   PendingMutation _toPendingMutation(StoredPendingMutation stored) {
     return PendingMutation(
       id: stored.id,

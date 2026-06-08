@@ -58,6 +58,8 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 > `QueueStorage` interfaces yourself (for example over IndexedDB) and pass them
 > in `LocalClientConfig`. `CacheStorage.deleteCacheEntry` must physically remove
 > a single entry so optimistic rollback and cache expiry stay correct.
+> `QueueStorage` must also persist failed locally-generated IDs so replay can
+> keep dependent mutations from being sent with stale IDs after a restart.
 
 ## Installation
 

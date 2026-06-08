@@ -1539,6 +1539,90 @@ void main() {
       },
     );
 
+    test(
+      'replay does not treat generated-shaped user strings as local IDs',
+      () async {
+        remoteClient.queryResults['messages:listPublic'] = <dynamic>[];
+        await localClient.query('messages:listPublic');
+        await localClient.setNetworkMode(LocalNetworkMode.offline);
+
+        await localClient.mutate('messages:sendPublic', <String, dynamic>{
+          'author': 'User',
+          'text': 'local-123-456',
+          'nested': <String, dynamic>{
+            'local-987-654': <String>['local-222-333'],
+          },
+        });
+
+        remoteClient.mutationResults['messages:sendPublic'] = <Object?>[
+          'msg-id-3',
+        ];
+
+        await localClient.setNetworkMode(LocalNetworkMode.auto);
+        await pumpEventQueue();
+
+        expect(localClient.currentPendingMutations, isEmpty);
+        final replayedArgs = remoteClient.mutationCalls.first.args;
+        expect(replayedArgs['text'], 'local-123-456');
+        expect(
+          (replayedArgs['nested'] as Map).cast<String, dynamic>(),
+          <String, dynamic>{
+            'local-987-654': <String>['local-222-333'],
+          },
+        );
+      },
+    );
+
+    test(
+      'replay does not treat future operation IDs as current dependencies',
+      () async {
+        await localClient.dispose();
+        store = await SqliteLocalStore.openInMemory();
+        const codec = JsonValueCodec();
+        const futureOperationId = 'local-200-2';
+        await store.enqueue(
+          mutationName: 'messages:sendPublic',
+          argsJson: codec.encode(<String, dynamic>{
+            'author': 'User',
+            'text': futureOperationId,
+          }),
+          optimisticJson: null,
+          createdAtMillis: 1,
+        );
+        await store.enqueue(
+          mutationName: 'tasks:create',
+          argsJson: codec.encode(<String, dynamic>{'title': 'Future'}),
+          optimisticJson: codec.encode(<String, dynamic>{
+            'operationId': futureOperationId,
+            'targets': <dynamic>[],
+            'rollback': <dynamic>[],
+          }),
+          createdAtMillis: 2,
+        );
+
+        remoteClient = FakeRemoteClient();
+        remoteClient.mutationResults['messages:sendPublic'] = <Object?>[
+          'msg-id-4',
+        ];
+        remoteClient.mutationResults['tasks:create'] = <Object?>[
+          'server-task-future',
+        ];
+        localClient = await ConvexLocalClient.openWithRemote(
+          remoteClient: remoteClient,
+          config: LocalClientConfig(cacheStorage: store, queueStorage: store),
+        );
+
+        await pumpEventQueue();
+
+        expect(localClient.currentPendingMutations, isEmpty);
+        expect(remoteClient.mutationCalls, hasLength(2));
+        expect(
+          remoteClient.mutationCalls.first.args['text'],
+          futureOperationId,
+        );
+      },
+    );
+
     test('crash recovery: new client picks up persisted remaps', () async {
       await localClient.dispose();
       store = await SqliteLocalStore.openInMemory();
@@ -1608,15 +1692,97 @@ void main() {
       );
     });
 
+    test(
+      'crash recovery: new client drops dependents of failed local IDs',
+      () async {
+        await localClient.dispose();
+        store = await SqliteLocalStore.openInMemory();
+        remoteClient = FakeRemoteClient();
+        remoteClient.queryResults['tasks:list'] = <dynamic>[];
+
+        final firstClient = await ConvexLocalClient.openWithRemote(
+          remoteClient: remoteClient,
+          config: LocalClientConfig(
+            cacheStorage: store,
+            queueStorage: store,
+            mutationHandlers: const <LocalMutationHandler>[
+              CreateTaskHandler(),
+              AdvanceTaskHandler(),
+            ],
+          ),
+        );
+
+        await firstClient.query('tasks:list');
+        await firstClient.setNetworkMode(LocalNetworkMode.offline);
+
+        await firstClient.mutate('tasks:create', <String, dynamic>{
+          'title': 'Failed before crash',
+        });
+        final opId =
+            firstClient
+                    .currentPendingMutations
+                    .first
+                    .optimisticData!['operationId']
+                as String;
+        await firstClient.mutate('tasks:advance', <String, dynamic>{
+          'taskId': opId,
+        });
+
+        // Simulate: create failed and was removed, then the process crashed before
+        // the dependent mutation was processed. The failed local ID tombstone must
+        // survive the restart so the dependent is dropped instead of replayed.
+        await store.saveFailedLocalId(opId);
+        final allMutations = await store.loadAll();
+        await store.remove(allMutations.first.id);
+
+        remoteClient = FakeRemoteClient();
+        remoteClient
+          ..setConnectionState(LocalRemoteConnectionState.disconnected)
+          ..queryResults['tasks:list'] = <dynamic>[]
+          ..mutationResults['tasks:advance'] = <Object?>['ok'];
+        localClient = await ConvexLocalClient.openWithRemote(
+          remoteClient: remoteClient,
+          config: LocalClientConfig(
+            cacheStorage: store,
+            queueStorage: store,
+            mutationHandlers: const <LocalMutationHandler>[
+              CreateTaskHandler(),
+              AdvanceTaskHandler(),
+            ],
+          ),
+        );
+        final conflicts = <LocalMutationConflict>[];
+        localClient.onConflict = conflicts.add;
+
+        remoteClient.setConnectionState(LocalRemoteConnectionState.connected);
+        await pumpEventQueue();
+
+        expect(localClient.currentPendingMutations, isEmpty);
+        expect(remoteClient.mutationCalls, isEmpty);
+        expect(conflicts, hasLength(1));
+        expect(conflicts.single.mutationName, 'tasks:advance');
+        expect(
+          conflicts.single.error.toString(),
+          contains('unresolved local ID'),
+        );
+        expect(await store.loadFailedLocalIds(), isEmpty);
+      },
+    );
+
     test('clearQueue also clears remaps', () async {
       await store.saveIdRemap('local-123', 'server-456');
+      await store.saveFailedLocalId('local-789-101');
       final remapsBefore = await store.loadIdRemaps();
+      final failedIdsBefore = await store.loadFailedLocalIds();
       expect(remapsBefore, isNotEmpty);
+      expect(failedIdsBefore, isNotEmpty);
 
       await localClient.clearQueue();
 
       final remapsAfter = await store.loadIdRemaps();
+      final failedIdsAfter = await store.loadFailedLocalIds();
       expect(remapsAfter, isEmpty);
+      expect(failedIdsAfter, isEmpty);
     });
 
     // ---------------------------------------------------------------
@@ -1831,7 +1997,7 @@ void main() {
           (database.select('PRAGMA user_version;').single['user_version']
                   as num)
               .toInt();
-      expect(version, 1);
+      expect(version, 2);
     });
 
     test('closes database handle when migration fails', () async {

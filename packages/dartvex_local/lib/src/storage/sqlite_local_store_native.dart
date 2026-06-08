@@ -111,6 +111,7 @@ class SqliteLocalStore
     final database = _assertOpen();
     database.execute('DELETE FROM mutation_queue;');
     database.execute('DELETE FROM id_remap;');
+    database.execute('DELETE FROM failed_local_id;');
   }
 
   @override
@@ -279,6 +280,35 @@ class SqliteLocalStore
   }
 
   @override
+  /// Persists a local document ID whose producing mutation failed.
+  Future<void> saveFailedLocalId(String localId) async {
+    final database = _assertOpen();
+    database.execute(
+      '''
+      INSERT INTO failed_local_id (local_id)
+      VALUES (?)
+      ON CONFLICT(local_id) DO NOTHING;
+      ''',
+      <Object?>[localId],
+    );
+  }
+
+  @override
+  /// Loads all local document IDs whose producing mutations failed.
+  Future<Set<String>> loadFailedLocalIds() async {
+    final database = _assertOpen();
+    final rows = database.select('SELECT local_id FROM failed_local_id;');
+    return {for (final row in rows) row['local_id'] as String};
+  }
+
+  @override
+  /// Clears all persisted failed local IDs.
+  Future<void> clearFailedLocalIds() async {
+    final database = _assertOpen();
+    database.execute('DELETE FROM failed_local_id;');
+  }
+
+  @override
   /// Inserts or updates a cached query [entry].
   Future<void> upsert(StoredCacheEntry entry) async {
     final database = _assertOpen();
@@ -346,6 +376,14 @@ class SqliteLocalStore
         );
         ''');
       database.execute('PRAGMA user_version = 1;');
+    }
+    if (currentVersion < 2) {
+      database.execute('''
+        CREATE TABLE IF NOT EXISTS failed_local_id (
+          local_id TEXT PRIMARY KEY
+        );
+        ''');
+      database.execute('PRAGMA user_version = 2;');
     }
     database.execute('''
       CREATE INDEX IF NOT EXISTS idx_query_cache_updated_at

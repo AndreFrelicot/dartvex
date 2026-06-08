@@ -1076,6 +1076,7 @@ class ConvexLocalClient {
     try {
       // Recover any ID remaps persisted from a prior crash.
       final idRemaps = await _mutationQueue.loadIdRemaps();
+      final failedLocalIds = await _mutationQueue.loadFailedLocalIds();
       var iteration = 0;
       while (!_disposed &&
           _pendingMutations.isNotEmpty &&
@@ -1097,14 +1098,25 @@ class ConvexLocalClient {
         // Remap any local IDs in args to server IDs.
         final remappedArgs =
             _remapIds(mutation.args, idRemaps) as Map<String, dynamic>;
-        final unresolvedLocalIds = _unresolvedLocalIds(remappedArgs, idRemaps);
+        final unresolvedLocalIds = _unresolvedLocalIds(
+          remappedArgs,
+          idRemaps,
+          _knownGeneratedLocalIds(
+            _pendingMutations,
+            failedLocalIds,
+            beforeMutationId: mutation.id,
+          ),
+        );
         if (unresolvedLocalIds.isNotEmpty) {
           final error = StateError(
             'Cannot replay ${mutation.mutationName} with unresolved local '
             'ID(s): ${unresolvedLocalIds.join(', ')}',
           );
           _log('replay:unresolved-local-id', '[$iteration] ${error.message}');
-          await _dropFailedMutation(mutation, error);
+          final failedLocalId = await _dropFailedMutation(mutation, error);
+          if (failedLocalId != null) {
+            failedLocalIds.add(failedLocalId);
+          }
           continue;
         }
         if (!const DeepCollectionEquality().equals(
@@ -1170,7 +1182,10 @@ class ConvexLocalClient {
             hitRetryableError = true;
             break;
           }
-          await _dropFailedMutation(mutation, error);
+          final failedLocalId = await _dropFailedMutation(mutation, error);
+          if (failedLocalId != null) {
+            failedLocalIds.add(failedLocalId);
+          }
         } catch (error, stack) {
           if (_disposed) {
             _log('replay:disposed', '[$iteration] stopping after error');
@@ -1188,12 +1203,20 @@ class ConvexLocalClient {
             hitRetryableError = true;
             break;
           }
-          await _dropFailedMutation(mutation, error);
+          final failedLocalId = await _dropFailedMutation(mutation, error);
+          if (failedLocalId != null) {
+            failedLocalIds.add(failedLocalId);
+          }
         }
       }
       // Clean up remap table when the queue is fully drained.
-      if (!_disposed && _pendingMutations.isEmpty && idRemaps.isNotEmpty) {
-        await _mutationQueue.clearIdRemaps();
+      if (!_disposed && _pendingMutations.isEmpty) {
+        if (idRemaps.isNotEmpty) {
+          await _mutationQueue.clearIdRemaps();
+        }
+        if (failedLocalIds.isNotEmpty) {
+          await _mutationQueue.clearFailedLocalIds();
+        }
       }
       _log(
         'replay:end',
@@ -1238,10 +1261,14 @@ class ConvexLocalClient {
     return Duration(seconds: seconds.clamp(1, 15));
   }
 
-  Future<void> _dropFailedMutation(
+  Future<String?> _dropFailedMutation(
     PendingMutation mutation,
     Object error,
   ) async {
+    final failedLocalId = _generatedOperationId(mutation);
+    if (failedLocalId != null) {
+      await _mutationQueue.saveFailedLocalId(failedLocalId);
+    }
     await _mutationQueue.remove(mutation.id);
     _pendingMutations = await _mutationQueue.loadAll();
     _rebuildPendingWriteCounts();
@@ -1260,6 +1287,7 @@ class ConvexLocalClient {
       _log('replay:on-conflict-error', '$callbackError\n$stackTrace');
     }
     await _refreshTargetsFromMutation(mutation);
+    return failedLocalId;
   }
 
   Future<void> _refreshTargetsFromMutation(PendingMutation mutation) async {
@@ -1874,6 +1902,32 @@ class ConvexLocalClient {
     return 'local-$micros-$_operationCounter';
   }
 
+  static String? _generatedOperationId(PendingMutation mutation) {
+    final operationId = mutation.optimisticData?['operationId'];
+    if (operationId is String && _isGeneratedLocalId(operationId)) {
+      return operationId;
+    }
+    return null;
+  }
+
+  static Set<String> _knownGeneratedLocalIds(
+    Iterable<PendingMutation> mutations,
+    Set<String> failedLocalIds, {
+    required int beforeMutationId,
+  }) {
+    final ids = <String>{...failedLocalIds};
+    for (final mutation in mutations) {
+      if (mutation.id >= beforeMutationId) {
+        continue;
+      }
+      final operationId = _generatedOperationId(mutation);
+      if (operationId != null) {
+        ids.add(operationId);
+      }
+    }
+    return ids;
+  }
+
   static String? _extractServerId(dynamic result) {
     if (result is String && result.isNotEmpty) {
       return result;
@@ -1939,12 +1993,13 @@ class ConvexLocalClient {
   static List<String> _unresolvedLocalIds(
     dynamic value,
     Map<String, String> idMap,
+    Set<String> knownLocalIds,
   ) {
     final ids = <String>{};
 
     void visit(dynamic item) {
       if (item is String) {
-        if (_isGeneratedLocalId(item) && !idMap.containsKey(item)) {
+        if (knownLocalIds.contains(item) && !idMap.containsKey(item)) {
           ids.add(item);
         }
         return;

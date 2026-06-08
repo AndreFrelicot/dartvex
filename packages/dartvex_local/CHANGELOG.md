@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   single-entry deletion is required for correct optimistic rollback. The
   optional `CacheStorageMaintenance` interface now only covers maximum-entry
   pruning.
+- `QueueStorage` implementations must now provide
+  `saveFailedLocalId`, `loadFailedLocalIds`, and `clearFailedLocalIds`, because
+  replay must persist failed locally-generated IDs to keep dependent mutations
+  from being sent with stale IDs after a restart.
 
 ### Fixed
 
@@ -54,6 +58,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mutation's rollback baseline to the restored cache value, so dropping a second
   mutation that touches the same query can no longer resurface the first,
   already-dropped mutation when the best-effort post-drop server refresh fails.
+- Replay now tracks actual locally generated IDs instead of treating every
+  `local-<digits>-<digits>` shaped user string as an unresolved local ID, while
+  persisting failed local IDs so dependents are still dropped correctly after a
+  crash.
 - Stops in-flight replay cleanly during `dispose()`, preventing writes to closed
   SQLite stores or closed mutation streams after a delayed remote mutation
   returns.

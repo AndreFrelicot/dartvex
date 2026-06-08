@@ -140,4 +140,28 @@ class SqliteLocalStore implements CacheStorage, QueueStorage {
       'SqliteLocalStore is not available on this platform',
     );
   }
+
+  @override
+  /// Throws because SQLite storage is unavailable on this platform.
+  Future<void> saveFailedLocalId(String localId) {
+    throw UnsupportedError(
+      'SqliteLocalStore is not available on this platform',
+    );
+  }
+
+  @override
+  /// Throws because SQLite storage is unavailable on this platform.
+  Future<Set<String>> loadFailedLocalIds() {
+    throw UnsupportedError(
+      'SqliteLocalStore is not available on this platform',
+    );
+  }
+
+  @override
+  /// Throws because SQLite storage is unavailable on this platform.
+  Future<void> clearFailedLocalIds() {
+    throw UnsupportedError(
+      'SqliteLocalStore is not available on this platform',
+    );
+  }
 }

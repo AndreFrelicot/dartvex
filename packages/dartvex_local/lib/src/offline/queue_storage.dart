@@ -73,6 +73,15 @@ abstract class QueueStorage {
   /// Clears all persisted ID remappings.
   Future<void> clearIdRemaps();
 
+  /// Persists a locally generated ID whose producing mutation failed.
+  Future<void> saveFailedLocalId(String localId);
+
+  /// Loads locally generated IDs whose producing mutations failed.
+  Future<Set<String>> loadFailedLocalIds();
+
+  /// Clears all persisted failed local IDs.
+  Future<void> clearFailedLocalIds();
+
   /// Releases any storage resources held by the implementation.
   Future<void> close();
 }
