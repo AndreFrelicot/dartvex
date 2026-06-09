@@ -160,6 +160,40 @@ void main() {
       expect(state.hasSyncedPastLastReconnect(), isTrue);
     });
 
+    test('a reconnect with no queries still re-declares an empty query set', () {
+      // Official parity: the client's restart() builds a
+      // ModifyQuerySet(baseVersion: 0, newVersion: 1) unconditionally and sends
+      // it on every reconnect, even with no active queries, advancing the
+      // query-set version to 1.
+      final state = LocalSyncState();
+
+      final messages = state.prepareReconnect();
+
+      final modifyQuerySet = messages.whereType<ModifyQuerySet>().single;
+      expect(modifyQuerySet.baseVersion, 0);
+      expect(modifyQuerySet.newVersion, 1);
+      expect(modifyQuerySet.modifications, isEmpty);
+      expect(state.querySetVersion, 1);
+      // No queries are outstanding, so the client is immediately re-synced.
+      expect(state.hasSyncedPastLastReconnect(), isTrue);
+    });
+
+    test('a reconnect with auth and no queries sends auth then an empty query '
+        'set', () {
+      final state = LocalSyncState();
+      state.setAuth(tokenType: 'User', value: 'token-123');
+
+      final messages = state.prepareReconnect();
+
+      // Auth is re-sent first, then the (empty) query set, matching the official
+      // client's reconnect send order.
+      expect(messages, hasLength(2));
+      expect(messages.first, isA<Authenticate>());
+      final modifyQuerySet = messages.last as ModifyQuerySet;
+      expect(modifyQuerySet.newVersion, 1);
+      expect(modifyQuerySet.modifications, isEmpty);
+    });
+
     test('transitions can clear a stored query journal', () {
       final state = LocalSyncState();
       final queryId =

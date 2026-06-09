@@ -250,7 +250,7 @@ void main() {
       });
 
       final reconnectMessages = client.prepareReconnect();
-      final mutation = reconnectMessages.single as Mutation;
+      final mutation = reconnectMessages.whereType<Mutation>().single;
 
       client.receive(
         MutationResponse(
@@ -281,9 +281,8 @@ void main() {
       client.handleDisconnect('socket closed');
       final reconnectMessages = client.prepareReconnect();
 
-      expect(reconnectMessages.single, isA<Mutation>());
-      expect(
-          (reconnectMessages.single as Mutation).requestId, mutation.requestId);
+      final replayedMutation = reconnectMessages.whereType<Mutation>().single;
+      expect(replayedMutation.requestId, mutation.requestId);
 
       client.receive(
         MutationResponse(
@@ -317,7 +316,9 @@ void main() {
       client.cancelMutation(request.requestId, TimeoutException('timed out'));
 
       await expectation;
-      expect(client.prepareReconnect(), isEmpty);
+      // The empty query set is re-declared on reconnect (official parity); the
+      // canceled mutation must not be among the replayed requests.
+      expect(client.prepareReconnect().whereType<RequestMessage>(), isEmpty);
     });
 
     test('completed mutation is replayed until transition catches up',
@@ -346,7 +347,9 @@ void main() {
       client.handleDisconnect('socket closed');
       final reconnectMessages = client.prepareReconnect();
       expect(
-          (reconnectMessages.single as Mutation).requestId, mutation.requestId);
+        reconnectMessages.whereType<Mutation>().single.requestId,
+        mutation.requestId,
+      );
 
       client.receive(
         MutationResponse(
@@ -412,7 +415,9 @@ void main() {
       client.handleDisconnect('socket closed');
 
       await expectation;
-      expect(client.prepareReconnect(), isEmpty);
+      // The empty query set is re-declared on reconnect (official parity); the
+      // failed in-flight action must not be replayed.
+      expect(client.prepareReconnect().whereType<RequestMessage>(), isEmpty);
     });
 
     test('canceled action is not replayed after reconnect', () async {
@@ -428,7 +433,9 @@ void main() {
       client.cancelAction(request.requestId, TimeoutException('timed out'));
 
       await expectation;
-      expect(client.prepareReconnect(), isEmpty);
+      // The empty query set is re-declared on reconnect (official parity); the
+      // canceled action must not be among the replayed requests.
+      expect(client.prepareReconnect().whereType<RequestMessage>(), isEmpty);
     });
 
     test('unsent action is sent on reconnect', () async {
@@ -451,7 +458,7 @@ void main() {
       expect(completed, isFalse);
 
       final reconnectMessages = client.prepareReconnect();
-      final action = reconnectMessages.single as Action;
+      final action = reconnectMessages.whereType<Action>().single;
       client.receive(
         ActionResponse(
           requestId: action.requestId,
@@ -474,9 +481,13 @@ void main() {
 
       final reconnectMessages = client.prepareReconnect();
 
-      expect(reconnectMessages, hasLength(2));
-      expect(reconnectMessages.first, isA<Action>());
-      expect(reconnectMessages.last, isA<Mutation>());
+      // The reconnect re-declares the (empty) query set first, then replays the
+      // requests in their original order (action before mutation).
+      final replayedRequests =
+          reconnectMessages.whereType<RequestMessage>().toList(growable: false);
+      expect(replayedRequests, hasLength(2));
+      expect(replayedRequests.first, isA<Action>());
+      expect(replayedRequests.last, isA<Mutation>());
     });
 
     test('failPendingRequests completes queued requests with error', () async {
@@ -498,7 +509,9 @@ void main() {
       client.failPendingRequests('ConvexClient has been disposed');
 
       await expectation;
-      expect(client.prepareReconnect(), isEmpty);
+      // The empty query set is re-declared on reconnect (official parity); no
+      // failed request must be replayed.
+      expect(client.prepareReconnect().whereType<RequestMessage>(), isEmpty);
     });
 
     test('ping is ignored by sync layer', () {

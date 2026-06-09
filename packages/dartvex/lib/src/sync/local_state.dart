@@ -508,10 +508,12 @@ class LocalSyncState {
       _outstandingAuthOlderThanRestart = false;
     }
 
-    if (_queriesByToken.isEmpty) {
-      return messages;
-    }
-
+    // Always re-declare the query set on reconnect, even when it is empty, so
+    // the wire sequence matches the official client's `restart()`, which builds
+    // a ModifyQuerySet(baseVersion: 0, newVersion: 1) unconditionally and sends
+    // it on every reconnect (client.ts). An empty query set still advances
+    // querySetVersion to 1, exactly as the official client does; the server
+    // treats it like any client that has declared no queries yet.
     querySetVersion = 1;
     final modifications = <QuerySetOperation>[];
     for (final state in _queriesByToken.values) {

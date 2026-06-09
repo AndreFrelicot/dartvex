@@ -439,7 +439,12 @@ void main() {
       await settle();
 
       expect(adapter.connectedUrls, hasLength(1));
-      expect(adapter.decodedSentMessages.single['type'], 'Connect');
+      // With no active queries, the handshake re-declares an empty query set
+      // (official parity), so Connect is followed by an empty ModifyQuerySet.
+      expect(
+        adapter.decodedSentMessages.map((message) => message['type']),
+        <String>['Connect', 'ModifyQuerySet'],
+      );
 
       client.dispose();
     });
@@ -1179,8 +1184,8 @@ void main() {
           .where((message) => message['type'] == 'ModifyQuerySet')
           .where((message) {
         final modifications = message['modifications'] as List<dynamic>;
-        return (modifications.single as Map<String, dynamic>)['type'] ==
-            'Remove';
+        return modifications.any((modification) =>
+            (modification as Map<String, dynamic>)['type'] == 'Remove');
       }).toList(growable: false);
       expect(removeMessages, hasLength(1));
 
@@ -1952,8 +1957,12 @@ void main() {
       );
       await settle();
 
+      // The empty handshake query set (official parity) is excluded; the two
+      // identical subscriptions coalesce into a single Add.
       final modifyMessages = adapter.decodedSentMessages
           .where((message) => message['type'] == 'ModifyQuerySet')
+          .where(
+              (message) => (message['modifications'] as List<dynamic>).isNotEmpty)
           .toList();
       expect(modifyMessages, hasLength(1));
 
@@ -1984,6 +1993,8 @@ void main() {
 
       final querySet = adapter.decodedSentMessages
           .where((message) => message['type'] == 'ModifyQuerySet')
+          .where(
+              (message) => (message['modifications'] as List<dynamic>).isNotEmpty)
           .single;
       final queryId = (((querySet['modifications'] as List<dynamic>).single
           as Map<String, dynamic>)['queryId']) as int;

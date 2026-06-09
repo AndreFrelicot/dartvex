@@ -110,6 +110,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Reconnect now re-declares the query set even when it is empty:
+  `prepareReconnect` always emits a `ModifyQuerySet(baseVersion: 0,
+  newVersion: 1)`, matching the official client's `restart()`, which sends one
+  unconditionally on every reconnect. The previous behavior (sending nothing for
+  an empty query set) was equivalent but is now byte-for-byte aligned with the
+  official wire sequence.
 - Query journals now honor the protocol's explicit `null` journal as an empty
   journal, clearing any previously stored cursor before the next reconnect
   replay.
