@@ -11,6 +11,16 @@ It exposes:
 - an optional custom JWT auth provider for the Flutter Demo auth mode and
   integration tests
 
+## Security note (demo only)
+
+This backend is **not production-hardened**. To keep the demo usable without
+signing in, several functions are intentionally **unauthenticated** — e.g.
+`messages:sendPublic` / `clearPublicMessages` and everything in `files.ts`
+(including `add` and `clear`, which write to and can wipe stored blobs). Deploy
+this to a throwaway dev deployment only, don't hand out its URL as if it were a
+real service, and add `ctx.auth.getUserIdentity()` checks before reusing any of
+these patterns in your own app.
+
 ## Install
 
 ```bash
