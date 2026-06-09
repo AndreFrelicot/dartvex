@@ -2,6 +2,18 @@
 
 import 'runtime.dart';
 
+class StorageId extends ConvexTableId {
+  const StorageId(super.value);
+
+  static const String tableName = '_storage';
+}
+
+class ImagesId extends ConvexTableId {
+  const ImagesId(super.value);
+
+  static const String tableName = 'images';
+}
+
 class PrivateMessagesId extends ConvexTableId {
   const PrivateMessagesId(super.value);
 

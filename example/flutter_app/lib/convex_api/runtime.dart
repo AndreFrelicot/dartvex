@@ -112,6 +112,53 @@ class TypedConvexSubscription<T> {
   }
 }
 
+class TypedConvexPaginatedResult<T> {
+  const TypedConvexPaginatedResult({
+    required this.items,
+    required this.status,
+    required this.isDone,
+    this.error,
+  });
+
+  final List<T> items;
+  final ConvexPaginationStatus status;
+  final bool isDone;
+  final Object? error;
+}
+
+class TypedConvexPaginatedQuery<T> {
+  TypedConvexPaginatedQuery(this._delegate, this._decode);
+
+  final ConvexPaginatedQuery _delegate;
+  final T Function(dynamic raw) _decode;
+
+  Stream<TypedConvexPaginatedResult<T>> get stream =>
+      _delegate.stream.map(_toTyped);
+
+  TypedConvexPaginatedResult<T> get current => _toTyped(_delegate.current);
+
+  List<T> get items => _delegate.current.results.map(_decode).toList();
+
+  ConvexPaginationStatus get status => _delegate.status;
+
+  bool get isDone => _delegate.isDone;
+
+  bool loadMore([int? numItems]) => _delegate.loadMore(numItems);
+
+  void cancel() {
+    _delegate.cancel();
+  }
+
+  TypedConvexPaginatedResult<T> _toTyped(ConvexPaginatedResult result) {
+    return TypedConvexPaginatedResult<T>(
+      items: result.results.map(_decode).toList(),
+      status: result.status,
+      isDone: result.isDone,
+      error: result.error,
+    );
+  }
+}
+
 Map<String, dynamic> expectMap(dynamic value, {String? label}) {
   if (value is Map<String, dynamic>) {
     return value;

@@ -25,6 +25,49 @@ class MessagesApi {
     return expectDouble(raw, label: 'ClearPublicMessagesResult');
   }
 
+  Future<double> countPublic() async {
+    final raw = await _client.query(
+      'messages:countPublic',
+      const <String, dynamic>{},
+    );
+    return expectDouble(raw, label: 'CountPublicResult');
+  }
+
+  TypedConvexSubscription<double> countPublicSubscribe() {
+    final subscription = _client.subscribe(
+      'messages:countPublic',
+      const <String, dynamic>{},
+    );
+    final typedStream = subscription.stream.map((event) {
+      switch (event) {
+        case QuerySuccess(:final value):
+          return TypedQuerySuccess<double>(
+            expectDouble(value, label: 'CountPublicResult'),
+          );
+        case QueryLoading(:final hasPendingWrites):
+          return TypedQueryLoading<double>(hasPendingWrites: hasPendingWrites);
+        case QueryError(:final message, :final data, :final logLines):
+          return TypedQueryError<double>(
+            message,
+            data: data,
+            logLines: logLines,
+          );
+      }
+    });
+    return TypedConvexSubscription<double>(subscription, typedStream);
+  }
+
+  Future<Null> failingSend({
+    required String author,
+    required String text,
+  }) async {
+    final raw = await _client.mutate(
+      'messages:failingSend',
+      _encodeFailingSendArgs((author: author, text: text)),
+    );
+    return null;
+  }
+
   Future<List<ListPrivateResultItem>> listPrivate() async {
     final raw = await _client.query(
       'messages:listPrivate',
@@ -111,13 +154,35 @@ class MessagesApi {
     );
   }
 
+  TypedConvexPaginatedQuery<PaginatePublicPageItem> paginatePublic({
+    int pageSize = 20,
+  }) {
+    final query = _client.paginatedQuery(
+      'messages:paginatePublic',
+      const <String, dynamic>{},
+      pageSize: pageSize,
+    );
+    return TypedConvexPaginatedQuery<PaginatePublicPageItem>(
+      query,
+      (dynamic raw) => _decodePaginatePublicPageItem(raw),
+    );
+  }
+
+  Future<double> seedPublic() async {
+    final raw = await _client.mutate(
+      'messages:seedPublic',
+      const <String, dynamic>{},
+    );
+    return expectDouble(raw, label: 'SeedPublicResult');
+  }
+
   Future<PrivateMessagesId> sendPrivate({
-    required String text,
     Optional<String> author = const Optional.absent(),
+    required String text,
   }) async {
     final raw = await _client.mutate(
       'messages:sendPrivate',
-      _encodeSendPrivateArgs((text: text, author: author)),
+      _encodeSendPrivateArgs((author: author, text: text)),
     );
     return PrivateMessagesId(expectString(raw, label: 'SendPrivateResult'));
   }
@@ -132,6 +197,29 @@ class MessagesApi {
     );
     return PublicMessagesId(expectString(raw, label: 'SendPublicResult'));
   }
+}
+
+typedef FailingSendArgs = ({String author, String text});
+
+Map<String, dynamic> _encodeFailingSendArgs(FailingSendArgs value) {
+  final (author: author, text: text) = value;
+  return <String, dynamic>{'author': author, 'text': text};
+}
+
+FailingSendArgs _decodeFailingSendArgs(dynamic raw) {
+  final map = expectMap(raw, label: 'FailingSendArgs');
+  if (!map.containsKey('author')) {
+    throw FormatException(
+      'Missing required field "author" for FailingSendArgs',
+    );
+  }
+  if (!map.containsKey('text')) {
+    throw FormatException('Missing required field "text" for FailingSendArgs');
+  }
+  return (
+    author: expectString(map['author'], label: 'FailingSendArgsAuthor'),
+    text: expectString(map['text'], label: 'FailingSendArgsText'),
+  );
 }
 
 typedef ListPrivateResultItem = ({
@@ -256,13 +344,68 @@ ListPublicResultItem _decodeListPublicResultItem(dynamic raw) {
   );
 }
 
-typedef SendPrivateArgs = ({String text, Optional<String> author});
+typedef PaginatePublicPageItem = ({
+  double creationTime,
+  PublicMessagesId id,
+  String author,
+  String text,
+});
+
+Map<String, dynamic> _encodePaginatePublicPageItem(
+  PaginatePublicPageItem value,
+) {
+  final (creationTime: creationTime, id: id, author: author, text: text) =
+      value;
+  return <String, dynamic>{
+    '_creationTime': creationTime,
+    '_id': id.value,
+    'author': author,
+    'text': text,
+  };
+}
+
+PaginatePublicPageItem _decodePaginatePublicPageItem(dynamic raw) {
+  final map = expectMap(raw, label: 'PaginatePublicPageItem');
+  if (!map.containsKey('_creationTime')) {
+    throw FormatException(
+      'Missing required field "_creationTime" for PaginatePublicPageItem',
+    );
+  }
+  if (!map.containsKey('_id')) {
+    throw FormatException(
+      'Missing required field "_id" for PaginatePublicPageItem',
+    );
+  }
+  if (!map.containsKey('author')) {
+    throw FormatException(
+      'Missing required field "author" for PaginatePublicPageItem',
+    );
+  }
+  if (!map.containsKey('text')) {
+    throw FormatException(
+      'Missing required field "text" for PaginatePublicPageItem',
+    );
+  }
+  return (
+    creationTime: expectDouble(
+      map['_creationTime'],
+      label: 'PaginatePublicPageItemCreationTime',
+    ),
+    id: PublicMessagesId(
+      expectString(map['_id'], label: 'PaginatePublicPageItemId'),
+    ),
+    author: expectString(map['author'], label: 'PaginatePublicPageItemAuthor'),
+    text: expectString(map['text'], label: 'PaginatePublicPageItemText'),
+  );
+}
+
+typedef SendPrivateArgs = ({Optional<String> author, String text});
 
 Map<String, dynamic> _encodeSendPrivateArgs(SendPrivateArgs value) {
-  final (text: text, author: author) = value;
+  final (author: author, text: text) = value;
   return <String, dynamic>{
-    'text': text,
     if (author.isDefined) 'author': author.value,
+    'text': text,
   };
 }
 
@@ -272,12 +415,12 @@ SendPrivateArgs _decodeSendPrivateArgs(dynamic raw) {
     throw FormatException('Missing required field "text" for SendPrivateArgs');
   }
   return (
-    text: expectString(map['text'], label: 'SendPrivateArgsText'),
     author: map.containsKey('author')
         ? Optional.of(
             expectString(map['author'], label: 'SendPrivateArgsAuthor'),
           )
         : const Optional.absent(),
+    text: expectString(map['text'], label: 'SendPrivateArgsText'),
   );
 }
 

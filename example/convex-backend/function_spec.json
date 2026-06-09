@@ -162,6 +162,26 @@
       }
     },
     {
+      "functionType": "HttpAction",
+      "method": "GET",
+      "path": "/.well-known/openid-configuration"
+    },
+    {
+      "functionType": "HttpAction",
+      "method": "GET",
+      "path": "/api/auth/*"
+    },
+    {
+      "functionType": "HttpAction",
+      "method": "OPTIONS",
+      "path": "/api/auth/*"
+    },
+    {
+      "functionType": "HttpAction",
+      "method": "POST",
+      "path": "/api/auth/*"
+    },
+    {
       "args": {
         "type": "object",
         "value": {}
@@ -287,17 +307,17 @@
       "args": {
         "type": "object",
         "value": {
-          "text": {
-            "fieldType": {
-              "type": "string"
-            },
-            "optional": false
-          },
           "author": {
             "fieldType": {
               "type": "string"
             },
             "optional": true
+          },
+          "text": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
           }
         }
       },
@@ -320,6 +340,214 @@
       "identifier": "messages.js:clearPrivate",
       "returns": {
         "type": "number"
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "paginationOpts": {
+            "fieldType": {
+              "type": "object",
+              "value": {
+                "cursor": {
+                  "fieldType": {
+                    "type": "union",
+                    "value": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "optional": false
+                },
+                "endCursor": {
+                  "fieldType": {
+                    "type": "union",
+                    "value": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "optional": true
+                },
+                "id": {
+                  "fieldType": {
+                    "type": "number"
+                  },
+                  "optional": true
+                },
+                "maximumBytesRead": {
+                  "fieldType": {
+                    "type": "number"
+                  },
+                  "optional": true
+                },
+                "maximumRowsRead": {
+                  "fieldType": {
+                    "type": "number"
+                  },
+                  "optional": true
+                },
+                "numItems": {
+                  "fieldType": {
+                    "type": "number"
+                  },
+                  "optional": false
+                }
+              }
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Query",
+      "identifier": "messages.js:paginatePublic",
+      "returns": {
+        "type": "object",
+        "value": {
+          "continueCursor": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "isDone": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": false
+          },
+          "page": {
+            "fieldType": {
+              "type": "array",
+              "value": {
+                "type": "object",
+                "value": {
+                  "_creationTime": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "_id": {
+                    "fieldType": {
+                      "tableName": "public_messages",
+                      "type": "id"
+                    },
+                    "optional": false
+                  },
+                  "author": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "text": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  }
+                }
+              }
+            },
+            "optional": false
+          },
+          "pageStatus": {
+            "fieldType": {
+              "type": "union",
+              "value": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "optional": true
+          },
+          "splitCursor": {
+            "fieldType": {
+              "type": "union",
+              "value": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "optional": true
+          }
+        }
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Query",
+      "identifier": "messages.js:countPublic",
+      "returns": {
+        "type": "number"
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Mutation",
+      "identifier": "messages.js:seedPublic",
+      "returns": {
+        "type": "number"
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "author": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "text": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "messages.js:failingSend",
+      "returns": {
+        "type": "null"
       },
       "visibility": {
         "kind": "public"
@@ -589,6 +817,231 @@
       },
       "functionType": "Mutation",
       "identifier": "tasks.js:clearTasks",
+      "returns": {
+        "type": "number"
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Query",
+      "identifier": "testing.js:specialValuesSnapshot",
+      "returns": {
+        "type": "object",
+        "value": {
+          "largeNegative": {
+            "fieldType": {
+              "type": "bigint"
+            },
+            "optional": false
+          },
+          "largePositive": {
+            "fieldType": {
+              "type": "bigint"
+            },
+            "optional": false
+          },
+          "sampleBytes": {
+            "fieldType": {
+              "type": "bytes"
+            },
+            "optional": false
+          },
+          "zero": {
+            "fieldType": {
+              "type": "bigint"
+            },
+            "optional": false
+          }
+        }
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "bytesValue": {
+            "fieldType": {
+              "type": "bytes"
+            },
+            "optional": false
+          },
+          "intValue": {
+            "fieldType": {
+              "type": "bigint"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Action",
+      "identifier": "testing.js:echoValues",
+      "returns": {
+        "type": "object",
+        "value": {
+          "bytesLength": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "bytesValue": {
+            "fieldType": {
+              "type": "bytes"
+            },
+            "optional": false
+          },
+          "intPlusOne": {
+            "fieldType": {
+              "type": "bigint"
+            },
+            "optional": false
+          },
+          "intValue": {
+            "fieldType": {
+              "type": "bigint"
+            },
+            "optional": false
+          }
+        }
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Mutation",
+      "identifier": "files.js:generateUploadUrl",
+      "returns": {
+        "type": "string"
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "storageId": {
+            "fieldType": {
+              "tableName": "_storage",
+              "type": "id"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Query",
+      "identifier": "files.js:getUrl",
+      "returns": {
+        "type": "union",
+        "value": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Query",
+      "identifier": "files.js:list",
+      "returns": {
+        "type": "array",
+        "value": {
+          "type": "object",
+          "value": {
+            "_creationTime": {
+              "fieldType": {
+                "type": "number"
+              },
+              "optional": false
+            },
+            "_id": {
+              "fieldType": {
+                "tableName": "images",
+                "type": "id"
+              },
+              "optional": false
+            },
+            "caption": {
+              "fieldType": {
+                "type": "string"
+              },
+              "optional": false
+            },
+            "storageId": {
+              "fieldType": {
+                "tableName": "_storage",
+                "type": "id"
+              },
+              "optional": false
+            }
+          }
+        }
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "caption": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "storageId": {
+            "fieldType": {
+              "tableName": "_storage",
+              "type": "id"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "files.js:add",
+      "returns": {
+        "tableName": "images",
+        "type": "id"
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Mutation",
+      "identifier": "files.js:clear",
       "returns": {
         "type": "number"
       },

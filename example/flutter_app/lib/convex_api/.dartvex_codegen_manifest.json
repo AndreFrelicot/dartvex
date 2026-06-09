@@ -2,8 +2,10 @@
   "files": [
     "api.dart",
     "modules/demo.dart",
+    "modules/files.dart",
     "modules/messages.dart",
     "modules/tasks.dart",
+    "modules/testing.dart",
     "runtime.dart",
     "schema.dart"
   ]
