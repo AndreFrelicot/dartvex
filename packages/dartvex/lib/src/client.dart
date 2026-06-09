@@ -1163,7 +1163,17 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       }
     }
     _publishConnectionStatus();
-    return result.outgoing;
+    // Route the messages receive() drained back through the re-queueing flush
+    // instead of handing them to the transport directly: the transport drops
+    // (returns a short prefix for) messages while the socket is paused for
+    // auth or already disconnected, and this return path has no re-queue. A
+    // tracked mutation drained here while paused would otherwise be lost
+    // until the next reconnect replay and hang its caller in the meantime.
+    if (!_disposed && result.outgoing.isNotEmpty) {
+      _baseClient.requeueOutgoing(result.outgoing);
+      await _flushOutgoing();
+    }
+    return const <ClientMessage>[];
   }
 
   QueryResult _toPublicQueryResult(

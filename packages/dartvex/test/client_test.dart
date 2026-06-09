@@ -1909,6 +1909,72 @@ void main() {
       client.dispose();
     });
 
+    test(
+        'mutation queued while the socket is paused survives a receive-path '
+        'drain and is sent on resume', () async {
+      final adapter = MockWebSocketAdapter();
+      final client = ConvexClient(
+        'https://demo.convex.cloud',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+      await settle();
+
+      // Pause the socket via the initial token fetch of setAuthWithRefresh.
+      final tokenFetch = Completer<String?>();
+      final authFuture = client.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) => tokenFetch.future,
+      );
+      await settle();
+
+      // Track a mutation while paused: its message must stay buffered until
+      // the socket resumes.
+      final mutationFuture = client.mutate(
+        'messages:send',
+        const <String, dynamic>{'body': 'hello'},
+      );
+      unawaited(mutationFuture.then((_) {}, onError: (_) {}));
+      await settle();
+
+      // A server message arriving mid-pause makes receive() drain the
+      // outgoing queue; the paused transport refuses to send, and the drained
+      // mutation must be re-queued rather than dropped.
+      adapter.pushServerMessage(const <String, dynamic>{
+        'type': 'ActionResponse',
+        'requestId': 999,
+        'success': true,
+        'result': null,
+        'logLines': <String>[],
+      });
+      await settle();
+
+      tokenFetch.complete('initial-token');
+      await authFuture;
+      await settle();
+
+      final sent = adapter.decodedSentMessages;
+      final mutationMessages = sent
+          .where((message) => message['type'] == 'Mutation')
+          .toList(growable: false);
+      expect(
+        mutationMessages,
+        hasLength(1),
+        reason: 'the mutation buffered while paused must be sent on resume',
+      );
+      expect(mutationMessages.single['udfPath'], 'messages:send');
+      // The deferred auth update still precedes the mutation on the wire.
+      final authIndex =
+          sent.indexWhere((message) => message['type'] == 'Authenticate');
+      final mutationIndex =
+          sent.indexWhere((message) => message['type'] == 'Mutation');
+      expect(authIndex, isNonNegative);
+      expect(mutationIndex, greaterThan(authIndex));
+
+      client.dispose();
+    });
+
     test('connection state emits reconnecting during reconnect attempts',
         () async {
       final adapter = MockWebSocketAdapter();
