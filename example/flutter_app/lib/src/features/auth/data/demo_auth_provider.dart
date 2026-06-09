@@ -96,7 +96,7 @@ class DemoAuthProvider extends ChangeNotifier
     final session = DemoUserSession(
       token: token,
       userId: 'demo-user-1',
-      displayName: 'Demo User',
+      displayName: 'Authenticated User',
       issuedAt: _now().toUtc(),
       cacheRestoreCount: 0,
       tokenLabel: tokenLabel,

@@ -121,7 +121,7 @@ void main() {
         DemoUserSession(
           token: 'demo-token',
           userId: 'demo-user-1',
-          displayName: 'Demo User',
+          displayName: 'Authenticated User',
           issuedAt: DateTime.utc(2026, 3, 13),
           cacheRestoreCount: 1,
           tokenLabel: 'test token',
@@ -206,7 +206,7 @@ void main() {
         DemoUserSession(
           token: 'demo-token',
           userId: 'demo-user-1',
-          displayName: 'Demo User',
+          displayName: 'Authenticated User',
           issuedAt: DateTime.utc(2026, 3, 13),
           cacheRestoreCount: 0,
           tokenLabel: 'test token',

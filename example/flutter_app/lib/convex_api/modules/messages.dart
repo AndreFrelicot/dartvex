@@ -103,10 +103,13 @@ class MessagesApi {
     );
   }
 
-  Future<PrivateMessagesId> sendPrivate({required String text}) async {
+  Future<PrivateMessagesId> sendPrivate({
+    required String text,
+    Optional<String> author = const Optional.absent(),
+  }) async {
     final raw = await _client.mutate(
       'messages:sendPrivate',
-      _encodeSendPrivateArgs((text: text)),
+      _encodeSendPrivateArgs((text: text, author: author)),
     );
     return PrivateMessagesId(expectString(raw, label: 'SendPrivateResult'));
   }
@@ -245,11 +248,14 @@ ListPublicResultItem _decodeListPublicResultItem(dynamic raw) {
   );
 }
 
-typedef SendPrivateArgs = ({String text});
+typedef SendPrivateArgs = ({String text, Optional<String> author});
 
 Map<String, dynamic> _encodeSendPrivateArgs(SendPrivateArgs value) {
-  final (text: text) = value;
-  return <String, dynamic>{'text': text};
+  final (text: text, author: author) = value;
+  return <String, dynamic>{
+    'text': text,
+    if (author.isDefined) 'author': author.value,
+  };
 }
 
 SendPrivateArgs _decodeSendPrivateArgs(dynamic raw) {
@@ -257,7 +263,14 @@ SendPrivateArgs _decodeSendPrivateArgs(dynamic raw) {
   if (!map.containsKey('text')) {
     throw FormatException('Missing required field "text" for SendPrivateArgs');
   }
-  return (text: expectString(map['text'], label: 'SendPrivateArgsText'));
+  return (
+    text: expectString(map['text'], label: 'SendPrivateArgsText'),
+    author: map.containsKey('author')
+        ? Optional.of(
+            expectString(map['author'], label: 'SendPrivateArgsAuthor'),
+          )
+        : const Optional.absent(),
+  );
 }
 
 typedef SendPublicArgs = ({String author, String text});

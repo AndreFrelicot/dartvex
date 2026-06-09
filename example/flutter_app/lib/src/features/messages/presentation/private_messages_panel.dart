@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../convex_api/api.dart';
@@ -6,6 +7,24 @@ import '../../shared/presentation/conversation_widgets.dart';
 import '../../shared/presentation/concierge_design.dart';
 import '../../shared/presentation/generated_subscription_builder.dart';
 import '../../shared/presentation/section_card.dart';
+
+/// Display label for the authenticated user in the private thread, suffixed
+/// with the running platform (e.g. "Authenticated User - iOS") so the demo
+/// shows where each message originated. Passed as the optional `author` arg to
+/// `messages:sendPrivate`; the message is still gated on a verified identity.
+String _authenticatedUserLabel() {
+  final platform = kIsWeb
+      ? 'Web'
+      : switch (defaultTargetPlatform) {
+          TargetPlatform.iOS => 'iOS',
+          TargetPlatform.android => 'Android',
+          TargetPlatform.macOS => 'macOS',
+          TargetPlatform.windows => 'Windows',
+          TargetPlatform.linux => 'Linux',
+          TargetPlatform.fuchsia => 'Fuchsia',
+        };
+  return 'Authenticated User - $platform';
+}
 
 class PrivateMessagesPanel extends StatefulWidget {
   const PrivateMessagesPanel({super.key, required this.api});
@@ -52,7 +71,10 @@ class _PrivateMessagesPanelState extends State<PrivateMessagesPanel> {
     });
 
     try {
-      await api.messages.sendPrivate(text: text);
+      await api.messages.sendPrivate(
+        text: text,
+        author: Optional.of(_authenticatedUserLabel()),
+      );
       _messageController.clear();
       setState(() {
         _status = 'Private message delivered.';
