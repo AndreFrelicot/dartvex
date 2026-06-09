@@ -494,7 +494,34 @@ class WebSocketManager {
         ).toJson(),
       ),
     );
-    final reconnectMessages = await onConnected();
+    // Resolve synchronously when possible: the production [onConnected]
+    // (BaseClient.prepareReconnect) returns its messages synchronously, and
+    // yielding to the event loop between the Connect frame and the
+    // session-restoring messages would open a window where a concurrent
+    // pause() makes [sendMessages] swallow them — the query set and replayed
+    // requests they carry are only rebuilt on the next reconnect, leaving
+    // this connection without any active queries until then.
+    final messagesOrFuture = onConnected();
+    final List<ClientMessage> reconnectMessages;
+    if (messagesOrFuture is List<ClientMessage>) {
+      reconnectMessages = messagesOrFuture;
+    } else {
+      reconnectMessages = await messagesOrFuture;
+      if (_pauseState != _SocketPauseState.no) {
+        // Paused while an asynchronous [onConnected] was building the
+        // handshake messages, with the Connect frame already on the wire.
+        // They cannot be buffered here, and resume() must not replay a second
+        // Connect on this socket, so force a clean reconnect: the fresh
+        // socket opens paused and defers its full handshake to resume().
+        _log(
+          DartvexLogLevel.warn,
+          'Socket paused during the connect handshake; forcing a clean '
+          'reconnect so the session-restoring messages are not dropped',
+        );
+        await reconnectNow('PausedDuringHandshake');
+        return;
+      }
+    }
     await sendMessages(reconnectMessages);
   }
 

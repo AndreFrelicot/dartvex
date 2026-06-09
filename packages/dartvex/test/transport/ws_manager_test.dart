@@ -56,6 +56,67 @@ void main() {
       await manager.dispose();
     });
 
+    test(
+        'pause during an asynchronous connect handshake forces a clean '
+        'reconnect instead of dropping the session-restoring messages',
+        () async {
+      final adapter = MockWebSocketAdapter();
+      late WebSocketManager manager;
+      var connectedCalls = 0;
+      const restore = ModifyQuerySet(
+        baseVersion: 0,
+        newVersion: 1,
+        modifications: <QuerySetOperation>[],
+      );
+      manager = WebSocketManager(
+        adapter: adapter,
+        deploymentUrl: 'https://demo.convex.cloud',
+        apiVersion: '0.1.0',
+        onConnected: () async {
+          connectedCalls += 1;
+          if (connectedCalls == 1) {
+            // A concurrent auth flow pauses the socket while the handshake
+            // messages are still being built.
+            manager.pause();
+          }
+          return const <ClientMessage>[restore];
+        },
+        onMessage: (_) => const <ClientMessage>[],
+        onDisconnected: (_) async {},
+        onConnectionStateChanged: (_, __) {},
+        maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => true,
+        reconnectBackoff: const <Duration>[Duration.zero],
+        inactivityTimeout: const Duration(seconds: 30),
+      );
+
+      await manager.start();
+      await pumpEventQueue();
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+
+      // The forced reconnect reopened the socket; the new socket opens paused
+      // and defers its handshake, so exactly one Connect frame is on the wire
+      // and the session-restoring message was never silently dropped.
+      final connectsBeforeResume = adapter.decodedSentMessages
+          .where((message) => message['type'] == 'Connect')
+          .toList(growable: false);
+      expect(connectsBeforeResume, hasLength(1));
+      expect(
+        adapter.decodedSentMessages
+            .where((message) => message['type'] == 'ModifyQuerySet'),
+        isEmpty,
+      );
+
+      await manager.resume();
+      final connects = await waitForConnectMessages(adapter, 2);
+      expect(connects, hasLength(2));
+      // The deferred handshake replays Connect followed by the restoring
+      // query-set message.
+      expect(adapter.decodedSentMessages.last['type'], 'ModifyQuerySet');
+
+      await manager.dispose();
+    });
+
     test('dispose ignores adapter close failures', () async {
       final adapter = MockWebSocketAdapter();
       final manager = WebSocketManager(
