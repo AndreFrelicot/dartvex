@@ -529,7 +529,20 @@ class _PaginationDemoCardState extends State<_PaginationDemoCard> {
                   ),
                 ),
                 clipBehavior: Clip.antiAlias,
-                child: _TypedPaginatedFeed(api: widget.api, total: total),
+                // Only open the paginated query once the feed has rows. A
+                // Convex page first loaded against an empty table owns the
+                // whole range and then reactively grows to swallow every row
+                // seeded afterwards (so it would show everything with no "Load
+                // more"). Gating on the live count means the first page always
+                // loads with data present — returning one page of `pageSize`.
+                child: total == 0
+                    ? const Center(
+                        child: Text(
+                          'Empty feed — tap "Seed demo feed".',
+                          style: TextStyle(color: ConciergeColors.textDim),
+                        ),
+                      )
+                    : _TypedPaginatedFeed(api: widget.api, total: total),
               );
             },
           ),
