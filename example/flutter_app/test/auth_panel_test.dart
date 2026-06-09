@@ -398,4 +398,11 @@ class FakeDemoAuthClient implements convex.ConvexAuthClient<DemoUserSession> {
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) => throw UnimplementedError();
+
+  @override
+  convex.ConvexPaginatedQuery paginatedQuery(
+    String name,
+    Map<String, dynamic> args, {
+    int pageSize = 20,
+  }) => throw UnimplementedError();
 }

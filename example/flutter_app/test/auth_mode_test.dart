@@ -14,9 +14,7 @@ import 'package:dartvex_flutter_demo/src/features/auth/presentation/better_auth_
 void main() {
   group('Auth mode switching', () {
     testWidgets('app starts in Demo mode by default', (tester) async {
-      await tester.pumpWidget(
-        const DartvexDemoAppForTest(deploymentUrl: ''),
-      );
+      await tester.pumpWidget(const DartvexDemoAppForTest(deploymentUrl: ''));
 
       // Mode selector should be visible with Demo selected.
       expect(find.text('Demo Provider'), findsOneWidget);
@@ -29,9 +27,7 @@ void main() {
     testWidgets(
       'switching to Better Auth mode without config shows setup panel',
       (tester) async {
-        await tester.pumpWidget(
-          const DartvexDemoAppForTest(deploymentUrl: ''),
-        );
+        await tester.pumpWidget(const DartvexDemoAppForTest(deploymentUrl: ''));
 
         // Switch to Better Auth mode.
         await tester.tap(find.text('Better Auth'));
@@ -47,9 +43,7 @@ void main() {
     testWidgets('switching back to Demo mode restores Demo panel', (
       tester,
     ) async {
-      await tester.pumpWidget(
-        const DartvexDemoAppForTest(deploymentUrl: ''),
-      );
+      await tester.pumpWidget(const DartvexDemoAppForTest(deploymentUrl: ''));
 
       // Switch to Better Auth.
       await tester.tap(find.text('Better Auth'));
@@ -153,12 +147,10 @@ class DartvexDemoAppForTest extends StatefulWidget {
   final String deploymentUrl;
 
   @override
-  State<DartvexDemoAppForTest> createState() =>
-      _DartvexDemoAppForTestState();
+  State<DartvexDemoAppForTest> createState() => _DartvexDemoAppForTestState();
 }
 
-class _DartvexDemoAppForTestState
-    extends State<DartvexDemoAppForTest> {
+class _DartvexDemoAppForTestState extends State<DartvexDemoAppForTest> {
   AuthMode _authMode = AuthMode.demo;
 
   late final DemoAuthProvider _demoAuthProvider = DemoAuthProvider(
@@ -306,4 +298,11 @@ class _FakeDemoAuthClient implements convex.ConvexAuthClient<DemoUserSession> {
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) => throw UnimplementedError();
+
+  @override
+  convex.ConvexPaginatedQuery paginatedQuery(
+    String name,
+    Map<String, dynamic> args, {
+    int pageSize = 20,
+  }) => throw UnimplementedError();
 }
