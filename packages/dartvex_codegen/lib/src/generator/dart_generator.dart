@@ -280,6 +280,11 @@ class DartGenerator {
     FunctionSpec function, {
     required TypeRenderContext context,
   }) {
+    final pagination = _detectPagination(function);
+    if (pagination != null) {
+      return _renderPaginatedQuery(function, pagination, context: context);
+    }
+
     final mapper = TypeMapper(naming: _naming);
     final functionPrefix = _naming.typeName(function.functionName);
     final resultType = mapper.mapType(
@@ -406,6 +411,141 @@ class DartGenerator {
     return _RenderedFunction(
       methods: methodBuffer.toString(),
       helpers: helperBuffer.toString(),
+    );
+  }
+
+  /// Detects whether [function] is a Convex paginated query and, if so, returns
+  /// the page element type and the non-`paginationOpts` arguments.
+  ///
+  /// A function paginates when it is a `Query` whose args carry a
+  /// `paginationOpts` field (an object with `numItems`/`cursor`, or `any`) and
+  /// whose returns is either a `PaginationResult` object (`page` array,
+  /// `isDone`, `continueCursor`) or has no validator at all. A returns-less
+  /// paginated query still generates a typed wrapper, just over
+  /// `Map<String, dynamic>` page items.
+  _PaginationInfo? _detectPagination(FunctionSpec function) {
+    if (function.functionType != 'Query') {
+      return null;
+    }
+    final args = function.args;
+    if (args is! ConvexObjectType) {
+      return null;
+    }
+    final paginationOpts = args.value['paginationOpts'];
+    if (paginationOpts == null) {
+      return null;
+    }
+    final optsType = paginationOpts.fieldType;
+    if (optsType is ConvexObjectType) {
+      if (!(optsType.value.containsKey('numItems') &&
+          optsType.value.containsKey('cursor'))) {
+        return null;
+      }
+    } else if (optsType is! ConvexAnyType) {
+      return null;
+    }
+
+    final returns = function.returns;
+    final ConvexType? elementType;
+    if (returns is ConvexAnyType) {
+      // No returns validator: paginate with untyped page items.
+      elementType = null;
+    } else if (returns is ConvexObjectType) {
+      final page = returns.value['page'];
+      final pageType = page?.fieldType;
+      if (page == null ||
+          pageType is! ConvexArrayType ||
+          !returns.value.containsKey('isDone') ||
+          !returns.value.containsKey('continueCursor')) {
+        // Not a PaginationResult shape; fall back to a normal query method.
+        return null;
+      }
+      elementType = pageType.value;
+    } else {
+      return null;
+    }
+
+    final otherArgs = <String, ConvexField>{
+      for (final entry in args.value.entries)
+        if (entry.key != 'paginationOpts') entry.key: entry.value,
+    };
+    return _PaginationInfo(elementType: elementType, otherArgs: otherArgs);
+  }
+
+  _RenderedFunction _renderPaginatedQuery(
+    FunctionSpec function,
+    _PaginationInfo info, {
+    required TypeRenderContext context,
+  }) {
+    final mapper = TypeMapper(naming: _naming);
+    final functionPrefix = _naming.typeName(function.functionName);
+    final methodName = _naming.methodName(function.functionName);
+
+    final String elementAnnotation;
+    final String elementDecode;
+    final elementType = info.elementType;
+    if (elementType == null) {
+      elementAnnotation = 'Map<String, dynamic>';
+      elementDecode = "expectMap(raw, label: '${functionPrefix}PageItem')";
+    } else {
+      final mappedElement = mapper.mapType(
+        elementType,
+        suggestedName: '${functionPrefix}PageItem',
+        context: context,
+      );
+      elementAnnotation = mappedElement.annotation;
+      elementDecode = mappedElement.decode('raw');
+    }
+
+    final argsFields = <String>[];
+    final argsMapEntries = <String>[];
+    for (final entry in info.otherArgs.entries) {
+      final fieldKey = dartSingleQuotedString(entry.key);
+      final fieldName = _naming.fieldName(entry.key);
+      final mappedField = mapper.mapType(
+        entry.value.fieldType,
+        suggestedName: '${functionPrefix}Args${_naming.typeName(entry.key)}',
+        context: context,
+      );
+      if (entry.value.optional) {
+        argsFields.add(
+          'Optional<${mappedField.annotation}> '
+          '$fieldName = const Optional.absent()',
+        );
+        argsMapEntries.add(
+          'if ($fieldName.isDefined) $fieldKey: '
+          "${mappedField.encode('$fieldName.value')},",
+        );
+      } else {
+        argsFields.add('required ${mappedField.annotation} $fieldName');
+        argsMapEntries.add('$fieldKey: ${mappedField.encode(fieldName)},');
+      }
+    }
+
+    final signature = <String>[...argsFields, 'int pageSize = 20'].join(', ');
+    final argsMap = argsMapEntries.isEmpty
+        ? 'const <String, dynamic>{}'
+        : '<String, dynamic>{${argsMapEntries.join(' ')}}';
+
+    final methodBuffer = StringBuffer()
+      ..writeln(
+        'TypedConvexPaginatedQuery<$elementAnnotation> '
+        '$methodName({$signature}) {',
+      )
+      ..writeln('  final query = _client.paginatedQuery(')
+      ..writeln('    ${dartSingleQuotedString(function.convexFunctionName)},')
+      ..writeln('    $argsMap,')
+      ..writeln('    pageSize: pageSize,')
+      ..writeln('  );')
+      ..writeln('  return TypedConvexPaginatedQuery<$elementAnnotation>(')
+      ..writeln('    query,')
+      ..writeln('    (dynamic raw) => $elementDecode,')
+      ..writeln('  );')
+      ..write('}');
+
+    return _RenderedFunction(
+      methods: methodBuffer.toString(),
+      helpers: '',
     );
   }
 
@@ -563,6 +703,53 @@ class TypedConvexSubscription<T> {
   }
 }
 
+class TypedConvexPaginatedResult<T> {
+  const TypedConvexPaginatedResult({
+    required this.items,
+    required this.status,
+    required this.isDone,
+    this.error,
+  });
+
+  final List<T> items;
+  final ConvexPaginationStatus status;
+  final bool isDone;
+  final Object? error;
+}
+
+class TypedConvexPaginatedQuery<T> {
+  TypedConvexPaginatedQuery(this._delegate, this._decode);
+
+  final ConvexPaginatedQuery _delegate;
+  final T Function(dynamic raw) _decode;
+
+  Stream<TypedConvexPaginatedResult<T>> get stream =>
+      _delegate.stream.map(_toTyped);
+
+  TypedConvexPaginatedResult<T> get current => _toTyped(_delegate.current);
+
+  List<T> get items => _delegate.current.results.map(_decode).toList();
+
+  ConvexPaginationStatus get status => _delegate.status;
+
+  bool get isDone => _delegate.isDone;
+
+  bool loadMore([int? numItems]) => _delegate.loadMore(numItems);
+
+  void cancel() {
+    _delegate.cancel();
+  }
+
+  TypedConvexPaginatedResult<T> _toTyped(ConvexPaginatedResult result) {
+    return TypedConvexPaginatedResult<T>(
+      items: result.results.map(_decode).toList(),
+      status: result.status,
+      isDone: result.isDone,
+      error: result.error,
+    );
+  }
+}
+
 Map<String, dynamic> expectMap(dynamic value, {String? label}) {
   if (value is Map<String, dynamic>) {
     return value;
@@ -693,4 +880,13 @@ class _RenderedFunction {
 
   final String methods;
   final String helpers;
+}
+
+/// Describes a detected paginated query: its page element type (or `null` for
+/// an untyped, returns-less query) and its arguments minus `paginationOpts`.
+class _PaginationInfo {
+  _PaginationInfo({required this.elementType, required this.otherArgs});
+
+  final ConvexType? elementType;
+  final Map<String, ConvexField> otherArgs;
 }

@@ -104,6 +104,108 @@
       "visibility": { "kind": "public" }
     },
     {
+      "functionType": "Query",
+      "args": {
+        "type": "object",
+        "value": {
+          "paginationOpts": {
+            "fieldType": {
+              "type": "object",
+              "value": {
+                "numItems": {
+                  "fieldType": { "type": "number" },
+                  "optional": false
+                },
+                "cursor": {
+                  "fieldType": {
+                    "type": "union",
+                    "value": [{ "type": "string" }, { "type": "null" }]
+                  },
+                  "optional": false
+                }
+              }
+            },
+            "optional": false
+          },
+          "channel": {
+            "fieldType": { "type": "string" },
+            "optional": true
+          }
+        }
+      },
+      "returns": {
+        "type": "object",
+        "value": {
+          "page": {
+            "fieldType": {
+              "type": "array",
+              "value": {
+                "type": "object",
+                "value": {
+                  "_id": {
+                    "fieldType": { "type": "id", "tableName": "messages" },
+                    "optional": false
+                  },
+                  "author": {
+                    "fieldType": { "type": "string" },
+                    "optional": false
+                  },
+                  "text": {
+                    "fieldType": { "type": "string" },
+                    "optional": false
+                  }
+                }
+              }
+            },
+            "optional": false
+          },
+          "isDone": {
+            "fieldType": { "type": "boolean" },
+            "optional": false
+          },
+          "continueCursor": {
+            "fieldType": {
+              "type": "union",
+              "value": [{ "type": "string" }, { "type": "null" }]
+            },
+            "optional": false
+          }
+        }
+      },
+      "identifier": "messages.ts:paginatePublic",
+      "visibility": { "kind": "public" }
+    },
+    {
+      "functionType": "Query",
+      "args": {
+        "type": "object",
+        "value": {
+          "paginationOpts": {
+            "fieldType": {
+              "type": "object",
+              "value": {
+                "numItems": {
+                  "fieldType": { "type": "number" },
+                  "optional": false
+                },
+                "cursor": {
+                  "fieldType": {
+                    "type": "union",
+                    "value": [{ "type": "string" }, { "type": "null" }]
+                  },
+                  "optional": false
+                }
+              }
+            },
+            "optional": false
+          }
+        }
+      },
+      "returns": null,
+      "identifier": "messages.ts:paginateRaw",
+      "visibility": { "kind": "public" }
+    },
+    {
       "functionType": "Action",
       "args": {
         "type": "object",

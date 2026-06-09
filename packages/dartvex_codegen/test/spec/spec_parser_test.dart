@@ -13,7 +13,7 @@ void main() {
       final spec = const SpecParser().parseString(fixture);
 
       expect(spec.url, 'https://sample.convex.cloud');
-      expect(spec.functions, hasLength(7));
+      expect(spec.functions, hasLength(9));
       expect(
           spec.publicFunctions.map((function) => function.identifier),
           containsAll(<String>[

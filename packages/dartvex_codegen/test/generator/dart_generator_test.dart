@@ -327,6 +327,43 @@ void main() {
       // The unknown field degraded to a dynamic value rather than aborting.
       expect(output.files['modules/messages.dart'], contains('mystery'));
     });
+
+    test('generates typed and untyped paginated query bindings', () {
+      final output = DartGenerator().generate(spec);
+      final messages = output.files['modules/messages.dart']!;
+      final runtime = output.files['runtime.dart']!;
+
+      // The runtime template gains the generic typed-pagination wrappers.
+      expect(runtime, contains('class TypedConvexPaginatedQuery<T>'));
+      expect(runtime, contains('class TypedConvexPaginatedResult<T>'));
+
+      // Typed paginated query: a generated element model, paginationOpts
+      // stripped from the exposed API, and pageSize exposed.
+      expect(
+        messages,
+        contains(
+          'TypedConvexPaginatedQuery<PaginatePublicPageItem> paginatePublic({',
+        ),
+      );
+      expect(messages, contains('typedef PaginatePublicPageItem ='));
+      expect(messages, contains('_client.paginatedQuery('));
+      expect(messages, contains("'messages:paginatePublic'"));
+      expect(messages, contains('int pageSize = 20'));
+      expect(messages, isNot(contains('paginationOpts')));
+
+      // Non-paginationOpts args pass through.
+      expect(
+        messages,
+        contains("if (channel.isDefined) 'channel': channel.value"),
+      );
+
+      // Returns-less paginated query degrades to untyped Map page items.
+      expect(
+        messages,
+        contains('TypedConvexPaginatedQuery<Map<String, dynamic>> paginateRaw({'),
+      );
+      expect(messages, contains("expectMap(raw, label: 'PaginateRawPageItem')"));
+    });
   });
 }
 

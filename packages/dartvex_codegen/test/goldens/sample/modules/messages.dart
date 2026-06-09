@@ -61,6 +61,35 @@ class MessagesApi {
     );
   }
 
+  TypedConvexPaginatedQuery<PaginatePublicPageItem> paginatePublic({
+    Optional<String> channel = const Optional.absent(),
+    int pageSize = 20,
+  }) {
+    final query = _client.paginatedQuery(
+      'messages:paginatePublic',
+      <String, dynamic>{if (channel.isDefined) 'channel': channel.value},
+      pageSize: pageSize,
+    );
+    return TypedConvexPaginatedQuery<PaginatePublicPageItem>(
+      query,
+      (dynamic raw) => _decodePaginatePublicPageItem(raw),
+    );
+  }
+
+  TypedConvexPaginatedQuery<Map<String, dynamic>> paginateRaw({
+    int pageSize = 20,
+  }) {
+    final query = _client.paginatedQuery(
+      'messages:paginateRaw',
+      const <String, dynamic>{},
+      pageSize: pageSize,
+    );
+    return TypedConvexPaginatedQuery<Map<String, dynamic>>(
+      query,
+      (dynamic raw) => expectMap(raw, label: 'PaginateRawPageItem'),
+    );
+  }
+
   Future<dynamic> ping([
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) async {
@@ -209,6 +238,39 @@ ListArgs _decodeListArgs(dynamic raw) {
     filters: map.containsKey('filters')
         ? Optional.of(_decodeListArgsFilters(map['filters']))
         : const Optional.absent(),
+  );
+}
+
+typedef PaginatePublicPageItem = ({MessagesId id, String author, String text});
+
+Map<String, dynamic> _encodePaginatePublicPageItem(
+  PaginatePublicPageItem value,
+) {
+  final (id: id, author: author, text: text) = value;
+  return <String, dynamic>{'_id': id.value, 'author': author, 'text': text};
+}
+
+PaginatePublicPageItem _decodePaginatePublicPageItem(dynamic raw) {
+  final map = expectMap(raw, label: 'PaginatePublicPageItem');
+  if (!map.containsKey('_id')) {
+    throw FormatException(
+      'Missing required field "_id" for PaginatePublicPageItem',
+    );
+  }
+  if (!map.containsKey('author')) {
+    throw FormatException(
+      'Missing required field "author" for PaginatePublicPageItem',
+    );
+  }
+  if (!map.containsKey('text')) {
+    throw FormatException(
+      'Missing required field "text" for PaginatePublicPageItem',
+    );
+  }
+  return (
+    id: MessagesId(expectString(map['_id'], label: 'PaginatePublicPageItemId')),
+    author: expectString(map['author'], label: 'PaginatePublicPageItemAuthor'),
+    text: expectString(map['text'], label: 'PaginatePublicPageItemText'),
   );
 }
 
