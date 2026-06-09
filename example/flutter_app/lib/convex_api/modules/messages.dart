@@ -9,6 +9,14 @@ class MessagesApi {
 
   final ConvexFunctionCaller _client;
 
+  Future<double> clearPrivate() async {
+    final raw = await _client.mutate(
+      'messages:clearPrivate',
+      const <String, dynamic>{},
+    );
+    return expectDouble(raw, label: 'ClearPrivateResult');
+  }
+
   Future<double> clearPublicMessages() async {
     final raw = await _client.mutate(
       'messages:clearPublicMessages',

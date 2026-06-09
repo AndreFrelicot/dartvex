@@ -38,6 +38,7 @@ class PrivateMessagesPanel extends StatefulWidget {
 class _PrivateMessagesPanelState extends State<PrivateMessagesPanel> {
   late final TextEditingController _messageController;
   bool _isSending = false;
+  bool _isClearing = false;
   String? _status;
 
   @override
@@ -87,6 +88,35 @@ class _PrivateMessagesPanelState extends State<PrivateMessagesPanel> {
       if (mounted) {
         setState(() {
           _isSending = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _clear() async {
+    final api = widget.api;
+    if (api == null) {
+      return;
+    }
+
+    setState(() {
+      _isClearing = true;
+      _status = null;
+    });
+
+    try {
+      final removed = await api.messages.clearPrivate();
+      setState(() {
+        _status = 'Cleared ${removed.toInt()} private message(s).';
+      });
+    } catch (error) {
+      setState(() {
+        _status = error.toString();
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isClearing = false;
         });
       }
     }
@@ -227,6 +257,17 @@ class _PrivateMessagesPanelState extends State<PrivateMessagesPanel> {
                         _isSending ? Icons.hourglass_top : Icons.lock_open,
                       ),
                       label: Text(_isSending ? 'Sending...' : 'Send Securely'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: widget.api == null || _isClearing
+                          ? null
+                          : _clear,
+                      icon: Icon(
+                        _isClearing
+                            ? Icons.hourglass_top
+                            : Icons.delete_sweep_outlined,
+                      ),
+                      label: Text(_isClearing ? 'Clearing...' : 'Clear thread'),
                     ),
                   ],
                 ),
