@@ -373,6 +373,59 @@ void main() {
           messages, contains("expectMap(raw, label: 'PaginateRawPageItem')"));
     });
 
+    test('demotes a paginated query whose argument collides with pageSize', () {
+      const paginationOpts = ConvexField(
+        fieldType: ConvexObjectType(<String, ConvexField>{
+          'numItems': ConvexField(
+            fieldType: ConvexNumberType(),
+            optional: false,
+          ),
+          'cursor': ConvexField(
+            fieldType: ConvexUnionType(
+              <ConvexType>[ConvexStringType(), ConvexNullType()],
+            ),
+            optional: false,
+          ),
+        }),
+        optional: false,
+      );
+      final collidingSpec = FunctionsSpec(
+        url: 'https://sample.convex.cloud',
+        functions: <BaseFunctionSpec>[
+          FunctionSpec(
+            functionType: 'Query',
+            args: const ConvexObjectType(<String, ConvexField>{
+              'paginationOpts': paginationOpts,
+              'page_size': ConvexField(
+                fieldType: ConvexNumberType(),
+                optional: false,
+              ),
+            }),
+            returns: const ConvexAnyType(),
+            identifier: 'messages.ts:paginateOdd',
+            visibility: const Visibility('public'),
+          ),
+        ],
+      );
+
+      final output = DartGenerator().generate(collidingSpec);
+      final messages = output.files['modules/messages.dart']!;
+
+      // The sanitized arg name page_size -> pageSize would be declared twice
+      // in the paginated wrapper; the function demotes to a plain query
+      // method (paginationOpts stays exposed) with a warning.
+      expect(messages, isNot(contains('TypedConvexPaginatedQuery')));
+      expect(messages, contains('Future<dynamic> paginateOdd({'));
+      expect(messages, contains('paginateOddSubscribe'));
+      expect(
+        output.warnings,
+        anyElement(allOf(
+          contains('messages.ts:paginateOdd'),
+          contains('pageSize'),
+        )),
+      );
+    });
+
     test('covers the full surface: number enum, unknown type, exotic literal',
         () {
       final output = DartGenerator().generate(spec);

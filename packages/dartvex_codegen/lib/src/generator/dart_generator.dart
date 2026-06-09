@@ -134,7 +134,10 @@ class DartGenerator {
       for (final function in node.functions) {
         final methodName = _naming.methodName(function.functionName);
         addMember(methodName, 'function "${function.identifier}"');
-        if (function.functionType == 'Query') {
+        // Paginated queries emit a single wrapper method, no Subscribe
+        // helper; reserving one would reject names that never collide.
+        if (function.functionType == 'Query' &&
+            _detectPagination(function) == null) {
           addMember(
             '${methodName}Subscribe',
             'subscription helper for "${function.identifier}"',
@@ -280,7 +283,8 @@ class DartGenerator {
     FunctionSpec function, {
     required TypeRenderContext context,
   }) {
-    final pagination = _detectPagination(function);
+    final pagination =
+        _detectPagination(function, onSkip: context.warnings.add);
     if (pagination != null) {
       return _renderPaginatedQuery(function, pagination, context: context);
     }
@@ -441,7 +445,14 @@ class DartGenerator {
   /// `isDone`, `continueCursor`) or has no validator at all. A returns-less
   /// paginated query still generates a typed wrapper, just over
   /// `Map<String, dynamic>` page items.
-  _PaginationInfo? _detectPagination(FunctionSpec function) {
+  ///
+  /// [onSkip] is invoked with a diagnostic when a function that would paginate
+  /// is demoted to a plain query method (an argument would collide with the
+  /// generated `pageSize` parameter).
+  _PaginationInfo? _detectPagination(
+    FunctionSpec function, {
+    void Function(String warning)? onSkip,
+  }) {
     if (function.functionType != 'Query') {
       return null;
     }
@@ -487,6 +498,17 @@ class DartGenerator {
       for (final entry in args.value.entries)
         if (entry.key != 'paginationOpts') entry.key: entry.value,
     };
+    if (otherArgs.keys.any((key) => _naming.fieldName(key) == 'pageSize')) {
+      // The paginated wrapper exposes its own `pageSize` parameter; a user
+      // argument with that (sanitized) name would declare it twice. Fall back
+      // to a plain query method, which still exposes paginationOpts directly.
+      onSkip?.call(
+        'Function "${function.identifier}" looks paginated but has an '
+        'argument that collides with the generated "pageSize" parameter; '
+        'generated as a plain query method instead.',
+      );
+      return null;
+    }
     return _PaginationInfo(elementType: elementType, otherArgs: otherArgs);
   }
 
