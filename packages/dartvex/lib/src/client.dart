@@ -281,6 +281,18 @@ abstract interface class ConvexFunctionCaller {
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
   ]);
+
+  /// Subscribes to a live, reactive paginated query.
+  ///
+  /// [name] must be a Convex paginated query (one taking `paginationOpts` and
+  /// returning a `PaginationResult`); [args] are its arguments excluding
+  /// `paginationOpts`, and [pageSize] is the number of items per page. Cancel
+  /// the returned query when done to release its page subscriptions.
+  ConvexPaginatedQuery paginatedQuery(
+    String name,
+    Map<String, dynamic> args, {
+    int pageSize = 20,
+  });
 }
 
 /// Main Dartvex client for communicating with a Convex deployment.
@@ -758,6 +770,8 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       },
     );
   }
+
+  @override
 
   /// Subscribes to a live, reactive paginated query.
   ///

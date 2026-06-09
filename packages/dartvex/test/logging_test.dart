@@ -466,6 +466,15 @@ class _FakeLoggedCaller implements ConvexFunctionCaller, DartvexLogSource {
   ]) {
     throw UnimplementedError();
   }
+
+  @override
+  ConvexPaginatedQuery paginatedQuery(
+    String name,
+    Map<String, dynamic> args, {
+    int pageSize = 20,
+  }) {
+    throw UnimplementedError();
+  }
 }
 
 class _FakeSession {

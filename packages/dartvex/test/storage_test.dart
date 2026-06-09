@@ -49,6 +49,15 @@ class _FakeCaller implements ConvexFunctionCaller {
   }
 
   @override
+  ConvexPaginatedQuery paginatedQuery(
+    String name,
+    Map<String, dynamic> args, {
+    int pageSize = 20,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
   Future<dynamic> action(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},

@@ -4,6 +4,7 @@ import '../client.dart';
 import '../exceptions.dart';
 import '../logging.dart';
 import '../sync/optimistic_updates.dart';
+import '../sync/paginated_query.dart';
 import 'auth_client.dart';
 import 'auth_manager.dart';
 import 'auth_provider.dart';
@@ -74,6 +75,17 @@ class ConvexClientWithAuth<TUser>
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) {
     return _client.action(name, args);
+  }
+
+  @override
+
+  /// Subscribes to a paginated query through the wrapped client.
+  ConvexPaginatedQuery paginatedQuery(
+    String name,
+    Map<String, dynamic> args, {
+    int pageSize = 20,
+  }) {
+    return _client.paginatedQuery(name, args, pageSize: pageSize);
   }
 
   @override
