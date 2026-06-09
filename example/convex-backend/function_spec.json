@@ -292,6 +292,12 @@
               "type": "string"
             },
             "optional": false
+          },
+          "author": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
           }
         }
       },

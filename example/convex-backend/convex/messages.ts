@@ -70,6 +70,11 @@ export const listPrivate = query({
 export const sendPrivate = mutation({
   args: {
     text: v.string(),
+    // Optional client-supplied display label (e.g. "Authenticated User - iOS").
+    // The message is still gated on a verified identity below; this only
+    // controls how the author is shown, letting the demo surface the
+    // originating platform.
+    author: v.optional(v.string()),
   },
   returns: v.id("private_messages"),
   handler: async (ctx, args) => {
@@ -79,7 +84,8 @@ export const sendPrivate = mutation({
     }
 
     return await ctx.db.insert("private_messages", {
-      author: identity.name ?? identity.email ?? identity.subject,
+      author:
+        args.author ?? identity.name ?? identity.email ?? identity.subject,
       text: args.text,
       tokenIdentifier: identity.tokenIdentifier,
       subject: identity.subject,
