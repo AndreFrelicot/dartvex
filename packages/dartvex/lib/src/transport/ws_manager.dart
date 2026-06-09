@@ -590,7 +590,35 @@ class WebSocketManager {
             'Resuming WebSocket; flushing buffered '
             'messages');
         if (onResume != null) {
-          final messages = await onResume!();
+          // Resolve synchronously when possible: the production [onResume]
+          // (BaseClient.resume) drains the base client synchronously, and
+          // yielding to the event loop between that drain and [sendMessages]
+          // would open a window where a concurrent pause() makes
+          // [sendMessages] drop the drained messages on a live connection —
+          // the deferred auth, the resume query-set delta, and any drained
+          // requests would only be rebuilt by the next reconnect.
+          final messagesOrFuture = onResume!();
+          final List<ClientMessage> messages;
+          if (messagesOrFuture is List<ClientMessage>) {
+            messages = messagesOrFuture;
+          } else {
+            messages = await messagesOrFuture;
+            if (_pauseState != _SocketPauseState.no) {
+              // Paused again while an asynchronous [onResume] was building
+              // the messages. They are already drained out of the base client
+              // and cannot be buffered here, so force a clean reconnect: the
+              // fresh socket opens paused and defers its handshake to the new
+              // pause owner's resume, which rebuilds the query set, auth, and
+              // unsent requests losslessly.
+              _log(
+                DartvexLogLevel.warn,
+                'Socket paused during resume; forcing a clean reconnect so '
+                'the resumed messages are not dropped',
+              );
+              await reconnectNow('PausedDuringResume');
+              return;
+            }
+          }
           await sendMessages(messages);
         }
     }

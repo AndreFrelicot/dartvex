@@ -1280,6 +1280,76 @@ void main() {
       await manager.dispose();
     });
 
+    test(
+        'pause during an asynchronous resume forces a clean reconnect '
+        'instead of dropping the resumed messages', () async {
+      final adapter = MockWebSocketAdapter();
+      late WebSocketManager manager;
+      var resumeCalls = 0;
+      const restore = ModifyQuerySet(
+        baseVersion: 0,
+        newVersion: 1,
+        modifications: <QuerySetOperation>[],
+      );
+      manager = WebSocketManager(
+        adapter: adapter,
+        deploymentUrl: 'https://demo.convex.cloud',
+        apiVersion: '0.1.0',
+        onConnected: () => const <ClientMessage>[restore],
+        onResume: () async {
+          resumeCalls += 1;
+          // A concurrent auth flow pauses the socket while the resumed
+          // messages are still being built; sending them now would drop them.
+          manager.pause();
+          return const <ClientMessage>[
+            Authenticate(tokenType: 'User', baseVersion: 0, value: 'tok'),
+          ];
+        },
+        onMessage: (_) => const <ClientMessage>[],
+        onDisconnected: (_) async {},
+        onConnectionStateChanged: (_, __) {},
+        maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => true,
+        reconnectBackoff: const <Duration>[Duration.zero],
+        inactivityTimeout: const Duration(seconds: 30),
+      );
+
+      await manager.start();
+      final connectsBeforePause = adapter.decodedSentMessages
+          .where((message) => message['type'] == 'Connect')
+          .length;
+      expect(connectsBeforePause, 1);
+
+      manager.pause();
+      await manager.resume();
+      await pumpEventQueue();
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+
+      // The repause forced a clean reconnect: the Authenticate built by the
+      // interrupted resume was never written to the wire, and the fresh
+      // socket opened paused with its handshake deferred to the new owner.
+      expect(resumeCalls, 1);
+      expect(
+        adapter.decodedSentMessages
+            .where((message) => message['type'] == 'Authenticate'),
+        isEmpty,
+      );
+      expect(
+        adapter.decodedSentMessages
+            .where((message) => message['type'] == 'Connect'),
+        hasLength(1),
+      );
+
+      // The new pause owner resumes: the deferred handshake replays Connect
+      // and rebuilds the session from onConnected, so nothing was lost.
+      await manager.resume();
+      final connects = await waitForConnectMessages(adapter, 2);
+      expect(connects, hasLength(2));
+      expect(adapter.decodedSentMessages.last['type'], 'ModifyQuerySet');
+
+      await manager.dispose();
+    });
+
     test('stop closes without reconnecting and restart re-establishes it',
         () async {
       final adapter = MockWebSocketAdapter();
