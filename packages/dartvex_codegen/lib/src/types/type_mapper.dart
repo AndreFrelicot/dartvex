@@ -372,9 +372,24 @@ class TypeMapper {
     required String suggestedName,
     required TypeRenderContext context,
   }) {
-    final nullable = union.value.any((type) => type is ConvexNullType);
-    final nonNull =
-        union.value.where((type) => type is! ConvexNullType).toList();
+    // v.literal(null) admits exactly the same values as v.null(); treating it
+    // as a null member keeps degenerate unions like
+    // v.union(v.null(), v.literal(null)) from reaching the enum builder.
+    bool isNullMember(ConvexType type) =>
+        type is ConvexNullType ||
+        (type is ConvexLiteralType && type.value == null);
+    final nullable = union.value.any(isNullMember);
+    final nonNull = union.value.where((type) => !isNullMember(type)).toList();
+
+    if (nonNull.isEmpty) {
+      // A union of only null members (v.union(v.null(), v.null())) is just
+      // null; without this it would render an empty — invalid — Dart enum.
+      return mapType(
+        const ConvexNullType(),
+        suggestedName: suggestedName,
+        context: context,
+      );
+    }
 
     final hasUntypeableLiteral = nonNull.any(
       (type) => type is ConvexLiteralType && !_isScalarLiteralValue(type.value),
@@ -413,6 +428,13 @@ class TypeMapper {
         context: context,
       );
       if (!nullable) {
+        return inner;
+      }
+      if (inner.dartType is DartNullableType ||
+          inner.annotation == 'dynamic' ||
+          inner.annotation == 'Null') {
+        // The inner type already admits null (a nested nullable union, or a
+        // degraded dynamic); wrapping it again would emit invalid `T??`.
         return inner;
       }
       return MappedType(

@@ -508,5 +508,92 @@ void main() {
       expect(mapped.decode('raw'), 'raw');
       expect(context.warnings, anyElement(contains('MaybeBig')));
     });
+
+    test('collapses unions of only null members to Null', () {
+      final context = TypeRenderContext();
+      final mapper = TypeMapper();
+
+      final nullOnly = mapper.mapType(
+        const ConvexUnionType(
+          <ConvexType>[ConvexNullType(), ConvexNullType()],
+        ),
+        suggestedName: 'NothingResult',
+        context: context,
+      );
+      final nullAndNullLiteral = mapper.mapType(
+        const ConvexUnionType(
+          <ConvexType>[ConvexNullType(), ConvexLiteralType(null)],
+        ),
+        suggestedName: 'AlsoNothing',
+        context: context,
+      );
+
+      // Without the collapse these rendered an empty — invalid — Dart enum.
+      expect(nullOnly.annotation, 'Null');
+      expect(nullOnly.decode('raw'), 'null');
+      expect(nullAndNullLiteral.annotation, 'Null');
+    });
+
+    test('does not double-wrap nested nullable unions', () {
+      final context = TypeRenderContext();
+      final mapper = TypeMapper();
+
+      final nestedNullableId = mapper.mapType(
+        const ConvexUnionType(<ConvexType>[
+          ConvexNullType(),
+          ConvexUnionType(<ConvexType>[
+            ConvexNullType(),
+            ConvexIdType('users'),
+          ]),
+        ]),
+        suggestedName: 'NestedTarget',
+        context: context,
+      );
+      final nestedDynamic = mapper.mapType(
+        const ConvexUnionType(<ConvexType>[
+          ConvexNullType(),
+          ConvexUnionType(<ConvexType>[
+            ConvexAnyType(),
+            ConvexStringType(),
+          ]),
+        ]),
+        suggestedName: 'NestedAny',
+        context: context,
+      );
+
+      // Without the guard these rendered invalid `UsersId??` / `dynamic?`.
+      expect(nestedNullableId.annotation, 'UsersId?');
+      expect(nestedDynamic.annotation, 'dynamic');
+    });
+
+    test('encodes nullable composite types through a promoted binding', () {
+      final context = TypeRenderContext();
+      final mapper = TypeMapper();
+
+      final nullableId = mapper.mapType(
+        const ConvexUnionType(
+          <ConvexType>[ConvexIdType('users'), ConvexNullType()],
+        ),
+        suggestedName: 'Target',
+        context: context,
+      );
+      final nullableString = mapper.mapType(
+        const ConvexUnionType(
+          <ConvexType>[ConvexStringType(), ConvexNullType()],
+        ),
+        suggestedName: 'Label',
+        context: context,
+      );
+
+      // `x.value == null ? null : x.value.value` does not compile when the
+      // receiver is a non-promotable getter such as Optional.value; the
+      // encode must bind through a promoting switch expression instead.
+      expect(
+        nullableId.encode('x.value'),
+        r'switch (x.value) { null => null, final v$ => v$.value }',
+      );
+      // Identity inner encodes need no null handling at all.
+      expect(nullableString.encode('x.value'), 'x.value');
+    });
   });
 }
