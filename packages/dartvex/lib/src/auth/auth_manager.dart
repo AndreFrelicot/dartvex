@@ -97,7 +97,7 @@ class AuthManager {
     );
     _cancelRefreshTimer();
     _setRefreshing(false);
-    _authGeneration += 1;
+    final generation = ++_authGeneration;
     _fetchToken = null;
     _onAuthChange = null;
     _currentToken = token;
@@ -106,6 +106,7 @@ class AuthManager {
     if (token == null) {
       _emit(false);
     }
+    await _resumeSocketLeftPausedByReplacedFlow(generation);
   }
 
   /// Configures an auth refresh flow driven by [fetchToken].
@@ -149,7 +150,7 @@ class AuthManager {
       } else {
         await sendAuth(token);
       }
-      return _RefreshAuthHandle(this);
+      return _RefreshAuthHandle(this, generation, fetchToken);
     } catch (error, stackTrace) {
       if (_isCurrentFlow(generation, fetchToken)) {
         shouldResumeSocket = true;
@@ -175,13 +176,14 @@ class AuthManager {
     _log(DartvexLogLevel.info, 'Auth cleared');
     _cancelRefreshTimer();
     _setRefreshing(false);
-    _authGeneration += 1;
+    final generation = ++_authGeneration;
     _fetchToken = null;
     _onAuthChange = null;
     _currentToken = null;
     _clearPendingConfirmation();
     await sendAuth(null);
     _emit(false);
+    await _resumeSocketLeftPausedByReplacedFlow(generation);
   }
 
   /// The most recently applied auth token, if any.
@@ -199,13 +201,14 @@ class AuthManager {
   Future<void> updateToken(String token) async {
     _log(DartvexLogLevel.info, 'Auth token updated');
     _cancelRefreshTimer();
-    _authGeneration += 1;
+    final generation = ++_authGeneration;
     _currentToken = token;
     _expectConfirmationForToken(
       token,
       source: _AuthConfirmationSource.fresh,
     );
     await sendAuth(token);
+    await _resumeSocketLeftPausedByReplacedFlow(generation);
   }
 
   /// Marks the current auth token as confirmed by the backend.
@@ -359,12 +362,33 @@ class AuthManager {
   /// Stops any active refresh flow without changing the current token.
   Future<void> stopRefreshing() async {
     _log(DartvexLogLevel.debug, 'Stopping auth refresh flow');
-    _authGeneration += 1;
+    final generation = ++_authGeneration;
     _fetchToken = null;
     _onAuthChange = null;
     _clearPendingConfirmation();
     _cancelRefreshTimer();
     _setRefreshing(false);
+    await _resumeSocketLeftPausedByReplacedFlow(generation);
+  }
+
+  /// Resumes the socket when the auth flow this caller just replaced may have
+  /// left it paused.
+  ///
+  /// [setAuthWithRefresh] pauses the socket for its initial token fetch and
+  /// deliberately skips its own resume when superseded mid-fetch — from that
+  /// moment the superseder owns the socket gating. A superseding
+  /// [setAuthWithRefresh] pauses and resumes on its own, but the other entry
+  /// points ([setAuth], [clearAuth], [updateToken], [stopRefreshing]) never
+  /// pause, so they must release a pause inherited from the flow they replaced
+  /// or the socket would buffer its handshake and queries forever. Guarded by
+  /// [generation]: when an even newer flow has started by the time the caller
+  /// gets here, that flow owns the gating and nothing is resumed. Resuming an
+  /// unpaused socket is a no-op.
+  Future<void> _resumeSocketLeftPausedByReplacedFlow(int generation) async {
+    if (generation != _authGeneration) {
+      return;
+    }
+    await _invokeResumeSocket();
   }
 
   /// Computes when to proactively refresh a token, immune to device clock skew.
@@ -649,12 +673,21 @@ class AuthManager {
 }
 
 class _RefreshAuthHandle implements AuthHandle {
-  _RefreshAuthHandle(this._manager);
+  _RefreshAuthHandle(this._manager, this._generation, this._fetchToken);
 
   final AuthManager _manager;
+  final int _generation;
+  final AuthTokenFetcher _fetchToken;
 
   @override
   Future<void> cancel() {
+    // A handle from a superseded flow must not tear down its successor: the
+    // generation bump that superseded this flow already retired it, and
+    // calling stopRefreshing here would clear the *current* flow's fetcher
+    // (and could strand its socket pause) instead.
+    if (!_manager._isCurrentFlow(_generation, _fetchToken)) {
+      return Future<void>.value();
+    }
     return _manager.stopRefreshing();
   }
 }

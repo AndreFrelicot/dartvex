@@ -2422,6 +2422,63 @@ void main() {
         client.dispose();
       });
     });
+
+    group('auth flow supersession', () {
+      test(
+          'clearAuth during a hung setAuthWithRefresh fetch releases the '
+          'paused transport', () async {
+        final adapter = MockWebSocketAdapter();
+        final client = ConvexClient(
+          'https://demo.convex.cloud',
+          config: ConvexClientConfig(
+            adapterFactory: (_) => adapter,
+            reconnectBackoff: const <Duration>[Duration.zero],
+          ),
+        );
+        await settle();
+        expect(client.currentConnectionStatus.isWebSocketConnected, isTrue);
+
+        // The initial token fetch hangs (a slow auth endpoint) with the
+        // socket paused for it.
+        final fetchGate = Completer<String?>();
+        final authFuture = client.setAuthWithRefresh(
+          fetchToken: ({required bool forceRefresh}) => fetchGate.future,
+        );
+        await settle();
+
+        // Logging out while that fetch is still pending supersedes the flow;
+        // the clear must take over the socket gating and release the pause.
+        await client.clearAuth();
+        await settle();
+
+        // The superseded fetch completing later must not re-apply its token.
+        fetchGate.complete('late-token');
+        await authFuture;
+        await settle();
+
+        // The transport works again: a mutation reaches the wire instead of
+        // buffering forever behind the abandoned pause.
+        adapter.sentMessages.clear();
+        final mutationFuture = client.mutate('tasks:add', <String, dynamic>{
+          'text': 'after-clear',
+        });
+        unawaited(mutationFuture.catchError((_) => null));
+        await settle();
+        expect(
+          adapter.decodedSentMessages
+              .where((message) => message['type'] == 'Mutation'),
+          hasLength(1),
+        );
+        expect(
+          adapter.decodedSentMessages
+              .where((message) => message['type'] == 'Authenticate')
+              .map((message) => message['value']),
+          isNot(contains('late-token')),
+        );
+
+        client.dispose();
+      });
+    });
   });
 }
 

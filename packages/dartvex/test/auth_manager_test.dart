@@ -634,9 +634,17 @@ void main() {
       );
       await manager.stopRefreshing();
 
+      // The trailing resume is stopRefreshing releasing a possibly-inherited
+      // pause; resuming an unpaused socket is a transport no-op.
       expect(
         events,
-        <String>['pause', 'fetch:false', 'sendAuth:token-abc', 'resume'],
+        <String>[
+          'pause',
+          'fetch:false',
+          'sendAuth:token-abc',
+          'resume',
+          'resume',
+        ],
       );
     });
 
@@ -663,7 +671,9 @@ void main() {
           'fetch:false',
           'fetch:true',
           'sendAuth:fresh-token',
-          'resume'
+          'resume',
+          // stopRefreshing releases a possibly-inherited pause (a no-op here).
+          'resume',
         ],
       );
     });
@@ -729,7 +739,14 @@ void main() {
 
       expect(
         events,
-        <String>['stop', 'fetch:true', 'sendAuth:fresh-token-2', 'restart'],
+        <String>[
+          'stop',
+          'fetch:true',
+          'sendAuth:fresh-token-2',
+          'restart',
+          // stopRefreshing releases a possibly-inherited pause (a no-op here).
+          'resume',
+        ],
       );
     });
 
@@ -764,8 +781,10 @@ void main() {
       );
       await manager.stopRefreshing();
 
-      // The socket is never left stopped, even when the refresh yields no token.
-      expect(events, <String>['stop', 'sendAuth:null', 'restart']);
+      // The socket is never left stopped, even when the refresh yields no
+      // token. The trailing resume is stopRefreshing releasing a
+      // possibly-inherited pause (a no-op here).
+      expect(events, <String>['stop', 'sendAuth:null', 'restart', 'resume']);
     });
 
     test('reauth clears auth and restarts the socket when refresh throws',
@@ -923,6 +942,186 @@ void main() {
       expect(refreshing, <bool>[true, false]);
       expect(manager.isRefreshing, isFalse);
       await manager.stopRefreshing();
+    });
+  });
+
+  group('AuthManager flow supersession', () {
+    AuthManager buildManager(List<String> events) {
+      return AuthManager(
+        config: const ConvexClientConfig(connectImmediately: false),
+        sendAuth: (token) async => events.add('sendAuth:${token ?? 'null'}'),
+        emitAuthState: (authenticated) =>
+            events.add('authState:$authenticated'),
+        pauseSocket: () async => events.add('pause'),
+        resumeSocket: () async => events.add('resume'),
+        stopSocket: () async => events.add('stop'),
+        restartSocket: () async => events.add('restart'),
+      );
+    }
+
+    test('clearAuth during the initial token fetch resumes the paused socket',
+        () async {
+      final events = <String>[];
+      final fetchStarted = Completer<void>();
+      final fetchGate = Completer<String?>();
+      final manager = buildManager(events);
+
+      final handleFuture = manager.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) {
+          if (!fetchStarted.isCompleted) {
+            fetchStarted.complete();
+          }
+          return fetchGate.future;
+        },
+      );
+      await fetchStarted.future;
+      expect(events, <String>['pause']);
+
+      await manager.clearAuth();
+      // The clear releases the inherited pause, and applies before the resume
+      // so the buffered Authenticate(None) flushes in order.
+      expect(events.where((event) => event == 'resume'), hasLength(1));
+      expect(
+        events.indexOf('sendAuth:null'),
+        lessThan(events.indexOf('resume')),
+      );
+
+      fetchGate.complete(_jwt(subject: 'late', issuedAt: 0, expiresAt: 7200));
+      final handle = await handleFuture;
+      await handle.cancel();
+      // The superseded flow neither sent its late token nor resumed again.
+      expect(events.where((event) => event == 'resume'), hasLength(1));
+      expect(
+        events.where((event) => event.startsWith('sendAuth:')).toList(),
+        <String>['sendAuth:null'],
+      );
+    });
+
+    test('setAuth during the initial token fetch resumes the paused socket',
+        () async {
+      final events = <String>[];
+      final fetchGate = Completer<String?>();
+      final manager = buildManager(events);
+
+      final handleFuture = manager.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) => fetchGate.future,
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(events, <String>['pause']);
+
+      await manager.setAuth('fixed-token');
+      expect(events.where((event) => event == 'resume'), hasLength(1));
+      expect(
+        events.indexOf('sendAuth:fixed-token'),
+        lessThan(events.indexOf('resume')),
+      );
+
+      fetchGate.complete(_jwt(subject: 'late', issuedAt: 0, expiresAt: 7200));
+      await handleFuture;
+      expect(events.where((event) => event == 'resume'), hasLength(1));
+      expect(
+        events.where((event) => event.startsWith('sendAuth:')).toList(),
+        <String>['sendAuth:fixed-token'],
+      );
+    });
+
+    test('stopRefreshing during the initial token fetch resumes the socket',
+        () async {
+      final events = <String>[];
+      final fetchGate = Completer<String?>();
+      final manager = buildManager(events);
+
+      final handleFuture = manager.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) => fetchGate.future,
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(events, <String>['pause']);
+
+      await manager.stopRefreshing();
+      expect(events.where((event) => event == 'resume'), hasLength(1));
+
+      fetchGate.complete(null);
+      await handleFuture;
+      expect(events.where((event) => event == 'resume'), hasLength(1));
+      expect(events.where((event) => event.startsWith('sendAuth:')), isEmpty);
+    });
+
+    test('a newer setAuthWithRefresh keeps ownership of the socket gating',
+        () async {
+      final events = <String>[];
+      final firstFetchGate = Completer<String?>();
+      final manager = buildManager(events);
+      final tokenA = _jwt(subject: 'a', issuedAt: 0, expiresAt: 7200);
+      final tokenB = _jwt(subject: 'b', issuedAt: 0, expiresAt: 7200);
+
+      final firstHandleFuture = manager.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) => firstFetchGate.future,
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(events, <String>['pause']);
+
+      await manager.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) async => tokenB,
+      );
+      // The newer flow paused again (idempotent at the transport) and resumed
+      // exactly once at its end; the supersession itself must not resume.
+      expect(events.where((event) => event == 'resume'), hasLength(1));
+      expect(events.last, 'resume');
+      expect(events, contains('sendAuth:$tokenB'));
+
+      firstFetchGate.complete(tokenA);
+      await firstHandleFuture;
+      // The stale flow neither resumed again nor sent its token.
+      expect(events.where((event) => event == 'resume'), hasLength(1));
+      expect(events, isNot(contains('sendAuth:$tokenA')));
+      await manager.stopRefreshing();
+    });
+
+    test('a stale auth handle cancel does not tear down the current flow',
+        () async {
+      final events = <String>[];
+      final manager = buildManager(events);
+      final tokenA = _jwt(subject: 'a', issuedAt: 0, expiresAt: 7200);
+      final tokenB = _jwt(subject: 'b', issuedAt: 0, expiresAt: 7200);
+      final tokenB2 = _jwt(subject: 'b2', issuedAt: 0, expiresAt: 7200);
+
+      final handleA = await manager.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) async => tokenA,
+      );
+      final handleB = await manager.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) async =>
+            forceRefresh ? tokenB2 : tokenB,
+      );
+
+      // Cancelling the replaced flow's handle must not clear the current
+      // flow's fetcher: a server auth error still drives a working reauth.
+      await handleA.cancel();
+      events.clear();
+      await manager.handleAuthError(
+        const AuthError(
+          error: 'expired',
+          baseVersion: 0,
+          authUpdateAttempted: true,
+        ),
+        currentAuthVersion: 0,
+      );
+      expect(events, contains('sendAuth:$tokenB2'));
+      expect(events, isNot(contains('sendAuth:null')));
+
+      // The current handle still cancels its own flow: the next auth error
+      // finds no fetcher and clears auth.
+      await handleB.cancel();
+      events.clear();
+      await manager.handleAuthError(
+        const AuthError(
+          error: 'expired',
+          baseVersion: 0,
+          authUpdateAttempted: true,
+        ),
+        currentAuthVersion: 0,
+      );
+      expect(events, contains('sendAuth:null'));
+      expect(events, contains('authState:false'));
     });
   });
 }

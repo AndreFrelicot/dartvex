@@ -1102,6 +1102,12 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   }
 
   Future<void> _resumeSocketForAuth() async {
+    if (_disposed) {
+      // close() stops the refresh flow before disposing the transport; the
+      // resume that releases a superseded flow's pause must not run a deferred
+      // handshake on a socket that is about to be torn down.
+      return;
+    }
     await _wsManager.resume();
     // Safety net: if the socket was never actually paused (e.g. it had already
     // disconnected before the fetch finished), unpause and flush local state so
