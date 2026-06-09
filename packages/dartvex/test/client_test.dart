@@ -1961,8 +1961,8 @@ void main() {
       // identical subscriptions coalesce into a single Add.
       final modifyMessages = adapter.decodedSentMessages
           .where((message) => message['type'] == 'ModifyQuerySet')
-          .where(
-              (message) => (message['modifications'] as List<dynamic>).isNotEmpty)
+          .where((message) =>
+              (message['modifications'] as List<dynamic>).isNotEmpty)
           .toList();
       expect(modifyMessages, hasLength(1));
 
@@ -1993,8 +1993,8 @@ void main() {
 
       final querySet = adapter.decodedSentMessages
           .where((message) => message['type'] == 'ModifyQuerySet')
-          .where(
-              (message) => (message['modifications'] as List<dynamic>).isNotEmpty)
+          .where((message) =>
+              (message['modifications'] as List<dynamic>).isNotEmpty)
           .single;
       final queryId = (((querySet['modifications'] as List<dynamic>).single
           as Map<String, dynamic>)['queryId']) as int;

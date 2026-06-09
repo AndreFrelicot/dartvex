@@ -160,7 +160,8 @@ void main() {
       expect(state.hasSyncedPastLastReconnect(), isTrue);
     });
 
-    test('a reconnect with no queries still re-declares an empty query set', () {
+    test('a reconnect with no queries still re-declares an empty query set',
+        () {
       // Official parity: the client's restart() builds a
       // ModifyQuerySet(baseVersion: 0, newVersion: 1) unconditionally and sends
       // it on every reconnect, even with no active queries, advancing the
@@ -178,7 +179,8 @@ void main() {
       expect(state.hasSyncedPastLastReconnect(), isTrue);
     });
 
-    test('a reconnect with auth and no queries sends auth then an empty query '
+    test(
+        'a reconnect with auth and no queries sends auth then an empty query '
         'set', () {
       final state = LocalSyncState();
       state.setAuth(tokenType: 'User', value: 'token-123');
