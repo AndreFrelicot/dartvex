@@ -42,7 +42,7 @@ TOKEN="$(cd ../convex-backend && npm run -s token)"
 flutter build macos --release \
   --dart-define=CONVEX_DEMO_URL=https://your-deployment.convex.cloud \
   --dart-define=CONVEX_DEMO_AUTH_TOKEN="$TOKEN"
-open build/macos/Build/Products/Release/convex_flutter_demo.app
+open build/macos/Build/Products/Release/dartvex_flutter_demo.app
 
 # Android (installable APK)
 flutter build apk --release \

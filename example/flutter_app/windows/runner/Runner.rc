@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "dev.appexpress" "\0"
-            VALUE "FileDescription", "convex_flutter_demo" "\0"
+            VALUE "FileDescription", "Dartvex Demo" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "convex_flutter_demo" "\0"
+            VALUE "InternalName", "dartvex_flutter_demo" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 dev.appexpress. All rights reserved." "\0"
-            VALUE "OriginalFilename", "convex_flutter_demo.exe" "\0"
-            VALUE "ProductName", "convex_flutter_demo" "\0"
+            VALUE "OriginalFilename", "dartvex_flutter_demo.exe" "\0"
+            VALUE "ProductName", "Dartvex Demo" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

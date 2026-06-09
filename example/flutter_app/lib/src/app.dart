@@ -27,11 +27,11 @@ import 'features/storage/presentation/files_panel.dart';
 import 'features/tasks/presentation/tasks_board_panel.dart';
 
 void runDemoApp() {
-  runApp(const ConvexFlutterDemoApp());
+  runApp(const DartvexDemoApp());
 }
 
-class ConvexFlutterDemoApp extends StatefulWidget {
-  const ConvexFlutterDemoApp({
+class DartvexDemoApp extends StatefulWidget {
+  const DartvexDemoApp({
     super.key,
     this.deploymentUrlOverride,
     this.initialTokenOverride,
@@ -41,10 +41,10 @@ class ConvexFlutterDemoApp extends StatefulWidget {
   final String? initialTokenOverride;
 
   @override
-  State<ConvexFlutterDemoApp> createState() => _ConvexFlutterDemoAppState();
+  State<DartvexDemoApp> createState() => _DartvexDemoAppState();
 }
 
-class _ConvexFlutterDemoAppState extends State<ConvexFlutterDemoApp> {
+class _DartvexDemoAppState extends State<DartvexDemoApp> {
   static const String _deploymentDefine = String.fromEnvironment(
     'CONVEX_DEMO_URL',
   );

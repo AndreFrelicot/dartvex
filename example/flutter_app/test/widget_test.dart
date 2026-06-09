@@ -14,7 +14,7 @@ void main() {
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
-      const ConvexFlutterDemoApp(deploymentUrlOverride: ''),
+      const DartvexDemoApp(deploymentUrlOverride: ''),
     );
 
     expect(find.textContaining('Set CONVEX_DEMO_URL'), findsWidgets);

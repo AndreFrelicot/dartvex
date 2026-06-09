@@ -15,7 +15,7 @@ void main() {
   group('Auth mode switching', () {
     testWidgets('app starts in Demo mode by default', (tester) async {
       await tester.pumpWidget(
-        const ConvexFlutterDemoAppForTest(deploymentUrl: ''),
+        const DartvexDemoAppForTest(deploymentUrl: ''),
       );
 
       // Mode selector should be visible with Demo selected.
@@ -30,7 +30,7 @@ void main() {
       'switching to Better Auth mode without config shows setup panel',
       (tester) async {
         await tester.pumpWidget(
-          const ConvexFlutterDemoAppForTest(deploymentUrl: ''),
+          const DartvexDemoAppForTest(deploymentUrl: ''),
         );
 
         // Switch to Better Auth mode.
@@ -48,7 +48,7 @@ void main() {
       tester,
     ) async {
       await tester.pumpWidget(
-        const ConvexFlutterDemoAppForTest(deploymentUrl: ''),
+        const DartvexDemoAppForTest(deploymentUrl: ''),
       );
 
       // Switch to Better Auth.
@@ -147,18 +147,18 @@ void main() {
 // No ConvexClient is created — the auth panels operate without a backend.
 // ---------------------------------------------------------------------------
 
-class ConvexFlutterDemoAppForTest extends StatefulWidget {
-  const ConvexFlutterDemoAppForTest({super.key, required this.deploymentUrl});
+class DartvexDemoAppForTest extends StatefulWidget {
+  const DartvexDemoAppForTest({super.key, required this.deploymentUrl});
 
   final String deploymentUrl;
 
   @override
-  State<ConvexFlutterDemoAppForTest> createState() =>
-      _ConvexFlutterDemoAppForTestState();
+  State<DartvexDemoAppForTest> createState() =>
+      _DartvexDemoAppForTestState();
 }
 
-class _ConvexFlutterDemoAppForTestState
-    extends State<ConvexFlutterDemoAppForTest> {
+class _DartvexDemoAppForTestState
+    extends State<DartvexDemoAppForTest> {
   AuthMode _authMode = AuthMode.demo;
 
   late final DemoAuthProvider _demoAuthProvider = DemoAuthProvider(

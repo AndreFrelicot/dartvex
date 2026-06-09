@@ -1,6 +1,6 @@
 {
-    "name": "dartvex_demo",
-    "short_name": "dartvex_demo",
+    "name": "Dartvex Demo",
+    "short_name": "Dartvex Demo",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

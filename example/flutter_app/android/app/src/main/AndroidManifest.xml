@@ -4,7 +4,7 @@
          or they cannot reach the backend ("realtime offline"). -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <application
-        android:label="convex_flutter_demo"
+        android:label="Dartvex Demo"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
