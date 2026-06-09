@@ -94,6 +94,29 @@ export const sendPrivate = mutation({
   },
 });
 
+// Clears only the calling identity's private messages (scoped by
+// tokenIdentifier, exactly like listPrivate). A signed-in viewer can wipe their
+// own private thread without touching anyone else's.
+export const clearPrivate = mutation({
+  args: {},
+  returns: v.number(),
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (identity === null) {
+      throw new ConvexError("Authentication required");
+    }
+
+    const mine = await ctx.db
+      .query("private_messages")
+      .withIndex("by_token_identifier", (q) =>
+        q.eq("tokenIdentifier", identity.tokenIdentifier),
+      )
+      .collect();
+    await Promise.all(mine.map((doc) => ctx.db.delete(doc._id)));
+    return mine.length;
+  },
+});
+
 // Reactive, gapless pagination over the public feed. Used by the Showcase
 // `PaginatedQueryBuilder` demo. Returns a standard Convex PaginationResult.
 export const paginatePublic = query({

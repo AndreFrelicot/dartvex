@@ -317,6 +317,20 @@
         "value": {}
       },
       "functionType": "Mutation",
+      "identifier": "messages.js:clearPrivate",
+      "returns": {
+        "type": "number"
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Mutation",
       "identifier": "messages.js:clearPublicMessages",
       "returns": {
         "type": "number"
