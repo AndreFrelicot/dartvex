@@ -1,4 +1,5 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND.
+// ignore_for_file: type=lint, unused_element, unused_import, unused_local_variable
 
 import '../runtime.dart';
 import '../schema.dart';
@@ -10,35 +11,35 @@ class MessagesApi {
   final ConvexFunctionCaller _client;
 
   Future<double> clearPrivate() async {
-    final raw = await _client.mutate(
+    final raw$ = await _client.mutate(
       'messages:clearPrivate',
       const <String, dynamic>{},
     );
-    return expectDouble(raw, label: 'ClearPrivateResult');
+    return expectDouble(raw$, label: 'ClearPrivateResult');
   }
 
   Future<double> clearPublicMessages() async {
-    final raw = await _client.mutate(
+    final raw$ = await _client.mutate(
       'messages:clearPublicMessages',
       const <String, dynamic>{},
     );
-    return expectDouble(raw, label: 'ClearPublicMessagesResult');
+    return expectDouble(raw$, label: 'ClearPublicMessagesResult');
   }
 
   Future<double> countPublic() async {
-    final raw = await _client.query(
+    final raw$ = await _client.query(
       'messages:countPublic',
       const <String, dynamic>{},
     );
-    return expectDouble(raw, label: 'CountPublicResult');
+    return expectDouble(raw$, label: 'CountPublicResult');
   }
 
   TypedConvexSubscription<double> countPublicSubscribe() {
-    final subscription = _client.subscribe(
+    final subscription$ = _client.subscribe(
       'messages:countPublic',
       const <String, dynamic>{},
     );
-    final typedStream = subscription.stream.map((event) {
+    final typedStream$ = subscription$.stream.map((event) {
       switch (event) {
         case QuerySuccess(:final value):
           return TypedQuerySuccess<double>(
@@ -54,14 +55,14 @@ class MessagesApi {
           );
       }
     });
-    return TypedConvexSubscription<double>(subscription, typedStream);
+    return TypedConvexSubscription<double>(subscription$, typedStream$);
   }
 
   Future<Null> failingSend({
     required String author,
     required String text,
   }) async {
-    final raw = await _client.mutate(
+    await _client.mutate(
       'messages:failingSend',
       _encodeFailingSendArgs((author: author, text: text)),
     );
@@ -69,22 +70,22 @@ class MessagesApi {
   }
 
   Future<List<ListPrivateResultItem>> listPrivate() async {
-    final raw = await _client.query(
+    final raw$ = await _client.query(
       'messages:listPrivate',
       const <String, dynamic>{},
     );
     return expectList(
-      raw,
+      raw$,
       label: 'ListPrivateResult',
     ).map((item) => _decodeListPrivateResultItem(item)).toList();
   }
 
   TypedConvexSubscription<List<ListPrivateResultItem>> listPrivateSubscribe() {
-    final subscription = _client.subscribe(
+    final subscription$ = _client.subscribe(
       'messages:listPrivate',
       const <String, dynamic>{},
     );
-    final typedStream = subscription.stream.map((event) {
+    final typedStream$ = subscription$.stream.map((event) {
       switch (event) {
         case QuerySuccess(:final value):
           return TypedQuerySuccess<List<ListPrivateResultItem>>(
@@ -106,28 +107,28 @@ class MessagesApi {
       }
     });
     return TypedConvexSubscription<List<ListPrivateResultItem>>(
-      subscription,
-      typedStream,
+      subscription$,
+      typedStream$,
     );
   }
 
   Future<List<ListPublicResultItem>> listPublic() async {
-    final raw = await _client.query(
+    final raw$ = await _client.query(
       'messages:listPublic',
       const <String, dynamic>{},
     );
     return expectList(
-      raw,
+      raw$,
       label: 'ListPublicResult',
     ).map((item) => _decodeListPublicResultItem(item)).toList();
   }
 
   TypedConvexSubscription<List<ListPublicResultItem>> listPublicSubscribe() {
-    final subscription = _client.subscribe(
+    final subscription$ = _client.subscribe(
       'messages:listPublic',
       const <String, dynamic>{},
     );
-    final typedStream = subscription.stream.map((event) {
+    final typedStream$ = subscription$.stream.map((event) {
       switch (event) {
         case QuerySuccess(:final value):
           return TypedQuerySuccess<List<ListPublicResultItem>>(
@@ -149,60 +150,59 @@ class MessagesApi {
       }
     });
     return TypedConvexSubscription<List<ListPublicResultItem>>(
-      subscription,
-      typedStream,
+      subscription$,
+      typedStream$,
     );
   }
 
   TypedConvexPaginatedQuery<PaginatePublicPageItem> paginatePublic({
     int pageSize = 20,
   }) {
-    final query = _client.paginatedQuery(
-      'messages:paginatePublic',
-      const <String, dynamic>{},
-      pageSize: pageSize,
-    );
     return TypedConvexPaginatedQuery<PaginatePublicPageItem>(
-      query,
+      _client.paginatedQuery(
+        'messages:paginatePublic',
+        const <String, dynamic>{},
+        pageSize: pageSize,
+      ),
       (dynamic raw) => _decodePaginatePublicPageItem(raw),
     );
   }
 
   Future<double> seedPublic() async {
-    final raw = await _client.mutate(
+    final raw$ = await _client.mutate(
       'messages:seedPublic',
       const <String, dynamic>{},
     );
-    return expectDouble(raw, label: 'SeedPublicResult');
+    return expectDouble(raw$, label: 'SeedPublicResult');
   }
 
   Future<PrivateMessagesId> sendPrivate({
     Optional<String> author = const Optional.absent(),
     required String text,
   }) async {
-    final raw = await _client.mutate(
+    final raw$ = await _client.mutate(
       'messages:sendPrivate',
       _encodeSendPrivateArgs((author: author, text: text)),
     );
-    return PrivateMessagesId(expectString(raw, label: 'SendPrivateResult'));
+    return PrivateMessagesId(expectString(raw$, label: 'SendPrivateResult'));
   }
 
   Future<PublicMessagesId> sendPublic({
     required String author,
     required String text,
   }) async {
-    final raw = await _client.mutate(
+    final raw$ = await _client.mutate(
       'messages:sendPublic',
       _encodeSendPublicArgs((author: author, text: text)),
     );
-    return PublicMessagesId(expectString(raw, label: 'SendPublicResult'));
+    return PublicMessagesId(expectString(raw$, label: 'SendPublicResult'));
   }
 }
 
 typedef FailingSendArgs = ({String author, String text});
 
-Map<String, dynamic> _encodeFailingSendArgs(FailingSendArgs value) {
-  final (author: author, text: text) = value;
+Map<String, dynamic> _encodeFailingSendArgs(FailingSendArgs value$) {
+  final (author: author, text: text) = value$;
   return <String, dynamic>{'author': author, 'text': text};
 }
 
@@ -230,14 +230,16 @@ typedef ListPrivateResultItem = ({
   String tokenIdentifier,
 });
 
-Map<String, dynamic> _encodeListPrivateResultItem(ListPrivateResultItem value) {
+Map<String, dynamic> _encodeListPrivateResultItem(
+  ListPrivateResultItem value$,
+) {
   final (
     creationTime: creationTime,
     id: id,
     author: author,
     text: text,
     tokenIdentifier: tokenIdentifier,
-  ) = value;
+  ) = value$;
   return <String, dynamic>{
     '_creationTime': creationTime,
     '_id': id.value,
@@ -298,9 +300,9 @@ typedef ListPublicResultItem = ({
   String text,
 });
 
-Map<String, dynamic> _encodeListPublicResultItem(ListPublicResultItem value) {
+Map<String, dynamic> _encodeListPublicResultItem(ListPublicResultItem value$) {
   final (creationTime: creationTime, id: id, author: author, text: text) =
-      value;
+      value$;
   return <String, dynamic>{
     '_creationTime': creationTime,
     '_id': id.value,
@@ -352,10 +354,10 @@ typedef PaginatePublicPageItem = ({
 });
 
 Map<String, dynamic> _encodePaginatePublicPageItem(
-  PaginatePublicPageItem value,
+  PaginatePublicPageItem value$,
 ) {
   final (creationTime: creationTime, id: id, author: author, text: text) =
-      value;
+      value$;
   return <String, dynamic>{
     '_creationTime': creationTime,
     '_id': id.value,
@@ -401,8 +403,8 @@ PaginatePublicPageItem _decodePaginatePublicPageItem(dynamic raw) {
 
 typedef SendPrivateArgs = ({Optional<String> author, String text});
 
-Map<String, dynamic> _encodeSendPrivateArgs(SendPrivateArgs value) {
-  final (author: author, text: text) = value;
+Map<String, dynamic> _encodeSendPrivateArgs(SendPrivateArgs value$) {
+  final (author: author, text: text) = value$;
   return <String, dynamic>{
     if (author.isDefined) 'author': author.value,
     'text': text,
@@ -426,8 +428,8 @@ SendPrivateArgs _decodeSendPrivateArgs(dynamic raw) {
 
 typedef SendPublicArgs = ({String author, String text});
 
-Map<String, dynamic> _encodeSendPublicArgs(SendPublicArgs value) {
-  final (author: author, text: text) = value;
+Map<String, dynamic> _encodeSendPublicArgs(SendPublicArgs value$) {
+  final (author: author, text: text) = value$;
   return <String, dynamic>{'author': author, 'text': text};
 }
 

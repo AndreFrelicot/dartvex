@@ -1,4 +1,5 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND.
+// ignore_for_file: type=lint, unused_element, unused_import, unused_local_variable
 
 import '../runtime.dart';
 import '../schema.dart';
@@ -10,19 +11,19 @@ class TasksApi {
   final ConvexFunctionCaller _client;
 
   Future<AdvanceTaskResult> advanceTask({required TasksId taskId}) async {
-    final raw = await _client.mutate(
+    final raw$ = await _client.mutate(
       'tasks:advanceTask',
       _encodeAdvanceTaskArgs((taskId: taskId)),
     );
-    return _decodeAdvanceTaskResult(raw);
+    return _decodeAdvanceTaskResult(raw$);
   }
 
   Future<double> clearTasks() async {
-    final raw = await _client.mutate(
+    final raw$ = await _client.mutate(
       'tasks:clearTasks',
       const <String, dynamic>{},
     );
-    return expectDouble(raw, label: 'ClearTasksResult');
+    return expectDouble(raw$, label: 'ClearTasksResult');
   }
 
   Future<TasksId> createTask({
@@ -34,7 +35,7 @@ class TasksApi {
     required String? summary,
     required String title,
   }) async {
-    final raw = await _client.mutate(
+    final raw$ = await _client.mutate(
       'tasks:createTask',
       _encodeCreateTaskArgs((
         assignee: assignee,
@@ -46,26 +47,26 @@ class TasksApi {
         title: title,
       )),
     );
-    return TasksId(expectString(raw, label: 'CreateTaskResult'));
+    return TasksId(expectString(raw$, label: 'CreateTaskResult'));
   }
 
   Future<List<ListBoardResultItem>> listBoard() async {
-    final raw = await _client.query(
+    final raw$ = await _client.query(
       'tasks:listBoard',
       const <String, dynamic>{},
     );
     return expectList(
-      raw,
+      raw$,
       label: 'ListBoardResult',
     ).map((item) => _decodeListBoardResultItem(item)).toList();
   }
 
   TypedConvexSubscription<List<ListBoardResultItem>> listBoardSubscribe() {
-    final subscription = _client.subscribe(
+    final subscription$ = _client.subscribe(
       'tasks:listBoard',
       const <String, dynamic>{},
     );
-    final typedStream = subscription.stream.map((event) {
+    final typedStream$ = subscription$.stream.map((event) {
       switch (event) {
         case QuerySuccess(:final value):
           return TypedQuerySuccess<List<ListBoardResultItem>>(
@@ -87,24 +88,24 @@ class TasksApi {
       }
     });
     return TypedConvexSubscription<List<ListBoardResultItem>>(
-      subscription,
-      typedStream,
+      subscription$,
+      typedStream$,
     );
   }
 
   Future<double> seedBoard() async {
-    final raw = await _client.mutate(
+    final raw$ = await _client.mutate(
       'tasks:seedBoard',
       const <String, dynamic>{},
     );
-    return expectDouble(raw, label: 'SeedBoardResult');
+    return expectDouble(raw$, label: 'SeedBoardResult');
   }
 }
 
 typedef AdvanceTaskResult = ({String status, TasksId taskId});
 
-Map<String, dynamic> _encodeAdvanceTaskResult(AdvanceTaskResult value) {
-  final (status: status, taskId: taskId) = value;
+Map<String, dynamic> _encodeAdvanceTaskResult(AdvanceTaskResult value$) {
+  final (status: status, taskId: taskId) = value$;
   return <String, dynamic>{'status': status, 'taskId': taskId.value};
 }
 
@@ -130,8 +131,8 @@ AdvanceTaskResult _decodeAdvanceTaskResult(dynamic raw) {
 
 typedef AdvanceTaskArgs = ({TasksId taskId});
 
-Map<String, dynamic> _encodeAdvanceTaskArgs(AdvanceTaskArgs value) {
-  final (taskId: taskId) = value;
+Map<String, dynamic> _encodeAdvanceTaskArgs(AdvanceTaskArgs value$) {
+  final (taskId: taskId) = value$;
   return <String, dynamic>{'taskId': taskId.value};
 }
 
@@ -159,7 +160,7 @@ typedef CreateTaskArgs = ({
   String title,
 });
 
-Map<String, dynamic> _encodeCreateTaskArgs(CreateTaskArgs value) {
+Map<String, dynamic> _encodeCreateTaskArgs(CreateTaskArgs value$) {
   final (
     assignee: assignee,
     dueAt: dueAt,
@@ -168,14 +169,14 @@ Map<String, dynamic> _encodeCreateTaskArgs(CreateTaskArgs value) {
     priority: priority,
     summary: summary,
     title: title,
-  ) = value;
+  ) = value$;
   return <String, dynamic>{
-    'assignee': assignee == null ? null : assignee,
-    'dueAt': dueAt == null ? null : dueAt,
+    'assignee': assignee,
+    'dueAt': dueAt,
     'estimatePoints': estimatePoints,
     'labels': labels.map((item) => item).toList(),
     'priority': priority,
-    'summary': summary == null ? null : summary,
+    'summary': summary,
     'title': title,
   };
 }
@@ -246,7 +247,7 @@ typedef ListBoardResultItem = ({
   String title,
 });
 
-Map<String, dynamic> _encodeListBoardResultItem(ListBoardResultItem value) {
+Map<String, dynamic> _encodeListBoardResultItem(ListBoardResultItem value$) {
   final (
     creationTime: creationTime,
     id: id,
@@ -258,17 +259,17 @@ Map<String, dynamic> _encodeListBoardResultItem(ListBoardResultItem value) {
     status: status,
     summary: summary,
     title: title,
-  ) = value;
+  ) = value$;
   return <String, dynamic>{
     '_creationTime': creationTime,
     '_id': id.value,
-    'assignee': assignee == null ? null : assignee,
-    'dueAt': dueAt == null ? null : dueAt,
+    'assignee': assignee,
+    'dueAt': dueAt,
     'estimatePoints': estimatePoints,
     'labels': labels.map((item) => item).toList(),
     'priority': priority,
     'status': status,
-    'summary': summary == null ? null : summary,
+    'summary': summary,
     'title': title,
   };
 }

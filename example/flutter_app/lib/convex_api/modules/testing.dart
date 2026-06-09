@@ -1,4 +1,5 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND.
+// ignore_for_file: type=lint, unused_element, unused_import, unused_local_variable
 
 import '../runtime.dart';
 import '../schema.dart';
@@ -14,28 +15,28 @@ class TestingApi {
     required Uint8List bytesValue,
     required BigInt intValue,
   }) async {
-    final raw = await _client.action(
+    final raw$ = await _client.action(
       'testing:echoValues',
       _encodeEchoValuesArgs((bytesValue: bytesValue, intValue: intValue)),
     );
-    return _decodeEchoValuesResult(raw);
+    return _decodeEchoValuesResult(raw$);
   }
 
   Future<SpecialValuesSnapshotResult> specialValuesSnapshot() async {
-    final raw = await _client.query(
+    final raw$ = await _client.query(
       'testing:specialValuesSnapshot',
       const <String, dynamic>{},
     );
-    return _decodeSpecialValuesSnapshotResult(raw);
+    return _decodeSpecialValuesSnapshotResult(raw$);
   }
 
   TypedConvexSubscription<SpecialValuesSnapshotResult>
   specialValuesSnapshotSubscribe() {
-    final subscription = _client.subscribe(
+    final subscription$ = _client.subscribe(
       'testing:specialValuesSnapshot',
       const <String, dynamic>{},
     );
-    final typedStream = subscription.stream.map((event) {
+    final typedStream$ = subscription$.stream.map((event) {
       switch (event) {
         case QuerySuccess(:final value):
           return TypedQuerySuccess<SpecialValuesSnapshotResult>(
@@ -54,8 +55,8 @@ class TestingApi {
       }
     });
     return TypedConvexSubscription<SpecialValuesSnapshotResult>(
-      subscription,
-      typedStream,
+      subscription$,
+      typedStream$,
     );
   }
 }
@@ -67,13 +68,13 @@ typedef EchoValuesResult = ({
   BigInt intValue,
 });
 
-Map<String, dynamic> _encodeEchoValuesResult(EchoValuesResult value) {
+Map<String, dynamic> _encodeEchoValuesResult(EchoValuesResult value$) {
   final (
     bytesLength: bytesLength,
     bytesValue: bytesValue,
     intPlusOne: intPlusOne,
     intValue: intValue,
-  ) = value;
+  ) = value$;
   return <String, dynamic>{
     'bytesLength': bytesLength,
     'bytesValue': bytesValue,
@@ -123,8 +124,8 @@ EchoValuesResult _decodeEchoValuesResult(dynamic raw) {
 
 typedef EchoValuesArgs = ({Uint8List bytesValue, BigInt intValue});
 
-Map<String, dynamic> _encodeEchoValuesArgs(EchoValuesArgs value) {
-  final (bytesValue: bytesValue, intValue: intValue) = value;
+Map<String, dynamic> _encodeEchoValuesArgs(EchoValuesArgs value$) {
+  final (bytesValue: bytesValue, intValue: intValue) = value$;
   return <String, dynamic>{'bytesValue': bytesValue, 'intValue': intValue};
 }
 
@@ -157,14 +158,14 @@ typedef SpecialValuesSnapshotResult = ({
 });
 
 Map<String, dynamic> _encodeSpecialValuesSnapshotResult(
-  SpecialValuesSnapshotResult value,
+  SpecialValuesSnapshotResult value$,
 ) {
   final (
     largeNegative: largeNegative,
     largePositive: largePositive,
     sampleBytes: sampleBytes,
     zero: zero,
-  ) = value;
+  ) = value$;
   return <String, dynamic>{
     'largeNegative': largeNegative,
     'largePositive': largePositive,

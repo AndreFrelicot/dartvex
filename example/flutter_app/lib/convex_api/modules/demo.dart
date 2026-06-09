@@ -1,4 +1,5 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND.
+// ignore_for_file: type=lint, unused_element, unused_import, unused_local_variable
 
 import '../runtime.dart';
 import '../schema.dart';
@@ -10,31 +11,31 @@ class DemoApi {
   final ConvexFunctionCaller _client;
 
   Future<PingActionResult> pingAction({required String message}) async {
-    final raw = await _client.action(
+    final raw$ = await _client.action(
       'demo:pingAction',
       _encodePingActionArgs((message: message)),
     );
-    return _decodePingActionResult(raw);
+    return _decodePingActionResult(raw$);
   }
 
   Future<RequireAuthEchoResult> requireAuthEcho({
     required String message,
   }) async {
-    final raw = await _client.query(
+    final raw$ = await _client.query(
       'demo:requireAuthEcho',
       _encodeRequireAuthEchoArgs((message: message)),
     );
-    return _decodeRequireAuthEchoResult(raw);
+    return _decodeRequireAuthEchoResult(raw$);
   }
 
   TypedConvexSubscription<RequireAuthEchoResult> requireAuthEchoSubscribe({
     required String message,
   }) {
-    final subscription = _client.subscribe(
+    final subscription$ = _client.subscribe(
       'demo:requireAuthEcho',
       _encodeRequireAuthEchoArgs((message: message)),
     );
-    final typedStream = subscription.stream.map((event) {
+    final typedStream$ = subscription$.stream.map((event) {
       switch (event) {
         case QuerySuccess(:final value):
           return TypedQuerySuccess<RequireAuthEchoResult>(
@@ -53,22 +54,22 @@ class DemoApi {
       }
     });
     return TypedConvexSubscription<RequireAuthEchoResult>(
-      subscription,
-      typedStream,
+      subscription$,
+      typedStream$,
     );
   }
 
   Future<WhoAmIResult?> whoAmI() async {
-    final raw = await _client.query('demo:whoAmI', const <String, dynamic>{});
-    return raw == null ? null : _decodeWhoAmIResult(raw);
+    final raw$ = await _client.query('demo:whoAmI', const <String, dynamic>{});
+    return raw$ == null ? null : _decodeWhoAmIResult(raw$);
   }
 
   TypedConvexSubscription<WhoAmIResult?> whoAmISubscribe() {
-    final subscription = _client.subscribe(
+    final subscription$ = _client.subscribe(
       'demo:whoAmI',
       const <String, dynamic>{},
     );
-    final typedStream = subscription.stream.map((event) {
+    final typedStream$ = subscription$.stream.map((event) {
       switch (event) {
         case QuerySuccess(:final value):
           return TypedQuerySuccess<WhoAmIResult?>(
@@ -86,7 +87,7 @@ class DemoApi {
           );
       }
     });
-    return TypedConvexSubscription<WhoAmIResult?>(subscription, typedStream);
+    return TypedConvexSubscription<WhoAmIResult?>(subscription$, typedStream$);
   }
 }
 
@@ -97,18 +98,18 @@ typedef PingActionResult = ({
   String? viewerName,
 });
 
-Map<String, dynamic> _encodePingActionResult(PingActionResult value) {
+Map<String, dynamic> _encodePingActionResult(PingActionResult value$) {
   final (
     echoedText: echoedText,
     isAuthenticated: isAuthenticated,
     receivedAt: receivedAt,
     viewerName: viewerName,
-  ) = value;
+  ) = value$;
   return <String, dynamic>{
     'echoedText': echoedText,
     'isAuthenticated': isAuthenticated,
     'receivedAt': receivedAt,
-    'viewerName': viewerName == null ? null : viewerName,
+    'viewerName': viewerName,
   };
 }
 
@@ -155,8 +156,8 @@ PingActionResult _decodePingActionResult(dynamic raw) {
 
 typedef PingActionArgs = ({String message});
 
-Map<String, dynamic> _encodePingActionArgs(PingActionArgs value) {
-  final (message: message) = value;
+Map<String, dynamic> _encodePingActionArgs(PingActionArgs value$) {
+  final (message: message) = value$;
   return <String, dynamic>{'message': message};
 }
 
@@ -174,8 +175,10 @@ PingActionArgs _decodePingActionArgs(dynamic raw) {
 
 typedef RequireAuthEchoResult = ({String message, String tokenIdentifier});
 
-Map<String, dynamic> _encodeRequireAuthEchoResult(RequireAuthEchoResult value) {
-  final (message: message, tokenIdentifier: tokenIdentifier) = value;
+Map<String, dynamic> _encodeRequireAuthEchoResult(
+  RequireAuthEchoResult value$,
+) {
+  final (message: message, tokenIdentifier: tokenIdentifier) = value$;
   return <String, dynamic>{
     'message': message,
     'tokenIdentifier': tokenIdentifier,
@@ -208,8 +211,8 @@ RequireAuthEchoResult _decodeRequireAuthEchoResult(dynamic raw) {
 
 typedef RequireAuthEchoArgs = ({String message});
 
-Map<String, dynamic> _encodeRequireAuthEchoArgs(RequireAuthEchoArgs value) {
-  final (message: message) = value;
+Map<String, dynamic> _encodeRequireAuthEchoArgs(RequireAuthEchoArgs value$) {
+  final (message: message) = value$;
   return <String, dynamic>{'message': message};
 }
 
@@ -233,18 +236,18 @@ typedef WhoAmIResult = ({
   String tokenIdentifier,
 });
 
-Map<String, dynamic> _encodeWhoAmIResult(WhoAmIResult value) {
+Map<String, dynamic> _encodeWhoAmIResult(WhoAmIResult value$) {
   final (
     email: email,
     issuer: issuer,
     name: name,
     subject: subject,
     tokenIdentifier: tokenIdentifier,
-  ) = value;
+  ) = value$;
   return <String, dynamic>{
-    'email': email == null ? null : email,
+    'email': email,
     'issuer': issuer,
-    'name': name == null ? null : name,
+    'name': name,
     'subject': subject,
     'tokenIdentifier': tokenIdentifier,
   };
