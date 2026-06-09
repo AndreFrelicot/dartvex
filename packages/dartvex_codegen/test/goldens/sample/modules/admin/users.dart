@@ -9,6 +9,42 @@ class AdminUsersApi {
 
   final ConvexFunctionCaller _client;
 
+  Future<DiagnoseResult> diagnose({required DiagnoseArgsLevel level}) async {
+    final raw = await _client.query(
+      'admin/users:diagnose',
+      _encodeDiagnoseArgs((level: level)),
+    );
+    return _decodeDiagnoseResult(raw);
+  }
+
+  TypedConvexSubscription<DiagnoseResult> diagnoseSubscribe({
+    required DiagnoseArgsLevel level,
+  }) {
+    final subscription = _client.subscribe(
+      'admin/users:diagnose',
+      _encodeDiagnoseArgs((level: level)),
+    );
+    final typedStream = subscription.stream.map((event) {
+      switch (event) {
+        case QuerySuccess(:final value):
+          return TypedQuerySuccess<DiagnoseResult>(
+            _decodeDiagnoseResult(value),
+          );
+        case QueryLoading(:final hasPendingWrites):
+          return TypedQueryLoading<DiagnoseResult>(
+            hasPendingWrites: hasPendingWrites,
+          );
+        case QueryError(:final message, :final data, :final logLines):
+          return TypedQueryError<DiagnoseResult>(
+            message,
+            data: data,
+            logLines: logLines,
+          );
+      }
+    });
+    return TypedConvexSubscription<DiagnoseResult>(subscription, typedStream);
+  }
+
   Future<SyncTypeResult> syncValue({
     required Map<String, SyncTypeArgsPayloadValue> payload,
     required SyncTypeArgsMode mode,
@@ -19,6 +55,63 @@ class AdminUsersApi {
     );
     return _decodeSyncTypeResult(raw);
   }
+}
+
+typedef DiagnoseResult = ({dynamic future, dynamic bigLiteral});
+
+Map<String, dynamic> _encodeDiagnoseResult(DiagnoseResult value) {
+  final (future: future, bigLiteral: bigLiteral) = value;
+  return <String, dynamic>{'future': future, 'bigLiteral': bigLiteral};
+}
+
+DiagnoseResult _decodeDiagnoseResult(dynamic raw) {
+  final map = expectMap(raw, label: 'DiagnoseResult');
+  if (!map.containsKey('future')) {
+    throw FormatException('Missing required field "future" for DiagnoseResult');
+  }
+  if (!map.containsKey('bigLiteral')) {
+    throw FormatException(
+      'Missing required field "bigLiteral" for DiagnoseResult',
+    );
+  }
+  return (future: map['future'], bigLiteral: map['bigLiteral']);
+}
+
+enum DiagnoseArgsLevel {
+  v1Value(1.0),
+  v2Value(2.0),
+  v3Value(3.0);
+
+  const DiagnoseArgsLevel(this.value);
+  final Object? value;
+
+  static DiagnoseArgsLevel fromJson(dynamic raw) {
+    switch (raw) {
+      case 1.0:
+        return DiagnoseArgsLevel.v1Value;
+      case 2.0:
+        return DiagnoseArgsLevel.v2Value;
+      case 3.0:
+        return DiagnoseArgsLevel.v3Value;
+      default:
+        throw FormatException('Expected one of 1, 2, 3 for DiagnoseArgsLevel');
+    }
+  }
+}
+
+typedef DiagnoseArgs = ({DiagnoseArgsLevel level});
+
+Map<String, dynamic> _encodeDiagnoseArgs(DiagnoseArgs value) {
+  final (level: level) = value;
+  return <String, dynamic>{'level': level.value};
+}
+
+DiagnoseArgs _decodeDiagnoseArgs(dynamic raw) {
+  final map = expectMap(raw, label: 'DiagnoseArgs');
+  if (!map.containsKey('level')) {
+    throw FormatException('Missing required field "level" for DiagnoseArgs');
+  }
+  return (level: DiagnoseArgsLevel.fromJson(map['level']));
 }
 
 typedef SyncTypeResult = ({bool success, BigInt count});

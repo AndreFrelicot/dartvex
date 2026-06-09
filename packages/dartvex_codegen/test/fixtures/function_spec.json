@@ -259,6 +259,46 @@
       "functionType": "Query",
       "args": {
         "type": "object",
+        "value": {
+          "level": {
+            "fieldType": {
+              "type": "union",
+              "value": [
+                { "type": "literal", "value": 1 },
+                { "type": "literal", "value": 2 },
+                { "type": "literal", "value": 3 }
+              ]
+            },
+            "optional": false
+          }
+        }
+      },
+      "returns": {
+        "type": "object",
+        "value": {
+          "future": {
+            "fieldType": { "type": "quantum" },
+            "optional": false
+          },
+          "bigLiteral": {
+            "fieldType": {
+              "type": "union",
+              "value": [
+                { "type": "literal", "value": { "$integer": "AQAAAAAAAAA=" } },
+                { "type": "literal", "value": { "$integer": "AgAAAAAAAAA=" } }
+              ]
+            },
+            "optional": false
+          }
+        }
+      },
+      "identifier": "admin/users.ts:diagnose",
+      "visibility": { "kind": "public" }
+    },
+    {
+      "functionType": "Query",
+      "args": {
+        "type": "object",
         "value": {}
       },
       "returns": {

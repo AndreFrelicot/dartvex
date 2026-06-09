@@ -29,8 +29,13 @@ void main() {
           'schema.dart',
         ],
       );
-      expect(output.warnings, hasLength(1));
-      expect(output.warnings.single, contains('Skipping HTTP action'));
+      expect(output.warnings, hasLength(3));
+      expect(output.warnings, anyElement(contains('Skipping HTTP action')));
+      expect(
+        output.warnings,
+        anyElement(contains('Unknown Convex type "quantum"')),
+      );
+      expect(output.warnings, anyElement(contains('cannot be represented')));
     });
 
     test('matches golden files for core outputs', () async {
@@ -363,6 +368,25 @@ void main() {
         contains('TypedConvexPaginatedQuery<Map<String, dynamic>> paginateRaw({'),
       );
       expect(messages, contains("expectMap(raw, label: 'PaginateRawPageItem')"));
+    });
+
+    test('covers the full surface: number enum, unknown type, exotic literal',
+        () {
+      final output = DartGenerator().generate(spec);
+      final users = output.files['modules/admin/users.dart']!;
+
+      // A number-literal union becomes a typed enum.
+      expect(users, contains('enum DiagnoseArgsLevel'));
+      expect(users, contains('required DiagnoseArgsLevel level'));
+
+      // An unknown type tag and an exotic ($integer-encoded) literal both
+      // degrade to dynamic instead of crashing generation.
+      expect(
+        users,
+        contains(
+          'typedef DiagnoseResult = ({dynamic future, dynamic bigLiteral});',
+        ),
+      );
     });
   });
 }
