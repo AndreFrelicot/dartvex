@@ -13,9 +13,7 @@ void main() {
   testWidgets('shows configuration guidance without deployment url', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(
-      const DartvexDemoApp(deploymentUrlOverride: ''),
-    );
+    await tester.pumpWidget(const DartvexDemoApp(deploymentUrlOverride: ''));
 
     expect(find.textContaining('Set CONVEX_DEMO_URL'), findsWidgets);
     expect(find.text('Chats'), findsWidgets);
