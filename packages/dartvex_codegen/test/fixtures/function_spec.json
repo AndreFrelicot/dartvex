@@ -314,6 +314,78 @@
       "visibility": { "kind": "public" }
     },
     {
+      "functionType": "Mutation",
+      "args": {
+        "type": "object",
+        "value": {
+          "key": {
+            "fieldType": { "type": "string" },
+            "optional": false
+          },
+          "value": {
+            "fieldType": { "type": "string" },
+            "optional": false
+          },
+          "raw": {
+            "fieldType": { "type": "boolean" },
+            "optional": true
+          }
+        }
+      },
+      "returns": { "type": "boolean" },
+      "identifier": "kv.ts:set",
+      "visibility": { "kind": "public" }
+    },
+    {
+      "functionType": "Query",
+      "args": {
+        "type": "object",
+        "value": {
+          "subscription": {
+            "fieldType": { "type": "string" },
+            "optional": false
+          }
+        }
+      },
+      "returns": { "type": "null" },
+      "identifier": "kv.ts:watch",
+      "visibility": { "kind": "public" }
+    },
+    {
+      "functionType": "Query",
+      "args": {
+        "type": "object",
+        "value": {
+          "paginationOpts": {
+            "fieldType": {
+              "type": "object",
+              "value": {
+                "numItems": {
+                  "fieldType": { "type": "number" },
+                  "optional": false
+                },
+                "cursor": {
+                  "fieldType": {
+                    "type": "union",
+                    "value": [{ "type": "string" }, { "type": "null" }]
+                  },
+                  "optional": false
+                }
+              }
+            },
+            "optional": false
+          },
+          "query": {
+            "fieldType": { "type": "string" },
+            "optional": false
+          }
+        }
+      },
+      "returns": null,
+      "identifier": "messages.ts:searchPublic",
+      "visibility": { "kind": "public" }
+    },
+    {
       "functionType": "Query",
       "args": {
         "type": "object",

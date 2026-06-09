@@ -347,17 +347,35 @@ class DartGenerator {
       );
     }
 
+    // Generated locals carry a `$` suffix: sanitized Convex argument names can
+    // never contain `$`, so a user argument named `raw`, `subscription`, or
+    // `query` cannot collide with (and shadow) a generated local.
     methodBuffer
       ..write('Future<${resultType.annotation}> $methodName(')
       ..write(signature)
-      ..writeln(') async {')
-      ..writeln(
-        "  final raw = await _client.$operation("
-        '${dartSingleQuotedString(function.convexFunctionName)}, '
-        '$requestArgsExpression);',
-      )
-      ..writeln('  return ${resultType.decode('raw')};')
-      ..writeln('}');
+      ..writeln(') async {');
+    final decodeExpression = resultType.decode(r'raw$');
+    if (decodeExpression == 'null') {
+      // A `v.null()` return needs no decode; skip the binding so the
+      // generated method does not hold an unused local.
+      methodBuffer
+        ..writeln(
+          "  await _client.$operation("
+          '${dartSingleQuotedString(function.convexFunctionName)}, '
+          '$requestArgsExpression);',
+        )
+        ..writeln('  return null;')
+        ..writeln('}');
+    } else {
+      methodBuffer
+        ..writeln(
+          "  final raw\$ = await _client.$operation("
+          '${dartSingleQuotedString(function.convexFunctionName)}, '
+          '$requestArgsExpression);',
+        )
+        ..writeln('  return $decodeExpression;')
+        ..writeln('}');
+    }
 
     if (function.functionType == 'Query') {
       methodBuffer
@@ -369,12 +387,12 @@ class DartGenerator {
         ..write(signature)
         ..writeln(') {')
         ..writeln(
-          "  final subscription = _client.subscribe("
+          "  final subscription\$ = _client.subscribe("
           '${dartSingleQuotedString(function.convexFunctionName)}, '
           '$requestArgsExpression);',
         )
         ..writeln(
-          '  final typedStream = subscription.stream.map((event) {',
+          '  final typedStream\$ = subscription\$.stream.map((event) {',
         )
         ..writeln(
           '    switch (event) {',
@@ -403,7 +421,7 @@ class DartGenerator {
         ..writeln('  });')
         ..writeln(
           '  return TypedConvexSubscription<${resultType.annotation}>('
-          'subscription, typedStream);',
+          'subscription\$, typedStream\$);',
         )
         ..writeln('}');
     }
@@ -532,13 +550,14 @@ class DartGenerator {
         'TypedConvexPaginatedQuery<$elementAnnotation> '
         '$methodName({$signature}) {',
       )
-      ..writeln('  final query = _client.paginatedQuery(')
-      ..writeln('    ${dartSingleQuotedString(function.convexFunctionName)},')
-      ..writeln('    $argsMap,')
-      ..writeln('    pageSize: pageSize,')
-      ..writeln('  );')
+      // No intermediate local: a user argument named `query` must stay
+      // referencable inside the args map below.
       ..writeln('  return TypedConvexPaginatedQuery<$elementAnnotation>(')
-      ..writeln('    query,')
+      ..writeln('    _client.paginatedQuery(')
+      ..writeln('      ${dartSingleQuotedString(function.convexFunctionName)},')
+      ..writeln('      $argsMap,')
+      ..writeln('      pageSize: pageSize,')
+      ..writeln('    ),')
       ..writeln('    (dynamic raw) => $elementDecode,')
       ..writeln('  );')
       ..write('}');

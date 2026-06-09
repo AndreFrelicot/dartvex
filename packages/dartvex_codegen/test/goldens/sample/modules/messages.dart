@@ -15,12 +15,12 @@ class MessagesApi {
     Optional<String?> author = const Optional.absent(),
     Optional<ListArgsFilters> filters = const Optional.absent(),
   }) async {
-    final raw = await _client.query(
+    final raw$ = await _client.query(
       'messages:list',
       _encodeListArgs((limit: limit, author: author, filters: filters)),
     );
     return expectList(
-      raw,
+      raw$,
       label: 'ListResult',
     ).map((item) => _decodeListResultItem(item)).toList();
   }
@@ -30,11 +30,11 @@ class MessagesApi {
     Optional<String?> author = const Optional.absent(),
     Optional<ListArgsFilters> filters = const Optional.absent(),
   }) {
-    final subscription = _client.subscribe(
+    final subscription$ = _client.subscribe(
       'messages:list',
       _encodeListArgs((limit: limit, author: author, filters: filters)),
     );
-    final typedStream = subscription.stream.map((event) {
+    final typedStream$ = subscription$.stream.map((event) {
       switch (event) {
         case QuerySuccess(:final value):
           return TypedQuerySuccess<List<ListResultItem>>(
@@ -56,8 +56,8 @@ class MessagesApi {
       }
     });
     return TypedConvexSubscription<List<ListResultItem>>(
-      subscription,
-      typedStream,
+      subscription$,
+      typedStream$,
     );
   }
 
@@ -65,13 +65,10 @@ class MessagesApi {
     Optional<String> channel = const Optional.absent(),
     int pageSize = 20,
   }) {
-    final query = _client.paginatedQuery(
-      'messages:paginatePublic',
-      <String, dynamic>{if (channel.isDefined) 'channel': channel.value},
-      pageSize: pageSize,
-    );
     return TypedConvexPaginatedQuery<PaginatePublicPageItem>(
-      query,
+      _client.paginatedQuery('messages:paginatePublic', <String, dynamic>{
+        if (channel.isDefined) 'channel': channel.value,
+      }, pageSize: pageSize),
       (dynamic raw) => _decodePaginatePublicPageItem(raw),
     );
   }
@@ -79,13 +76,12 @@ class MessagesApi {
   TypedConvexPaginatedQuery<Map<String, dynamic>> paginateRaw({
     int pageSize = 20,
   }) {
-    final query = _client.paginatedQuery(
-      'messages:paginateRaw',
-      const <String, dynamic>{},
-      pageSize: pageSize,
-    );
     return TypedConvexPaginatedQuery<Map<String, dynamic>>(
-      query,
+      _client.paginatedQuery(
+        'messages:paginateRaw',
+        const <String, dynamic>{},
+        pageSize: pageSize,
+      ),
       (dynamic raw) => expectMap(raw, label: 'PaginateRawPageItem'),
     );
   }
@@ -93,15 +89,15 @@ class MessagesApi {
   Future<dynamic> ping([
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) async {
-    final raw = await _client.query('messages:ping', args);
-    return raw;
+    final raw$ = await _client.query('messages:ping', args);
+    return raw$;
   }
 
   TypedConvexSubscription<dynamic> pingSubscribe([
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) {
-    final subscription = _client.subscribe('messages:ping', args);
-    final typedStream = subscription.stream.map((event) {
+    final subscription$ = _client.subscribe('messages:ping', args);
+    final typedStream$ = subscription$.stream.map((event) {
       switch (event) {
         case QuerySuccess(:final value):
           return TypedQuerySuccess<dynamic>(value);
@@ -115,7 +111,19 @@ class MessagesApi {
           );
       }
     });
-    return TypedConvexSubscription<dynamic>(subscription, typedStream);
+    return TypedConvexSubscription<dynamic>(subscription$, typedStream$);
+  }
+
+  TypedConvexPaginatedQuery<Map<String, dynamic>> searchPublic({
+    required String query,
+    int pageSize = 20,
+  }) {
+    return TypedConvexPaginatedQuery<Map<String, dynamic>>(
+      _client.paginatedQuery('messages:searchPublic', <String, dynamic>{
+        'query': query,
+      }, pageSize: pageSize),
+      (dynamic raw) => expectMap(raw, label: 'SearchPublicPageItem'),
+    );
   }
 
   Future<MessagesId> send({
@@ -123,11 +131,11 @@ class MessagesApi {
     required String text,
     Optional<Uint8List> attachment = const Optional.absent(),
   }) async {
-    final raw = await _client.mutate(
+    final raw$ = await _client.mutate(
       'messages:send',
       _encodeSendArgs((author: author, text: text, attachment: attachment)),
     );
-    return MessagesId(expectString(raw, label: 'SendResult'));
+    return MessagesId(expectString(raw$, label: 'SendResult'));
   }
 }
 
@@ -159,8 +167,8 @@ typedef ListResultItem = ({
   ListResultItemStatus status,
 });
 
-Map<String, dynamic> _encodeListResultItem(ListResultItem value) {
-  final (id: id, author: author, text: text, status: status) = value;
+Map<String, dynamic> _encodeListResultItem(ListResultItem value$) {
+  final (id: id, author: author, text: text, status: status) = value$;
   return <String, dynamic>{
     '_id': id.value,
     'author': author,
@@ -193,8 +201,8 @@ ListResultItem _decodeListResultItem(dynamic raw) {
 
 typedef ListArgsFilters = ({Optional<String> tag});
 
-Map<String, dynamic> _encodeListArgsFilters(ListArgsFilters value) {
-  final (tag: tag) = value;
+Map<String, dynamic> _encodeListArgsFilters(ListArgsFilters value$) {
+  final (tag: tag) = value$;
   return <String, dynamic>{if (tag.isDefined) 'tag': tag.value};
 }
 
@@ -213,8 +221,8 @@ typedef ListArgs = ({
   Optional<ListArgsFilters> filters,
 });
 
-Map<String, dynamic> _encodeListArgs(ListArgs value) {
-  final (limit: limit, author: author, filters: filters) = value;
+Map<String, dynamic> _encodeListArgs(ListArgs value$) {
+  final (limit: limit, author: author, filters: filters) = value$;
   return <String, dynamic>{
     if (limit.isDefined) 'limit': limit.value,
     if (author.isDefined) 'author': author.value == null ? null : author.value,
@@ -244,9 +252,9 @@ ListArgs _decodeListArgs(dynamic raw) {
 typedef PaginatePublicPageItem = ({MessagesId id, String author, String text});
 
 Map<String, dynamic> _encodePaginatePublicPageItem(
-  PaginatePublicPageItem value,
+  PaginatePublicPageItem value$,
 ) {
-  final (id: id, author: author, text: text) = value;
+  final (id: id, author: author, text: text) = value$;
   return <String, dynamic>{'_id': id.value, 'author': author, 'text': text};
 }
 
@@ -280,8 +288,8 @@ typedef SendArgs = ({
   Optional<Uint8List> attachment,
 });
 
-Map<String, dynamic> _encodeSendArgs(SendArgs value) {
-  final (author: author, text: text, attachment: attachment) = value;
+Map<String, dynamic> _encodeSendArgs(SendArgs value$) {
+  final (author: author, text: text, attachment: attachment) = value$;
   return <String, dynamic>{
     'author': author,
     'text': text,

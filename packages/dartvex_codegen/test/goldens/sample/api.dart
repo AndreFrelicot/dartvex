@@ -1,6 +1,7 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND.
 
 import './modules/admin.dart';
+import './modules/kv.dart';
 import './modules/messages.dart';
 import './runtime.dart';
 import './schema.dart';
@@ -15,19 +16,20 @@ class ConvexApi {
   final ConvexFunctionCaller _client;
 
   AdminApi get admin => AdminApi(_client);
+  KvApi get kv => KvApi(_client);
   MessagesApi get messages => MessagesApi(_client);
 
   Future<HealthResult> health() async {
-    final raw = await _client.query('index:health', const <String, dynamic>{});
-    return _decodeHealthResult(raw);
+    final raw$ = await _client.query('index:health', const <String, dynamic>{});
+    return _decodeHealthResult(raw$);
   }
 
   TypedConvexSubscription<HealthResult> healthSubscribe() {
-    final subscription = _client.subscribe(
+    final subscription$ = _client.subscribe(
       'index:health',
       const <String, dynamic>{},
     );
-    final typedStream = subscription.stream.map((event) {
+    final typedStream$ = subscription$.stream.map((event) {
       switch (event) {
         case QuerySuccess(:final value):
           return TypedQuerySuccess<HealthResult>(_decodeHealthResult(value));
@@ -43,14 +45,14 @@ class ConvexApi {
           );
       }
     });
-    return TypedConvexSubscription<HealthResult>(subscription, typedStream);
+    return TypedConvexSubscription<HealthResult>(subscription$, typedStream$);
   }
 }
 
 typedef HealthResult = ({bool ok});
 
-Map<String, dynamic> _encodeHealthResult(HealthResult value) {
-  final (ok: ok) = value;
+Map<String, dynamic> _encodeHealthResult(HealthResult value$) {
+  final (ok: ok) = value$;
   return <String, dynamic>{'ok': ok};
 }
 

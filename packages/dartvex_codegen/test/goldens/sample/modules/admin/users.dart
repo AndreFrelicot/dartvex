@@ -10,21 +10,21 @@ class AdminUsersApi {
   final ConvexFunctionCaller _client;
 
   Future<DiagnoseResult> diagnose({required DiagnoseArgsLevel level}) async {
-    final raw = await _client.query(
+    final raw$ = await _client.query(
       'admin/users:diagnose',
       _encodeDiagnoseArgs((level: level)),
     );
-    return _decodeDiagnoseResult(raw);
+    return _decodeDiagnoseResult(raw$);
   }
 
   TypedConvexSubscription<DiagnoseResult> diagnoseSubscribe({
     required DiagnoseArgsLevel level,
   }) {
-    final subscription = _client.subscribe(
+    final subscription$ = _client.subscribe(
       'admin/users:diagnose',
       _encodeDiagnoseArgs((level: level)),
     );
-    final typedStream = subscription.stream.map((event) {
+    final typedStream$ = subscription$.stream.map((event) {
       switch (event) {
         case QuerySuccess(:final value):
           return TypedQuerySuccess<DiagnoseResult>(
@@ -42,25 +42,25 @@ class AdminUsersApi {
           );
       }
     });
-    return TypedConvexSubscription<DiagnoseResult>(subscription, typedStream);
+    return TypedConvexSubscription<DiagnoseResult>(subscription$, typedStream$);
   }
 
   Future<SyncTypeResult> syncValue({
     required Map<String, SyncTypeArgsPayloadValue> payload,
     required SyncTypeArgsMode mode,
   }) async {
-    final raw = await _client.action(
+    final raw$ = await _client.action(
       'admin/users:sync',
       _encodeSyncTypeArgs((payload: payload, mode: mode)),
     );
-    return _decodeSyncTypeResult(raw);
+    return _decodeSyncTypeResult(raw$);
   }
 }
 
 typedef DiagnoseResult = ({dynamic future, dynamic bigLiteral});
 
-Map<String, dynamic> _encodeDiagnoseResult(DiagnoseResult value) {
-  final (future: future, bigLiteral: bigLiteral) = value;
+Map<String, dynamic> _encodeDiagnoseResult(DiagnoseResult value$) {
+  final (future: future, bigLiteral: bigLiteral) = value$;
   return <String, dynamic>{'future': future, 'bigLiteral': bigLiteral};
 }
 
@@ -101,8 +101,8 @@ enum DiagnoseArgsLevel {
 
 typedef DiagnoseArgs = ({DiagnoseArgsLevel level});
 
-Map<String, dynamic> _encodeDiagnoseArgs(DiagnoseArgs value) {
-  final (level: level) = value;
+Map<String, dynamic> _encodeDiagnoseArgs(DiagnoseArgs value$) {
+  final (level: level) = value$;
   return <String, dynamic>{'level': level.value};
 }
 
@@ -116,8 +116,8 @@ DiagnoseArgs _decodeDiagnoseArgs(dynamic raw) {
 
 typedef SyncTypeResult = ({bool success, BigInt count});
 
-Map<String, dynamic> _encodeSyncTypeResult(SyncTypeResult value) {
-  final (success: success, count: count) = value;
+Map<String, dynamic> _encodeSyncTypeResult(SyncTypeResult value$) {
+  final (success: success, count: count) = value$;
   return <String, dynamic>{'success': success, 'count': count};
 }
 
@@ -208,8 +208,8 @@ typedef SyncTypeArgs = ({
   SyncTypeArgsMode mode,
 });
 
-Map<String, dynamic> _encodeSyncTypeArgs(SyncTypeArgs value) {
-  final (payload: payload, mode: mode) = value;
+Map<String, dynamic> _encodeSyncTypeArgs(SyncTypeArgs value$) {
+  final (payload: payload, mode: mode) = value$;
   return <String, dynamic>{
     'payload': payload.map(
       (key, value) => MapEntry(key, _encodeSyncTypeArgsPayloadValue(value)),

@@ -24,6 +24,7 @@ void main() {
           'api.dart',
           'modules/admin.dart',
           'modules/admin/users.dart',
+          'modules/kv.dart',
           'modules/messages.dart',
           'runtime.dart',
           'schema.dart',

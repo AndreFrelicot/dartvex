@@ -344,10 +344,13 @@ class TypeMapper {
       final typedef = DartRecordType(fields);
       context.addDefinition(
           typeName, 'typedef $typeName = ${typedef.annotation};');
+      // The parameter is `value$` (not `value`): the destructured locals are
+      // named after the user's fields, so a field named `value` would
+      // otherwise shadow the parameter inside its own initializer.
       context.addDefinition(
         '_encode$typeName',
-        'Map<String, dynamic> _encode$typeName($typeName value) {\n'
-            '  final (${fields.map((field) => '${field.name}: ${field.name}').join(', ')}) = value;\n'
+        'Map<String, dynamic> _encode$typeName($typeName value\$) {\n'
+            '  final (${fields.map((field) => '${field.name}: ${field.name}').join(', ')}) = value\$;\n'
             '  return ${encodeBuffer.toString()};\n'
             '}',
       );
