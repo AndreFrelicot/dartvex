@@ -2,11 +2,13 @@ import 'package:dartvex/dartvex.dart'
     show
         AuthAuthenticated,
         ConvexClientConfig,
+        ConvexPaginationStatus,
         DartvexLogEvent,
         DartvexLogLevel;
 import 'package:dartvex_flutter/dartvex_flutter.dart';
 import 'package:flutter/material.dart';
 
+import '../../../../convex_api/api.dart';
 import '../../auth/data/demo_auth_provider.dart' show DemoUserSession;
 import '../../shared/presentation/concierge_design.dart';
 import '../../shared/presentation/section_card.dart';
@@ -23,12 +25,17 @@ class ShowcasePanel extends StatelessWidget {
     super.key,
     required this.hasBackend,
     required this.logsNotifier,
+    this.api,
     this.clientConfig,
     this.onSimulateExpiredToken,
   });
 
   /// Whether a deployment URL is configured (the live client is available).
   final bool hasBackend;
+
+  /// The generated typed API root, used by the reactive pagination demo.
+  /// Non-null whenever [hasBackend] is true (the cards only render then).
+  final ConvexApi? api;
 
   /// Live, bounded ring buffer of structured SDK log events (newest first), fed
   /// by the [DartvexLogger] configured on the client in `app.dart`.
@@ -61,7 +68,7 @@ class ShowcasePanel extends StatelessWidget {
         children: <Widget>[
           const _OptimisticDemoCard(),
           const SizedBox(height: 20),
-          const _PaginationDemoCard(),
+          _PaginationDemoCard(api: api!),
           const SizedBox(height: 20),
           const _ConnectionStatusDemoCard(),
           const SizedBox(height: 20),
@@ -395,7 +402,9 @@ class _FeedBubble extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _PaginationDemoCard extends StatefulWidget {
-  const _PaginationDemoCard();
+  const _PaginationDemoCard({required this.api});
+
+  final ConvexApi api;
 
   @override
   State<_PaginationDemoCard> createState() => _PaginationDemoCardState();
@@ -520,107 +529,7 @@ class _PaginationDemoCardState extends State<_PaginationDemoCard> {
                   ),
                 ),
                 clipBehavior: Clip.antiAlias,
-                child: PaginatedQueryBuilder<Map<String, dynamic>>(
-                  query: 'messages:paginatePublic',
-                  pageSize: 10,
-                  fromJson: (json) => json,
-                  builder: (context, items, loadMore, status) {
-                    if (status == PaginationStatus.loading) {
-                      return const Center(
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      );
-                    }
-                    if (status == PaginationStatus.error) {
-                      return const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(16),
-                          child: Text(
-                            'Failed to load — is messages:paginatePublic deployed?',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: ConciergeColors.danger),
-                          ),
-                        ),
-                      );
-                    }
-                    if (items.isEmpty) {
-                      return const Center(
-                        child: Text(
-                          'Empty feed — tap "Seed demo feed".',
-                          style: TextStyle(color: ConciergeColors.textDim),
-                        ),
-                      );
-                    }
-                    return Column(
-                      children: <Widget>[
-                        _PaginationProgress(
-                          loaded: items.length,
-                          total: total,
-                          exhausted: status == PaginationStatus.allLoaded,
-                        ),
-                        Expanded(
-                          child: ListView.builder(
-                            padding: const EdgeInsets.all(12),
-                            itemCount: items.length + 1,
-                            itemBuilder: (context, index) {
-                              if (index < items.length) {
-                                final item = items[index];
-                                return Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 4,
-                                  ),
-                                  child: Row(
-                                    children: <Widget>[
-                                      Text(
-                                        '${index + 1}'.padLeft(2, '0'),
-                                        style: const TextStyle(
-                                          color: ConciergeColors.textDim,
-                                          fontFeatures: <FontFeature>[
-                                            FontFeature.tabularFigures(),
-                                          ],
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Text(
-                                          '${item['author'] ?? '—'}: ${item['text'] ?? ''}',
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              }
-                              return Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 12,
-                                ),
-                                child: Center(
-                                  child: switch (status) {
-                                    PaginationStatus.allLoaded => const Text(
-                                      '— end of feed —',
-                                      style: TextStyle(
-                                        color: ConciergeColors.textDim,
-                                      ),
-                                    ),
-                                    PaginationStatus.loadingMore =>
-                                      const CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    _ => OutlinedButton(
-                                      onPressed: loadMore,
-                                      child: const Text('Load more'),
-                                    ),
-                                  },
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
+                child: _TypedPaginatedFeed(api: widget.api, total: total),
               );
             },
           ),
@@ -633,6 +542,130 @@ class _PaginationDemoCardState extends State<_PaginationDemoCard> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Reactive feed backed by the generated, typed `messages:paginatePublic`
+/// binding. Owns a [TypedConvexPaginatedQuery] for its lifetime — created once
+/// and cancelled on dispose — and renders its page items as the typed
+/// `PaginatePublicPageItem` record (note `item.author` / `item.text`, not
+/// untyped map lookups).
+class _TypedPaginatedFeed extends StatefulWidget {
+  const _TypedPaginatedFeed({required this.api, required this.total});
+
+  final ConvexApi api;
+  final int total;
+
+  @override
+  State<_TypedPaginatedFeed> createState() => _TypedPaginatedFeedState();
+}
+
+class _TypedPaginatedFeedState extends State<_TypedPaginatedFeed> {
+  // The element type (PaginatePublicPageItem) is inferred from the typed API.
+  late final _query = widget.api.messages.paginatePublic(pageSize: 10);
+
+  @override
+  void dispose() {
+    _query.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder(
+      stream: _query.stream,
+      initialData: _query.current,
+      builder: (context, snapshot) {
+        final result = snapshot.data!;
+        final items = result.items;
+        final status = result.status;
+
+        if (status == ConvexPaginationStatus.loadingFirstPage) {
+          return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+        }
+        if (status == ConvexPaginationStatus.error) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Text(
+                'Failed to load — is messages:paginatePublic deployed?',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: ConciergeColors.danger),
+              ),
+            ),
+          );
+        }
+        if (items.isEmpty) {
+          return const Center(
+            child: Text(
+              'Empty feed — tap "Seed demo feed".',
+              style: TextStyle(color: ConciergeColors.textDim),
+            ),
+          );
+        }
+        return Column(
+          children: <Widget>[
+            _PaginationProgress(
+              loaded: items.length,
+              total: widget.total,
+              exhausted: status == ConvexPaginationStatus.exhausted,
+            ),
+            Expanded(
+              child: ListView.builder(
+                padding: const EdgeInsets.all(12),
+                itemCount: items.length + 1,
+                itemBuilder: (context, index) {
+                  if (index < items.length) {
+                    final item = items[index];
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        children: <Widget>[
+                          Text(
+                            '${index + 1}'.padLeft(2, '0'),
+                            style: const TextStyle(
+                              color: ConciergeColors.textDim,
+                              fontFeatures: <FontFeature>[
+                                FontFeature.tabularFigures(),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              '${item.author}: ${item.text}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Center(
+                      child: switch (status) {
+                        ConvexPaginationStatus.exhausted => const Text(
+                          '— end of feed —',
+                          style: TextStyle(color: ConciergeColors.textDim),
+                        ),
+                        ConvexPaginationStatus.loadingMore =>
+                          const CircularProgressIndicator(strokeWidth: 2),
+                        _ => OutlinedButton(
+                          onPressed: () => _query.loadMore(),
+                          child: const Text('Load more'),
+                        ),
+                      },
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

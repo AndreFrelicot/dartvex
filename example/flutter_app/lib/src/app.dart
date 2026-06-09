@@ -785,6 +785,7 @@ class _ShowcaseScreen extends StatelessWidget {
       ),
       body: ShowcasePanel(
         hasBackend: api != null,
+        api: api,
         logsNotifier: logsNotifier,
         clientConfig: clientConfig,
         onSimulateExpiredToken: onSimulateExpiredToken,
