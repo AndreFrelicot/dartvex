@@ -5,10 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.4] - 2026-06-08
+## [0.1.4] - 2026-06-09
+
+### Added
+
+- Tolerates raw `convex function-spec` dumps: absent or `null` `args`/`returns`
+  parse as the Convex `any` type (a returns-less function generates
+  `Future<dynamic>`; an unvalidated-args function takes a
+  `Map<String, dynamic>` argument) instead of aborting generation.
+- Unknown/future Convex type tags and non-scalar literal values (such as
+  `$integer`-encoded bigint literals) degrade to `dynamic` with a warning
+  instead of crashing the run.
+- Spec parse errors now name the offending function and field path
+  (`messages.ts:list → args → field "filters"`).
+- `dartvex_codegen scrub` subcommand and `scrubFunctionSpec`: replace the real
+  deployment URL in a function-spec dump with a placeholder before the file is
+  committed.
+- Typed paginated query bindings: a query taking `paginationOpts` and returning
+  a `PaginationResult` shape generates a
+  `TypedConvexPaginatedQuery<PageItem>` wrapper (typed page items when a
+  `returns:` validator exists, `Map<String, dynamic>` items otherwise),
+  exposing `items`, `stream`, `status`, `isDone`, `loadMore`, and `cancel`.
+- Generated files carry an `ignore_for_file` line under the generated-code
+  header, so projects that do not exclude the generated directory from
+  analysis do not fail on unused generated helpers or imports.
 
 ### Fixed
 
+- Encoding an optional field with a nullable composite type (for example
+  `v.optional(v.union(v.id('users'), v.null()))`) generated Dart that did not
+  compile; nullable encodes now bind through a promoting switch expression.
+- Generated locals no longer collide with user argument names: arguments named
+  `raw`, `value`, `subscription`, or `query` (for example `kv.set(key, value)`
+  or a paginated `search(query)`) previously generated code that failed to
+  compile.
+- A paginated query with an argument that sanitizes to `pageSize` falls back
+  to a plain query method with a warning instead of declaring the parameter
+  twice.
+- Unions of only null members (including `v.literal(null)`) map to `Null`
+  instead of rendering an empty Dart enum, and nested nullable unions no
+  longer emit invalid `T??` annotations.
+- NUL characters in string literals are escaped as `\x00`; Dart has no `\0`
+  escape, so the previous output silently matched the digit `'0'`.
 - Generated typed query subscriptions now include `TypedQueryLoading<T>` and
   handle `dartvex` `QueryLoading` events, keeping generated switches exhaustive
   with `dartvex` 0.2.x.
