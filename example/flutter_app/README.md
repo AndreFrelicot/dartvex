@@ -17,13 +17,49 @@ flutter run \
   --dart-define=CONVEX_DEMO_URL=https://your-deployment.convex.cloud
 ```
 
-Demo auth token at startup:
+Demo auth token at startup — capture the token in a shell variable first (it is
+~400 characters; pasting it directly on the command line is fragile, see
+[Troubleshooting](#troubleshooting)):
 
 ```bash
+TOKEN="$(cd ../convex-backend && npm run -s token)"
 flutter run \
   --dart-define=CONVEX_DEMO_URL=https://your-deployment.convex.cloud \
-  --dart-define=CONVEX_DEMO_AUTH_TOKEN="$(cd ../convex-backend && npm run -s token)"
+  --dart-define=CONVEX_DEMO_AUTH_TOKEN="$TOKEN"
 ```
+
+## Standalone builds (test on a device)
+
+`--dart-define` values are compile-time constants baked into the binary, so pass
+them to `flutter build` (not only `flutter run`). The resulting artifact runs on
+a device with no `flutter`/terminal attached.
+
+```bash
+cd example/flutter_app
+TOKEN="$(cd ../convex-backend && npm run -s token)"
+
+# macOS (.app — no signing needed for local runs)
+flutter build macos --release \
+  --dart-define=CONVEX_DEMO_URL=https://your-deployment.convex.cloud \
+  --dart-define=CONVEX_DEMO_AUTH_TOKEN="$TOKEN"
+open build/macos/Build/Products/Release/convex_flutter_demo.app
+
+# Android (installable APK)
+flutter build apk --release \
+  --dart-define=CONVEX_DEMO_URL=https://your-deployment.convex.cloud \
+  --dart-define=CONVEX_DEMO_AUTH_TOKEN="$TOKEN"
+# install: adb install -r build/app/outputs/flutter-apk/app-release.apk
+
+# iOS (requires Apple signing; a release build installs standalone on a paired device)
+flutter run --release -d <device-id> \
+  --dart-define=CONVEX_DEMO_URL=https://your-deployment.convex.cloud \
+  --dart-define=CONVEX_DEMO_AUTH_TOKEN="$TOKEN"
+```
+
+> A baked `--dart-define` value is recoverable from the binary (it is a
+> compile-time constant — e.g. `strings` on the artifact reveals it). That is
+> fine for the demo JWT and the deployment URL, but never bake a real secret
+> into a client build.
 
 ## What the app shows
 
@@ -70,13 +106,15 @@ npm run demo:key
 2. Run the printed `npx convex env set DEMO_JWKS ...` command. This publishes
    only the public JWKS to Convex. The private key remains in gitignored `.env`.
 
-3. Run Flutter with a freshly generated token:
+3. Run Flutter with a freshly generated token (capture it in a shell variable —
+   see [Troubleshooting](#troubleshooting)):
 
 ```bash
 cd ../flutter_app
+TOKEN="$(cd ../convex-backend && npm run -s token)"
 flutter run \
   --dart-define=CONVEX_DEMO_URL=https://your-deployment.convex.cloud \
-  --dart-define=CONVEX_DEMO_AUTH_TOKEN="$(cd ../convex-backend && npm run -s token)"
+  --dart-define=CONVEX_DEMO_AUTH_TOKEN="$TOKEN"
 ```
 
 If `CONVEX_DEMO_AUTH_TOKEN` is omitted, the Auth tab stays available but Demo
@@ -114,7 +152,7 @@ npm install better-auth@1.5.3 @convex-dev/better-auth
 2. Set the secret:
 
 ```bash
-npx convex env set BETTER_AUTH_SECRET=$(openssl rand -base64 32)
+npx convex env set BETTER_AUTH_SECRET "$(openssl rand -base64 32)"
 ```
 
 3. If you host the Flutter web build somewhere other than localhost, allow that
@@ -176,6 +214,20 @@ Upload and the live `files:list` gallery work on web and native targets. On web,
 the demo resolves signed Convex storage URLs and renders them with
 `Image.network`; disk-backed file cache and offline image fallback are
 native-only, so the extra image-widget/cache variants are hidden on web.
+
+## Troubleshooting
+
+- **`zsh: file name too long`, or `Target file "…" not found` when launching** —
+  the `--dart-define=CONVEX_DEMO_AUTH_TOKEN=…` argument got mangled. The demo JWT
+  is ~400 characters; a broken line continuation (a space after a trailing `\`)
+  turns it into a positional argument that the shell or Flutter then misreads.
+  Fix: put the token in a variable first (`TOKEN="$(…)"`) and pass `"$TOKEN"`, or
+  run the whole command on a single line.
+- **Auth tab shows "Demo token missing"** — `CONVEX_DEMO_AUTH_TOKEN` did not reach
+  the build (usually the issue above). Public tabs and Better Auth do not need it.
+- **`./generate_bindings.sh: permission denied`** — run it via
+  `bash example/generate_bindings.sh`, which works regardless of the file's
+  executable bit.
 
 ## Regenerate the typed API
 

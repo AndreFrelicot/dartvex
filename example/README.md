@@ -68,10 +68,13 @@ flutter run \
   --dart-define=CONVEX_DEMO_URL=https://your-deployment.convex.cloud
 ```
 
-Demo auth token at startup:
+Demo auth token at startup — capture the token in a shell variable first (it is
+~400 characters; pasting it directly is fragile). See the Flutter app README's
+Troubleshooting and Standalone builds sections for details:
 
 ```bash
+TOKEN="$(cd ../convex-backend && npm run -s token)"
 flutter run \
   --dart-define=CONVEX_DEMO_URL=https://your-deployment.convex.cloud \
-  --dart-define=CONVEX_DEMO_AUTH_TOKEN="$(cd ../convex-backend && npm run -s token)"
+  --dart-define=CONVEX_DEMO_AUTH_TOKEN="$TOKEN"
 ```
