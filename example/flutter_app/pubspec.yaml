@@ -27,6 +27,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.0
 
 dependency_overrides:
   dartvex:
@@ -46,3 +47,27 @@ flutter:
   assets:
     - assets/dartvex-logo.svg
     - assets/sample/
+
+# App launcher icons generated from the Dartvex logo with `flutter_launcher_icons`.
+# Regenerate after changing the masters in assets/icon/ with:
+#   dart run flutter_launcher_icons
+flutter_launcher_icons:
+  image_path: "assets/icon/dartvex_icon.png"
+  android: true
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/icon/dartvex_icon_foreground.png"
+  ios: true
+  remove_alpha_ios: true
+  background_color_ios: "#FFFFFF"
+  web:
+    generate: true
+    image_path: "assets/icon/dartvex_icon.png"
+    background_color: "#ffffff"
+    theme_color: "#0372b9"
+  macos:
+    generate: true
+    image_path: "assets/icon/dartvex_icon.png"
+  windows:
+    generate: true
+    image_path: "assets/icon/dartvex_icon.png"
+    icon_size: 256
