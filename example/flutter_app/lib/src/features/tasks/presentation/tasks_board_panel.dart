@@ -870,6 +870,8 @@ class _TaskComposer extends StatelessWidget {
 
         final assigneeField = TextField(
           controller: assigneeController,
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) => FocusManager.instance.primaryFocus?.unfocus(),
           decoration: const InputDecoration(
             labelText: 'Assignee',
             hintText: 'Optional owner',
@@ -896,6 +898,8 @@ class _TaskComposer extends StatelessWidget {
           children: <Widget>[
             TextField(
               controller: titleController,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => FocusManager.instance.primaryFocus?.unfocus(),
               decoration: const InputDecoration(
                 labelText: 'Title',
                 hintText: 'Ship typed local-first exploration',
@@ -938,6 +942,9 @@ class _TaskComposer extends StatelessWidget {
               const SizedBox(height: 12),
               TextField(
                 controller: labelsController,
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) =>
+                    FocusManager.instance.primaryFocus?.unfocus(),
                 decoration: const InputDecoration(
                   labelText: 'Labels',
                   hintText: 'Comma separated labels',

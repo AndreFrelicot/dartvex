@@ -477,6 +477,14 @@ class _ConvexFlutterDemoAppState extends State<ConvexFlutterDemoApp> {
       debugShowCheckedModeBanner: false,
       theme: buildConciergeTheme(),
       home: _buildHome(),
+      // Tap anywhere outside a focused field to dismiss the keyboard (iOS has no
+      // system gesture for this). Translucent so buttons and fields keep their
+      // own taps; only taps that land on empty space dismiss the keyboard.
+      builder: (context, child) => GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+        child: child,
+      ),
     );
     if (_authMode == AuthMode.demo && _authClient != null) {
       app = ConvexAuthProvider<DemoUserSession>(

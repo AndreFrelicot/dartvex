@@ -198,6 +198,9 @@ class _PublicMessagesPanelState extends State<PublicMessagesPanel> {
               children: <Widget>[
                 TextField(
                   controller: _authorController,
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (_) =>
+                      FocusManager.instance.primaryFocus?.unfocus(),
                   decoration: InputDecoration(
                     labelText: 'Display name',
                     hintText: platformDisplayName('Anonymous Friend'),

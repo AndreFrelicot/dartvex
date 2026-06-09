@@ -160,6 +160,8 @@ class _OptimisticDemoCardState extends State<_OptimisticDemoCard> {
           const SizedBox(height: 14),
           TextField(
             controller: _controller,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => FocusManager.instance.primaryFocus?.unfocus(),
             decoration: const InputDecoration(
               labelText: 'Message',
               hintText: 'Type something to send optimistically',

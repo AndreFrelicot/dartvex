@@ -396,6 +396,8 @@ class _LocalFirstPanelState extends State<LocalFirstPanel> {
           const SizedBox(height: 16),
           TextField(
             controller: _authorController,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => FocusManager.instance.primaryFocus?.unfocus(),
             decoration: InputDecoration(
               labelText: 'Author',
               hintText: platformDisplayName('Offline Explorer'),
@@ -545,6 +547,8 @@ class _LocalFirstPanelState extends State<LocalFirstPanel> {
           const SizedBox(height: 16),
           TextField(
             controller: _taskTitleController,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => FocusManager.instance.primaryFocus?.unfocus(),
             decoration: const InputDecoration(
               labelText: 'New task title',
               hintText: 'Ship local-first replay demo',
