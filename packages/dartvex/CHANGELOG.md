@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0] - 2026-06-08
+## [0.2.0] - 2026-06-09
 
 ### Added
 
@@ -35,6 +35,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is an ordinary query subscription, so loaded pages update reactively and stay
   gapless across reconnects via the query journals; oversized pages are
   transparently re-split. Mirrors the official client's paginated query engine.
+- `paginatedQuery` is now part of the `ConvexFunctionCaller` interface (and
+  delegated by `ConvexClientWithAuth`), so generated typed bindings can open
+  paginated queries through any caller. **Breaking for implementors:** classes
+  that `implement ConvexFunctionCaller` (or `ConvexAuthClient`) must add a
+  `paginatedQuery` member.
 - Optimistic updates: pass an `OptimisticUpdate` to `ConvexClient.mutate` to
   locally overlay query results the instant a mutation is sent. The overlay is
   replayed whenever fresh server data arrives while the mutation is pending and
