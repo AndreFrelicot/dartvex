@@ -9,6 +9,7 @@ import '../generator/file_emitter.dart';
 import '../spec/spec_parser.dart';
 import 'config.dart';
 import 'process_runner.dart';
+import 'scrub_command.dart';
 
 /// Runs the Dartvex code generator command-line entrypoint.
 Future<int> runConvexCodegen(
@@ -17,7 +18,16 @@ Future<int> runConvexCodegen(
   FileEmitter? fileEmitter,
   void Function(String message)? log,
   void Function(String message)? errorLog,
+  Future<String> Function()? readStdin,
+  void Function(String output)? writeOutput,
 }) {
+  if (args.isNotEmpty && args.first == 'scrub') {
+    return ScrubCommand(
+      readStdin: readStdin,
+      writeOutput: writeOutput,
+      errorLog: errorLog,
+    ).run(args.sublist(1));
+  }
   final void Function(String message) outputLog = log ?? stdout.writeln;
   return GenerateCommand(
     processRunner: processRunner ?? const SystemProcessRunner(),
