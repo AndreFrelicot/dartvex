@@ -8,8 +8,11 @@ String escapeDartStringContent(String value) {
   final buffer = StringBuffer();
   for (final codeUnit in value.codeUnits) {
     switch (codeUnit) {
+      // NB: Dart has no `\0` escape — in a Dart string literal `\0` is the
+      // digit '0' (unknown escapes evaluate to the escaped character), so NUL
+      // must use the hex form.
       case 0x00:
-        buffer.write(r'\0');
+        buffer.write(r'\x00');
       case 0x08:
         buffer.write(r'\b');
       case 0x09:
