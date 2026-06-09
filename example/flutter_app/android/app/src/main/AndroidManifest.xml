@@ -1,4 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Required for Convex (WebSocket sync + HTTP storage). Flutter only adds
+         INTERNET to the debug/profile manifests, so release builds need it here
+         or they cannot reach the backend ("realtime offline"). -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="convex_flutter_demo"
         android:name="${applicationName}"
