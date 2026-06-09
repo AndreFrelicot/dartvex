@@ -22,6 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `clearQueue` now rolls back the discarded mutations' optimistic patches:
+  every affected cached query is restored to its oldest pending rollback
+  baseline (the last server-confirmed value) and subscribers are notified, so
+  the cache no longer presents writes that will never be sent as authoritative
+  data. An optimistic-only cache entry (one created from an absent baseline) is
+  deleted and its subscribers receive an error event instead of a stale
+  optimistic value.
 - `PendingMutation.copyWith` can now clear replay error metadata explicitly via
   `clearErrorMessage`, avoiding stale errors when callers reset queue state.
 - `ConvexLocalClient.mutate` now serializes calls in FIFO order, so concurrent
