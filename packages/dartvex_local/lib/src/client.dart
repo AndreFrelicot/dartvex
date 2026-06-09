@@ -854,12 +854,34 @@ class ConvexLocalClient {
   }
 
   /// Clears the offline mutation queue and resets pending write state.
+  ///
+  /// The discarded mutations' optimistic patches are rolled back as well:
+  /// every affected cached query is restored to its oldest pending rollback
+  /// baseline (the last server-confirmed value), so the cache no longer
+  /// presents writes that will never be sent as authoritative data.
   Future<void> clearQueue() async {
     _assertNotDisposed();
+    // Capture the pre-optimistic baseline per target before discarding the
+    // queue: the oldest pending mutation's rollback snapshot for a target is
+    // the last server-confirmed value (snapshots are rebased on every remote
+    // write and on every drop).
+    final baselinesByKey = <String, _CacheSnapshot>{};
+    for (final mutation in _pendingMutations) {
+      for (final snapshot in _rollbackSnapshotsFromMutation(mutation)) {
+        baselinesByKey.putIfAbsent(snapshot.target.key, () => snapshot);
+      }
+    }
     await _mutationQueue.clear();
     _pendingMutations = const <PendingMutation>[];
     _pendingWritesByQueryKey.clear();
     _pendingMutationsController.add(currentPendingMutations);
+    if (baselinesByKey.isNotEmpty) {
+      try {
+        await _restoreOptimisticPatchSnapshots(baselinesByKey.values);
+      } catch (error, stackTrace) {
+        _log('clear-queue:rollback-error', '$error\n$stackTrace');
+      }
+    }
     // Snapshot the query states: emitting below can synchronously cancel a
     // subscription, which removes its query state, mutating `_queryStates`
     // mid-iteration.
@@ -873,6 +895,20 @@ class ConvexLocalClient {
           queryState.descriptor.key,
           LocalQuerySuccess(
             cached.value,
+            source: LocalQuerySource.cache,
+            hasPendingWrites: false,
+          ),
+        );
+      } else if (baselinesByKey.containsKey(queryState.descriptor.key)) {
+        // The rollback deleted an optimistic-only cache entry; tell its
+        // subscribers the value is gone instead of leaving the stale
+        // optimistic emission as their latest event.
+        _emitToQueryKey(
+          queryState.descriptor.key,
+          LocalQueryError(
+            StateError(
+              'No cached query value remains after clearing queued mutations',
+            ),
             source: LocalQuerySource.cache,
             hasPendingWrites: false,
           ),

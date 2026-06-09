@@ -1958,6 +1958,76 @@ void main() {
       },
     );
 
+    test(
+      'clearQueue rolls back optimistic patches to the last server baseline',
+      () async {
+        remoteClient.queryResults['messages:listPublic'] = <dynamic>[
+          <String, dynamic>{'_id': 'server-1', 'text': 'Hello'},
+        ];
+        await localClient.query('messages:listPublic');
+        await localClient.setNetworkMode(LocalNetworkMode.offline);
+
+        await localClient.mutate('messages:sendPublic', <String, dynamic>{
+          'author': 'User',
+          'text': 'Queued',
+        });
+        expect(localClient.currentPendingMutations, hasLength(1));
+        // The optimistic patch is in the cache while the mutation is queued.
+        final patched = await localClient.query('messages:listPublic');
+        expect(patched, hasLength(2));
+
+        final events = <LocalQueryEvent>[];
+        final subscription = localClient.subscribe('messages:listPublic');
+        addTearDown(subscription.cancel);
+        subscription.stream.listen(events.add);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        await localClient.clearQueue();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(localClient.currentPendingMutations, isEmpty);
+        // The cache is restored to the last server-confirmed value: the
+        // discarded mutation's message is gone.
+        final restored = await localClient.query('messages:listPublic');
+        expect(restored, hasLength(1));
+        expect((restored as List).single['_id'], 'server-1');
+        final lastSuccess = events.whereType<LocalQuerySuccess>().last;
+        expect(lastSuccess.value, hasLength(1));
+        expect(lastSuccess.hasPendingWrites, isFalse);
+      },
+    );
+
+    test(
+      'clearQueue deletes optimistic-only cache entries and reports the loss',
+      () async {
+        await localClient.setNetworkMode(LocalNetworkMode.offline);
+
+        // No server value was ever cached: the optimistic patch creates the
+        // cache entry from scratch (absent baseline).
+        await localClient.mutate('messages:sendPublic', <String, dynamic>{
+          'author': 'User',
+          'text': 'Queued',
+        });
+        expect(await localClient.query('messages:listPublic'), hasLength(1));
+
+        final events = <LocalQueryEvent>[];
+        final subscription = localClient.subscribe('messages:listPublic');
+        addTearDown(subscription.cancel);
+        subscription.stream.listen(events.add);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        await localClient.clearQueue();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        // The optimistic-only entry is rolled back to its absent baseline.
+        expect(
+          () => localClient.query('messages:listPublic'),
+          throwsA(isA<StateError>()),
+        );
+        expect(events.whereType<LocalQueryError>(), isNotEmpty);
+      },
+    );
+
     // ---------------------------------------------------------------
     // Dispose
     // ---------------------------------------------------------------
