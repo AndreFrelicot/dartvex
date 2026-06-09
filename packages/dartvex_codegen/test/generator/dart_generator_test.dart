@@ -39,6 +39,18 @@ void main() {
       expect(output.warnings, anyElement(contains('cannot be represented')));
     });
 
+    test('emits the generated header and analyzer suppressions everywhere', () {
+      final output = DartGenerator().generate(spec);
+
+      for (final entry in output.files.entries) {
+        expect(
+          entry.value,
+          startsWith('$generatedFileHeader\n$generatedFileIgnores\n'),
+          reason: '${entry.key} must carry the header and ignore_for_file',
+        );
+      }
+    });
+
     test('matches golden files for core outputs', () async {
       final output = DartGenerator().generate(spec);
 

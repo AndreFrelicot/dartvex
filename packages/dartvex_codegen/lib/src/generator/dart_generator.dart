@@ -9,6 +9,17 @@ import 'string_literals.dart';
 /// File header added to every generated Dart binding.
 const generatedFileHeader = '// GENERATED CODE - DO NOT MODIFY BY HAND.';
 
+/// Analyzer suppressions emitted below the header of every generated file.
+///
+/// Generated bindings legitimately contain members a given consumer never
+/// references (every object type ships both an encode and a decode helper,
+/// and every module imports the shared runtime and schema), and consumers'
+/// lint sets vary; without this line `dart analyze` fails on unused-element
+/// warnings in projects that do not exclude the generated directory.
+const generatedFileIgnores =
+    '// ignore_for_file: type=lint, unused_element, unused_import, '
+    'unused_local_variable';
+
 /// Result of a single code generation pass.
 class GeneratedOutput {
   /// Creates generated output metadata.
@@ -228,6 +239,7 @@ class DartGenerator {
 
     final buffer = StringBuffer()
       ..writeln(generatedFileHeader)
+      ..writeln(generatedFileIgnores)
       ..writeln()
       ..writeln(imports.render())
       ..writeln();
@@ -608,6 +620,7 @@ class DartGenerator {
 
     final buffer = StringBuffer()
       ..writeln(generatedFileHeader)
+      ..writeln(generatedFileIgnores)
       ..writeln()
       ..writeln("import 'runtime.dart';")
       ..writeln();
@@ -631,6 +644,7 @@ class DartGenerator {
   String _buildRuntimeFile() {
     return '''
 $generatedFileHeader
+$generatedFileIgnores
 
 import 'dart:async';
 import 'dart:typed_data';
