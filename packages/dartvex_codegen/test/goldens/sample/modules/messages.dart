@@ -225,7 +225,7 @@ Map<String, dynamic> _encodeListArgs(ListArgs value$) {
   final (limit: limit, author: author, filters: filters) = value$;
   return <String, dynamic>{
     if (limit.isDefined) 'limit': limit.value,
-    if (author.isDefined) 'author': author.value == null ? null : author.value,
+    if (author.isDefined) 'author': author.value,
     if (filters.isDefined) 'filters': _encodeListArgsFilters(filters.value),
   };
 }

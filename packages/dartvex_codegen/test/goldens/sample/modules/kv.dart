@@ -9,6 +9,17 @@ class KvApi {
 
   final ConvexFunctionCaller _client;
 
+  Future<Null> link({
+    Optional<UsersId?> target = const Optional.absent(),
+    Optional<List<String>?> tags = const Optional.absent(),
+  }) async {
+    await _client.mutate(
+      'kv:link',
+      _encodeLinkArgs((target: target, tags: tags)),
+    );
+    return null;
+  }
+
   Future<bool> setValue({
     required String key,
     required String value,
@@ -46,6 +57,48 @@ class KvApi {
     });
     return TypedConvexSubscription<Null>(subscription$, typedStream$);
   }
+}
+
+typedef LinkArgs = ({Optional<UsersId?> target, Optional<List<String>?> tags});
+
+Map<String, dynamic> _encodeLinkArgs(LinkArgs value$) {
+  final (target: target, tags: tags) = value$;
+  return <String, dynamic>{
+    if (target.isDefined)
+      'target': switch (target.value) {
+        null => null,
+        final v$ => v$.value,
+      },
+    if (tags.isDefined)
+      'tags': switch (tags.value) {
+        null => null,
+        final v$ => v$.map((item) => item).toList(),
+      },
+  };
+}
+
+LinkArgs _decodeLinkArgs(dynamic raw) {
+  final map = expectMap(raw, label: 'LinkArgs');
+  return (
+    target: map.containsKey('target')
+        ? Optional.of(
+            map['target'] == null
+                ? null
+                : UsersId(expectString(map['target'], label: 'LinkArgsTarget')),
+          )
+        : const Optional.absent(),
+    tags: map.containsKey('tags')
+        ? Optional.of(
+            map['tags'] == null
+                ? null
+                : expectList(map['tags'], label: 'LinkArgsTags')
+                      .map(
+                        (item) => expectString(item, label: 'LinkArgsTagsItem'),
+                      )
+                      .toList(),
+          )
+        : const Optional.absent(),
+  );
 }
 
 typedef SetTypeArgs = ({String key, String value, Optional<bool> raw});

@@ -417,8 +417,7 @@ class TypeMapper {
       }
       return MappedType(
         dartType: DartNullableType(inner.dartType),
-        encode: (expression) =>
-            '$expression == null ? null : ${inner.encode(expression)}',
+        encode: _nullableEncode(inner.encode),
         decode: (expression) =>
             '$expression == null ? null : ${inner.decode(expression)}',
       );
@@ -553,13 +552,29 @@ class TypeMapper {
         : DartNamedType(typeName);
     return MappedType(
       dartType: dartType,
-      encode: (expression) => nullable
-          ? '$expression == null ? null : _encode$typeName($expression)'
-          : '_encode$typeName($expression)',
+      encode: nullable
+          ? _nullableEncode((expression) => '_encode$typeName($expression)')
+          : (expression) => '_encode$typeName($expression)',
       decode: (expression) => nullable
           ? '$expression == null ? null : _decode$typeName($expression)'
           : '_decode$typeName($expression)',
     );
+  }
+
+  /// Wraps [innerEncode] so it accepts a nullable expression.
+  ///
+  /// A `expr == null ? null : <encode(expr)>` ternary only compiles when
+  /// `expr` is a promotable local; encoding an `Optional<T?>` field reads the
+  /// non-promotable `Optional.value` getter, so the null check must bind a
+  /// promoted variable instead. A switch expression does exactly that. When
+  /// the inner encode is the identity, no null handling is needed at all.
+  ExpressionRenderer _nullableEncode(ExpressionRenderer innerEncode) {
+    const probe = r'probe$';
+    if (innerEncode(probe) == probe) {
+      return _identityExpression;
+    }
+    return (expression) => 'switch ($expression) { null => null, final v\$ => '
+        '${innerEncode(r'v$')} }';
   }
 
   String _renderUnionEncode(String typeName, List<_UnionCase> cases) {

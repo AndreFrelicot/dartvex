@@ -352,6 +352,37 @@
       "visibility": { "kind": "public" }
     },
     {
+      "functionType": "Mutation",
+      "args": {
+        "type": "object",
+        "value": {
+          "target": {
+            "fieldType": {
+              "type": "union",
+              "value": [
+                { "type": "id", "tableName": "users" },
+                { "type": "null" }
+              ]
+            },
+            "optional": true
+          },
+          "tags": {
+            "fieldType": {
+              "type": "union",
+              "value": [
+                { "type": "array", "value": { "type": "string" } },
+                { "type": "null" }
+              ]
+            },
+            "optional": true
+          }
+        }
+      },
+      "returns": { "type": "null" },
+      "identifier": "kv.ts:link",
+      "visibility": { "kind": "public" }
+    },
+    {
       "functionType": "Query",
       "args": {
         "type": "object",

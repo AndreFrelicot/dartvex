@@ -7,3 +7,9 @@ class MessagesId extends ConvexTableId {
 
   static const String tableName = 'messages';
 }
+
+class UsersId extends ConvexTableId {
+  const UsersId(super.value);
+
+  static const String tableName = 'users';
+}
