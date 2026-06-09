@@ -113,4 +113,13 @@ class FakeAuthClient<TUser> implements ConvexAuthClient<TUser> {
   ]) {
     throw UnimplementedError();
   }
+
+  @override
+  ConvexPaginatedQuery paginatedQuery(
+    String name,
+    Map<String, dynamic> args, {
+    int pageSize = 20,
+  }) {
+    throw UnimplementedError();
+  }
 }
