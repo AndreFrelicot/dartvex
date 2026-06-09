@@ -444,6 +444,7 @@ class QueryUpdated extends StateModification {
     required this.value,
     this.logLines = const <String>[],
     this.journal,
+    this.hasJournal = true,
   });
 
   @override
@@ -458,6 +459,15 @@ class QueryUpdated extends StateModification {
   /// Updated journal cursor for paginated query state, if any.
   final String? journal;
 
+  /// Whether the wire message carried a `journal` field at all.
+  ///
+  /// The official client only touches its stored journal when the field is
+  /// present (`journal !== undefined`): an explicit `null` is a real protocol
+  /// value that clears the stored cursor, while an absent field leaves it
+  /// untouched. Defaults to `true` so a directly constructed modification
+  /// treats its [journal] (including null) as a present wire field.
+  final bool hasJournal;
+
   /// Deserializes a [QueryUpdated] from JSON.
   factory QueryUpdated.fromJson(Map<String, dynamic> json) {
     return QueryUpdated(
@@ -466,6 +476,7 @@ class QueryUpdated extends StateModification {
       logLines: (json['logLines'] as List<dynamic>? ?? const <dynamic>[])
           .cast<String>(),
       journal: json['journal'] as String?,
+      hasJournal: json.containsKey('journal'),
     );
   }
 
@@ -476,7 +487,7 @@ class QueryUpdated extends StateModification {
       'queryId': queryId,
       'value': convexToJson(value),
       'logLines': logLines,
-      'journal': journal,
+      if (hasJournal) 'journal': journal,
     };
   }
 }
@@ -490,6 +501,7 @@ class QueryFailed extends StateModification {
     this.errorData,
     this.logLines = const <String>[],
     this.journal,
+    this.hasJournal = true,
   });
 
   @override
@@ -507,6 +519,12 @@ class QueryFailed extends StateModification {
   /// Updated journal cursor for paginated query state, if any.
   final String? journal;
 
+  /// Whether the wire message carried a `journal` field at all.
+  ///
+  /// See [QueryUpdated.hasJournal]: a present `null` clears the stored
+  /// journal, an absent field leaves it untouched.
+  final bool hasJournal;
+
   /// Deserializes a [QueryFailed] from JSON.
   factory QueryFailed.fromJson(Map<String, dynamic> json) {
     return QueryFailed(
@@ -518,6 +536,7 @@ class QueryFailed extends StateModification {
       logLines: (json['logLines'] as List<dynamic>? ?? const <dynamic>[])
           .cast<String>(),
       journal: json['journal'] as String?,
+      hasJournal: json.containsKey('journal'),
     );
   }
 
@@ -529,7 +548,7 @@ class QueryFailed extends StateModification {
       'errorMessage': errorMessage,
       'errorData': convexToJson(errorData),
       'logLines': logLines,
-      'journal': journal,
+      if (hasJournal) 'journal': journal,
     };
   }
 }

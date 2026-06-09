@@ -238,6 +238,70 @@ void main() {
       add = reconnect.single.modifications.single as Add;
       expect(add.journal, isNull);
     });
+
+    test(
+        'transitions without a journal field leave the stored journal '
+        'untouched', () {
+      final state = LocalSyncState();
+      final queryId =
+          state.subscribe('messages:list', const <String, dynamic>{}).queryId;
+
+      state.transition(
+        Transition(
+          startVersion: const StateVersion.initial(),
+          endVersion: StateVersion(querySet: 1, identity: 0, ts: encodeTs(1)),
+          modifications: <StateModification>[
+            QueryUpdated(
+              queryId: queryId,
+              value: const <String, dynamic>{
+                'page': <String>['a']
+              },
+              journal: 'cursor-a',
+            ),
+          ],
+        ),
+      );
+
+      // Decode from wire JSON with no `journal` key: the official client only
+      // updates the stored journal when the field is present
+      // (`journal !== undefined`), so an absent field must not clear it.
+      final updatedWithoutJournal = StateModification.fromJson(
+        <String, dynamic>{
+          'type': 'QueryUpdated',
+          'queryId': queryId,
+          'value': <String, dynamic>{
+            'page': <String>['a', 'b']
+          },
+          'logLines': <String>[],
+        },
+      );
+      final failedWithoutJournal = StateModification.fromJson(
+        <String, dynamic>{
+          'type': 'QueryFailed',
+          'queryId': queryId,
+          'errorMessage': 'boom',
+          'logLines': <String>[],
+        },
+      );
+      state.transition(
+        Transition(
+          startVersion: StateVersion(querySet: 1, identity: 0, ts: encodeTs(1)),
+          endVersion: StateVersion(querySet: 1, identity: 0, ts: encodeTs(2)),
+          modifications: <StateModification>[updatedWithoutJournal],
+        ),
+      );
+      state.transition(
+        Transition(
+          startVersion: StateVersion(querySet: 1, identity: 0, ts: encodeTs(2)),
+          endVersion: StateVersion(querySet: 1, identity: 0, ts: encodeTs(3)),
+          modifications: <StateModification>[failedWithoutJournal],
+        ),
+      );
+
+      final reconnect = state.prepareReconnect().whereType<ModifyQuerySet>();
+      final add = reconnect.single.modifications.single as Add;
+      expect(add.journal, 'cursor-a');
+    });
   });
 
   group('LocalSyncState pause/resume', () {

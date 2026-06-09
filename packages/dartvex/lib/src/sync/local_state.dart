@@ -472,11 +472,19 @@ class LocalSyncState {
   void transition(Transition transition) {
     for (final modification in transition.modifications) {
       _outstandingQueriesOlderThanRestart.remove(modification.queryId);
+      // Only touch the stored journal when the modification carried a journal
+      // field at all, mirroring the official client's `journal !== undefined`
+      // guard: a present null is a real value that clears the cursor, while an
+      // absent field leaves the previously stored journal intact.
       switch (modification) {
         case QueryUpdated():
-          updateJournal(modification.queryId, modification.journal);
+          if (modification.hasJournal) {
+            updateJournal(modification.queryId, modification.journal);
+          }
         case QueryFailed():
-          updateJournal(modification.queryId, modification.journal);
+          if (modification.hasJournal) {
+            updateJournal(modification.queryId, modification.journal);
+          }
         case QueryRemoved():
           break;
       }
