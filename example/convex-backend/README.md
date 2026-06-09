@@ -61,12 +61,19 @@ npx convex codegen
 
 ## Refresh the versioned function spec
 
-If your Convex deployment is configured locally, you can refresh the spec used
-by `packages/convex_codegen` with:
+The committed `function_spec.json` drives the typed Dart bindings produced by
+`packages/dartvex_codegen`. A raw `npx convex function-spec` dump bakes your
+**real deployment URL** into the file, so never redirect it straight into the
+committed spec. Instead, if your Convex deployment is configured locally, run:
 
 ```bash
-npx convex function-spec > function_spec.json
+bash ../refresh-function-spec.sh
 ```
+
+That dumps the spec, pipes it through the codegen `scrub` subcommand to replace
+the deployment URL with the `https://your-deployment.convex.cloud` placeholder,
+writes `function_spec.json`, and regenerates the Dart bindings. Confirm the
+result still uses the placeholder URL before committing.
 
 ## Run locally
 
