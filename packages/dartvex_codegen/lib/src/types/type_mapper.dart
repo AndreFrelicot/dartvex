@@ -169,6 +169,17 @@ class TypeMapper {
       );
     }
     if (type is ConvexLiteralType) {
+      if (!_isScalarLiteralValue(type.value)) {
+        context.warnings.add(
+          'Literal "$suggestedName" has a value that cannot be represented '
+          'as a Dart constant; generated as dynamic.',
+        );
+        return const MappedType(
+          dartType: DartPrimitiveType('dynamic'),
+          encode: _identityExpression,
+          decode: _identityExpression,
+        );
+      }
       final literalType = _literalDartType(type.value);
       final expectedCode = _literalCode(type.value);
       return MappedType(
@@ -362,7 +373,16 @@ class TypeMapper {
     final nonNull =
         union.value.where((type) => type is! ConvexNullType).toList();
 
-    if (nonNull.any((type) => type is ConvexAnyType)) {
+    final hasUntypeableLiteral = nonNull.any(
+      (type) => type is ConvexLiteralType && !_isScalarLiteralValue(type.value),
+    );
+    if (hasUntypeableLiteral) {
+      context.warnings.add(
+        'Union "$suggestedName" contains a literal whose value cannot be '
+        'represented as a Dart constant; generated as dynamic.',
+      );
+    }
+    if (hasUntypeableLiteral || nonNull.any((type) => type is ConvexAnyType)) {
       return const MappedType(
         dartType: DartPrimitiveType('dynamic'),
         encode: _identityExpression,
@@ -758,6 +778,13 @@ class TypeMapper {
     }
     return type.type;
   }
+
+  /// Whether [value] is a literal the generator can render as a Dart constant.
+  /// JSON decoding only ever yields these scalar shapes (plus `List`/`Map`), so
+  /// anything else — e.g. a Convex `$integer`-encoded bigint literal — is
+  /// degraded to `dynamic` rather than crashing generation.
+  bool _isScalarLiteralValue(Object? value) =>
+      value == null || value is bool || value is num || value is String;
 
   DartType _literalDartType(Object? value) {
     if (value == null) {

@@ -288,6 +288,45 @@ void main() {
         ),
       );
     });
+
+    test('surfaces parser warnings and degrades unknown types without throwing',
+        () {
+      final degradedSpec = const SpecParser().parseString('''
+{
+  "url": "https://sample.convex.cloud",
+  "functions": [
+    {
+      "functionType": "Query",
+      "args": { "type": "object", "value": {} },
+      "returns": {
+        "type": "object",
+        "value": {
+          "mystery": {
+            "fieldType": { "type": "quantum" },
+            "optional": false
+          }
+        }
+      },
+      "identifier": "messages.ts:future",
+      "visibility": { "kind": "public" }
+    }
+  ]
+}
+''');
+
+      final output = DartGenerator().generate(degradedSpec);
+
+      expect(
+        output.warnings,
+        anyElement(allOf(
+          contains('messages.ts:future'),
+          contains('field "mystery"'),
+          contains('Unknown Convex type "quantum"'),
+        )),
+      );
+      // The unknown field degraded to a dynamic value rather than aborting.
+      expect(output.files['modules/messages.dart'], contains('mystery'));
+    });
   });
 }
 

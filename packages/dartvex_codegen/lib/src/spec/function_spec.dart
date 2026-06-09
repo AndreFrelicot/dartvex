@@ -4,6 +4,7 @@ class FunctionsSpec {
   const FunctionsSpec({
     required this.url,
     required this.functions,
+    this.warnings = const <String>[],
   });
 
   /// The deployment URL reported by the function spec.
@@ -11,6 +12,10 @@ class FunctionsSpec {
 
   /// All functions included in the raw spec, including HTTP actions.
   final List<BaseFunctionSpec> functions;
+
+  /// Non-fatal diagnostics produced while parsing, such as unknown Convex
+  /// type tags that were degraded to `any` instead of aborting the run.
+  final List<String> warnings;
 
   /// The public query, mutation, and action functions in declaration order.
   Iterable<FunctionSpec> get publicFunctions sync* {

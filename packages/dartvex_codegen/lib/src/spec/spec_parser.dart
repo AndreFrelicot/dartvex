@@ -44,20 +44,22 @@ class SpecParser {
   FunctionsSpec parseMap(Map<String, dynamic> map) {
     final url = _readString(map, 'url');
     final rawFunctions = _readList(map, 'functions');
-    return FunctionsSpec(
-      url: url,
-      functions: rawFunctions.map((item) {
-        if (item is! Map<String, dynamic>) {
-          throw SpecParserException(
-            'Each function entry must be a JSON object',
-          );
-        }
-        return _parseBaseFunctionSpec(item);
-      }).toList(growable: false),
-    );
+    final warnings = <String>[];
+    final functions = rawFunctions.map((item) {
+      if (item is! Map<String, dynamic>) {
+        throw SpecParserException(
+          'Each function entry must be a JSON object',
+        );
+      }
+      return _parseBaseFunctionSpec(item, warnings);
+    }).toList(growable: false);
+    return FunctionsSpec(url: url, functions: functions, warnings: warnings);
   }
 
-  BaseFunctionSpec _parseBaseFunctionSpec(Map<String, dynamic> map) {
+  BaseFunctionSpec _parseBaseFunctionSpec(
+    Map<String, dynamic> map,
+    List<String> warnings,
+  ) {
     final functionType = _readString(map, 'functionType');
     if (functionType == 'HttpAction') {
       return HttpFunctionSpec(
@@ -71,9 +73,9 @@ class SpecParser {
       return FunctionSpec(
         functionType: functionType,
         args: _parseTypeOrAny(map, 'args',
-            context: _appendContext(identifier, 'args')),
+            context: _appendContext(identifier, 'args'), warnings: warnings),
         returns: _parseTypeOrAny(map, 'returns',
-            context: _appendContext(identifier, 'returns')),
+            context: _appendContext(identifier, 'returns'), warnings: warnings),
         identifier: identifier,
         visibility: Visibility(_readString(_readMap(map, 'visibility'), 'kind')),
       );
@@ -97,15 +99,20 @@ class SpecParser {
     Map<String, dynamic> map,
     String key, {
     String context = '',
+    required List<String> warnings,
   }) {
     final value = map[key];
     if (value == null) {
       return const ConvexAnyType();
     }
-    return _parseType(_readMap(map, key), context: context);
+    return _parseType(_readMap(map, key), context: context, warnings: warnings);
   }
 
-  ConvexType _parseType(Map<String, dynamic> map, {String context = ''}) {
+  ConvexType _parseType(
+    Map<String, dynamic> map, {
+    String context = '',
+    required List<String> warnings,
+  }) {
     final type = _readString(map, 'type');
     switch (type) {
       case 'any':
@@ -136,15 +143,18 @@ class SpecParser {
               _withContext('Union members must be JSON objects', memberContext),
             );
           }
-          parsed.add(_parseType(item, context: memberContext));
+          parsed.add(
+              _parseType(item, context: memberContext, warnings: warnings));
         }
         return ConvexUnionType(parsed);
       case 'record':
         return ConvexRecordType(
           keys: _parseType(_readMap(map, 'keys'),
-              context: _appendContext(context, 'record key')),
+              context: _appendContext(context, 'record key'),
+              warnings: warnings),
           values: _parseField(_readMap(map, 'values'),
-              context: _appendContext(context, 'record value')),
+              context: _appendContext(context, 'record value'),
+              warnings: warnings),
         );
       case 'object':
         final value = _readMap(map, 'value');
@@ -162,7 +172,8 @@ class SpecParser {
               return MapEntry(
                 key,
                 _parseField(rawField,
-                    context: _appendContext(context, 'field "$key"')),
+                    context: _appendContext(context, 'field "$key"'),
+                    warnings: warnings),
               );
             },
           ),
@@ -170,19 +181,30 @@ class SpecParser {
       case 'array':
         return ConvexArrayType(
           _parseType(_readMap(map, 'value'),
-              context: _appendContext(context, 'element')),
+              context: _appendContext(context, 'element'),
+              warnings: warnings),
         );
       case 'id':
         return ConvexIdType(_readString(map, 'tableName'));
     }
-    throw SpecParserException(
-      _withContext('Unsupported Convex type "$type"', context),
+    // Bulletproofing: an unknown/future Convex type tag must not abort the
+    // entire run. Degrade it to `any` (Dart `dynamic`) and record a warning so
+    // the offending location is reported instead of crashing generation.
+    warnings.add(
+      _withContext(
+          'Unknown Convex type "$type"; generated as dynamic.', context),
     );
+    return const ConvexAnyType();
   }
 
-  ConvexField _parseField(Map<String, dynamic> map, {String context = ''}) {
+  ConvexField _parseField(
+    Map<String, dynamic> map, {
+    String context = '',
+    required List<String> warnings,
+  }) {
     return ConvexField(
-      fieldType: _parseType(_readMap(map, 'fieldType'), context: context),
+      fieldType: _parseType(_readMap(map, 'fieldType'),
+          context: context, warnings: warnings),
       optional: _readBool(map, 'optional'),
     );
   }

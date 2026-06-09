@@ -470,5 +470,43 @@ void main() {
         ),
       );
     });
+
+    test('degrades a non-scalar literal value to dynamic with a warning', () {
+      final context = TypeRenderContext();
+      final mapper = TypeMapper();
+
+      // A Convex $integer-encoded bigint literal arrives as a Map after JSON
+      // decoding; it has no Dart constant form, so it degrades to dynamic.
+      final mapped = mapper.mapType(
+        ConvexLiteralType(<String, dynamic>{r'$integer': 'BQAAAAAAAAA='}),
+        suggestedName: 'BigLiteral',
+        context: context,
+      );
+
+      expect(mapped.annotation, 'dynamic');
+      expect(mapped.encode('value'), 'value');
+      expect(mapped.decode('raw'), 'raw');
+      expect(context.warnings, anyElement(contains('BigLiteral')));
+    });
+
+    test('degrades a union with a non-scalar literal to dynamic with a warning',
+        () {
+      final context = TypeRenderContext();
+      final mapper = TypeMapper();
+
+      final mapped = mapper.mapType(
+        ConvexUnionType(<ConvexType>[
+          ConvexLiteralType(<String, dynamic>{r'$integer': 'BQAAAAAAAAA='}),
+          const ConvexStringType(),
+        ]),
+        suggestedName: 'MaybeBig',
+        context: context,
+      );
+
+      expect(mapped.annotation, 'dynamic');
+      expect(mapped.encode('value'), 'value');
+      expect(mapped.decode('raw'), 'raw');
+      expect(context.warnings, anyElement(contains('MaybeBig')));
+    });
   });
 }

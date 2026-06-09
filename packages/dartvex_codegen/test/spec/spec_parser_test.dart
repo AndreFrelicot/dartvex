@@ -144,5 +144,33 @@ void main() {
         ),
       );
     });
+
+    test('degrades an unknown Convex type to any with a warning', () {
+      final spec = const SpecParser().parseMap(<String, dynamic>{
+        'url': 'https://sample.convex.cloud',
+        'functions': <dynamic>[
+          <String, dynamic>{
+            'functionType': 'Query',
+            'args': <String, dynamic>{
+              'type': 'object',
+              'value': <String, dynamic>{},
+            },
+            'returns': <String, dynamic>{'type': 'quantum'},
+            'identifier': 'messages.ts:future',
+            'visibility': <String, dynamic>{'kind': 'public'},
+          },
+        ],
+      });
+
+      final future = spec.publicFunctions.single;
+      expect(future.returns, isA<ConvexAnyType>());
+      expect(
+        spec.warnings,
+        anyElement(allOf(
+          contains('messages.ts:future'),
+          contains('Unknown Convex type "quantum"'),
+        )),
+      );
+    });
   });
 }

@@ -51,7 +51,7 @@ class DartGenerator {
 
   /// Generates the runtime, API modules, and schema types for [spec].
   GeneratedOutput generate(FunctionsSpec spec) {
-    final warnings = <String>[];
+    final warnings = <String>[...spec.warnings];
     final root = _buildTree(spec);
     final files = <String, String>{};
 
