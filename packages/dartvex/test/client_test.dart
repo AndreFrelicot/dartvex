@@ -1220,6 +1220,56 @@ void main() {
       await expectation;
     });
 
+    test(
+        'mutate and action raced by a same-event close report no unhandled '
+        'error', () async {
+      final unhandledErrors = <Object>[];
+      await runZonedGuarded(() async {
+        final adapter = MockWebSocketAdapter();
+        final client = ConvexClient(
+          'https://demo.convex.cloud',
+          config: ConvexClientConfig(
+            adapterFactory: (_) => adapter,
+            connectImmediately: false,
+            reconnectBackoff: const <Duration>[Duration.zero],
+          ),
+        );
+        // Issue the requests and close in the same synchronous segment:
+        // close() fails the tracked request futures in the microtask gap
+        // before mutate()/action() have attached their own awaits, which
+        // used to surface as a spurious unhandled-error report even though
+        // the same error is delivered to the callers below.
+        final mutation = client.mutate('messages:send');
+        final action = client.action('messages:archive');
+        final closed = client.close();
+        await expectLater(
+          mutation,
+          throwsA(
+            isA<ConvexException>().having(
+              (error) => error.message,
+              'message',
+              'ConvexClient has been disposed',
+            ),
+          ),
+        );
+        await expectLater(
+          action,
+          throwsA(
+            isA<ConvexException>().having(
+              (error) => error.message,
+              'message',
+              'ConvexClient has been disposed',
+            ),
+          ),
+        );
+        await closed;
+      }, (error, stackTrace) {
+        unhandledErrors.add(error);
+      })!;
+      await pumpEventQueue();
+      expect(unhandledErrors, isEmpty);
+    });
+
     test('mutation timeout completes caller future', () async {
       final adapter = MockWebSocketAdapter();
       final client = ConvexClient(

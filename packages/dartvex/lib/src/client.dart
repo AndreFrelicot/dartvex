@@ -856,6 +856,14 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
           _publishConnectionStatus();
         },
       );
+      // The await below only attaches to [future] after the flush; a dispose
+      // landing in that microtask gap (mutate() then close() in the same
+      // event) would fail it while unlistened and report a spurious unhandled
+      // error even though the same error reaches this caller. Marking it
+      // ignored suppresses only that duplicate report — the error still
+      // propagates through the await (and to fire-and-forget callers via this
+      // method's own returned future).
+      future.ignore();
       await _flushOutgoing();
       final result = await future;
       _log(
@@ -910,6 +918,10 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
           _publishConnectionStatus();
         },
       );
+      // See mutate(): suppress the spurious unhandled-error report when a
+      // dispose fails the request in the microtask gap before the await
+      // below attaches; the error itself still reaches this caller.
+      future.ignore();
       await _flushOutgoing();
       final result = await future;
       _log(
