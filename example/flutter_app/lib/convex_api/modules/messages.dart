@@ -33,27 +33,27 @@ class MessagesApi {
       'messages:listPrivate',
       const <String, dynamic>{},
     );
-    final typedStream = subscription.stream.map(
-      (event) => switch (event) {
-        QuerySuccess(:final value) =>
-          TypedQuerySuccess<List<ListPrivateResultItem>>(
+    final typedStream = subscription.stream.map((event) {
+      switch (event) {
+        case QuerySuccess(:final value):
+          return TypedQuerySuccess<List<ListPrivateResultItem>>(
             expectList(
               value,
               label: 'ListPrivateResult',
             ).map((item) => _decodeListPrivateResultItem(item)).toList(),
-          ),
-        QueryLoading(:final hasPendingWrites) =>
-          TypedQueryLoading<List<ListPrivateResultItem>>(
+          );
+        case QueryLoading(:final hasPendingWrites):
+          return TypedQueryLoading<List<ListPrivateResultItem>>(
             hasPendingWrites: hasPendingWrites,
-          ),
-        QueryError(:final message, :final data, :final logLines) =>
-          TypedQueryError<List<ListPrivateResultItem>>(
+          );
+        case QueryError(:final message, :final data, :final logLines):
+          return TypedQueryError<List<ListPrivateResultItem>>(
             message,
             data: data,
             logLines: logLines,
-          ),
-      },
-    );
+          );
+      }
+    });
     return TypedConvexSubscription<List<ListPrivateResultItem>>(
       subscription,
       typedStream,
@@ -76,27 +76,27 @@ class MessagesApi {
       'messages:listPublic',
       const <String, dynamic>{},
     );
-    final typedStream = subscription.stream.map(
-      (event) => switch (event) {
-        QuerySuccess(:final value) =>
-          TypedQuerySuccess<List<ListPublicResultItem>>(
+    final typedStream = subscription.stream.map((event) {
+      switch (event) {
+        case QuerySuccess(:final value):
+          return TypedQuerySuccess<List<ListPublicResultItem>>(
             expectList(
               value,
               label: 'ListPublicResult',
             ).map((item) => _decodeListPublicResultItem(item)).toList(),
-          ),
-        QueryLoading(:final hasPendingWrites) =>
-          TypedQueryLoading<List<ListPublicResultItem>>(
+          );
+        case QueryLoading(:final hasPendingWrites):
+          return TypedQueryLoading<List<ListPublicResultItem>>(
             hasPendingWrites: hasPendingWrites,
-          ),
-        QueryError(:final message, :final data, :final logLines) =>
-          TypedQueryError<List<ListPublicResultItem>>(
+          );
+        case QueryError(:final message, :final data, :final logLines):
+          return TypedQueryError<List<ListPublicResultItem>>(
             message,
             data: data,
             logLines: logLines,
-          ),
-      },
-    );
+          );
+      }
+    });
     return TypedConvexSubscription<List<ListPublicResultItem>>(
       subscription,
       typedStream,
@@ -150,6 +150,31 @@ Map<String, dynamic> _encodeListPrivateResultItem(ListPrivateResultItem value) {
 
 ListPrivateResultItem _decodeListPrivateResultItem(dynamic raw) {
   final map = expectMap(raw, label: 'ListPrivateResultItem');
+  if (!map.containsKey('_creationTime')) {
+    throw FormatException(
+      'Missing required field "_creationTime" for ListPrivateResultItem',
+    );
+  }
+  if (!map.containsKey('_id')) {
+    throw FormatException(
+      'Missing required field "_id" for ListPrivateResultItem',
+    );
+  }
+  if (!map.containsKey('author')) {
+    throw FormatException(
+      'Missing required field "author" for ListPrivateResultItem',
+    );
+  }
+  if (!map.containsKey('text')) {
+    throw FormatException(
+      'Missing required field "text" for ListPrivateResultItem',
+    );
+  }
+  if (!map.containsKey('tokenIdentifier')) {
+    throw FormatException(
+      'Missing required field "tokenIdentifier" for ListPrivateResultItem',
+    );
+  }
   return (
     creationTime: expectDouble(
       map['_creationTime'],
@@ -187,6 +212,26 @@ Map<String, dynamic> _encodeListPublicResultItem(ListPublicResultItem value) {
 
 ListPublicResultItem _decodeListPublicResultItem(dynamic raw) {
   final map = expectMap(raw, label: 'ListPublicResultItem');
+  if (!map.containsKey('_creationTime')) {
+    throw FormatException(
+      'Missing required field "_creationTime" for ListPublicResultItem',
+    );
+  }
+  if (!map.containsKey('_id')) {
+    throw FormatException(
+      'Missing required field "_id" for ListPublicResultItem',
+    );
+  }
+  if (!map.containsKey('author')) {
+    throw FormatException(
+      'Missing required field "author" for ListPublicResultItem',
+    );
+  }
+  if (!map.containsKey('text')) {
+    throw FormatException(
+      'Missing required field "text" for ListPublicResultItem',
+    );
+  }
   return (
     creationTime: expectDouble(
       map['_creationTime'],
@@ -209,6 +254,9 @@ Map<String, dynamic> _encodeSendPrivateArgs(SendPrivateArgs value) {
 
 SendPrivateArgs _decodeSendPrivateArgs(dynamic raw) {
   final map = expectMap(raw, label: 'SendPrivateArgs');
+  if (!map.containsKey('text')) {
+    throw FormatException('Missing required field "text" for SendPrivateArgs');
+  }
   return (text: expectString(map['text'], label: 'SendPrivateArgsText'));
 }
 
@@ -221,6 +269,12 @@ Map<String, dynamic> _encodeSendPublicArgs(SendPublicArgs value) {
 
 SendPublicArgs _decodeSendPublicArgs(dynamic raw) {
   final map = expectMap(raw, label: 'SendPublicArgs');
+  if (!map.containsKey('author')) {
+    throw FormatException('Missing required field "author" for SendPublicArgs');
+  }
+  if (!map.containsKey('text')) {
+    throw FormatException('Missing required field "text" for SendPublicArgs');
+  }
   return (
     author: expectString(map['author'], label: 'SendPublicArgsAuthor'),
     text: expectString(map['text'], label: 'SendPublicArgsText'),

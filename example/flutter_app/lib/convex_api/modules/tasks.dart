@@ -65,27 +65,27 @@ class TasksApi {
       'tasks:listBoard',
       const <String, dynamic>{},
     );
-    final typedStream = subscription.stream.map(
-      (event) => switch (event) {
-        QuerySuccess(:final value) =>
-          TypedQuerySuccess<List<ListBoardResultItem>>(
+    final typedStream = subscription.stream.map((event) {
+      switch (event) {
+        case QuerySuccess(:final value):
+          return TypedQuerySuccess<List<ListBoardResultItem>>(
             expectList(
               value,
               label: 'ListBoardResult',
             ).map((item) => _decodeListBoardResultItem(item)).toList(),
-          ),
-        QueryLoading(:final hasPendingWrites) =>
-          TypedQueryLoading<List<ListBoardResultItem>>(
+          );
+        case QueryLoading(:final hasPendingWrites):
+          return TypedQueryLoading<List<ListBoardResultItem>>(
             hasPendingWrites: hasPendingWrites,
-          ),
-        QueryError(:final message, :final data, :final logLines) =>
-          TypedQueryError<List<ListBoardResultItem>>(
+          );
+        case QueryError(:final message, :final data, :final logLines):
+          return TypedQueryError<List<ListBoardResultItem>>(
             message,
             data: data,
             logLines: logLines,
-          ),
-      },
-    );
+          );
+      }
+    });
     return TypedConvexSubscription<List<ListBoardResultItem>>(
       subscription,
       typedStream,
@@ -110,6 +110,16 @@ Map<String, dynamic> _encodeAdvanceTaskResult(AdvanceTaskResult value) {
 
 AdvanceTaskResult _decodeAdvanceTaskResult(dynamic raw) {
   final map = expectMap(raw, label: 'AdvanceTaskResult');
+  if (!map.containsKey('status')) {
+    throw FormatException(
+      'Missing required field "status" for AdvanceTaskResult',
+    );
+  }
+  if (!map.containsKey('taskId')) {
+    throw FormatException(
+      'Missing required field "taskId" for AdvanceTaskResult',
+    );
+  }
   return (
     status: expectString(map['status'], label: 'AdvanceTaskResultStatus'),
     taskId: TasksId(
@@ -127,6 +137,11 @@ Map<String, dynamic> _encodeAdvanceTaskArgs(AdvanceTaskArgs value) {
 
 AdvanceTaskArgs _decodeAdvanceTaskArgs(dynamic raw) {
   final map = expectMap(raw, label: 'AdvanceTaskArgs');
+  if (!map.containsKey('taskId')) {
+    throw FormatException(
+      'Missing required field "taskId" for AdvanceTaskArgs',
+    );
+  }
   return (
     taskId: TasksId(
       expectString(map['taskId'], label: 'AdvanceTaskArgsTaskId'),
@@ -167,6 +182,35 @@ Map<String, dynamic> _encodeCreateTaskArgs(CreateTaskArgs value) {
 
 CreateTaskArgs _decodeCreateTaskArgs(dynamic raw) {
   final map = expectMap(raw, label: 'CreateTaskArgs');
+  if (!map.containsKey('assignee')) {
+    throw FormatException(
+      'Missing required field "assignee" for CreateTaskArgs',
+    );
+  }
+  if (!map.containsKey('dueAt')) {
+    throw FormatException('Missing required field "dueAt" for CreateTaskArgs');
+  }
+  if (!map.containsKey('estimatePoints')) {
+    throw FormatException(
+      'Missing required field "estimatePoints" for CreateTaskArgs',
+    );
+  }
+  if (!map.containsKey('labels')) {
+    throw FormatException('Missing required field "labels" for CreateTaskArgs');
+  }
+  if (!map.containsKey('priority')) {
+    throw FormatException(
+      'Missing required field "priority" for CreateTaskArgs',
+    );
+  }
+  if (!map.containsKey('summary')) {
+    throw FormatException(
+      'Missing required field "summary" for CreateTaskArgs',
+    );
+  }
+  if (!map.containsKey('title')) {
+    throw FormatException('Missing required field "title" for CreateTaskArgs');
+  }
   return (
     assignee: map['assignee'] == null
         ? null
@@ -231,6 +275,56 @@ Map<String, dynamic> _encodeListBoardResultItem(ListBoardResultItem value) {
 
 ListBoardResultItem _decodeListBoardResultItem(dynamic raw) {
   final map = expectMap(raw, label: 'ListBoardResultItem');
+  if (!map.containsKey('_creationTime')) {
+    throw FormatException(
+      'Missing required field "_creationTime" for ListBoardResultItem',
+    );
+  }
+  if (!map.containsKey('_id')) {
+    throw FormatException(
+      'Missing required field "_id" for ListBoardResultItem',
+    );
+  }
+  if (!map.containsKey('assignee')) {
+    throw FormatException(
+      'Missing required field "assignee" for ListBoardResultItem',
+    );
+  }
+  if (!map.containsKey('dueAt')) {
+    throw FormatException(
+      'Missing required field "dueAt" for ListBoardResultItem',
+    );
+  }
+  if (!map.containsKey('estimatePoints')) {
+    throw FormatException(
+      'Missing required field "estimatePoints" for ListBoardResultItem',
+    );
+  }
+  if (!map.containsKey('labels')) {
+    throw FormatException(
+      'Missing required field "labels" for ListBoardResultItem',
+    );
+  }
+  if (!map.containsKey('priority')) {
+    throw FormatException(
+      'Missing required field "priority" for ListBoardResultItem',
+    );
+  }
+  if (!map.containsKey('status')) {
+    throw FormatException(
+      'Missing required field "status" for ListBoardResultItem',
+    );
+  }
+  if (!map.containsKey('summary')) {
+    throw FormatException(
+      'Missing required field "summary" for ListBoardResultItem',
+    );
+  }
+  if (!map.containsKey('title')) {
+    throw FormatException(
+      'Missing required field "title" for ListBoardResultItem',
+    );
+  }
   return (
     creationTime: expectDouble(
       map['_creationTime'],

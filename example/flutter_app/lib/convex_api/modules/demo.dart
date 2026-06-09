@@ -34,23 +34,24 @@ class DemoApi {
       'demo:requireAuthEcho',
       _encodeRequireAuthEchoArgs((message: message)),
     );
-    final typedStream = subscription.stream.map(
-      (event) => switch (event) {
-        QuerySuccess(:final value) => TypedQuerySuccess<RequireAuthEchoResult>(
-          _decodeRequireAuthEchoResult(value),
-        ),
-        QueryLoading(:final hasPendingWrites) =>
-          TypedQueryLoading<RequireAuthEchoResult>(
+    final typedStream = subscription.stream.map((event) {
+      switch (event) {
+        case QuerySuccess(:final value):
+          return TypedQuerySuccess<RequireAuthEchoResult>(
+            _decodeRequireAuthEchoResult(value),
+          );
+        case QueryLoading(:final hasPendingWrites):
+          return TypedQueryLoading<RequireAuthEchoResult>(
             hasPendingWrites: hasPendingWrites,
-          ),
-        QueryError(:final message, :final data, :final logLines) =>
-          TypedQueryError<RequireAuthEchoResult>(
+          );
+        case QueryError(:final message, :final data, :final logLines):
+          return TypedQueryError<RequireAuthEchoResult>(
             message,
             data: data,
             logLines: logLines,
-          ),
-      },
-    );
+          );
+      }
+    });
     return TypedConvexSubscription<RequireAuthEchoResult>(
       subscription,
       typedStream,
@@ -67,21 +68,24 @@ class DemoApi {
       'demo:whoAmI',
       const <String, dynamic>{},
     );
-    final typedStream = subscription.stream.map(
-      (event) => switch (event) {
-        QuerySuccess(:final value) => TypedQuerySuccess<WhoAmIResult?>(
-          value == null ? null : _decodeWhoAmIResult(value),
-        ),
-        QueryLoading(:final hasPendingWrites) =>
-          TypedQueryLoading<WhoAmIResult?>(hasPendingWrites: hasPendingWrites),
-        QueryError(:final message, :final data, :final logLines) =>
-          TypedQueryError<WhoAmIResult?>(
+    final typedStream = subscription.stream.map((event) {
+      switch (event) {
+        case QuerySuccess(:final value):
+          return TypedQuerySuccess<WhoAmIResult?>(
+            value == null ? null : _decodeWhoAmIResult(value),
+          );
+        case QueryLoading(:final hasPendingWrites):
+          return TypedQueryLoading<WhoAmIResult?>(
+            hasPendingWrites: hasPendingWrites,
+          );
+        case QueryError(:final message, :final data, :final logLines):
+          return TypedQueryError<WhoAmIResult?>(
             message,
             data: data,
             logLines: logLines,
-          ),
-      },
-    );
+          );
+      }
+    });
     return TypedConvexSubscription<WhoAmIResult?>(subscription, typedStream);
   }
 }
@@ -110,6 +114,26 @@ Map<String, dynamic> _encodePingActionResult(PingActionResult value) {
 
 PingActionResult _decodePingActionResult(dynamic raw) {
   final map = expectMap(raw, label: 'PingActionResult');
+  if (!map.containsKey('echoedText')) {
+    throw FormatException(
+      'Missing required field "echoedText" for PingActionResult',
+    );
+  }
+  if (!map.containsKey('isAuthenticated')) {
+    throw FormatException(
+      'Missing required field "isAuthenticated" for PingActionResult',
+    );
+  }
+  if (!map.containsKey('receivedAt')) {
+    throw FormatException(
+      'Missing required field "receivedAt" for PingActionResult',
+    );
+  }
+  if (!map.containsKey('viewerName')) {
+    throw FormatException(
+      'Missing required field "viewerName" for PingActionResult',
+    );
+  }
   return (
     echoedText: expectString(
       map['echoedText'],
@@ -138,6 +162,11 @@ Map<String, dynamic> _encodePingActionArgs(PingActionArgs value) {
 
 PingActionArgs _decodePingActionArgs(dynamic raw) {
   final map = expectMap(raw, label: 'PingActionArgs');
+  if (!map.containsKey('message')) {
+    throw FormatException(
+      'Missing required field "message" for PingActionArgs',
+    );
+  }
   return (
     message: expectString(map['message'], label: 'PingActionArgsMessage'),
   );
@@ -155,6 +184,16 @@ Map<String, dynamic> _encodeRequireAuthEchoResult(RequireAuthEchoResult value) {
 
 RequireAuthEchoResult _decodeRequireAuthEchoResult(dynamic raw) {
   final map = expectMap(raw, label: 'RequireAuthEchoResult');
+  if (!map.containsKey('message')) {
+    throw FormatException(
+      'Missing required field "message" for RequireAuthEchoResult',
+    );
+  }
+  if (!map.containsKey('tokenIdentifier')) {
+    throw FormatException(
+      'Missing required field "tokenIdentifier" for RequireAuthEchoResult',
+    );
+  }
   return (
     message: expectString(
       map['message'],
@@ -176,6 +215,11 @@ Map<String, dynamic> _encodeRequireAuthEchoArgs(RequireAuthEchoArgs value) {
 
 RequireAuthEchoArgs _decodeRequireAuthEchoArgs(dynamic raw) {
   final map = expectMap(raw, label: 'RequireAuthEchoArgs');
+  if (!map.containsKey('message')) {
+    throw FormatException(
+      'Missing required field "message" for RequireAuthEchoArgs',
+    );
+  }
   return (
     message: expectString(map['message'], label: 'RequireAuthEchoArgsMessage'),
   );
@@ -208,6 +252,23 @@ Map<String, dynamic> _encodeWhoAmIResult(WhoAmIResult value) {
 
 WhoAmIResult _decodeWhoAmIResult(dynamic raw) {
   final map = expectMap(raw, label: 'WhoAmIResult');
+  if (!map.containsKey('email')) {
+    throw FormatException('Missing required field "email" for WhoAmIResult');
+  }
+  if (!map.containsKey('issuer')) {
+    throw FormatException('Missing required field "issuer" for WhoAmIResult');
+  }
+  if (!map.containsKey('name')) {
+    throw FormatException('Missing required field "name" for WhoAmIResult');
+  }
+  if (!map.containsKey('subject')) {
+    throw FormatException('Missing required field "subject" for WhoAmIResult');
+  }
+  if (!map.containsKey('tokenIdentifier')) {
+    throw FormatException(
+      'Missing required field "tokenIdentifier" for WhoAmIResult',
+    );
+  }
   return (
     email: map['email'] == null
         ? null
