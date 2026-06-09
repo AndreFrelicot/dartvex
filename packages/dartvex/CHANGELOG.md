@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0] - 2026-06-09
+## [0.2.0] - 2026-06-10
 
 ### Added
 
@@ -115,6 +115,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A `setAuthWithRefresh` superseded while its initial token fetch was still
+  pending no longer leaves the transport paused forever. `setAuth`,
+  `clearAuth`, `updateAuthToken`, and a cancelled auth handle now release the
+  socket pause inherited from the flow they replaced (resuming an unpaused
+  socket is a no-op, and a flow superseded by a newer `setAuthWithRefresh`
+  still hands the gating to that flow, which resumes on its own). Previously a
+  logout — or any new fixed token — issued while the initial fetch was hung
+  left every query and mutation buffering indefinitely, and the stall survived
+  reconnects.
+- Cancelling the `AuthHandle` of a superseded `setAuthWithRefresh` flow is now
+  a no-op instead of tearing down the current flow's refresh state (which
+  could stop token refreshes for the active session).
+- A connect attempt superseded by a reauth `stop()`/`restart()` cycle while
+  its socket was still opening now abandons its handshake instead of — in the
+  worst interleaving — writing a second `Connect` frame onto the restarted
+  attempt's socket and double-counting the connection. `stop()` now also
+  closes a half-open socket, mirroring the official client's `stop()` on a
+  "connecting" socket.
 - Reconnect now re-declares the query set even when it is empty:
   `prepareReconnect` always emits a `ModifyQuerySet(baseVersion: 0,
   newVersion: 1)`, matching the official client's `restart()`, which sends one
