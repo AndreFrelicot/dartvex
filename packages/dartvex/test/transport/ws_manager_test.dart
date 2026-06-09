@@ -1516,6 +1516,63 @@ void main() {
         );
       });
     });
+
+    group('connect attempt supersession', () {
+      test(
+          'a connect superseded by stop()/restart() never finishes its '
+          'handshake on the newer socket', () async {
+        final adapter = _QueuedConnectAdapter();
+        var connectedCalls = 0;
+        final manager = WebSocketManager(
+          adapter: adapter,
+          deploymentUrl: 'https://demo.convex.cloud',
+          apiVersion: '0.1.0',
+          onConnected: () {
+            connectedCalls += 1;
+            return const <ClientMessage>[];
+          },
+          onMessage: (_) => const <ClientMessage>[],
+          onDisconnected: (_) async {},
+          onConnectionStateChanged: (_, __) {},
+          maxObservedTimestamp: () => null,
+          hasSyncedPastLastReconnect: () => false,
+          reconnectBackoff: const <Duration>[Duration.zero],
+          inactivityTimeout: const Duration(seconds: 30),
+        );
+
+        // First connect attempt hangs at the adapter.
+        final startFuture = manager.start();
+        await Future<void>.delayed(Duration.zero);
+        expect(adapter.pendingConnects, hasLength(1));
+
+        // An auth reauth stops the manager mid-connect and restarts it; the
+        // restarted attempt also hangs at the adapter.
+        await manager.stop();
+        final restartFuture = manager.restart();
+        await Future<void>.delayed(Duration.zero);
+        expect(adapter.pendingConnects, hasLength(2));
+
+        // The newer attempt opens first and runs the handshake.
+        adapter.completeConnect(1);
+        await restartFuture;
+
+        // The superseded attempt opens late: its continuation must bail out
+        // instead of writing a second Connect frame onto the live socket or
+        // double-counting the connection.
+        adapter.completeConnect(0);
+        await startFuture;
+        await Future<void>.delayed(Duration.zero);
+
+        final connectFrames = adapter.decodedSentMessages
+            .where((message) => message['type'] == 'Connect')
+            .toList(growable: false);
+        expect(connectFrames, hasLength(1));
+        expect(connectedCalls, 1);
+        expect(manager.connectionCount, 1);
+
+        await manager.dispose();
+      });
+    });
   });
 }
 
@@ -1536,6 +1593,59 @@ Future<List<Map<String, dynamic>>> _waitForConnectMessages(
   return adapter.decodedSentMessages
       .where((message) => message['type'] == 'Connect')
       .toList(growable: false);
+}
+
+/// Adapter whose connect() calls each hang on their own completer, so a test
+/// can resolve overlapping connect attempts out of order.
+class _QueuedConnectAdapter implements WebSocketAdapter {
+  final StreamController<String> _messagesController =
+      StreamController<String>.broadcast();
+  final StreamController<WebSocketCloseEvent> _closeController =
+      StreamController<WebSocketCloseEvent>.broadcast(sync: true);
+
+  final List<Completer<void>> pendingConnects = <Completer<void>>[];
+  final List<String> sentMessages = <String>[];
+  bool _connected = false;
+
+  @override
+  Future<void> connect(String url) async {
+    final completer = Completer<void>();
+    pendingConnects.add(completer);
+    await completer.future;
+    _connected = true;
+  }
+
+  void completeConnect(int index) {
+    pendingConnects[index].complete();
+  }
+
+  @override
+  void send(String message) {
+    if (!_connected) {
+      throw StateError('Mock socket is disconnected');
+    }
+    sentMessages.add(message);
+  }
+
+  List<Map<String, dynamic>> get decodedSentMessages {
+    return sentMessages
+        .map((message) => jsonDecode(message) as Map<String, dynamic>)
+        .toList(growable: false);
+  }
+
+  @override
+  Stream<String> get messages => _messagesController.stream;
+
+  @override
+  Stream<WebSocketCloseEvent> get closeEvents => _closeController.stream;
+
+  @override
+  Future<void> close() async {
+    _connected = false;
+  }
+
+  @override
+  bool get isConnected => _connected;
 }
 
 class _ThrowingSendAdapter extends MockWebSocketAdapter {

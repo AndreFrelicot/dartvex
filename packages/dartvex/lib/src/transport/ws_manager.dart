@@ -225,6 +225,13 @@ class WebSocketManager {
   bool _connecting = false;
   bool _closeHandled = false;
   bool _stopped = false;
+
+  /// Monotonic id of the latest connect attempt. [stop] advances it so a
+  /// continuation of an in-flight [_connect] that resumes after a
+  /// stop()/restart() cycle can detect it was superseded and bail out instead
+  /// of running its handshake against the newer attempt's socket (which would
+  /// write a second `Connect` frame onto it — a protocol violation).
+  int _connectAttempt = 0;
   _SocketPauseState _pauseState = _SocketPauseState.no;
   int _connectionCount = 0;
   int _reconnectIndex = 0;
@@ -413,6 +420,7 @@ class WebSocketManager {
     }
     _connecting = true;
     _closeHandled = false;
+    final attempt = ++_connectAttempt;
     _log(
       DartvexLogLevel.info,
       'Connecting WebSocket',
@@ -421,6 +429,14 @@ class WebSocketManager {
     onConnectionStateChanged(false, true);
     try {
       await adapter.connect(_buildWebSocketUrl()).timeout(connectTimeout);
+      if (attempt != _connectAttempt) {
+        // stop() superseded this attempt while the socket was opening; its
+        // adapter close discards the late socket, and a restart() may already
+        // be driving a newer attempt. Touch nothing — not even _connecting —
+        // and especially do not run the handshake: it would send a second
+        // Connect frame on whichever socket the adapter now fronts.
+        return;
+      }
       if (_disposed || _stopped) {
         _connecting = false;
         await _closeAdapterBestEffort(
@@ -449,6 +465,13 @@ class WebSocketManager {
       }
       _markConnected();
     } catch (error) {
+      if (attempt != _connectAttempt) {
+        // A superseded attempt's failure is not this manager's disconnect: the
+        // stop()/restart() that superseded it owns the connection lifecycle
+        // now, and running _handleClosed here would schedule a reconnect (or
+        // clobber _connecting) on top of the newer attempt.
+        return;
+      }
       _connecting = false;
       final timedOut = error is TimeoutException;
       if (timedOut) {
@@ -586,16 +609,23 @@ class WebSocketManager {
     _stopped = true;
     _pauseState = _SocketPauseState.no;
     _connecting = false;
+    // Supersede any in-flight connect attempt so its continuation bails out
+    // instead of completing a handshake the restart() will redo on a fresh
+    // socket. Mirrors the official client's stop(), which detaches and closes
+    // a "connecting" socket.
+    _connectAttempt += 1;
     _reconnectTimer?.cancel();
     _inactivityTimer?.cancel();
     _chunkBuffer = null;
-    if (adapter.isConnected) {
-      // The close that follows is deliberate; _handleClosed sees _stopped and
-      // skips its reconnect bookkeeping. restart() rebuilds the session.
-      await _closeAdapterBestEffort(
-        'Failed to close WebSocket while stopping for reauth',
-      );
-    }
+    // Close unconditionally: when a connect is mid-flight the adapter is not
+    // "connected" yet, but close() advances its connect generation so the
+    // late socket is discarded at the adapter level instead of opening
+    // unmanaged while stopped. Closing an idle adapter is a no-op.
+    // _handleClosed sees _stopped and skips its reconnect bookkeeping;
+    // restart() rebuilds the session.
+    await _closeAdapterBestEffort(
+      'Failed to close WebSocket while stopping for reauth',
+    );
   }
 
   /// Re-establishes the connection after [stop]. No-op unless stopped.
