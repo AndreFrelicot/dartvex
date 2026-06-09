@@ -97,6 +97,13 @@
       "visibility": { "kind": "public" }
     },
     {
+      "functionType": "Query",
+      "args": null,
+      "returns": null,
+      "identifier": "messages.ts:ping",
+      "visibility": { "kind": "public" }
+    },
+    {
       "functionType": "Action",
       "args": {
         "type": "object",

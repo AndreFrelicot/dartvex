@@ -61,6 +61,34 @@ class MessagesApi {
     );
   }
 
+  Future<dynamic> ping([
+    Map<String, dynamic> args = const <String, dynamic>{},
+  ]) async {
+    final raw = await _client.query('messages:ping', args);
+    return raw;
+  }
+
+  TypedConvexSubscription<dynamic> pingSubscribe([
+    Map<String, dynamic> args = const <String, dynamic>{},
+  ]) {
+    final subscription = _client.subscribe('messages:ping', args);
+    final typedStream = subscription.stream.map((event) {
+      switch (event) {
+        case QuerySuccess(:final value):
+          return TypedQuerySuccess<dynamic>(value);
+        case QueryLoading(:final hasPendingWrites):
+          return TypedQueryLoading<dynamic>(hasPendingWrites: hasPendingWrites);
+        case QueryError(:final message, :final data, :final logLines):
+          return TypedQueryError<dynamic>(
+            message,
+            data: data,
+            logLines: logLines,
+          );
+      }
+    });
+    return TypedConvexSubscription<dynamic>(subscription, typedStream);
+  }
+
   Future<MessagesId> send({
     required String author,
     required String text,

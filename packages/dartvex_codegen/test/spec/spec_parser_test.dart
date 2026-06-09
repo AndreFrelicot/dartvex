@@ -13,7 +13,7 @@ void main() {
       final spec = const SpecParser().parseString(fixture);
 
       expect(spec.url, 'https://sample.convex.cloud');
-      expect(spec.functions, hasLength(6));
+      expect(spec.functions, hasLength(7));
       expect(
           spec.publicFunctions.map((function) => function.identifier),
           containsAll(<String>[
@@ -55,6 +55,41 @@ void main() {
         ),
         throwsA(isA<SpecParserException>()),
       );
+    });
+
+    test('treats missing or null args and returns as ConvexAnyType', () {
+      final spec = const SpecParser().parseMap(<String, dynamic>{
+        'url': 'https://sample.convex.cloud',
+        'functions': <dynamic>[
+          // Explicit nulls, as emitted by `convex function-spec` for a
+          // function declared without a returns validator.
+          <String, dynamic>{
+            'functionType': 'Query',
+            'args': null,
+            'returns': null,
+            'identifier': 'messages.ts:ping',
+            'visibility': <String, dynamic>{'kind': 'public'},
+          },
+          // The args/returns keys omitted entirely.
+          <String, dynamic>{
+            'functionType': 'Mutation',
+            'identifier': 'messages.ts:pong',
+            'visibility': <String, dynamic>{'kind': 'public'},
+          },
+        ],
+      });
+
+      final ping = spec.publicFunctions.firstWhere(
+        (function) => function.identifier == 'messages.ts:ping',
+      );
+      expect(ping.args, isA<ConvexAnyType>());
+      expect(ping.returns, isA<ConvexAnyType>());
+
+      final pong = spec.publicFunctions.firstWhere(
+        (function) => function.identifier == 'messages.ts:pong',
+      );
+      expect(pong.args, isA<ConvexAnyType>());
+      expect(pong.returns, isA<ConvexAnyType>());
     });
   });
 }

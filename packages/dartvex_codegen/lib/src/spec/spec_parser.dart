@@ -68,11 +68,25 @@ class SpecParser {
     }
     return FunctionSpec(
       functionType: functionType,
-      args: _parseType(_readMap(map, 'args')),
-      returns: _parseType(_readMap(map, 'returns')),
+      args: _parseTypeOrAny(map, 'args'),
+      returns: _parseTypeOrAny(map, 'returns'),
       identifier: _readString(map, 'identifier'),
       visibility: Visibility(_readString(_readMap(map, 'visibility'), 'kind')),
     );
+  }
+
+  /// Parses the type at [key], treating an absent or null value as the Convex
+  /// `any` type.
+  ///
+  /// `convex function-spec` emits `"returns": null` for functions without an
+  /// explicit returns validator (and may omit `args`); both should degrade to
+  /// an untyped value instead of aborting the entire generation run.
+  ConvexType _parseTypeOrAny(Map<String, dynamic> map, String key) {
+    final value = map[key];
+    if (value == null) {
+      return const ConvexAnyType();
+    }
+    return _parseType(_readMap(map, key));
   }
 
   ConvexType _parseType(Map<String, dynamic> map) {
