@@ -365,9 +365,11 @@ void main() {
       // Returns-less paginated query degrades to untyped Map page items.
       expect(
         messages,
-        contains('TypedConvexPaginatedQuery<Map<String, dynamic>> paginateRaw({'),
+        contains(
+            'TypedConvexPaginatedQuery<Map<String, dynamic>> paginateRaw({'),
       );
-      expect(messages, contains("expectMap(raw, label: 'PaginateRawPageItem')"));
+      expect(
+          messages, contains("expectMap(raw, label: 'PaginateRawPageItem')"));
     });
 
     test('covers the full surface: number enum, unknown type, exotic literal',

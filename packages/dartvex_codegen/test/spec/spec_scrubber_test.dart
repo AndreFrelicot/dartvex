@@ -34,7 +34,8 @@ void main() {
 
     test('preserves the functions array (only the url changes)', () {
       final before = jsonDecode(rawDump) as Map<String, dynamic>;
-      final after = jsonDecode(scrubFunctionSpec(rawDump)) as Map<String, dynamic>;
+      final after =
+          jsonDecode(scrubFunctionSpec(rawDump)) as Map<String, dynamic>;
 
       expect(after['functions'], before['functions']);
     });

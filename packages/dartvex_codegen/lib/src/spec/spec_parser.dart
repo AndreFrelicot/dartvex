@@ -77,7 +77,8 @@ class SpecParser {
         returns: _parseTypeOrAny(map, 'returns',
             context: _appendContext(identifier, 'returns'), warnings: warnings),
         identifier: identifier,
-        visibility: Visibility(_readString(_readMap(map, 'visibility'), 'kind')),
+        visibility:
+            Visibility(_readString(_readMap(map, 'visibility'), 'kind')),
       );
     } on SpecParserException catch (error) {
       // Guarantee the offending function is always named, even for failures
@@ -181,8 +182,7 @@ class SpecParser {
       case 'array':
         return ConvexArrayType(
           _parseType(_readMap(map, 'value'),
-              context: _appendContext(context, 'element'),
-              warnings: warnings),
+              context: _appendContext(context, 'element'), warnings: warnings),
         );
       case 'id':
         return ConvexIdType(_readString(map, 'tableName'));
