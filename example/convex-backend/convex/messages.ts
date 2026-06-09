@@ -121,6 +121,17 @@ export const clearPrivate = mutation({
 // `PaginatedQueryBuilder` demo. Returns a standard Convex PaginationResult.
 export const paginatePublic = query({
   args: { paginationOpts: paginationOptsValidator },
+  // Describe the standard Convex PaginationResult so the typed Dart codegen can
+  // derive a typed page element. continueCursor is always a string (the dartvex
+  // client requires it); splitCursor/pageStatus are optional because paginate()
+  // only emits them when it recommends splitting an oversized page.
+  returns: v.object({
+    page: v.array(publicMessageValidator),
+    isDone: v.boolean(),
+    continueCursor: v.string(),
+    splitCursor: v.optional(v.union(v.string(), v.null())),
+    pageStatus: v.optional(v.union(v.string(), v.null())),
+  }),
   handler: async (ctx, args) => {
     return await ctx.db
       .query("public_messages")
