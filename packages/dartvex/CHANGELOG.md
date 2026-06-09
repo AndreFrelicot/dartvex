@@ -124,6 +124,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Query journals now honor the protocol's explicit `null` journal as an empty
   journal, clearing any previously stored cursor before the next reconnect
   replay.
+- A transition modification that omits the `journal` field entirely now leaves
+  the stored journal untouched, matching the official client's
+  `journal !== undefined` guard; only a present `null` clears the stored
+  cursor.
+- A mutation or action queued while the socket is paused for auth is no longer
+  silently dropped when a concurrently arriving server message drains the
+  outgoing queue: drained messages are re-queued through the normal flush path,
+  so the request goes out on resume instead of hanging until the next
+  reconnect.
+- The connect handshake no longer yields to the event loop between the
+  `Connect` frame and the session-restoring messages, and an asynchronous
+  connected-callback that gets paused mid-handshake forces a clean reconnect,
+  so a pause landing during the handshake can no longer leave the connection
+  without its re-declared query set and replayed requests.
 - Mutation and action function log lines are now routed to the configured
   logger for both successful and failed responses, matching the official
   client's response log handling while keeping structured failure logs sanitized.
