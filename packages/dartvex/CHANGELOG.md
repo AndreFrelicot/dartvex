@@ -115,6 +115,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A socket pause that lands while an asynchronous resume is still building its
+  replay messages no longer drops them on a live connection: the resume now
+  hands the drained messages to the transport without yielding when they are
+  available synchronously (the production path), and an async resume that is
+  re-paused mid-build forces a clean `PausedDuringResume` reconnect whose
+  deferred handshake rebuilds the query set, auth, and unsent requests instead
+  of silently losing them.
+- A `mutate()` or `action()` raced by a `close()` in the same event no longer
+  reports a spurious unhandled `ConvexException` while the request future is
+  failed in the microtask gap before the method's own await attaches; the
+  error itself still reaches the caller unchanged.
 - A `setAuthWithRefresh` superseded while its initial token fetch was still
   pending no longer leaves the transport paused forever. `setAuth`,
   `clearAuth`, `updateAuthToken`, and a cancelled auth handle now release the
