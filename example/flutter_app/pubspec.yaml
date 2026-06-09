@@ -31,6 +31,15 @@ dev_dependencies:
 dependency_overrides:
   dartvex:
     path: ../../packages/dartvex
+  # path_provider_android 2.3.x migrated to a JNI plugin (jni_flutter) that fails
+  # to configure on this AGP 8.11 / Gradle 8.14 toolchain:
+  #   ":jni_flutter:compileReleaseJavaWithJavac > Cannot query the value of this
+  #    provider because it has no value available."
+  # Pin to the last method-channel release so the Android build works. Only
+  # flutter_cache_manager (image disk cache) pulls path_provider here, and the
+  # method-channel implementation serves it identically. Remove once the upstream
+  # JNI plugin builds cleanly.
+  path_provider_android: 2.2.23
 
 flutter:
   uses-material-design: true
