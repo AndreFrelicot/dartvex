@@ -91,5 +91,58 @@ void main() {
       expect(pong.args, isA<ConvexAnyType>());
       expect(pong.returns, isA<ConvexAnyType>());
     });
+
+    test('names the offending function and field path in parse errors', () {
+      expect(
+        () => const SpecParser().parseMap(<String, dynamic>{
+          'url': 'https://sample.convex.cloud',
+          'functions': <dynamic>[
+            <String, dynamic>{
+              'functionType': 'Query',
+              'args': <String, dynamic>{
+                'type': 'object',
+                'value': <String, dynamic>{
+                  'filters': 'this should be an object',
+                },
+              },
+              'identifier': 'messages.ts:list',
+              'visibility': <String, dynamic>{'kind': 'public'},
+            },
+          ],
+        }),
+        throwsA(
+          isA<SpecParserException>().having(
+            (error) => error.message,
+            'message',
+            allOf(contains('messages.ts:list'), contains('field "filters"')),
+          ),
+        ),
+      );
+    });
+
+    test('prefixes the function identifier onto structural errors', () {
+      expect(
+        () => const SpecParser().parseMap(<String, dynamic>{
+          'url': 'https://sample.convex.cloud',
+          'functions': <dynamic>[
+            <String, dynamic>{
+              'functionType': 'Mutation',
+              'args': null,
+              'returns': null,
+              'identifier': 'messages.ts:send',
+              // Wrong shape: visibility must be an object with a "kind".
+              'visibility': 'public',
+            },
+          ],
+        }),
+        throwsA(
+          isA<SpecParserException>().having(
+            (error) => error.message,
+            'message',
+            contains('messages.ts:send'),
+          ),
+        ),
+      );
+    });
   });
 }
