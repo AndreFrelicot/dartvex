@@ -72,6 +72,16 @@ class AuthManager {
   Timer? _refreshTimer;
   String? _currentToken;
   int _authGeneration = 0;
+
+  /// Identity of the current *refresh flow*, advanced only when the flow
+  /// itself is replaced or destroyed ([setAuthWithRefresh], [setAuth],
+  /// [clearAuth], [stopRefreshing]) — NOT by [updateToken], which bumps
+  /// [_authGeneration] to supersede an in-flight fetch but keeps the flow
+  /// (and its [AuthHandle]) alive. Handles bind to this id so a token update
+  /// pushed mid-flow cannot silently orphan the caller's handle, while a
+  /// handle from a genuinely replaced flow still cannot tear down its
+  /// successor.
+  int _flowId = 0;
   int _tokenConfirmationAttempts = 0;
   bool _backendAuthenticated = false;
   bool _awaitingConfirmation = false;
@@ -98,6 +108,7 @@ class AuthManager {
     _cancelRefreshTimer();
     _setRefreshing(false);
     final generation = ++_authGeneration;
+    _flowId += 1;
     _fetchToken = null;
     _onAuthChange = null;
     _currentToken = token;
@@ -117,6 +128,7 @@ class AuthManager {
     _log(DartvexLogLevel.debug, 'Configuring auth refresh flow');
     _cancelRefreshTimer();
     final generation = ++_authGeneration;
+    final flowId = ++_flowId;
     _fetchToken = fetchToken;
     _onAuthChange = onAuthChange;
     // Pause the socket so queries/mutations cannot be sent ahead of the initial
@@ -150,7 +162,7 @@ class AuthManager {
       } else {
         await sendAuth(token);
       }
-      return _RefreshAuthHandle(this, generation, fetchToken);
+      return _RefreshAuthHandle(this, flowId);
     } catch (error, stackTrace) {
       if (_isCurrentFlow(generation, fetchToken)) {
         shouldResumeSocket = true;
@@ -177,6 +189,7 @@ class AuthManager {
     _cancelRefreshTimer();
     _setRefreshing(false);
     final generation = ++_authGeneration;
+    _flowId += 1;
     _fetchToken = null;
     _onAuthChange = null;
     _currentToken = null;
@@ -363,6 +376,7 @@ class AuthManager {
   Future<void> stopRefreshing() async {
     _log(DartvexLogLevel.debug, 'Stopping auth refresh flow');
     final generation = ++_authGeneration;
+    _flowId += 1;
     _fetchToken = null;
     _onAuthChange = null;
     _clearPendingConfirmation();
@@ -673,19 +687,19 @@ class AuthManager {
 }
 
 class _RefreshAuthHandle implements AuthHandle {
-  _RefreshAuthHandle(this._manager, this._generation, this._fetchToken);
+  _RefreshAuthHandle(this._manager, this._flowId);
 
   final AuthManager _manager;
-  final int _generation;
-  final AuthTokenFetcher _fetchToken;
+  final int _flowId;
 
   @override
   Future<void> cancel() {
-    // A handle from a superseded flow must not tear down its successor: the
-    // generation bump that superseded this flow already retired it, and
-    // calling stopRefreshing here would clear the *current* flow's fetcher
-    // (and could strand its socket pause) instead.
-    if (!_manager._isCurrentFlow(_generation, _fetchToken)) {
+    // A handle from a replaced flow must not tear down its successor, so the
+    // handle binds to the flow id — which, unlike the auth generation, is NOT
+    // advanced by updateToken: a token pushed into a live flow keeps the
+    // caller's handle cancellable instead of silently orphaning it (leaving
+    // the scheduled refresh running after, say, a wrapper dispose).
+    if (_manager._flowId != _flowId) {
       return Future<void>.value();
     }
     return _manager.stopRefreshing();

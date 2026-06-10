@@ -1123,6 +1123,38 @@ void main() {
       expect(events, contains('sendAuth:null'));
       expect(events, contains('authState:false'));
     });
+
+    test('updateToken keeps the active refresh-flow handle cancellable',
+        () async {
+      final events = <String>[];
+      final manager = buildManager(events);
+      final tokenA = _jwt(subject: 'a', issuedAt: 0, expiresAt: 7200);
+      final tokenB = _jwt(subject: 'b', issuedAt: 0, expiresAt: 7200);
+
+      final handle = await manager.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) async => tokenA,
+      );
+      // A token pushed into the live flow supersedes any in-flight fetch but
+      // does not replace the flow itself; the caller's handle must stay in
+      // control or a wrapper dispose would leave the refresh flow running.
+      await manager.updateToken(tokenB);
+      await handle.cancel();
+
+      events.clear();
+      await manager.handleAuthError(
+        const AuthError(
+          error: 'expired',
+          baseVersion: 0,
+          authUpdateAttempted: true,
+        ),
+        currentAuthVersion: 0,
+      );
+      // The cancel cleared the fetcher: the auth error clears auth instead of
+      // refetching through the cancelled flow.
+      expect(events, contains('sendAuth:null'));
+      expect(events, contains('authState:false'));
+      expect(events, isNot(contains('sendAuth:$tokenA')));
+    });
   });
 }
 

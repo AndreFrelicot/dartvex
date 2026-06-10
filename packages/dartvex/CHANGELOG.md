@@ -115,6 +115,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- An `AuthHandle` from `setAuthWithRefresh` now stays cancellable after
+  `updateAuthToken` pushes a new token into the same flow. Handles bind to the
+  refresh-flow identity instead of the auth generation, so a token update —
+  which supersedes in-flight fetches but keeps the flow alive — no longer
+  silently orphans the caller's handle (previously a later `handle.cancel()`,
+  for example from `ConvexClientWithAuth.dispose()`, became a no-op and left
+  the scheduled token refresh running). A handle from a genuinely replaced
+  flow still cannot tear down its successor.
 - Mutation, action, and subscription arguments are now validated and
   deep-snapshotted eagerly, when the call is made, matching the official
   client's eager `convexToJson(args)`. An unsupported argument value (for
