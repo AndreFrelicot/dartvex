@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0] - 2026-06-10
+## [0.2.0] - 2026-06-11
 
 ### Added
 
@@ -115,6 +115,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A close event from a superseded WebSocket is now ignored once a newer
+  connection is open. Previously, when a socket's close on a dead network
+  outlived the platform close timeout and its close event was only delivered
+  after a fast reconnect (for example on a connectivity restore or app
+  resume), the stale event was treated as the current connection closing —
+  tearing down the healthy successor with a spurious disconnect and a
+  scheduled reconnect. The official client cannot reach this state because it
+  detaches the close handler from sockets it closes deliberately.
 - An `AuthHandle` from `setAuthWithRefresh` now stays cancellable after
   `updateAuthToken` pushes a new token into the same flow. Handles bind to the
   refresh-flow identity instead of the auth generation, so a token update —
