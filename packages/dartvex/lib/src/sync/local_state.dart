@@ -186,7 +186,12 @@ class LocalSyncState {
     String? journal,
   }) {
     final canonicalPath = canonicalizeUdfPath(udfPath);
-    final token = serializeQueryToken(canonicalPath, args);
+    // Validate and deep-snapshot the args before touching any state: an
+    // unsupported value throws here, synchronously, and the stored snapshot is
+    // what every reconnect's Add re-encodes — so caller-side mutation of
+    // nested values can never poison the replayed query set.
+    final canonicalArgs = canonicalizeConvexArgs(args);
+    final token = serializeQueryToken(canonicalPath, canonicalArgs);
     final existing = _queriesByToken[token];
     final subscriberId = _nextSubscriberId++;
 
@@ -203,7 +208,7 @@ class LocalSyncState {
     final state = QuerySubscriptionState(
       queryId: queryId,
       udfPath: canonicalPath,
-      args: Map<String, dynamic>.from(args),
+      args: canonicalArgs,
       subscriberIds: <int>{subscriberId},
       journal: journal,
     );
@@ -214,7 +219,7 @@ class LocalSyncState {
     final add = Add(
       queryId: queryId,
       udfPath: canonicalPath,
-      args: <dynamic>[Map<String, dynamic>.from(args)],
+      args: <dynamic>[Map<String, dynamic>.from(canonicalArgs)],
       journal: journal,
     );
 

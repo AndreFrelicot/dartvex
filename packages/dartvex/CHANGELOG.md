@@ -115,6 +115,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Mutation, action, and subscription arguments are now validated and
+  deep-snapshotted eagerly, when the call is made, matching the official
+  client's eager `convexToJson(args)`. An unsupported argument value (for
+  example a `DateTime`, a `Set`, or a `$`-prefixed field name) now fails the
+  call immediately with an `ArgumentError` instead of throwing later inside
+  the transport send path — where it closed a healthy connection and was
+  replayed by every reconnect, flapping the socket forever while the caller's
+  future never resolved. The snapshot also means mutating a nested argument
+  collection after the call can no longer change what is sent (or re-sent on
+  reconnect).
 - A socket pause that lands while an asynchronous resume is still building its
   replay messages no longer drops them on a live connection: the resume now
   hands the drained messages to the transport without yielding when they are

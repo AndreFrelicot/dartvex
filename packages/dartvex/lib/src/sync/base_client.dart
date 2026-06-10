@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:collection';
 
 import '../protocol/messages.dart';
+import '../values/json_codec.dart';
 import 'local_state.dart';
 import 'optimistic_updates.dart';
 import 'remote_query_set.dart';
@@ -280,11 +281,15 @@ class BaseClient {
 
   /// Enqueues a [Mutation] for [udfPath] with [args] and returns a
   /// [TrackedRequest] whose future resolves with the server response.
+  ///
+  /// [args] are validated and deep-snapshotted here, so an unsupported value
+  /// throws immediately (official-client parity) instead of poisoning the send
+  /// path, and later caller-side mutation cannot change what is sent.
   TrackedRequest trackMutation(String udfPath, Map<String, dynamic> args) {
     final message = Mutation(
       requestId: _nextRequestId++,
       udfPath: LocalSyncState.canonicalizeUdfPath(udfPath),
-      args: <dynamic>[Map<String, dynamic>.from(args)],
+      args: <dynamic>[canonicalizeConvexArgs(args)],
     );
     _outgoing.add(message);
     return TrackedRequest(
@@ -314,11 +319,14 @@ class BaseClient {
 
   /// Enqueues an [Action] for [udfPath] with [args] and returns a
   /// [TrackedRequest] whose future resolves with the server response.
+  ///
+  /// [args] are validated and deep-snapshotted here, exactly as in
+  /// [trackMutation].
   TrackedRequest trackAction(String udfPath, Map<String, dynamic> args) {
     final message = Action(
       requestId: _nextRequestId++,
       udfPath: LocalSyncState.canonicalizeUdfPath(udfPath),
-      args: <dynamic>[Map<String, dynamic>.from(args)],
+      args: <dynamic>[canonicalizeConvexArgs(args)],
     );
     _outgoing.add(message);
     return TrackedRequest(

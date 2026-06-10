@@ -90,6 +90,19 @@ dynamic jsonToConvex(dynamic value) {
   return out;
 }
 
+/// Eagerly validates and deep-canonicalizes a Convex argument map.
+///
+/// Runs the full wire encoding ([convexToJson]) and decodes it back, so an
+/// unsupported value throws here — synchronously at the call site, like the
+/// official client's eager `convexToJson(args)` — rather than later inside the
+/// transport send path, where it would tear down a healthy connection and be
+/// replayed by every reconnect. The round-trip also deep-copies the map, so
+/// caller-side mutation of nested values after the call cannot change what is
+/// sent (or re-sent on reconnect).
+Map<String, dynamic> canonicalizeConvexArgs(Map<String, dynamic> args) {
+  return jsonToConvex(convexToJson(args)) as Map<String, dynamic>;
+}
+
 dynamic _convexToJson(dynamic value) {
   if (value == null || value is bool || value is String) {
     return value;
