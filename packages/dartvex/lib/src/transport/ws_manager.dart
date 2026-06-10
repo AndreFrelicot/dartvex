@@ -848,6 +848,27 @@ class WebSocketManager {
       // must not run the disconnect bookkeeping or schedule a reconnect here.
       return;
     }
+    if (adapter.isConnected) {
+      // Both adapters null their current socket before emitting its close
+      // event, so a close delivered while the adapter fronts an open socket
+      // can only come from a superseded socket whose teardown outlived the
+      // next connect — e.g. a native close that timed out on a dead network
+      // and was force-destroyed by the platform seconds later, after a
+      // connectivity-restore reconnect already succeeded. Running the
+      // disconnect bookkeeping here would tear down that healthy successor
+      // connection. The official client cannot reach this state because it
+      // detaches the close handler from sockets it closes deliberately.
+      _log(
+        DartvexLogLevel.debug,
+        'Ignoring close event from a superseded socket',
+        data: <String, Object?>{
+          if (event.code != null) 'code': event.code,
+          if (event.reason != null && event.reason!.isNotEmpty)
+            'closeReason': event.reason,
+        },
+      );
+      return;
+    }
     _closeHandled = true;
     // A close the client itself initiated (reconnectNow, a detected
     // protocol error, an inactivity timeout) sets _pendingCloseReason first; an

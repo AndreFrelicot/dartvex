@@ -117,6 +117,55 @@ void main() {
       await manager.dispose();
     });
 
+    test(
+        'ignores a superseded socket close event delivered while a healthy '
+        'successor connection is open', () async {
+      final adapter = MockWebSocketAdapter();
+      final disconnectReasons = <String>[];
+      final stateChanges = <(bool, bool)>[];
+      final manager = WebSocketManager(
+        adapter: adapter,
+        deploymentUrl: 'https://demo.convex.cloud',
+        apiVersion: '0.1.0',
+        onConnected: () => const <ClientMessage>[],
+        onMessage: (_) => const <ClientMessage>[],
+        onDisconnected: (reason) {
+          disconnectReasons.add(reason);
+        },
+        onConnectionStateChanged: (connected, reconnecting) {
+          stateChanges.add((connected, reconnecting));
+        },
+        maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => true,
+        reconnectBackoff: const <Duration>[Duration.zero],
+        inactivityTimeout: const Duration(seconds: 30),
+      );
+
+      await manager.start();
+      expect(adapter.isConnected, isTrue);
+      stateChanges.clear();
+
+      // A previous socket's close timed out on a dead network and was
+      // force-destroyed by the platform only after this healthy connection
+      // was already established. Its late close event must not tear the
+      // healthy connection down.
+      adapter.emitStaleCloseEvent(reason: 'ServerInactivity');
+      await pumpEventQueue();
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+
+      expect(disconnectReasons, isEmpty);
+      expect(stateChanges, isEmpty);
+      expect(adapter.isConnected, isTrue);
+      // No reconnect ran: exactly one Connect frame ever hit the wire.
+      expect(
+        adapter.decodedSentMessages
+            .where((message) => message['type'] == 'Connect'),
+        hasLength(1),
+      );
+
+      await manager.dispose();
+    });
+
     test('dispose ignores adapter close failures', () async {
       final adapter = MockWebSocketAdapter();
       final manager = WebSocketManager(

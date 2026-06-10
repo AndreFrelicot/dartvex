@@ -41,6 +41,14 @@ class MockWebSocketAdapter implements WebSocketAdapter {
     _messagesController.add(jsonEncode(message));
   }
 
+  /// Emits a close event without touching the connected state, simulating a
+  /// superseded socket whose delayed teardown completes only after a newer
+  /// socket has already connected (e.g. a native close that timed out on a
+  /// dead network and was force-destroyed by the platform later).
+  void emitStaleCloseEvent({int? code, String? reason}) {
+    _closeController.add(WebSocketCloseEvent(code: code, reason: reason));
+  }
+
   void disconnect({
     int? code,
     String? reason,

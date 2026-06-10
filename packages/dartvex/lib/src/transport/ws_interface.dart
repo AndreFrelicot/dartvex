@@ -50,6 +50,13 @@ abstract class WebSocketAdapter {
   Stream<String> get messages;
 
   /// Stream that emits when the socket closes.
+  ///
+  /// Contract for implementations: by the time a close event is delivered for
+  /// a socket, [isConnected] must already report `false` unless a *newer*
+  /// socket has since connected. The sync layer uses this to tell a stale
+  /// close (from a superseded socket whose teardown outlived the next
+  /// connect) apart from the current connection closing, and ignores close
+  /// events delivered while [isConnected] is `true`.
   Stream<WebSocketCloseEvent> get closeEvents;
 
   /// Closes the socket connection.
