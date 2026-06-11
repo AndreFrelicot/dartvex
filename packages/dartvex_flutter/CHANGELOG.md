@@ -29,6 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   connection ends. Upstream `CupertinoWebSocket` never invalidates its
   session, which leaks a native session per connect — a real cost for a sync
   client that reconnects indefinitely (dart-lang/http#1282).
+- `defaultWebSocketAdapterOverride` and `defaultHttpClientFactory` are
+  re-exported from `dartvex_flutter`, so the documented transport opt-out is
+  reachable without a direct `dartvex` import.
 
 ### Fixed
 

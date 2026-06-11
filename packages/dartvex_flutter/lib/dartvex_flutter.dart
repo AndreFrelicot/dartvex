@@ -1,8 +1,9 @@
 /// Flutter widgets and runtime adapters for building reactive Convex UIs.
 library;
 
-// Re-exported from the core package so optimistic updates and paginated query
-// results can be used with a single `dartvex_flutter` import.
+// Re-exported from the core package so optimistic updates, paginated query
+// results, and the transport override seams (the documented opt-out from the
+// NSURLSession transports) can be used with a single `dartvex_flutter` import.
 export 'package:dartvex/dartvex.dart'
     show
         ConnectionStatus,
@@ -11,7 +12,9 @@ export 'package:dartvex/dartvex.dart'
         ConvexStorageException,
         OptimisticLocalStore,
         OptimisticQueryEntry,
-        OptimisticUpdate;
+        OptimisticUpdate,
+        defaultHttpClientFactory,
+        defaultWebSocketAdapterOverride;
 
 export 'src/action_builder.dart' show ConvexAction, ConvexActionBuilder;
 // NSURLSession transport: installed automatically on iOS/macOS via
