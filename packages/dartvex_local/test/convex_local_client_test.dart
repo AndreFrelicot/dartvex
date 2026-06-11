@@ -95,6 +95,27 @@ void main() {
       expect(received, containsAll(<String>['first', 'second']));
     });
 
+    test('disposing while a subscription cancel is in flight does not throw '
+        'ConcurrentModificationError', () async {
+      // Cancelling a query's last subscriber removes its entry from the
+      // client's query-state map after one microtask (the detach await).
+      // dispose() — like setNetworkMode(offline) — suspends every remote
+      // subscription with an await between entries, so the cancel's removal
+      // lands mid-iteration; without a snapshot the iteration threw a
+      // ConcurrentModificationError and dispose never closed its storage.
+      final first = localClient.subscribe('messages:listPublic');
+      final second = localClient.subscribe('messages:countPublic');
+      addTearDown(second.cancel);
+
+      // Let both subscriptions wire up their remote feeds.
+      await Future<void>.delayed(Duration.zero);
+
+      // Fire-and-forget cancel immediately followed by dispose in the same
+      // synchronous burst: the two microtask chains interleave.
+      first.cancel();
+      await localClient.dispose();
+    });
+
     test('detached cache seed errors are logged instead of escaping', () async {
       await localClient.dispose();
       final queueStore = await SqliteLocalStore.openInMemory();

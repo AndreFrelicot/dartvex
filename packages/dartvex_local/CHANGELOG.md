@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `dispose` and `setNetworkMode(LocalNetworkMode.offline)` no longer throw a
+  `ConcurrentModificationError` when a subscription cancel that drops a
+  query's last subscriber is in flight at the same time; the failed `dispose`
+  also skipped closing the underlying storage.
 - `clearQueue` now rolls back the discarded mutations' optimistic patches:
   every affected cached query is restored to its oldest pending rollback
   baseline (the last server-confirmed value) and subscribers are notified, so

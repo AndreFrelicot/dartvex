@@ -1054,7 +1054,11 @@ class ConvexLocalClient {
   }
 
   Future<void> _suspendRemoteSubscriptions() async {
-    for (final queryState in _queryStates.values) {
+    // Snapshot: each detach awaits (a microtask), and an in-flight
+    // subscription cancel that drops a query's last subscriber removes its
+    // entry from `_queryStates` in that window, which would throw a
+    // ConcurrentModificationError out of dispose()/setNetworkMode(offline).
+    for (final queryState in _queryStates.values.toList(growable: false)) {
       await _detachRemoteSubscription(queryState);
     }
   }
