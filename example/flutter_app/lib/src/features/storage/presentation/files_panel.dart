@@ -709,8 +709,7 @@ class _FullscreenImageSurface extends StatelessWidget {
               child: SizedBox(
                 width: maxWidth,
                 height: maxHeight,
-                child: _ResolvedStorageImage(
-                  fit: BoxFit.contain,
+                child: buildFullscreenStorageImage(
                   getUrlAction: getUrlAction,
                   height: maxHeight,
                   storageId: storageId,
@@ -719,59 +718,6 @@ class _FullscreenImageSurface extends StatelessWidget {
               ),
             ),
           ),
-        );
-      },
-    );
-  }
-}
-
-class _ResolvedStorageImage extends StatelessWidget {
-  const _ResolvedStorageImage({
-    required this.fit,
-    required this.getUrlAction,
-    required this.height,
-    required this.storageId,
-    required this.width,
-  });
-
-  final BoxFit fit;
-  final String getUrlAction;
-  final double height;
-  final String storageId;
-  final double width;
-
-  @override
-  Widget build(BuildContext context) {
-    return ConvexQuery<String?>(
-      query: getUrlAction,
-      args: <String, dynamic>{'storageId': storageId},
-      decode: (value) => value as String?,
-      builder: (context, snapshot) {
-        final url = snapshot.data;
-        if (snapshot.isLoading && url == null) {
-          return const Center(child: FilesImageLoading());
-        }
-        if (snapshot.hasError || url == null || url.isEmpty) {
-          return const Center(child: FilesImageError());
-        }
-        return Image.network(
-          url,
-          width: width,
-          height: height,
-          fit: fit,
-          loadingBuilder: (context, child, loadingProgress) {
-            if (loadingProgress == null) {
-              return child;
-            }
-            final expected = loadingProgress.expectedTotalBytes;
-            final progress = expected == null || expected == 0
-                ? -1.0
-                : loadingProgress.cumulativeBytesLoaded / expected;
-            return Center(child: FilesImageProgress(progress));
-          },
-          errorBuilder: (context, error, stackTrace) {
-            return const Center(child: FilesImageError());
-          },
         );
       },
     );

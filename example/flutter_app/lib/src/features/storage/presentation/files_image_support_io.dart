@@ -34,6 +34,30 @@ Widget buildCachedStorageImage({
   );
 }
 
+/// Full-resolution image for the fullscreen viewer.
+///
+/// Uses [ConvexCachedImage], so it reuses the disk file the gallery thumbnail
+/// already cached (instant, offline-capable) and, on a cache miss, downloads
+/// through the platform transport (NSURLSession on iOS/macOS) — unlike
+/// `Image.network`, which is backed by Flutter's own `dart:io` HttpClient and
+/// fails on networks where raw sockets are blackholed.
+Widget buildFullscreenStorageImage({
+  required String storageId,
+  required String getUrlAction,
+  required double width,
+  required double height,
+}) {
+  return ConvexCachedImage(
+    storageId: storageId,
+    getUrlAction: getUrlAction,
+    width: width,
+    height: height,
+    fit: BoxFit.contain,
+    placeholder: const Center(child: FilesImageLoading()),
+    errorWidget: const Center(child: FilesImageError()),
+  );
+}
+
 /// In-memory streaming download with a live progress ring (no disk cache).
 Widget buildDownloadStorageImage({
   required String storageId,
