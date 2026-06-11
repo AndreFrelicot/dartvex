@@ -108,9 +108,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reactive query and paginated-query widgets now ignore late events from
   canceled subscriptions after inputs change, preventing stale results from
   overwriting the newest subscription state.
-- Action and mutation builders now ignore stale in-flight completions after their
-  action/mutation, decoder, optimistic update, or client changes, so old results
-  cannot overwrite the new request state.
+- Action and mutation builders now ignore stale in-flight completions after
+  their action/mutation or client changes, so old results cannot overwrite the
+  new request state.
 - `FakeConvexClient` now broadcasts duplicate query subscriptions and paginated
   queries with the same name to every live handle instead of only the latest.
 - Closes file-download HTTP clients and rejects non-success responses instead
