@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-06-11
+## [0.2.0] - 2026-06-12
 
 ### Added
 
@@ -82,6 +82,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The NSURLSession WebSocket adapter decodes binary frames with
+  `allowMalformed`, so a peer sending invalid UTF-8 can no longer throw an
+  uncaught `FormatException` out of the socket listener. The garbled message
+  fails JSON parsing upstream instead, driving the normal
+  `InvalidServerMessage` reconnect.
 - `ConvexImage` and `ConvexCachedImage` now treat a changed runtime client as a
   new load identity, preventing stale images from a previous provider/client
   and avoiding implicit retries when unchanged failed loads rebuild.

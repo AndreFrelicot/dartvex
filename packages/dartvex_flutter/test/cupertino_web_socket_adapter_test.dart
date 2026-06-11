@@ -109,6 +109,36 @@ void main() {
       await sub.cancel();
     });
 
+    test(
+        'a binary frame with malformed UTF-8 surfaces as a replacement '
+        'string instead of an uncaught zone error', () async {
+      final received = <String>[];
+      final errors = <Object>[];
+      await runZonedGuarded(() async {
+        await adapter.connect('wss://example.convex.cloud/sync');
+        adapter.messages.listen(received.add);
+        // 0xC3 opens a two-byte sequence; 0x28 is not a continuation byte.
+        fake.receiveBinary(<int>[0xC3, 0x28, 0xFF]);
+        await Future<void>.delayed(Duration.zero);
+      }, (error, stackTrace) {
+        errors.add(error);
+      });
+      expect(
+        errors,
+        isEmpty,
+        reason: 'malformed network input must never escape the adapter as an '
+            'uncaught zone error',
+      );
+      expect(received, hasLength(1));
+      expect(
+        received.single,
+        contains('�'),
+        reason: 'malformed bytes decode with replacement characters; the '
+            'garbled message then fails JSON parsing upstream, which drives '
+            'the InvalidServerMessage reconnect instead of a crash',
+      );
+    });
+
     test('send forwards to the socket; throws StateError when disconnected',
         () async {
       expect(() => adapter.send('x'), throwsStateError);

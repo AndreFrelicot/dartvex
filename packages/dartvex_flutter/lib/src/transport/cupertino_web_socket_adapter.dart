@@ -130,7 +130,12 @@ class CupertinoWebSocketAdapter implements WebSocketAdapter {
               return;
             }
             if (!_messagesController.isClosed) {
-              _messagesController.add(utf8.decode(data));
+              // allowMalformed: invalid UTF-8 in a binary frame must not
+              // throw out of this listener as an uncaught zone error. The
+              // replacement characters make the message fail JSON parsing
+              // upstream instead, which drives the sync layer's
+              // InvalidServerMessage reconnect.
+              _messagesController.add(utf8.decode(data, allowMalformed: true));
             }
           case CloseReceived(:final code, :final reason):
             emitClose(
