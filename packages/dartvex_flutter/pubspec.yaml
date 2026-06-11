@@ -48,7 +48,8 @@ flutter:
   # Dart-only plugin registration: Flutter calls
   # DartvexFlutterPlugin.registerWith() before main() on these platforms,
   # which installs the NSURLSession-backed WebSocket transport as the
-  # process-wide default (see lib/src/transport/cupertino_adapter.dart).
+  # process-wide default
+  # (see lib/src/transport/cupertino_web_socket_adapter.dart).
   plugin:
     platforms:
       ios:
