@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:dartvex/dartvex.dart' show createDefaultHttpClient;
 import 'package:http/http.dart' as http;
 
 import 'better_auth_exception.dart';
@@ -18,7 +19,7 @@ class BetterAuthClient {
     required String baseUrl,
     http.Client? httpClient,
   })  : baseUrl = _normalizeBaseUrl(baseUrl),
-        _http = httpClient ?? http.Client(),
+        _http = httpClient ?? createDefaultHttpClient(),
         _ownsHttp = httpClient == null;
 
   /// The Convex deployment URL (e.g. "https://your-app.convex.cloud").
