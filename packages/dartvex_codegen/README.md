@@ -27,6 +27,15 @@ dev_dependencies:
   dartvex_codegen: ^0.1.4
 ```
 
+The generated bindings call APIs introduced in `dartvex` 0.2.0 (such as
+`ConvexFunctionCaller.paginatedQuery` and `QueryLoading`), so the application
+consuming the generated code needs:
+
+```yaml
+dependencies:
+  dartvex: ^0.2.0
+```
+
 ## Usage
 
 Generate from an existing Convex TypeScript project:
