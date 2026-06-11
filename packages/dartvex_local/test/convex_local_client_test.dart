@@ -494,6 +494,58 @@ void main() {
       expect(localClient.currentPendingMutations, isEmpty);
     });
 
+    test('rapid offline→auto mode toggle leaves every remote subscription '
+        'attached', () async {
+      // Two live queries so the offline suspension loop spans more than one
+      // microtask: setNetworkMode(offline) detaches the first query
+      // synchronously, then yields. An immediately following (un-awaited)
+      // setNetworkMode(auto) used to interleave there — re-attaching the
+      // first query while the still-running suspension loop went on to
+      // detach the second, leaving it permanently unsubscribed in auto mode.
+      final listFeed = StreamController<LocalRemoteQueryEvent>.broadcast();
+      final countFeed = StreamController<LocalRemoteQueryEvent>.broadcast();
+      addTearDown(listFeed.close);
+      addTearDown(countFeed.close);
+      remoteClient.subscriptionStreams['messages:listPublic'] = listFeed.stream;
+      remoteClient.subscriptionStreams['messages:countPublic'] =
+          countFeed.stream;
+
+      final listEvents = <LocalQueryEvent>[];
+      final countEvents = <LocalQueryEvent>[];
+      final list = localClient.subscribe('messages:listPublic');
+      final count = localClient.subscribe('messages:countPublic');
+      addTearDown(list.cancel);
+      addTearDown(count.cancel);
+      list.stream.listen(listEvents.add);
+      count.stream.listen(countEvents.add);
+      await pumpEventQueue();
+
+      // Same synchronous burst: the offline transition is still suspending
+      // remote subscriptions when the auto transition starts.
+      final goOffline = localClient.setNetworkMode(LocalNetworkMode.offline);
+      final goAuto = localClient.setNetworkMode(LocalNetworkMode.auto);
+      await goOffline;
+      await goAuto;
+      await pumpEventQueue();
+
+      listEvents.clear();
+      countEvents.clear();
+      listFeed.add(const LocalRemoteQuerySuccess(<dynamic>['live']));
+      countFeed.add(const LocalRemoteQuerySuccess(1));
+      await pumpEventQueue();
+
+      expect(
+        listEvents,
+        isNotEmpty,
+        reason: 'first query must be re-attached after returning to auto',
+      );
+      expect(
+        countEvents,
+        isNotEmpty,
+        reason: 'second query must be re-attached after returning to auto',
+      );
+    });
+
     test('refresh timeout cancels one-shot remote subscription', () async {
       await localClient.dispose();
       store = await SqliteLocalStore.openInMemory();

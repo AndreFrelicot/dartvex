@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.3] - 2026-06-10
+## [0.1.3] - 2026-06-12
 
 ### Changed
 
@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `setNetworkMode` transitions are now serialized. A mode change issued while
+  the previous transition was still suspending or resuming remote
+  subscriptions could interleave with it — re-attaching some queries
+  mid-suspension while the rest were detached after the resume, leaving them
+  unsubscribed (and silently stale) in auto mode.
 - `dispose` and `setNetworkMode(LocalNetworkMode.offline)` no longer throw a
   `ConcurrentModificationError` when a subscription cancel that drops a
   query's last subscriber is in flight at the same time; the failed `dispose`

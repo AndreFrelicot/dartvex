@@ -580,6 +580,13 @@ class ConvexLocalClient {
   // path into committing out of order.
   Future<void> _mutateChain = Future<void>.value();
 
+  // Serializes setNetworkMode() transitions: the offline transition suspends
+  // remote subscriptions across several microtasks, and an immediately
+  // following auto transition used to interleave with that loop —
+  // re-attaching some queries mid-suspension while the rest were detached
+  // after the resume, leaving them unsubscribed in auto mode.
+  Future<void> _networkModeChain = Future<void>.value();
+
   /// Callback invoked when replay drops a permanently failed queued mutation.
   void Function(LocalMutationConflict conflict)? onConflict;
 
@@ -821,9 +828,20 @@ class ConvexLocalClient {
   }
 
   /// Updates the active network mode.
-  Future<void> setNetworkMode(LocalNetworkMode mode) async {
+  Future<void> setNetworkMode(LocalNetworkMode mode) {
     _assertNotDisposed();
-    if (_networkMode == mode) {
+    final result = _networkModeChain.then((_) => _setNetworkModeInternal(mode));
+    // Keep the chain alive across failures without leaking a prior call's
+    // error to the next caller.
+    _networkModeChain = result.then((_) {}, onError: (_) {});
+    return result;
+  }
+
+  Future<void> _setNetworkModeInternal(LocalNetworkMode mode) async {
+    // Re-checked here (not only in the public entry): both can change while
+    // this transition waits its turn on the chain, and emitting on the
+    // closed-after-dispose controller would throw.
+    if (_disposed || _networkMode == mode) {
       return;
     }
     _log(
