@@ -2,6 +2,9 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:dartvex/dartvex.dart' show createDefaultHttpClient;
+import 'package:http/http.dart' as http;
+
 /// Snapshot of an in-progress file download.
 class ConvexDownloadProgress {
   /// Creates a download progress snapshot.
@@ -31,12 +34,14 @@ typedef ConvexDownloadProgressCallback = void Function(
 
 /// Downloads files from URLs with byte-level progress tracking.
 ///
-/// Uses Dart's [HttpClient] to stream the response, providing real-time
-/// progress updates suitable for UI indicators.
+/// Streams the response through the SDK's default HTTP client
+/// (`createDefaultHttpClient`), so downloads share the platform transport —
+/// NSURLSession on iOS/macOS — and provide real-time progress updates
+/// suitable for UI indicators.
 ///
-/// Native-only: [HttpClient] comes from `dart:io`, so this helper is not
-/// available on Flutter web. Use browser-native loading via `Image.network` or
-/// `fetch`-style APIs in web-specific UI.
+/// Native-only: this helper is not available on Flutter web. Use
+/// browser-native loading via `Image.network` or `fetch`-style APIs in
+/// web-specific UI.
 ///
 /// ```dart
 /// final bytes = await ConvexFileDownloader.download(
@@ -68,26 +73,30 @@ class ConvexFileDownloader {
     Duration idleTimeout = const Duration(seconds: 30),
   }) async {
     final uri = Uri.parse(url);
-    final client = HttpClient()..connectionTimeout = idleTimeout;
+    final client = createDefaultHttpClient();
     try {
-      final request = await client.getUrl(uri);
-      final response = await request.close().timeout(idleTimeout);
+      // The send() timeout bounds connection establishment and response
+      // headers together — the same stall window dart:io's connectionTimeout
+      // plus close().timeout() used to cover.
+      final response = await client
+          .send(http.Request('GET', uri))
+          .timeout(idleTimeout);
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        await response.drain<void>();
+        await response.stream.drain<void>();
         throw HttpException(
           'Failed to download file (status ${response.statusCode})',
           uri: uri,
         );
       }
 
-      final contentLength = response.contentLength;
+      final contentLength = response.contentLength ?? -1;
       final hasLength = contentLength > 0;
       int received = 0;
 
       final builder = BytesBuilder(copy: false);
 
-      await for (final chunk in response.timeout(idleTimeout)) {
+      await for (final chunk in response.stream.timeout(idleTimeout)) {
         builder.add(chunk);
         received += chunk.length;
         onProgress?.call(ConvexDownloadProgress(
@@ -99,7 +108,7 @@ class ConvexFileDownloader {
 
       return builder.toBytes();
     } finally {
-      client.close(force: true);
+      client.close();
     }
   }
 }

@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:dartvex/dartvex.dart' show createDefaultHttpClient;
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
 /// Caches binary assets (images, files) from Convex storage to disk,
@@ -22,6 +23,12 @@ class ConvexAssetCache {
             cacheKey,
             stalePeriod: stalePeriod,
             maxNrOfCacheObjects: maxNrOfCacheObjects,
+            // Route downloads through the SDK's default HTTP client so they
+            // share the platform transport (NSURLSession on iOS/macOS)
+            // instead of cache_manager's raw dart:io default.
+            fileService: HttpFileService(
+              httpClient: createDefaultHttpClient(),
+            ),
           ),
         );
 

@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- NSURLSession-backed network transports on iOS and macOS, installed
+  automatically at startup via Dart plugin registration
+  (`DartvexFlutterPlugin.registerWith()`). All SDK network paths — the sync
+  WebSocket, storage uploads, auth endpoints, asset-cache downloads, and
+  `ConvexFileDownloader` — now use the same system network path as Safari and
+  native apps instead of raw `dart:io` sockets. POSIX sockets are discouraged
+  by Apple (they bypass VPNs, proxies, and per-app network policy; see
+  dart-lang/sdk#41376) and are blackholed with `errno 65` on some iOS devices.
+  Apps can opt out by resetting `defaultWebSocketAdapterOverride` and
+  `defaultHttpClientFactory` to `null` early in `main()`, or override per
+  client with `ConvexClientConfig.adapterFactory` / explicit `httpClient`
+  parameters as before. `installCupertinoTransport()` is exported to
+  re-install the defaults after an opt-out. Adds `cupertino_http`, `http`,
+  and `web_socket` dependencies; the package is now a Dart-only plugin on
+  iOS/macOS.
+
 ## [0.2.0] - 2026-06-08
 
 ### Added

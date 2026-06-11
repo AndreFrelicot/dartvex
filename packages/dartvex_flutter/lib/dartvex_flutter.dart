@@ -14,6 +14,13 @@ export 'package:dartvex/dartvex.dart'
         OptimisticUpdate;
 
 export 'src/action_builder.dart' show ConvexAction, ConvexActionBuilder;
+// NSURLSession transport: installed automatically on iOS/macOS via
+// DartvexFlutterPlugin.registerWith(); installCupertinoTransport is exported
+// for apps that need to re-install it after opting out.
+export 'src/plugin.dart' show DartvexFlutterPlugin;
+export 'src/transport/cupertino_web_socket_adapter_stub.dart'
+    if (dart.library.io) 'src/transport/cupertino_web_socket_adapter.dart'
+    show installCupertinoTransport;
 export 'src/asset_cache.dart' show ConvexAssetCache, ConvexAssetCacheMetrics;
 export 'src/convex_cached_image.dart' show ConvexCachedImage;
 export 'src/convex_image.dart' show ConvexImage;
