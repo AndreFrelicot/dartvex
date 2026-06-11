@@ -1372,6 +1372,69 @@ void main() {
       await manager.dispose();
     });
 
+    test(
+        'a reconnect after a paused socket closes still defers its handshake '
+        'until resume', () async {
+      final adapter = MockWebSocketAdapter();
+      var connectedCalls = 0;
+      final stateChanges = <String>[];
+      const restore = ModifyQuerySet(
+        baseVersion: 0,
+        newVersion: 1,
+        modifications: <QuerySetOperation>[],
+      );
+      final manager = WebSocketManager(
+        adapter: adapter,
+        deploymentUrl: 'https://demo.convex.cloud',
+        apiVersion: '0.1.0',
+        onConnected: () {
+          connectedCalls += 1;
+          return const <ClientMessage>[restore];
+        },
+        onResume: () => const <ClientMessage>[],
+        onMessage: (_) => const <ClientMessage>[],
+        onDisconnected: (_) async {},
+        onConnectionStateChanged: (connected, reconnecting) =>
+            stateChanges.add('c=$connected,r=$reconnecting'),
+        maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => false,
+        reconnectBackoff: const <Duration>[Duration.zero],
+        inactivityTimeout: const Duration(seconds: 30),
+      );
+
+      manager.pause();
+      await manager.start();
+      expect(adapter.sentMessages, isEmpty);
+
+      // The paused socket (handshake deferred) dies and the reconnect lands
+      // before the pause owner resumes — e.g. a network blip during the
+      // initial auth token fetch.
+      adapter.disconnect(errorMessage: 'network dropped during auth');
+      await waitForConnectAttempts(adapter, 2);
+      await pumpEventQueue();
+
+      // The new socket must defer its handshake exactly like the first one:
+      // no Connect frame on the wire, no session-restoring messages swallowed
+      // by the paused transport, and no premature connected state.
+      expect(adapter.isConnected, isTrue);
+      expect(adapter.sentMessages, isEmpty);
+      expect(connectedCalls, 0);
+      expect(stateChanges, isNot(contains('c=true,r=false')));
+
+      await manager.resume();
+
+      // Resume runs the deferred handshake once: a single Connect frame
+      // followed by the session-restoring messages.
+      final types = adapter.decodedSentMessages
+          .map((message) => message['type'])
+          .toList(growable: false);
+      expect(types, <String>['Connect', 'ModifyQuerySet']);
+      expect(connectedCalls, 1);
+      expect(stateChanges.last, 'c=true,r=false');
+
+      await manager.dispose();
+    });
+
     test('pause buffers sends and resume flushes buffered messages', () async {
       final adapter = MockWebSocketAdapter();
       const buffered = <ClientMessage>[

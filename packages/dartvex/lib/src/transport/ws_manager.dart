@@ -449,9 +449,15 @@ class WebSocketManager {
       _reconnectTimer?.cancel();
       _resetInactivityTimer();
       _log(DartvexLogLevel.info, 'WebSocket connected');
-      if (_pauseState == _SocketPauseState.yes) {
+      if (_pauseState != _SocketPauseState.no) {
         // The socket opened while paused: defer the Connect handshake and
         // subscription replay to resume() so they cannot race a pending auth.
+        // Checked against `no` (not `yes`) defensively: `uninitialized` here
+        // would mean a previous paused socket's state leaked across a close,
+        // and running the handshake in that state would send it on a socket
+        // the pause owner still believes is gated — sendMessages would
+        // swallow the session-restoring messages and resume() would later
+        // send a second Connect frame on this socket.
         _pauseState = _SocketPauseState.uninitialized;
         _log(
           DartvexLogLevel.debug,
@@ -880,6 +886,16 @@ class WebSocketManager {
       return;
     }
     _closeHandled = true;
+    if (_pauseState == _SocketPauseState.uninitialized) {
+      // `uninitialized` means "the current socket opened while paused and its
+      // handshake is deferred to resume()". That socket is gone, so revert to
+      // the plain paused state: the next reconnect must defer its handshake
+      // again rather than treat the dead socket's deferral as already
+      // resolved (which would run the handshake while paused, swallowing the
+      // session-restoring messages, and let resume() send a second Connect
+      // frame on the new socket).
+      _pauseState = _SocketPauseState.yes;
+    }
     // A close the client itself initiated (reconnectNow, a detected
     // protocol error, an inactivity timeout) sets _pendingCloseReason first; an
     // unexpected server/network close leaves it null. Client-initiated
@@ -923,6 +939,11 @@ class WebSocketManager {
       return;
     }
     _closeHandled = true;
+    if (_pauseState == _SocketPauseState.uninitialized) {
+      // See _handleClosed: the socket whose handshake was deferred is gone,
+      // so the next socket must defer its handshake to resume() again.
+      _pauseState = _SocketPauseState.yes;
+    }
     _pendingCloseReason = null;
     _log(
       DartvexLogLevel.info,
