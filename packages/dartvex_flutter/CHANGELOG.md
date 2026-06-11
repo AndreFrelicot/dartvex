@@ -7,42 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- NSURLSession-backed network transports on iOS and macOS, installed
-  automatically at startup via Dart plugin registration
-  (`DartvexFlutterPlugin.registerWith()`). All SDK network paths — the sync
-  WebSocket, storage uploads, auth endpoints, asset-cache downloads, and
-  `ConvexFileDownloader` — now use the same system network path as Safari and
-  native apps instead of raw `dart:io` sockets. POSIX sockets are discouraged
-  by Apple (they bypass VPNs, proxies, and per-app network policy; see
-  dart-lang/sdk#41376) and are blackholed with `errno 65` on some iOS devices.
-  Apps can opt out by resetting `defaultWebSocketAdapterOverride` and
-  `defaultHttpClientFactory` to `null` early in `main()`, or override per
-  client with `ConvexClientConfig.adapterFactory` / explicit `httpClient`
-  parameters as before. `installCupertinoTransport()` is exported to
-  re-install the defaults after an opt-out. Adds `cupertino_http`, `http`,
-  `objective_c`, and `web_socket` dependencies; the package is now a
-  Dart-only plugin on iOS/macOS.
-- The WebSocket transport uses a session-owning NSURLSession socket: the
-  `URLSession` created for each connection attempt is invalidated once the
-  connection ends. Upstream `CupertinoWebSocket` never invalidates its
-  session, which leaks a native session per connect — a real cost for a sync
-  client that reconnects indefinitely (dart-lang/http#1282).
-- `defaultWebSocketAdapterOverride` and `defaultHttpClientFactory` are
-  re-exported from `dartvex_flutter`, so the documented transport opt-out is
-  reachable without a direct `dartvex` import.
-
-### Fixed
-
-- `ConvexAssetCache.dispose()` now closes the HTTP client the cache created
-  for its file service (`CacheManager.dispose()` never does), releasing its
-  platform resources — an NSURLSession on iOS/macOS.
-- `ConvexFileDownloader.download` now bounds draining a non-2xx error
-  response body by `idleTimeout`, so a stalled error response fails with the
-  status error instead of hanging the download forever.
-
-## [0.2.0] - 2026-06-08
+## [0.2.0] - 2026-06-11
 
 ### Added
 
@@ -76,6 +41,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `currentAuthRefreshing`, backed by `ConvexClient.authRefreshing`.
 - `ConvexRuntimeQueryLoading`, emitted when the core client reports an
   optimistic query clear/loading state.
+- NSURLSession-backed network transports on iOS and macOS, installed
+  automatically at startup via Dart plugin registration
+  (`DartvexFlutterPlugin.registerWith()`). All SDK network paths — the sync
+  WebSocket, storage uploads, auth endpoints, asset-cache downloads, and
+  `ConvexFileDownloader` — now use the same system network path as Safari and
+  native apps instead of raw `dart:io` sockets. POSIX sockets are discouraged
+  by Apple (they bypass VPNs, proxies, and per-app network policy; see
+  dart-lang/sdk#41376) and are blackholed with `errno 65` on some iOS devices.
+  Apps can opt out by resetting `defaultWebSocketAdapterOverride` and
+  `defaultHttpClientFactory` to `null` early in `main()`, or override per
+  client with `ConvexClientConfig.adapterFactory` / explicit `httpClient`
+  parameters as before. `installCupertinoTransport()` is exported to
+  re-install the defaults after an opt-out. Adds `cupertino_http`, `http`,
+  `objective_c`, and `web_socket` dependencies; the package is now a
+  Dart-only plugin on iOS/macOS.
+- The WebSocket transport uses a session-owning NSURLSession socket: the
+  `URLSession` created for each connection attempt is invalidated once the
+  connection ends. Upstream `CupertinoWebSocket` never invalidates its
+  session, which leaks a native session per connect — a real cost for a sync
+  client that reconnects indefinitely (dart-lang/http#1282).
+- `defaultWebSocketAdapterOverride` and `defaultHttpClientFactory` are
+  re-exported from `dartvex_flutter`, so the documented transport opt-out is
+  reachable without a direct `dartvex` import.
 
 ### Changed
 
@@ -124,6 +112,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ConvexCachedImage` to `ConvexStorageException`, instead of surfacing raw
   cast errors for non-string values.
 - Excludes build artifacts from the package archive.
+- `ConvexAssetCache.dispose()` now closes the HTTP client the cache created
+  for its file service (`CacheManager.dispose()` never does), releasing its
+  platform resources — an NSURLSession on iOS/macOS.
+- `ConvexFileDownloader.download` now bounds draining a non-2xx error
+  response body by `idleTimeout`, so a stalled error response fails with the
+  status error instead of hanging the download forever.
 
 ## [0.1.4] - 2026-04-30
 

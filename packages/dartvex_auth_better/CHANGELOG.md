@@ -7,14 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- `BetterAuthClient` now constructs its default HTTP client through the
-  core's `createDefaultHttpClient()`, so auth requests share the platform
-  transport installed by `dartvex_flutter` (NSURLSession on iOS/macOS). An
-  explicitly provided `httpClient` behaves exactly as before.
-
-## [0.1.4] - 2026-06-08
+## [0.1.4] - 2026-06-11
 
 ### Fixed
 
@@ -51,6 +44,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Require `dartvex` `^0.2.0`.
+- `BetterAuthClient` now constructs its default HTTP client through the
+  core's `createDefaultHttpClient()`, so auth requests share the platform
+  transport installed by `dartvex_flutter` (NSURLSession on iOS/macOS). An
+  explicitly provided `httpClient` behaves exactly as before.
 
 ## [0.1.3] - 2026-04-30
 
