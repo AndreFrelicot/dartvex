@@ -44,7 +44,9 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 
 - No CRDTs or conflict-free merge engine. Conflicts are surfaced via the
   `onConflict` callback — the app decides what to do.
-- No automatic cache eviction. Once cached, results stay until `clearCache()`.
+- No automatic cache eviction by default. Results stay until `clearCache()`
+  unless you configure `LocalClientConfig.queryCachePolicy`, which can expire
+  stale entries and cap the SQLite cache to a maximum entry count.
 - No bundled web storage. The included `SqliteLocalStore` requires native
   `dart:io` targets; on web, supply your own `CacheStorage`/`QueueStorage`.
 

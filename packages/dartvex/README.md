@@ -87,6 +87,8 @@ subscription.stream.listen((result) {
       print(value);
     case QueryError(:final message):
       print(message);
+    case QueryLoading():
+      break; // Cleared by an optimistic update; a concrete result follows.
   }
 });
 
@@ -176,6 +178,8 @@ subscription.stream.listen((result) {
       print(message);
       print(data);
       print(logLines);
+    case QueryLoading():
+      break;
   }
 });
 ```

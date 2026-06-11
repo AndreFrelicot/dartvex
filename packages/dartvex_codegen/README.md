@@ -90,15 +90,18 @@ await api.messages.send(author: 'Andre', text: 'Hello');
 final subscription = api.messages.listSubscribe();
 ```
 
-## API Overview
+## How It Works
 
-| Class | Description |
+The public Dart API is the CLI entrypoint (`GenerateCommand` /
+`runConvexCodegen`); the stages below are internal:
+
+| Stage | Description |
 |-------|-------------|
 | `GenerateCommand` | Main CLI command for code generation |
-| `DartGenerator` | Generates Dart source from function specs |
-| `FileEmitter` | Writes generated files to disk |
 | `SpecParser` | Parses Convex function_spec.json |
 | `TypeMapper` | Maps Convex types to Dart types |
+| `DartGenerator` | Generates Dart source from function specs |
+| `FileEmitter` | Writes generated files to disk |
 
 ## Workflow
 
