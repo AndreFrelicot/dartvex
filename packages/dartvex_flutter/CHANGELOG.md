@@ -30,6 +30,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   session, which leaks a native session per connect — a real cost for a sync
   client that reconnects indefinitely (dart-lang/http#1282).
 
+### Fixed
+
+- `ConvexAssetCache.dispose()` now closes the HTTP client the cache created
+  for its file service (`CacheManager.dispose()` never does), releasing its
+  platform resources — an NSURLSession on iOS/macOS.
+
 ## [0.2.0] - 2026-06-08
 
 ### Added

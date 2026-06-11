@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:dartvex/dartvex.dart' show createDefaultHttpClient;
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:http/http.dart' as http;
 
 /// Caches binary assets (images, files) from Convex storage to disk,
 /// keyed by stable storage ID rather than expiring signed URLs.
@@ -18,7 +19,20 @@ class ConvexAssetCache {
     String cacheKey = 'convexAssetCache',
     Duration stalePeriod = const Duration(days: 30),
     int maxNrOfCacheObjects = 200,
-  }) : _cacheManager = CacheManager(
+  }) : this._owned(
+          createDefaultHttpClient(),
+          cacheKey: cacheKey,
+          stalePeriod: stalePeriod,
+          maxNrOfCacheObjects: maxNrOfCacheObjects,
+        );
+
+  ConvexAssetCache._owned(
+    http.Client httpClient, {
+    required String cacheKey,
+    required Duration stalePeriod,
+    required int maxNrOfCacheObjects,
+  })  : _ownedHttpClient = httpClient,
+        _cacheManager = CacheManager(
           Config(
             cacheKey,
             stalePeriod: stalePeriod,
@@ -26,9 +40,7 @@ class ConvexAssetCache {
             // Route downloads through the SDK's default HTTP client so they
             // share the platform transport (NSURLSession on iOS/macOS)
             // instead of cache_manager's raw dart:io default.
-            fileService: HttpFileService(
-              httpClient: createDefaultHttpClient(),
-            ),
+            fileService: HttpFileService(httpClient: httpClient),
           ),
         );
 
@@ -36,9 +48,15 @@ class ConvexAssetCache {
   ///
   /// Useful for testing or custom cache configurations.
   ConvexAssetCache.custom(BaseCacheManager cacheManager)
-      : _cacheManager = cacheManager;
+      : _cacheManager = cacheManager,
+        _ownedHttpClient = null;
 
   final BaseCacheManager _cacheManager;
+
+  /// The HTTP client this cache created for its file service, closed on
+  /// [dispose]. Null when wrapping a custom cache manager, whose file
+  /// service's client lifecycle belongs to the caller.
+  final http.Client? _ownedHttpClient;
 
   /// Downloads the asset at [url] and caches it under [cacheKey].
   ///
@@ -103,6 +121,10 @@ class ConvexAssetCache {
   /// Disposes the underlying cache manager.
   Future<void> dispose() async {
     await _cacheManager.dispose();
+    // CacheManager.dispose() only closes its repository, never the file
+    // service's HTTP client; close the one this cache created so its
+    // platform resources (an NSURLSession on iOS/macOS) are released.
+    _ownedHttpClient?.close();
   }
 }
 
