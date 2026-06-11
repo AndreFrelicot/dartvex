@@ -8,6 +8,12 @@
 
 Offline-capable extension for [dartvex](https://pub.dev/packages/dartvex) — the pure Dart client for [Convex](https://convex.dev). SQLite query cache and mutation queue with optimistic updates.
 
+<p align="center">
+  <a href="https://github.com/AndreFrelicot/dartvex">
+    <img src="https://raw.githubusercontent.com/AndreFrelicot/dartvex/main/assets/dartvex-poster.webp" width="900" alt="Dartvex Flutter demo — real-time chats running on iOS and macOS" />
+  </a>
+</p>
+
 ## The Dartvex ecosystem
 
 | Package | Description |

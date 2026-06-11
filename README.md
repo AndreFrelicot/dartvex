@@ -15,6 +15,10 @@
   <a href="https://pub.dev/publishers/andrefrelicot.dev/packages"><img src="https://img.shields.io/badge/pub.dev-andrefrelicot.dev-0175C2" alt="pub.dev publisher: andrefrelicot.dev" /></a>
 </p>
 
+<p align="center">
+  <img src="assets/dartvex-poster.webp" width="900" alt="Dartvex Flutter demo — real-time chats running on iOS and macOS" />
+</p>
+
 ---
 
 ## Why Dartvex?

@@ -14,6 +14,12 @@ This keeps Better Auth isolated from the core SDK packages:
 - [`dartvex_flutter`](https://pub.dev/packages/dartvex_flutter) stays provider-agnostic
 - Better Auth logic lives here
 
+<p align="center">
+  <a href="https://github.com/AndreFrelicot/dartvex">
+    <img src="https://raw.githubusercontent.com/AndreFrelicot/dartvex/main/assets/dartvex-poster.webp" width="900" alt="Dartvex Flutter demo — real-time chats running on iOS and macOS" />
+  </a>
+</p>
+
 ## The Dartvex ecosystem
 
 | Package | Description |

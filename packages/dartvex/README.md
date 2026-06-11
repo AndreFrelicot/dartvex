@@ -8,6 +8,12 @@
 
 Pure Dart client for [Convex](https://convex.dev) with WebSocket sync, type-safe values, and reactive subscriptions. Works on iOS, Android, web, and desktop.
 
+<p align="center">
+  <a href="https://github.com/AndreFrelicot/dartvex">
+    <img src="https://raw.githubusercontent.com/AndreFrelicot/dartvex/main/assets/dartvex-poster.webp" width="900" alt="Dartvex Flutter demo — real-time chats running on iOS and macOS" />
+  </a>
+</p>
+
 ## The Dartvex ecosystem
 
 | Package | Description |

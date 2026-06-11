@@ -8,6 +8,12 @@
 
 CLI code generator for [Convex](https://convex.dev) backends. Generates type-safe Dart bindings from your Convex schema and function spec — companion tool to [`dartvex`](https://pub.dev/packages/dartvex).
 
+<p align="center">
+  <a href="https://github.com/AndreFrelicot/dartvex">
+    <img src="https://raw.githubusercontent.com/AndreFrelicot/dartvex/main/assets/dartvex-poster.webp" width="900" alt="Dartvex Flutter demo — real-time chats running on iOS and macOS" />
+  </a>
+</p>
+
 ## The Dartvex ecosystem
 
 | Package | Description |
