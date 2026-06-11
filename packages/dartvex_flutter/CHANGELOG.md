@@ -38,6 +38,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ConvexAssetCache.dispose()` now closes the HTTP client the cache created
   for its file service (`CacheManager.dispose()` never does), releasing its
   platform resources — an NSURLSession on iOS/macOS.
+- `ConvexFileDownloader.download` now bounds draining a non-2xx error
+  response body by `idleTimeout`, so a stalled error response fails with the
+  status error instead of hanging the download forever.
 
 ## [0.2.0] - 2026-06-08
 

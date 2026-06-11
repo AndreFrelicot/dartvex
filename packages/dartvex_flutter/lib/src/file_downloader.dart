@@ -82,7 +82,12 @@ class ConvexFileDownloader {
           await client.send(http.Request('GET', uri)).timeout(idleTimeout);
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        await response.stream.drain<void>();
+        try {
+          // Draining the error body is best-effort cleanup; bound it by the
+          // idle timeout so a stalled error response cannot hang the download,
+          // and never let a drain failure mask the status error thrown below.
+          await response.stream.drain<void>().timeout(idleTimeout);
+        } catch (_) {}
         throw HttpException(
           'Failed to download file (status ${response.statusCode})',
           uri: uri,
