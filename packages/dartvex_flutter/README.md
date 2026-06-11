@@ -46,6 +46,7 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 - `ConvexOfflineImage` / `ConvexAssetCache` — native offline binary asset caching
 - `FakeConvexClient` — test helper for unit and widget tests
 - App lifecycle reconnect when a Flutter app resumes while disconnected
+- NSURLSession network transports on iOS and macOS, installed automatically
 - Runtime-interface based — works with `ConvexClientRuntime` and local-first adapters
 
 The core storage flow works on web: resolve a signed storage URL and render it
@@ -61,6 +62,34 @@ dependencies:
   dartvex: ^0.2.0
   dartvex_flutter: ^0.2.0
 ```
+
+## Platform Transports
+
+On iOS and macOS the plugin automatically installs NSURLSession-backed
+transports at startup (via Dart plugin registration, before `main()` runs).
+Every network path the SDK uses — the sync WebSocket, storage uploads, auth
+endpoints, asset-cache downloads, and `ConvexFileDownloader` — then travels
+the same system network stack as Safari and native apps instead of raw
+`dart:io` sockets. POSIX sockets bypass VPNs, proxies, and per-app network
+policy, and are blackholed with `errno 65` on some iOS devices, which is why
+Apple discourages them.
+
+Android, Linux, and Windows keep the default `dart:io` transport; web uses
+`package:web`. To opt back into `dart:io` on Apple platforms, reset the
+process-wide seams:
+
+```dart
+import 'package:dartvex_flutter/dartvex_flutter.dart';
+
+void main() {
+  defaultWebSocketAdapterOverride = null;
+  defaultHttpClientFactory = null;
+  runApp(const MyApp());
+}
+```
+
+A per-client `ConvexClientConfig.adapterFactory` or an explicitly provided
+HTTP client always takes precedence over the installed defaults.
 
 ## Provider Setup
 

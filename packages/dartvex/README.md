@@ -51,13 +51,20 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 
 ## Platform Support
 
-| Platform | Transport | Status |
-|----------|-----------|--------|
+| Platform | Default transport | Status |
+|----------|-------------------|--------|
 | iOS / Android | `dart:io` WebSocket | Tested |
 | macOS / Linux / Windows | `dart:io` WebSocket | Tested |
 | Web (JS / Wasm) | `package:web` WebSocket | Tested |
 
-The web adapter is selected automatically via conditional import.
+The web adapter is selected automatically via conditional import. These are
+the defaults for the pure-Dart package; in Flutter apps,
+[`dartvex_flutter`](https://pub.dev/packages/dartvex_flutter) automatically
+replaces the `dart:io` transport on iOS and macOS with an NSURLSession-backed
+one (the same system network path Safari and native apps use), via the
+process-wide `defaultWebSocketAdapterOverride` / `defaultHttpClientFactory`
+seams exported by this package. An explicit `ConvexClientConfig.adapterFactory`
+always takes precedence.
 
 ## Installation
 
