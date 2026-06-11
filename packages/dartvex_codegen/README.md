@@ -30,7 +30,7 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 
 ```yaml
 dev_dependencies:
-  dartvex_codegen: ^0.1.4
+  dartvex_codegen: ^0.2.0
 ```
 
 The generated bindings call APIs introduced in `dartvex` 0.2.0 (such as
