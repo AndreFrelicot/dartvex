@@ -98,9 +98,14 @@ class _ConvexActionState<T> extends State<ConvexAction<T>> {
   ]) {
     final active = _inFlight;
     if (active != null) {
-      return Future<T>.error(
+      // ignore() keeps an ignored return value (the normal builder pattern,
+      // where the snapshot carries the state) from surfacing as an unhandled
+      // zone error; awaiting callers still receive the StateError.
+      final rejection = Future<T>.error(
         StateError('Action "${widget.action}" is already in progress.'),
       );
+      rejection.ignore();
+      return rejection;
     }
     final completer = Completer<T>();
     _inFlight = completer.future;

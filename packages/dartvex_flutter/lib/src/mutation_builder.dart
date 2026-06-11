@@ -104,9 +104,14 @@ class _ConvexMutationState<T> extends State<ConvexMutation<T>> {
   Future<T> _mutate([Map<String, dynamic> args = const <String, dynamic>{}]) {
     final active = _inFlight;
     if (active != null) {
-      return Future<T>.error(
+      // ignore() keeps an ignored return value (the normal builder pattern,
+      // where the snapshot carries the state) from surfacing as an unhandled
+      // zone error; awaiting callers still receive the StateError.
+      final rejection = Future<T>.error(
         StateError('Mutation "${widget.mutation}" is already in progress.'),
       );
+      rejection.ignore();
+      return rejection;
     }
     final completer = Completer<T>();
     _inFlight = completer.future;

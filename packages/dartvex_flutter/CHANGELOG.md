@@ -90,6 +90,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the query, reset a paginated list back to its first page, or wiped the
   request snapshot. Changing `decode`/`fromJson` now re-decodes the current
   value (or re-maps the loaded items) in place.
+- The in-flight guard of `ConvexMutation`/`ConvexAction` no longer surfaces an
+  unhandled zone error when the returned future is ignored (the normal builder
+  pattern); awaiting callers still receive the `StateError`.
 - The NSURLSession WebSocket adapter decodes binary frames with
   `allowMalformed`, so a peer sending invalid UTF-8 can no longer throw an
   uncaught `FormatException` out of the socket listener. The garbled message

@@ -343,4 +343,64 @@ void main() {
     expect(snapshot.isLoading, isFalse);
     expect(snapshot.data, 'fresh');
   });
+
+  testWidgets(
+      'ConvexMutation in-flight guard does not report an unhandled error '
+      'when the returned future is ignored', (tester) async {
+    final client = FakeRuntimeClient();
+    final pending = Completer<dynamic>();
+    client.onMutate = (name, args) => pending.future;
+    late ConvexRequestExecutor<dynamic> mutate;
+
+    await tester.pumpWidget(
+      wrapWithProvider(
+        client: client,
+        child: ConvexMutation<dynamic>(
+          mutation: 'messages:send',
+          builder: (context, execute, state) {
+            mutate = execute;
+            return const SizedBox();
+          },
+        ),
+      ),
+    );
+
+    // Double-tap: both returned futures are ignored, as in a plain
+    // onPressed handler. The second call hits the in-flight guard.
+    unawaited(mutate());
+    mutate();
+    pending.complete('done');
+    await tester.pump();
+
+    expect(client.mutateCalls, hasLength(1));
+  });
+
+  testWidgets(
+      'ConvexAction in-flight guard does not report an unhandled error '
+      'when the returned future is ignored', (tester) async {
+    final client = FakeRuntimeClient();
+    final pending = Completer<dynamic>();
+    client.onAction = (name, args) => pending.future;
+    late ConvexRequestExecutor<dynamic> run;
+
+    await tester.pumpWidget(
+      wrapWithProvider(
+        client: client,
+        child: ConvexAction<dynamic>(
+          action: 'messages:archive',
+          builder: (context, execute, state) {
+            run = execute;
+            return const SizedBox();
+          },
+        ),
+      ),
+    );
+
+    unawaited(run());
+    run();
+    pending.complete('done');
+    await tester.pump();
+
+    expect(client.actionCalls, hasLength(1));
+  });
 }
