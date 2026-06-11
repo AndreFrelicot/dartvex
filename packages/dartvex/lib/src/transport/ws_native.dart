@@ -76,7 +76,12 @@ class NativeWebSocketAdapter implements WebSocketAdapter {
         }
         if (event is List<int>) {
           if (!_messagesController.isClosed) {
-            _messagesController.add(utf8.decode(event));
+            // allowMalformed: invalid UTF-8 in a binary frame must not throw
+            // out of this listener — an uncaught zone error kills the isolate
+            // in a pure-Dart app. The replacement characters make the message
+            // fail JSON parsing upstream instead, which drives the sync
+            // layer's InvalidServerMessage reconnect.
+            _messagesController.add(utf8.decode(event, allowMalformed: true));
           }
         }
       },

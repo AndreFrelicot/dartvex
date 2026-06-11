@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-06-11
+## [0.2.0] - 2026-06-12
 
 ### Added
 
@@ -127,6 +127,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The native WebSocket adapter decodes binary frames with `allowMalformed`, so
+  a peer sending invalid UTF-8 can no longer crash a pure-Dart isolate with an
+  uncaught `FormatException` thrown from the socket listener. The garbled
+  message fails JSON parsing upstream instead, driving the normal
+  `InvalidServerMessage` reconnect.
 - A close event from a superseded WebSocket is now ignored once a newer
   connection is open. Previously, when a socket's close on a dead network
   outlived the platform close timeout and its close event was only delivered
