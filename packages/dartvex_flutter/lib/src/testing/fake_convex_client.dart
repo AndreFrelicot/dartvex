@@ -310,8 +310,15 @@ class FakeConvexClient implements ConvexRuntimeClient {
   void dispose() {
     if (_disposed) return;
     _disposed = true;
-    for (final controllers in _subscriptionControllers.values) {
-      for (final controller in controllers) {
+    // close() delivers the done event synchronously (sync controllers), and a
+    // done listener may cancel a subscription, which mutates these
+    // collections — iterate snapshots, like the paginated branch below.
+    for (final controllers
+        in List<List<StreamController<ConvexRuntimeQueryEvent>>>.of(
+      _subscriptionControllers.values,
+    )) {
+      for (final controller
+          in List<StreamController<ConvexRuntimeQueryEvent>>.of(controllers)) {
         unawaited(controller.close());
       }
     }

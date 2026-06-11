@@ -172,6 +172,29 @@ void main() {
       );
     });
 
+    test('dispose survives a done listener canceling its own subscription', () {
+      final client = FakeConvexClient();
+      final subscription = client.subscribe('messages:list');
+      subscription.stream.listen(
+        null,
+        // A listener that cleans up on done — the done event is delivered
+        // synchronously from close(), re-entering the fake during dispose.
+        onDone: subscription.cancel,
+      );
+
+      expect(client.dispose, returnsNormally);
+    });
+
+    test('dispose survives a done listener canceling a sibling subscription',
+        () {
+      final client = FakeConvexClient();
+      final first = client.subscribe('messages:list');
+      final second = client.subscribe('messages:list');
+      first.stream.listen(null, onDone: second.cancel);
+
+      expect(client.dispose, returnsNormally);
+    });
+
     test('emit helpers are no-ops after dispose', () {
       final client = FakeConvexClient();
       client.dispose();
