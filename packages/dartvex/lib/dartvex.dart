@@ -34,6 +34,10 @@ export 'src/sync/paginated_query.dart'
         PageSubscriber,
         PageSubscription;
 export 'src/transport/connectivity.dart' show ConnectivitySignal;
+export 'src/transport/http_factory.dart'
+    show createDefaultHttpClient, defaultHttpClientFactory;
+export 'src/transport/ws_factory.dart'
+    show createDefaultWebSocketAdapter, defaultWebSocketAdapterOverride;
 export 'src/transport/ws_interface.dart'
     show WebSocketAdapter, WebSocketCloseEvent;
 export 'src/transport/ws_manager.dart'

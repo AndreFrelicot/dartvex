@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'client.dart';
 import 'exceptions.dart';
 import 'logging.dart';
+import 'transport/http_factory.dart';
 
 /// Helper for uploading and downloading files via Convex storage.
 ///
@@ -85,7 +86,7 @@ class ConvexStorage {
       );
     }
 
-    final client = _httpClient ?? http.Client();
+    final client = _httpClient ?? createDefaultHttpClient();
     try {
       final response = await client.post(
         uri,

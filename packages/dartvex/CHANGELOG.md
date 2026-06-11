@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `defaultWebSocketAdapterOverride`: a process-wide override consulted by
+  `createDefaultWebSocketAdapter`, letting platform integrations (such as
+  `dartvex_flutter` on iOS/macOS) swap the default WebSocket transport for
+  every client without per-client configuration. An explicit
+  `ConvexClientConfig.adapterFactory` still takes precedence.
+  `createDefaultWebSocketAdapter` is now exported.
+- `defaultHttpClientFactory` / `createDefaultHttpClient`: the same
+  process-wide seam for the SDK's HTTP requests. `ConvexStorage` uploads now
+  construct their default client through it; an explicitly provided
+  `httpClient` still takes precedence.
+
 ## [0.2.0] - 2026-06-11
 
 ### Added
