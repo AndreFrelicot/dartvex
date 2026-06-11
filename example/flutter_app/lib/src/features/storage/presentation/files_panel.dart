@@ -491,14 +491,16 @@ class _FilesPanelState extends State<FilesPanel> {
           color: ConciergeColors.cyanSoft,
         ),
         const SizedBox(width: 8),
-        Text(
-          'Disk cache: ${size == null ? '…' : _fmtBytes(size)}',
-          style: const TextStyle(
-            color: ConciergeColors.textMuted,
-            fontWeight: FontWeight.w700,
+        Expanded(
+          child: Text(
+            'Disk cache: ${size == null ? '…' : _fmtBytes(size)}',
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: ConciergeColors.textMuted,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ),
-        const Spacer(),
         IconButton(
           tooltip: 'Refresh cache size',
           onPressed: _refreshCacheSize,
