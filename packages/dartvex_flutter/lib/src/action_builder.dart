@@ -64,9 +64,11 @@ class _ConvexActionState<T> extends State<ConvexAction<T>> {
   void didUpdateWidget(covariant ConvexAction<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
     final resolvedClient = widget.client ?? ConvexProvider.of(context);
-    final identityChanged = oldWidget.action != widget.action ||
-        oldWidget.decode != widget.decode ||
-        _runtimeClient != resolvedClient;
+    // decode is captured per request, not part of the action identity — an
+    // inline closure differs on every parent rebuild and must not wipe the
+    // snapshot or orphan an in-flight request.
+    final identityChanged =
+        oldWidget.action != widget.action || _runtimeClient != resolvedClient;
     _runtimeClient = resolvedClient;
     if (identityChanged) {
       _invalidateRequestState();

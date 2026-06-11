@@ -82,6 +82,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Inline closures no longer reset widget state on parent rebuilds: `decode`
+  (`ConvexQuery`, `ConvexMutation`, `ConvexAction`), `fromJson`
+  (`PaginatedQueryBuilder`), and `optimisticUpdate` (`ConvexMutation`) are
+  treated as render/call-time mappings instead of subscription identity.
+  Previously a parent rebuild that passed a new closure instance resubscribed
+  the query, reset a paginated list back to its first page, or wiped the
+  request snapshot. Changing `decode`/`fromJson` now re-decodes the current
+  value (or re-maps the loaded items) in place.
 - The NSURLSession WebSocket adapter decodes binary frames with
   `allowMalformed`, so a peer sending invalid UTF-8 can no longer throw an
   uncaught `FormatException` out of the socket listener. The garbled message

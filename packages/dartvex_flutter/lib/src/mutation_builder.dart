@@ -72,9 +72,10 @@ class _ConvexMutationState<T> extends State<ConvexMutation<T>> {
   void didUpdateWidget(covariant ConvexMutation<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
     final resolvedClient = widget.client ?? ConvexProvider.of(context);
+    // decode and optimisticUpdate are captured per request, not part of the
+    // mutation identity — inline closures differ on every parent rebuild and
+    // must not wipe the snapshot or orphan an in-flight request.
     final identityChanged = oldWidget.mutation != widget.mutation ||
-        oldWidget.decode != widget.decode ||
-        oldWidget.optimisticUpdate != widget.optimisticUpdate ||
         _runtimeClient != resolvedClient;
     _runtimeClient = resolvedClient;
     if (identityChanged) {

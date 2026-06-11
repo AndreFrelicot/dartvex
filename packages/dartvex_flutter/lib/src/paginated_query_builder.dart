@@ -39,8 +39,9 @@ typedef PaginatedQueryWidgetBuilder<T> = Widget Function(
 /// via [ConvexRuntimeClient.paginatedQuery]: each page is a live query
 /// subscription, so loaded pages update reactively as their data changes and
 /// stay gapless at page boundaries. `loadMore` extends the list using the last
-/// page's cursor; changing [query], [args], [pageSize], [fromJson], or [client]
-/// resets the query.
+/// page's cursor; changing [query], [args], [pageSize], or [client] resets the
+/// query, while changing [fromJson] re-maps the already-loaded items in place
+/// (so an inline closure is safe — parent rebuilds do not reset pagination).
 ///
 /// ```dart
 /// PaginatedQueryBuilder<Message>(
@@ -102,6 +103,7 @@ class _PaginatedQueryBuilderState<T> extends State<PaginatedQueryBuilder<T>> {
 
   List<T> _items = const <Never>[];
   PaginationStatus _status = PaginationStatus.loading;
+  convex.ConvexPaginatedResult? _lastResult;
 
   @override
   void didChangeDependencies() {
@@ -119,11 +121,24 @@ class _PaginatedQueryBuilderState<T> extends State<PaginatedQueryBuilder<T>> {
     final client = widget.client ?? ConvexProvider.of(context);
     if (oldWidget.query != widget.query ||
         oldWidget.pageSize != widget.pageSize ||
-        oldWidget.fromJson != widget.fromJson ||
         _client != client ||
         !_deepEquality.equals(oldWidget.args, widget.args)) {
       _client = client;
       _start();
+    } else if (oldWidget.fromJson != widget.fromJson) {
+      // The item mapper is not part of the query identity — an inline closure
+      // differs on every parent rebuild, and restarting would drop every
+      // loaded page. Re-map the current result in place instead; a rebuild is
+      // already scheduled, so plain assignment is enough.
+      final result = _lastResult;
+      if (result != null) {
+        try {
+          _items = _mapItems(result);
+          _status = _mapStatus(result.status);
+        } catch (_) {
+          _status = PaginationStatus.error;
+        }
+      }
     }
   }
 
@@ -140,6 +155,7 @@ class _PaginatedQueryBuilderState<T> extends State<PaginatedQueryBuilder<T>> {
     // Seed synchronously from the current snapshot (a build is already pending
     // from this lifecycle callback), then update reactively from the stream.
     final initial = query.current;
+    _lastResult = initial;
     try {
       _items = _mapItems(initial);
       _status = _mapStatus(initial.status);
@@ -159,6 +175,7 @@ class _PaginatedQueryBuilderState<T> extends State<PaginatedQueryBuilder<T>> {
     if (!mounted) {
       return;
     }
+    _lastResult = result;
     late final List<T> items;
     late final PaginationStatus status;
     try {

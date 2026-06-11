@@ -49,6 +49,7 @@ class _ConvexQueryState<T> extends State<ConvexQuery<T>> {
   ConvexRuntimeSubscription? _runtimeSubscription;
   StreamSubscription<ConvexRuntimeQueryEvent>? _eventSubscription;
   ConvexQuerySnapshot<T> _snapshot = ConvexQuerySnapshot<T>.initial();
+  ConvexRuntimeQueryEvent? _lastEvent;
   int _subscriptionGeneration = 0;
 
   @override
@@ -67,9 +68,17 @@ class _ConvexQueryState<T> extends State<ConvexQuery<T>> {
     final clientChanged = _runtimeClient != resolvedClient;
     final queryChanged = oldWidget.query != widget.query;
     final argsChanged = !_argsEquality.equals(oldWidget.args, widget.args);
-    final decodeChanged = oldWidget.decode != widget.decode;
-    if (clientChanged || queryChanged || argsChanged || decodeChanged) {
+    if (clientChanged || queryChanged || argsChanged) {
       _subscribe(resolvedClient, preserveData: _snapshot.hasData);
+    } else if (oldWidget.decode != widget.decode) {
+      // The decoder is a render-time mapping, not part of the subscription
+      // identity — an inline closure differs on every parent rebuild, and
+      // resubscribing would churn the query. Re-decode the latest event so
+      // the snapshot reflects the new decoder.
+      final lastEvent = _lastEvent;
+      if (lastEvent != null) {
+        _handleEvent(lastEvent);
+      }
     }
   }
 
@@ -104,6 +113,7 @@ class _ConvexQueryState<T> extends State<ConvexQuery<T>> {
     if (!mounted) {
       return;
     }
+    _lastEvent = event;
     switch (event) {
       case ConvexRuntimeQuerySuccess(:final value):
         try {
@@ -169,6 +179,7 @@ class _ConvexQueryState<T> extends State<ConvexQuery<T>> {
   }) {
     _cancelSubscription();
     _runtimeClient = resolvedClient;
+    _lastEvent = null;
     if (mounted) {
       setState(() {
         _snapshot = ConvexQuerySnapshot<T>(
