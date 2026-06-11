@@ -78,9 +78,8 @@ class ConvexFileDownloader {
       // The send() timeout bounds connection establishment and response
       // headers together — the same stall window dart:io's connectionTimeout
       // plus close().timeout() used to cover.
-      final response = await client
-          .send(http.Request('GET', uri))
-          .timeout(idleTimeout);
+      final response =
+          await client.send(http.Request('GET', uri)).timeout(idleTimeout);
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
         await response.stream.drain<void>();
