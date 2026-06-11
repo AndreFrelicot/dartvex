@@ -7,6 +7,8 @@ import 'package:dartvex/dartvex.dart';
 import 'package:meta/meta.dart';
 import 'package:web_socket/web_socket.dart';
 
+import 'cupertino_session_web_socket.dart';
+
 /// Installs the NSURLSession-backed WebSocket and HTTP transports as the
 /// process-wide defaults on iOS and macOS. No-op elsewhere.
 ///
@@ -39,7 +41,10 @@ typedef CupertinoWebSocketConnector = Future<WebSocket> Function(
 Future<WebSocket> _defaultConnector(Uri url, String clientId) {
   final config = URLSessionConfiguration.defaultSessionConfiguration()
     ..httpAdditionalHeaders = <String, String>{'Convex-Client': clientId};
-  return CupertinoWebSocket.connect(url, config: config);
+  // Session-owning variant rather than CupertinoWebSocket.connect: upstream
+  // never invalidates the URLSession it creates per connect, which leaks a
+  // native session on every reconnect attempt.
+  return OwnedSessionCupertinoWebSocket.connect(url, config: config);
 }
 
 /// A [WebSocketAdapter] that transports Convex sync messages over an

@@ -22,8 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   client with `ConvexClientConfig.adapterFactory` / explicit `httpClient`
   parameters as before. `installCupertinoTransport()` is exported to
   re-install the defaults after an opt-out. Adds `cupertino_http`, `http`,
-  and `web_socket` dependencies; the package is now a Dart-only plugin on
-  iOS/macOS.
+  `objective_c`, and `web_socket` dependencies; the package is now a
+  Dart-only plugin on iOS/macOS.
+- The WebSocket transport uses a session-owning NSURLSession socket: the
+  `URLSession` created for each connection attempt is invalidated once the
+  connection ends. Upstream `CupertinoWebSocket` never invalidates its
+  session, which leaks a native session per connect — a real cost for a sync
+  client that reconnects indefinitely (dart-lang/http#1282).
 
 ## [0.2.0] - 2026-06-08
 
