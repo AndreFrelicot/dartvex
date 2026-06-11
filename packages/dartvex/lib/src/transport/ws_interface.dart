@@ -56,7 +56,11 @@ abstract class WebSocketAdapter {
   /// socket has since connected. The sync layer uses this to tell a stale
   /// close (from a superseded socket whose teardown outlived the next
   /// connect) apart from the current connection closing, and ignores close
-  /// events delivered while [isConnected] is `true`.
+  /// events delivered while [isConnected] is `true` — or while a [connect]
+  /// call is still in flight. An adapter whose in-flight socket dies must
+  /// therefore fail the pending [connect] future rather than rely on a close
+  /// event alone; a close event that only ever surfaces mid-[connect] is
+  /// recovered by the sync layer's connect timeout instead.
   Stream<WebSocketCloseEvent> get closeEvents;
 
   /// Closes the socket connection.

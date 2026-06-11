@@ -32,6 +32,21 @@ void main() {
       fail('Timed out waiting for $expectedCount Connect messages');
     }
 
+    Future<void> waitForConnectAttempts(
+      MockWebSocketAdapter adapter,
+      int expectedCount,
+    ) async {
+      final stopwatch = Stopwatch()..start();
+      while (stopwatch.elapsed < const Duration(seconds: 1)) {
+        if (adapter.connectedUrls.length >= expectedCount) {
+          return;
+        }
+        await pumpEventQueue();
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      }
+      fail('Timed out waiting for $expectedCount connect attempts');
+    }
+
     test('sends connect only after adapter connect completes', () async {
       final adapter = MockWebSocketAdapter();
       final manager = WebSocketManager(
@@ -162,6 +177,71 @@ void main() {
             .where((message) => message['type'] == 'Connect'),
         hasLength(1),
       );
+
+      await manager.dispose();
+    });
+
+    test(
+        'a superseded socket close delivered while the successor connect is '
+        'in flight does not poison close handling for the new connection',
+        () async {
+      final adapter = MockWebSocketAdapter();
+      final disconnectReasons = <String>[];
+      final manager = WebSocketManager(
+        adapter: adapter,
+        deploymentUrl: 'https://demo.convex.cloud',
+        apiVersion: '0.1.0',
+        onConnected: () => const <ClientMessage>[],
+        onMessage: (_) => const <ClientMessage>[],
+        onDisconnected: (reason) {
+          disconnectReasons.add(reason);
+        },
+        onConnectionStateChanged: (_, __) {},
+        maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => true,
+        // Index 0 drives the first reconnect immediately; any reconnect a
+        // stale close might spuriously schedule lands at index 1 and stays
+        // safely outside the test window.
+        reconnectBackoff: const <Duration>[
+          Duration.zero,
+          Duration(seconds: 30),
+        ],
+        inactivityTimeout: const Duration(seconds: 30),
+      );
+
+      await manager.start();
+      expect(adapter.isConnected, isTrue);
+
+      // The connection drops; the immediate reconnect's adapter.connect() is
+      // held in flight by the gate, simulating a slow TCP/TLS handshake.
+      final gate = adapter.connectGate = Completer<void>();
+      adapter.disconnect(reason: 'NetworkDrop');
+      await waitForConnectAttempts(adapter, 2);
+      expect(disconnectReasons, ['NetworkDrop']);
+
+      // A previous socket's close, force-destroyed by the platform seconds
+      // after its close() timed out, lands while the successor's connect is
+      // still in flight. It must not consume the new attempt's close
+      // handling.
+      adapter.emitStaleCloseEvent(reason: 'ServerInactivity');
+      await pumpEventQueue();
+      expect(disconnectReasons, ['NetworkDrop']);
+
+      // The in-flight connect completes; the connection is healthy.
+      gate.complete();
+      adapter.connectGate = null;
+      await pumpEventQueue();
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      expect(adapter.isConnected, isTrue);
+
+      // A later real close of the healthy connection must still drive the
+      // disconnect bookkeeping (and with it the reconnect schedule); with a
+      // poisoned _closeHandled it would be silently ignored, leaving the
+      // client disconnected forever.
+      adapter.disconnect(reason: 'LaterNetworkDrop');
+      await pumpEventQueue();
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      expect(disconnectReasons, ['NetworkDrop', 'LaterNetworkDrop']);
 
       await manager.dispose();
     });
@@ -608,7 +688,10 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 10));
 
       expect(adapter.connectAttempts, 2);
-      expect(disconnectReasons, <String>['WebSocket closed with code 1006']);
+      // The close event surfaced while the connect was still in flight, so it
+      // is ignored as potentially stale; the failed connect future drives the
+      // one disconnect instead, carrying the connect error as the reason.
+      expect(disconnectReasons, <String>['Bad state: connect failed']);
       final connectMessages = adapter.decodedSentMessages
           .where((message) => message['type'] == 'Connect')
           .toList(growable: false);
@@ -616,7 +699,7 @@ void main() {
       expect(connectMessages.single['connectionCount'], 0);
       expect(
         connectMessages.single['lastCloseReason'],
-        'WebSocket closed with code 1006',
+        'Bad state: connect failed',
       );
 
       await manager.dispose();

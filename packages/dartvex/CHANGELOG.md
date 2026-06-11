@@ -123,6 +123,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tearing down the healthy successor with a spurious disconnect and a
   scheduled reconnect. The official client cannot reach this state because it
   detaches the close handler from sockets it closes deliberately.
+- A superseded socket's close event is also ignored while the successor's
+  connect attempt is still in flight. Previously a stale close landing in
+  that window consumed the new attempt's close handling, so once the connect
+  succeeded, the connection's next real close was silently dropped — no
+  reconnect was ever scheduled again and even `reconnectNow` became a no-op
+  until the client was disposed or reauthed. An adapter whose in-flight
+  socket dies must fail the pending `connect()` future (both built-in
+  adapters do); the `WebSocketAdapter.closeEvents` contract now documents
+  this.
 - An `AuthHandle` from `setAuthWithRefresh` now stays cancellable after
   `updateAuthToken` pushes a new token into the same flow. Handles bind to the
   refresh-flow identity instead of the auth generation, so a token update —

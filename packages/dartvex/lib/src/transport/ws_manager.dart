@@ -848,7 +848,7 @@ class WebSocketManager {
       // must not run the disconnect bookkeeping or schedule a reconnect here.
       return;
     }
-    if (adapter.isConnected) {
+    if (adapter.isConnected || _connecting) {
       // Both adapters null their current socket before emitting its close
       // event, so a close delivered while the adapter fronts an open socket
       // can only come from a superseded socket whose teardown outlived the
@@ -858,6 +858,16 @@ class WebSocketManager {
       // disconnect bookkeeping here would tear down that healthy successor
       // connection. The official client cannot reach this state because it
       // detaches the close handler from sockets it closes deliberately.
+      //
+      // The same applies while a connect attempt is in flight: a stale close
+      // landing in that window would consume _closeHandled, and once the
+      // attempt succeeds the poisoned flag would make the new connection's
+      // next real close a silent no-op — no reconnect would ever be
+      // scheduled again. The in-flight socket itself cannot be silenced by
+      // this guard: the native adapter only registers its close listener
+      // after connect() resolves, and a web socket that closes mid-connect
+      // also fails the connect future, whose catch drives _handleClosed
+      // after clearing _connecting.
       _log(
         DartvexLogLevel.debug,
         'Ignoring close event from a superseded socket',

@@ -17,9 +17,18 @@ class MockWebSocketAdapter implements WebSocketAdapter {
   /// socket that fails to close cleanly (e.g. on an inactivity timeout).
   bool throwOnClose = false;
 
+  /// When set, [connect] records the URL, then waits for this completer before
+  /// reporting the socket open — simulating a slow TCP/TLS/WebSocket handshake
+  /// so events can be delivered while a connect attempt is still in flight.
+  Completer<void>? connectGate;
+
   @override
   Future<void> connect(String url) async {
     connectedUrls.add(url);
+    final gate = connectGate;
+    if (gate != null) {
+      await gate.future;
+    }
     _connected = true;
   }
 
