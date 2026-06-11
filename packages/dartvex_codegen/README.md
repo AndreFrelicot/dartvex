@@ -67,6 +67,18 @@ Useful flags:
 - `--verbose`
 - `--watch`
 
+Before committing an exported spec file, scrub the real deployment URL it
+bakes in:
+
+```bash
+npx convex function-spec | dart run dartvex_codegen scrub > function_spec.json
+```
+
+`scrub` reads from stdin (or `--spec-file`) and writes the spec with the
+top-level `url` replaced by `https://your-deployment.convex.cloud`
+(customizable via `--placeholder-url`). The transform is idempotent and
+preserves key order, so committed diffs stay minimal.
+
 ## Generated API
 
 The generator produces:

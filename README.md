@@ -132,7 +132,9 @@ dart run dartvex_codegen generate \
 ConvexQuery<List<Message>>(
   query: 'messages:list',
   args: const {},
-  decode: (v) => (v as List).map(Message.fromJson).toList(),
+  decode: (v) => [
+    for (final item in v as List) Message.fromJson(item as Map<String, dynamic>),
+  ],
   builder: (context, snapshot) {
     if (snapshot.isLoading) return const CircularProgressIndicator();
     if (snapshot.hasError) return Text('Error: ${snapshot.error}');

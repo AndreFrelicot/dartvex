@@ -373,7 +373,7 @@ Flutter apps can use `ConvexAuthRefreshingBuilder` and
 | `ConvexClient` | Main client — connect, subscribe, mutate, act |
 | `ConvexClientConfig` | Configuration (client ID, timeouts, backoff, logging) |
 | `ConvexSubscription` | Reactive subscription handle with stream |
-| `QueryResult` | Base type for `QuerySuccess` / `QueryError` |
+| `QueryResult` | Base type for `QuerySuccess` / `QueryError` / `QueryLoading` |
 | `ConnectionStatus` | Rich connection snapshot — inflight counts, retries, sync |
 | `ConvexPaginatedQuery` | Reactive, gapless paginated query handle |
 | `OptimisticLocalStore` | Overlay store passed to optimistic updates |
