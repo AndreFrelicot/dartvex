@@ -59,7 +59,9 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 | Web | Bundled `SqliteLocalStore` unavailable — supply a custom store |
 
 > **Requirements:** `dartvex_local` requires Dart **≥ 3.10** — its `sqlite3`
-> dependency sets that floor (the other Dartvex packages require Dart ≥ 3.6).
+> dependency sets that floor. The other Dartvex packages have their own
+> package-specific Dart and Flutter floors; check each package's `pubspec.yaml`
+> or README before pinning a shared SDK floor.
 >
 > The bundled `SqliteLocalStore` is native-only (`dart:io`). To run
 > `ConvexLocalClient` on the web, implement the `CacheStorage` and

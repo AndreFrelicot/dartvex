@@ -5,7 +5,7 @@
 <h1 align="center">Dartvex</h1>
 
 <p align="center">
-  Pure Dart SDK for <a href="https://convex.dev">Convex</a> — real-time sync, type-safe codegen, Flutter widgets, and offline support.
+  Dart packages for <a href="https://convex.dev">Convex</a> — pure-Dart realtime sync, type-safe codegen, Flutter widgets, and offline support.
 </p>
 
 <p align="center">
@@ -23,7 +23,8 @@
 
 ## Why Dartvex?
 
-- **Pure Dart** — No Rust FFI, no native bridges. Works everywhere Dart runs.
+- **Pure-Dart core** — the `dartvex` client has no Rust FFI or Flutter
+  dependency; companion packages add Flutter/native integrations where noted.
 - **Type-safe codegen** — Generate Dart bindings from your Convex schema. Catch errors at compile time.
 - **Flutter widgets** — `ConvexProvider`, `ConvexQuery`, `ConvexMutation` and more for reactive UI.
 - **Offline capable** — SQLite query cache and mutation queue with optimistic updates.
