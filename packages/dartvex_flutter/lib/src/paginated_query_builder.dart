@@ -99,6 +99,7 @@ class _PaginatedQueryBuilderState<T> extends State<PaginatedQueryBuilder<T>> {
   ConvexRuntimeClient? _client;
   ConvexRuntimePaginatedQuery? _query;
   StreamSubscription<convex.ConvexPaginatedResult>? _subscription;
+  Map<String, dynamic>? _subscribedArgs;
   int _queryGeneration = 0;
 
   List<T> _items = const <Never>[];
@@ -122,7 +123,10 @@ class _PaginatedQueryBuilderState<T> extends State<PaginatedQueryBuilder<T>> {
     if (oldWidget.query != widget.query ||
         oldWidget.pageSize != widget.pageSize ||
         _client != client ||
-        !_deepEquality.equals(oldWidget.args, widget.args)) {
+        !_deepEquality.equals(
+          _subscribedArgs,
+          widget.args ?? const <String, dynamic>{},
+        )) {
       _client = client;
       _start();
     } else if (oldWidget.fromJson != widget.fromJson) {
@@ -146,9 +150,11 @@ class _PaginatedQueryBuilderState<T> extends State<PaginatedQueryBuilder<T>> {
     final generation = ++_queryGeneration;
     _subscription?.cancel();
     _query?.cancel();
+    final argsSnapshot = _snapshotArgs(widget.args);
+    _subscribedArgs = argsSnapshot;
     final query = _client!.paginatedQuery(
       widget.query,
-      <String, dynamic>{...?widget.args},
+      argsSnapshot,
       pageSize: widget.pageSize,
     );
     _query = query;
@@ -223,6 +229,12 @@ class _PaginatedQueryBuilderState<T> extends State<PaginatedQueryBuilder<T>> {
       case convex.ConvexPaginationStatus.error:
         return PaginationStatus.error;
     }
+  }
+
+  Map<String, dynamic> _snapshotArgs(Map<String, dynamic>? args) {
+    return convex.jsonToConvex(
+      convex.convexToJson(args ?? const <String, dynamic>{}),
+    ) as Map<String, dynamic>;
   }
 
   void _loadMore() {

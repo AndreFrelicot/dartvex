@@ -346,6 +346,38 @@ void main() {
     );
   });
 
+  testWidgets('resets the query when the args map is mutated in place',
+      (tester) async {
+    final client = connectedClient();
+    final args = <String, dynamic>{'channel': 'a'};
+
+    await tester.pumpWidget(
+      buildPaginated(
+        client: client,
+        args: args,
+        onBuild: (_, __) {},
+      ),
+    );
+    expect(client.paginatedQueryCalls, hasLength(1));
+    final firstQuery = client.paginatedQueryCalls.first.query;
+
+    args['channel'] = 'b';
+    await tester.pumpWidget(
+      buildPaginated(
+        client: client,
+        args: args,
+        onBuild: (_, __) {},
+      ),
+    );
+
+    expect(client.paginatedQueryCalls, hasLength(2));
+    expect(firstQuery.isCanceled, isTrue);
+    expect(
+      client.paginatedQueryCalls.last.args,
+      const <String, dynamic>{'channel': 'b'},
+    );
+  });
+
   testWidgets('ignores stale page events from canceled queries',
       (tester) async {
     final client = _StalePaginatedRuntimeClient(

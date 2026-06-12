@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:collection/collection.dart';
+import 'package:dartvex/dartvex.dart' as convex;
 import 'package:flutter/widgets.dart';
 
 import 'provider.dart';
@@ -50,6 +51,7 @@ class _ConvexQueryState<T> extends State<ConvexQuery<T>> {
   StreamSubscription<ConvexRuntimeQueryEvent>? _eventSubscription;
   ConvexQuerySnapshot<T> _snapshot = ConvexQuerySnapshot<T>.initial();
   ConvexRuntimeQueryEvent? _lastEvent;
+  Map<String, dynamic>? _subscribedArgs;
   int _subscriptionGeneration = 0;
 
   @override
@@ -67,7 +69,7 @@ class _ConvexQueryState<T> extends State<ConvexQuery<T>> {
     final resolvedClient = _resolveClient();
     final clientChanged = _runtimeClient != resolvedClient;
     final queryChanged = oldWidget.query != widget.query;
-    final argsChanged = !_argsEquality.equals(oldWidget.args, widget.args);
+    final argsChanged = !_argsEquality.equals(_subscribedArgs, widget.args);
     if (clientChanged || queryChanged || argsChanged) {
       _subscribe(resolvedClient, preserveData: _snapshot.hasData);
     } else if (oldWidget.decode != widget.decode) {
@@ -194,7 +196,9 @@ class _ConvexQueryState<T> extends State<ConvexQuery<T>> {
         );
       });
     }
-    final subscription = resolvedClient.subscribe(widget.query, widget.args);
+    final argsSnapshot = _snapshotArgs(widget.args);
+    _subscribedArgs = argsSnapshot;
+    final subscription = resolvedClient.subscribe(widget.query, argsSnapshot);
     final generation = ++_subscriptionGeneration;
     _runtimeSubscription = subscription;
     _eventSubscription = subscription.stream.listen((event) {
@@ -208,6 +212,11 @@ class _ConvexQueryState<T> extends State<ConvexQuery<T>> {
       }
       _handleEvent(ConvexRuntimeQueryError(error, stackTrace: stackTrace));
     });
+  }
+
+  Map<String, dynamic> _snapshotArgs(Map<String, dynamic> args) {
+    return convex.jsonToConvex(convex.convexToJson(args))
+        as Map<String, dynamic>;
   }
 }
 

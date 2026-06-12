@@ -82,6 +82,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `ConvexQuery` and `PaginatedQueryBuilder` now compare rebuild arguments
+  against the deep-snapshotted args used for the active subscription. Reusing a
+  `Map` and mutating it in place between parent rebuilds now correctly
+  resubscribes to the new query instead of leaving the widget attached to the
+  previous args.
 - The NSURLSession WebSocket decodes peer close reasons with `allowMalformed`.
   A close frame carrying invalid UTF-8 previously threw out of the session
   delegate callback, which skipped the close event entirely — leaving the sync

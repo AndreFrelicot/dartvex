@@ -47,6 +47,25 @@ void main() {
       fail('Timed out waiting for $expectedCount connect attempts');
     }
 
+    Future<List<DartvexLogEvent>> waitForLogEvents(
+      List<DartvexLogEvent> events,
+      String message,
+      int expectedCount,
+    ) async {
+      final stopwatch = Stopwatch()..start();
+      while (stopwatch.elapsed < const Duration(seconds: 1)) {
+        final matching = events
+            .where((event) => event.message == message)
+            .toList(growable: false);
+        if (matching.length >= expectedCount) {
+          return matching;
+        }
+        await pumpEventQueue();
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      }
+      fail('Timed out waiting for $expectedCount "$message" log events');
+    }
+
     test('sends connect only after adapter connect completes', () async {
       final adapter = MockWebSocketAdapter();
       final manager = WebSocketManager(
@@ -706,11 +725,7 @@ void main() {
         reason: 'InternalServerError: deployment push',
         wasClean: false,
       );
-      await Future<void>.delayed(const Duration(milliseconds: 10));
-
-      final connectMessages = adapter.decodedSentMessages
-          .where((message) => message['type'] == 'Connect')
-          .toList(growable: false);
+      final connectMessages = await waitForConnectMessages(adapter, 2);
       expect(connectMessages, hasLength(2));
       expect(
         connectMessages.last['lastCloseReason'],
@@ -1362,10 +1377,11 @@ void main() {
       // Flap before re-syncing: a delivered message must not reset the backoff,
       // so the schedule keeps climbing (10ms then 20ms).
       adapter.disconnect();
-      await Future<void>.delayed(const Duration(milliseconds: 15));
+      await waitForConnectMessages(adapter, 2);
       await deliverMessage();
       adapter.disconnect();
-      await Future<void>.delayed(const Duration(milliseconds: 25));
+      await waitForLogEvents(events, 'Reconnect scheduled', 2);
+      await waitForConnectMessages(adapter, 3);
 
       expect(scheduledDelays(), <int>[10, 20]);
 
@@ -1374,7 +1390,7 @@ void main() {
       synced = true;
       await deliverMessage();
       adapter.disconnect();
-      await Future<void>.delayed(const Duration(milliseconds: 15));
+      await waitForLogEvents(events, 'Reconnect scheduled', 3);
 
       expect(scheduledDelays(), <int>[10, 20, 10]);
 
