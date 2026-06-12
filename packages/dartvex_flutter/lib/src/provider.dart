@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dartvex/dartvex.dart' show ConvexException;
 import 'package:flutter/widgets.dart';
 
 import 'runtime_client.dart';
@@ -60,7 +61,15 @@ class _ConvexProviderState extends State<ConvexProvider>
     if (state == AppLifecycleState.resumed) {
       final client = widget.client;
       if (client.currentConnectionState != ConvexConnectionState.connected) {
-        unawaited(client.reconnectNow('AppResumed'));
+        try {
+          unawaited(client.reconnectNow('AppResumed'));
+        } on ConvexException {
+          // An externally owned client (disposeClient: false) can be disposed
+          // while the app is backgrounded with this provider still mounted —
+          // for example an app that tears its client down on pause and
+          // rebuilds it after resume. The convenience reconnect is best
+          // effort; a torn-down client has nothing to reconnect.
+        }
       }
     }
   }

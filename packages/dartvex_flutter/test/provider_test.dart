@@ -1,3 +1,4 @@
+import 'package:dartvex/dartvex.dart' show ConvexException;
 import 'package:dartvex_flutter/dartvex_flutter.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -99,6 +100,37 @@ void main() {
       simulateAppLifecycleState(tester, AppLifecycleState.resumed);
       await tester.pump();
 
+      expect(client.reconnectNowCalls, isEmpty);
+    },
+  );
+
+  testWidgets(
+    'ConvexProvider swallows the disposed-client error on app resume',
+    (tester) async {
+      // An externally owned client (disposeClient: false) can be disposed
+      // while the app is backgrounded with the provider still mounted; the
+      // disposed assertion must not escape into the lifecycle dispatch.
+      final client = FakeRuntimeClient(
+        initialConnectionState: ConvexConnectionState.disconnected,
+      )..reconnectNowSyncError =
+          const ConvexException('ConvexClient has been disposed');
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: ConvexProvider(
+            client: client,
+            child: const SizedBox(),
+          ),
+        ),
+      );
+
+      simulateAppLifecycleState(tester, AppLifecycleState.paused);
+      await tester.pump();
+      simulateAppLifecycleState(tester, AppLifecycleState.resumed);
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
       expect(client.reconnectNowCalls, isEmpty);
     },
   );

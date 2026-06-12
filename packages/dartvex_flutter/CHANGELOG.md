@@ -88,6 +88,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   layer blind to the disconnect until its inactivity timeout — and leaked the
   owned native session. The close reason is diagnostic-only, so replacement
   characters are harmless.
+- `ConvexProvider` no longer lets the disposed-client error escape into the
+  Flutter lifecycle dispatch when the app resumes after an externally owned
+  client (`disposeClient: false`) was disposed in the background. The
+  best-effort `AppResumed` reconnect is skipped instead.
 - Inline closures no longer reset widget state on parent rebuilds: `decode`
   (`ConvexQuery`, `ConvexMutation`, `ConvexAction`), `fromJson`
   (`PaginatedQueryBuilder`), and `optimisticUpdate` (`ConvexMutation`) are

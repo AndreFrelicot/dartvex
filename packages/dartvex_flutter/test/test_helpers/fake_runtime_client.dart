@@ -74,9 +74,18 @@ class FakeRuntimeClient implements ConvexRuntimeClient {
 
   final List<String> reconnectNowCalls = <String>[];
 
+  /// When set, [reconnectNow] throws this synchronously, mirroring the real
+  /// client's disposed assertion (which throws before returning a future).
+  Object? reconnectNowSyncError;
+
   @override
-  Future<void> reconnectNow(String reason) async {
+  Future<void> reconnectNow(String reason) {
+    final error = reconnectNowSyncError;
+    if (error != null) {
+      throw error;
+    }
     reconnectNowCalls.add(reason);
+    return Future<void>.value();
   }
 
   @override
