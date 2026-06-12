@@ -295,7 +295,8 @@ await client.mutate(
 
 The update must be pure (it can be replayed multiple times). Read current values
 with `store.getQuery(name, args)` / `store.getAllQueries(name)` and overlay new
-ones with `store.setQuery(name, args, value)` — pass `null` to remove a query.
+ones with `store.setQuery(name, args, value)` — `null` is the real Convex `null`
+value; use `store.clearQuery(name, args)` to clear a query to a loading state.
 
 ## Reactive Pagination
 
