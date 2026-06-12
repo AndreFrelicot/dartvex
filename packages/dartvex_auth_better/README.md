@@ -164,7 +164,7 @@ final session = await authClient.verifyMagicLink(token: magicLinkToken);
 
 ### BetterAuthClient
 
-- `signUp({email, password, name?})` — create account, returns `BetterAuthSession`
+- `signUp({name, email, password})` — create account, returns `BetterAuthSession`
 - `signIn({email, password})` — authenticate, returns `BetterAuthSession`
 - `forgotPassword({email, redirectTo?})` — send password reset email
 - `resetPassword({token, newPassword})` — confirm password reset
@@ -181,7 +181,8 @@ Implements `AuthProvider<BetterAuthSession>` from `dartvex`:
 - `login()` — sign in with stored email/password
 - `loginFromCache()` — restore session from cached token
 - `logout()` — sign out and clear cache
-- `signUp({email, password, name?})` — create account and authenticate
+- `signUp({name, email, password, onIdToken})` — create account and
+  authenticate, reporting the Convex JWT through `onIdToken`
 
 ### BetterAuthSession
 
