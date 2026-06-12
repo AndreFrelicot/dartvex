@@ -127,7 +127,7 @@ class SendMessageHandler extends LocalMutationHandler {
 | Class | Description |
 |-------|-------------|
 | `ConvexLocalClient` | Offline-aware client with cache and queue |
-| `QueryCache` | In-memory + persistent query cache |
+| `QueryCache` | Persistent query cache with expiry/pruning policy |
 | `MutationQueue` | Pending mutation queue with retry |
 | `SqliteLocalStore` | SQLite-backed local storage |
 | `PendingMutation` | Queued mutation with status tracking |
