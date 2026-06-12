@@ -40,7 +40,10 @@ class NativeWebSocketAdapter implements WebSocketAdapter {
     if (generation != _connectGeneration) {
       // A newer connect() or close() superseded this attempt (for example after
       // a connect-timeout). Discard the late socket instead of leaking it.
-      unawaited(socket.close());
+      // ignore(): this close often runs on an already-dead network, and a
+      // close failure on a socket nobody owns must not become an uncaught
+      // zone error (isolate-fatal in a pure Dart app).
+      socket.close().ignore();
       return;
     }
     _socket = socket;

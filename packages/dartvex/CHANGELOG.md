@@ -132,6 +132,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pure-Dart app). The restore subscription survives the error, so a later
   offline→online edge still reconnects immediately; losing a hint only means
   falling back to the normal reconnect backoff.
+- Closing the late socket of a superseded native connect attempt now ignores
+  close failures. That close typically runs on an already-dead network, and a
+  failure on a socket nobody owns must not surface as an uncaught zone error.
 - The native WebSocket adapter decodes binary frames with `allowMalformed`, so
   a peer sending invalid UTF-8 can no longer crash a pure-Dart isolate with an
   uncaught `FormatException` thrown from the socket listener. The garbled
