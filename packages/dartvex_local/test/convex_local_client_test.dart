@@ -291,6 +291,45 @@ void main() {
       expect(logs.map((event) => event.tag), contains('local.seed:error'));
     });
 
+    test('remote subscribe failures emit a local error and keep cancellation '
+        'available', () async {
+      remoteClient.subscribeErrors['tasks:list'] = StateError(
+        'remote subscribe failed',
+      );
+
+      final subscription = localClient.subscribe('tasks:list');
+      final events = <LocalQueryEvent>[];
+      final listener = subscription.stream.listen(events.add);
+      await pumpEventQueue();
+
+      expect(events, hasLength(1));
+      expect(events.single, isA<LocalQueryError>());
+      final error = events.single as LocalQueryError;
+      expect(error.error, isA<StateError>());
+      expect(error.source, LocalQuerySource.unknown);
+
+      subscription.cancel();
+      await listener.cancel();
+    });
+
+    test('remote connection stream errors mark the local client offline '
+        'without escaping', () async {
+      final errors = <Object>[];
+
+      await runZonedGuarded(
+        () async {
+          remoteClient.emitConnectionError(StateError('signal failed'));
+          await pumpEventQueue();
+        },
+        (error, stackTrace) {
+          errors.add(error);
+        },
+      );
+
+      expect(errors, isEmpty);
+      expect(localClient.currentConnectionState, LocalConnectionState.offline);
+    });
+
     // ---------------------------------------------------------------
     // Cache behavior
     // ---------------------------------------------------------------
@@ -527,6 +566,54 @@ void main() {
       expect(remoteClient.mutationCalls, isEmpty);
       expect(localClient.currentPendingMutations, hasLength(1));
     });
+
+    test(
+      'queued concurrent mutations snapshot caller args at call time',
+      () async {
+        final firstResult = Completer<Object?>();
+        remoteClient.mutationResults['tasks:first'] = <Object?>[
+          firstResult.future,
+        ];
+        remoteClient.mutationResults['tasks:second'] = <Object?>['second-ok'];
+
+        final first = localClient.mutate('tasks:first');
+        final secondArgs = <String, dynamic>{
+          'filter': <String, dynamic>{'status': 'active'},
+        };
+        final second = localClient.mutate('tasks:second', secondArgs);
+
+        (secondArgs['filter'] as Map<String, dynamic>)['status'] = 'archived';
+        firstResult.complete('first-ok');
+
+        await first;
+        await second;
+
+        final secondCall = remoteClient.mutationCalls
+            .where((call) => call.name == 'tasks:second')
+            .single;
+        expect(secondCall.args['filter'], containsPair('status', 'active'));
+      },
+    );
+
+    test(
+      'actions snapshot caller args before delegating to the remote client',
+      () async {
+        final args = <String, dynamic>{
+          'filter': <String, dynamic>{'status': 'active'},
+        };
+
+        final action = localClient.action('tasks:preview', args);
+        (args['filter'] as Map<String, dynamic>)['status'] = 'archived';
+        await action;
+
+        expect(remoteClient.actionCalls, hasLength(1));
+        expect(remoteClient.actionCalls.single.name, 'tasks:preview');
+        expect(
+          remoteClient.actionCalls.single.args['filter'],
+          containsPair('status', 'active'),
+        );
+      },
+    );
 
     test('replays queued mutations in order when returning online', () async {
       remoteClient.queryResults['messages:listPublic'] = <dynamic>[
@@ -2748,8 +2835,10 @@ class FakeRemoteClient implements LocalRemoteClient {
   final Map<String, ConvexException> queryErrors = <String, ConvexException>{};
   final Map<String, List<Object?>> mutationResults = <String, List<Object?>>{};
   final List<RemoteCall> mutationCalls = <RemoteCall>[];
+  final List<RemoteCall> actionCalls = <RemoteCall>[];
   final Map<String, Stream<LocalRemoteQueryEvent>> subscriptionStreams =
       <String, Stream<LocalRemoteQueryEvent>>{};
+  final Map<String, Object> subscribeErrors = <String, Object>{};
   final Map<String, int> subscriptionCancelCounts = <String, int>{};
   final StreamController<LocalRemoteConnectionState>
   _connectionStateController =
@@ -2771,6 +2860,7 @@ class FakeRemoteClient implements LocalRemoteClient {
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) async {
+    actionCalls.add(RemoteCall(name, args));
     return 'action-ok';
   }
 
@@ -2829,6 +2919,10 @@ class FakeRemoteClient implements LocalRemoteClient {
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) {
+    final error = subscribeErrors[name];
+    if (error != null) {
+      throw error;
+    }
     final stream =
         subscriptionStreams[name] ??
         Stream<LocalRemoteQueryEvent>.value(
@@ -2849,6 +2943,10 @@ class FakeRemoteClient implements LocalRemoteClient {
   void setConnectionState(LocalRemoteConnectionState state) {
     _currentConnectionState = state;
     _connectionStateController.add(state);
+  }
+
+  void emitConnectionError(Object error) {
+    _connectionStateController.addError(error, StackTrace.current);
   }
 }
 

@@ -100,9 +100,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the query, reset a paginated list back to its first page, or wiped the
   request snapshot. Changing `decode`/`fromJson` now re-decodes the current
   value (or re-maps the loaded items) in place.
-- The in-flight guard of `ConvexMutation`/`ConvexAction` no longer surfaces an
-  unhandled zone error when the returned future is ignored (the normal builder
-  pattern); awaiting callers still receive the `StateError`.
+- `ConvexMutation`/`ConvexAction` no longer surface unhandled zone errors when
+  the returned future is ignored (the normal builder pattern), both for the
+  in-flight guard and for request failures already reported through the
+  snapshot. Awaiting callers still receive the same errors.
 - `FakeConvexClient.dispose()` no longer throws a
   `ConcurrentModificationError` when a subscription listener reacts to its
   done event by canceling a subscription (done events are delivered
@@ -123,6 +124,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   new request state.
 - `FakeConvexClient` now broadcasts duplicate query subscriptions and paginated
   queries with the same name to every live handle instead of only the latest.
+- `FakeConvexClient` now deep-snapshots query, subscription, mutation, and
+  action arguments before invoking handlers, matching the real client behavior
+  and preventing caller-side map mutations from changing deferred fake results.
 - Closes file-download HTTP clients and rejects non-success responses instead
   of returning error bodies as image bytes.
 - `ConvexFileDownloader.download` now applies a configurable `idleTimeout`

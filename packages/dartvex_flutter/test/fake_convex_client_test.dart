@@ -25,12 +25,44 @@ void main() {
       expect(result, ['msg-general']);
     });
 
+    test('query handlers see an argument snapshot', () async {
+      final client = FakeConvexClient()
+        ..whenQueryWith('messages:list', (args) async {
+          await Future<void>.delayed(Duration.zero);
+          return (args['filter'] as Map<String, dynamic>)['status'];
+        });
+      final args = <String, dynamic>{
+        'filter': <String, dynamic>{'status': 'active'},
+      };
+
+      final result = client.query('messages:list', args);
+      (args['filter'] as Map<String, dynamic>)['status'] = 'archived';
+
+      expect(await result, 'active');
+    });
+
     test('whenMutation returns mocked data', () async {
       final client = FakeConvexClient()
         ..whenMutation('messages:send', returns: {'id': 'abc123'});
 
       final result = await client.mutate('messages:send', {'text': 'hello'});
       expect(result, {'id': 'abc123'});
+    });
+
+    test('mutation handlers see an argument snapshot', () async {
+      final client = FakeConvexClient()
+        ..whenMutationWith('messages:send', (args) async {
+          await Future<void>.delayed(Duration.zero);
+          return (args['draft'] as Map<String, dynamic>)['text'];
+        });
+      final args = <String, dynamic>{
+        'draft': <String, dynamic>{'text': 'hello'},
+      };
+
+      final result = client.mutate('messages:send', args);
+      (args['draft'] as Map<String, dynamic>)['text'] = 'edited';
+
+      expect(await result, 'hello');
     });
 
     test('whenAction returns mocked data', () async {
@@ -40,6 +72,22 @@ void main() {
 
       final result = await client.action('files:generateUploadUrl');
       expect(result, 'https://upload.convex.cloud/abc');
+    });
+
+    test('action handlers see an argument snapshot', () async {
+      final client = FakeConvexClient()
+        ..whenActionWith('messages:notify', (args) async {
+          await Future<void>.delayed(Duration.zero);
+          return (args['payload'] as Map<String, dynamic>)['id'];
+        });
+      final args = <String, dynamic>{
+        'payload': <String, dynamic>{'id': 'one'},
+      };
+
+      final result = client.action('messages:notify', args);
+      (args['payload'] as Map<String, dynamic>)['id'] = 'two';
+
+      expect(await result, 'one');
     });
 
     test('query throws when no handler registered', () {
@@ -67,6 +115,23 @@ void main() {
 
       expect(event, isA<ConvexRuntimeQuerySuccess>());
       expect((event as ConvexRuntimeQuerySuccess).value, ['msg1']);
+    });
+
+    test('subscription auto-emit uses an argument snapshot', () async {
+      final client = FakeConvexClient()
+        ..whenQueryWith('messages:list', (args) {
+          return (args['filter'] as Map<String, dynamic>)['status'];
+        });
+      final args = <String, dynamic>{
+        'filter': <String, dynamic>{'status': 'active'},
+      };
+
+      final subscription = client.subscribe('messages:list', args);
+      (args['filter'] as Map<String, dynamic>)['status'] = 'archived';
+      final event = await subscription.stream.first;
+
+      expect(event, isA<ConvexRuntimeQuerySuccess>());
+      expect((event as ConvexRuntimeQuerySuccess).value, 'active');
     });
 
     test('emitSubscription pushes updates', () async {

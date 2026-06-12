@@ -108,7 +108,11 @@ class _ConvexActionState<T> extends State<ConvexAction<T>> {
       return rejection;
     }
     final completer = Completer<T>();
-    _inFlight = completer.future;
+    final future = completer.future;
+    // The builder API intentionally lets callers ignore the returned future
+    // and observe failures through the snapshot.
+    future.ignore();
+    _inFlight = future;
     final generation = ++_requestGeneration;
     final runtimeClient = _runtimeClient!;
     final actionName = widget.action;
@@ -155,7 +159,7 @@ class _ConvexActionState<T> extends State<ConvexAction<T>> {
       }
     }();
 
-    return completer.future;
+    return future;
   }
 
   void _invalidateRequestState() {

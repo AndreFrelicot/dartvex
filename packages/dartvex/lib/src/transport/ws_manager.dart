@@ -408,10 +408,69 @@ class WebSocketManager {
           stackTrace: stackTrace,
         );
       });
+    }, onError: (Object error, StackTrace stackTrace) {
+      unawaited(
+        _handleAdapterStreamError(
+          reason: 'WebSocketMessageStreamError',
+          message: 'WebSocket message stream failed',
+          error: error,
+          stackTrace: stackTrace,
+        ),
+      );
     });
     _closeSubscription ??= adapter.closeEvents.listen((event) {
       unawaited(_handleClosed(event));
+    }, onError: (Object error, StackTrace stackTrace) {
+      unawaited(
+        _handleAdapterStreamError(
+          reason: 'WebSocketCloseStreamError',
+          message: 'WebSocket close stream failed',
+          error: error,
+          stackTrace: stackTrace,
+        ),
+      );
     });
+  }
+
+  Future<void> _handleAdapterStreamError({
+    required String reason,
+    required String message,
+    required Object error,
+    required StackTrace stackTrace,
+  }) async {
+    if (_disposed || _closeHandled || _stopped) {
+      return;
+    }
+    _lastCloseReason = reason;
+    _pendingCloseReason = reason;
+    _chunkBuffer = null;
+    if (_connecting) {
+      // Supersede a connect continuation that might complete after this stream
+      // error; otherwise it could run a handshake after this path has already
+      // scheduled a replacement connection.
+      _connectAttempt += 1;
+      _connecting = false;
+    }
+    _log(
+      DartvexLogLevel.error,
+      message,
+      error: error,
+      stackTrace: stackTrace,
+    );
+    try {
+      // Call close even when the adapter is not yet "connected": the built-in
+      // adapters use close() to supersede and later discard a half-open
+      // connect attempt.
+      await adapter.close();
+    } catch (closeError, closeStackTrace) {
+      _log(
+        DartvexLogLevel.error,
+        'Failed to close WebSocket after stream error',
+        error: closeError,
+        stackTrace: closeStackTrace,
+      );
+    }
+    await _handleSyntheticDisconnect(reason, clientInitiated: true);
   }
 
   Future<void> _connect() async {

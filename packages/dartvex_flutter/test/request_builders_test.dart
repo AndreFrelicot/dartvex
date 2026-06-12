@@ -376,6 +376,39 @@ void main() {
   });
 
   testWidgets(
+      'ConvexMutation request failure updates the snapshot without an '
+      'unhandled error when the returned future is ignored', (tester) async {
+    final client = FakeRuntimeClient();
+    final pending = Completer<dynamic>();
+    client.onMutate = (name, args) => pending.future;
+    late ConvexRequestExecutor<dynamic> mutate;
+    late ConvexRequestSnapshot<dynamic> snapshot;
+
+    await tester.pumpWidget(
+      wrapWithProvider(
+        client: client,
+        child: ConvexMutation<dynamic>(
+          mutation: 'messages:send',
+          builder: (context, execute, state) {
+            mutate = execute;
+            snapshot = state;
+            return const SizedBox();
+          },
+        ),
+      ),
+    );
+
+    unawaited(mutate());
+    pending.completeError(StateError('failed'));
+    await tester.pump();
+
+    expect(snapshot.isLoading, isFalse);
+    expect(snapshot.hasError, isTrue);
+    expect(snapshot.error, isA<StateError>());
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
       'ConvexAction in-flight guard does not report an unhandled error '
       'when the returned future is ignored', (tester) async {
     final client = FakeRuntimeClient();
@@ -402,5 +435,38 @@ void main() {
     await tester.pump();
 
     expect(client.actionCalls, hasLength(1));
+  });
+
+  testWidgets(
+      'ConvexAction request failure updates the snapshot without an '
+      'unhandled error when the returned future is ignored', (tester) async {
+    final client = FakeRuntimeClient();
+    final pending = Completer<dynamic>();
+    client.onAction = (name, args) => pending.future;
+    late ConvexRequestExecutor<dynamic> run;
+    late ConvexRequestSnapshot<dynamic> snapshot;
+
+    await tester.pumpWidget(
+      wrapWithProvider(
+        client: client,
+        child: ConvexAction<dynamic>(
+          action: 'messages:archive',
+          builder: (context, execute, state) {
+            run = execute;
+            snapshot = state;
+            return const SizedBox();
+          },
+        ),
+      ),
+    );
+
+    unawaited(run());
+    pending.completeError(StateError('failed'));
+    await tester.pump();
+
+    expect(snapshot.isLoading, isFalse);
+    expect(snapshot.hasError, isTrue);
+    expect(snapshot.error, isA<StateError>());
+    expect(tester.takeException(), isNull);
   });
 }

@@ -31,11 +31,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   event's rebased value could land last — leaving a stale value in the cache
   and as the subscribers' latest emission until the next remote event.
 - Caller-provided args are now deep-snapshotted at the `query`, `subscribe`,
-  and `mutate` entry points. A `LocalQueryDescriptor` key is recomputed from
-  its stored args on every use, and the previous shallow copy shared nested
-  values with the caller — so mutating a nested value after subscribing made
-  the recomputed key diverge, orphaned the query state on cancel, and leaked
-  its remote subscription.
+  `mutate`, and `action` entry points. A `LocalQueryDescriptor` key is
+  recomputed from its stored args on every use, and the previous shallow copy
+  shared nested values with the caller — so mutating a nested value after
+  subscribing made the recomputed key diverge, orphaned the query state on
+  cancel, and leaked its remote subscription. Concurrent `mutate` calls also
+  snapshot before waiting on the FIFO mutation chain, so a later caller-side
+  args mutation cannot alter a queued call that has not started yet.
 - Disposing the client while a `setNetworkMode(LocalNetworkMode.offline)` or
   `clearQueue` call was emitting cached snapshots no longer routes an event
   into a just-closed subscription controller, which failed the in-flight
@@ -112,6 +114,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   iterates a snapshot of subscribers and defers closing the subscription stream
   past the in-progress dispatch, fixing a `ConcurrentModificationError` and a
   "Cannot fire new event" state error.
+- A synchronous `LocalRemoteClient.subscribe` failure is now reported as a
+  local query error event instead of escaping from `ConvexLocalClient.subscribe`
+  after local subscription state has already been registered. The returned
+  local subscription remains cancellable.
+- Errors emitted by a custom `LocalRemoteClient.connectionState` stream are
+  now logged and treated as a remote disconnect instead of surfacing as
+  unhandled zone errors while leaving the local client marked online.
 - `SqliteLocalStore.close()` no longer deletes the database file's parent
   directory, which could remove unrelated files placed alongside it.
 - Queues auto-mode mutations immediately while the remote client is

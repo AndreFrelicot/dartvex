@@ -246,6 +246,100 @@ void main() {
       await manager.dispose();
     });
 
+    test('message stream errors reconnect without escaping the zone', () async {
+      final unhandledErrors = <Object>[];
+      await runZonedGuarded(() async {
+        final adapter = MockWebSocketAdapter();
+        final disconnectReasons = <String>[];
+        final manager = WebSocketManager(
+          adapter: adapter,
+          deploymentUrl: 'https://demo.convex.cloud',
+          apiVersion: '0.1.0',
+          onConnected: () => const <ClientMessage>[],
+          onMessage: (_) => const <ClientMessage>[],
+          onDisconnected: disconnectReasons.add,
+          onConnectionStateChanged: (_, __) {},
+          maxObservedTimestamp: () => null,
+          hasSyncedPastLastReconnect: () => true,
+          reconnectBackoff: const <Duration>[Duration.zero],
+          inactivityTimeout: const Duration(seconds: 30),
+        );
+
+        await manager.start();
+        adapter.emitMessageStreamError(StateError('message stream failed'));
+        await waitForConnectAttempts(adapter, 2);
+
+        expect(disconnectReasons, <String>['WebSocketMessageStreamError']);
+        await manager.dispose();
+      }, (error, stackTrace) {
+        unhandledErrors.add(error);
+      });
+
+      expect(unhandledErrors, isEmpty);
+    });
+
+    test('stream error during connect closes the half-open adapter', () async {
+      final adapter = MockWebSocketAdapter();
+      adapter.connectGate = Completer<void>();
+      final manager = WebSocketManager(
+        adapter: adapter,
+        deploymentUrl: 'https://demo.convex.cloud',
+        apiVersion: '0.1.0',
+        onConnected: () => const <ClientMessage>[],
+        onMessage: (_) => const <ClientMessage>[],
+        onDisconnected: (_) {},
+        onConnectionStateChanged: (_, __) {},
+        maxObservedTimestamp: () => null,
+        hasSyncedPastLastReconnect: () => true,
+        reconnectBackoff: const <Duration>[Duration.zero],
+        inactivityTimeout: const Duration(seconds: 30),
+      );
+
+      final start = manager.start();
+      await waitForConnectAttempts(adapter, 1);
+
+      adapter.emitMessageStreamError(StateError('message stream failed'));
+      await waitForConnectAttempts(adapter, 2);
+
+      expect(adapter.closeCalls, 1);
+
+      adapter.connectGate!.complete();
+      await start;
+      await manager.dispose();
+    });
+
+    test('close stream errors reconnect without escaping the zone', () async {
+      final unhandledErrors = <Object>[];
+      await runZonedGuarded(() async {
+        final adapter = MockWebSocketAdapter();
+        final disconnectReasons = <String>[];
+        final manager = WebSocketManager(
+          adapter: adapter,
+          deploymentUrl: 'https://demo.convex.cloud',
+          apiVersion: '0.1.0',
+          onConnected: () => const <ClientMessage>[],
+          onMessage: (_) => const <ClientMessage>[],
+          onDisconnected: disconnectReasons.add,
+          onConnectionStateChanged: (_, __) {},
+          maxObservedTimestamp: () => null,
+          hasSyncedPastLastReconnect: () => true,
+          reconnectBackoff: const <Duration>[Duration.zero],
+          inactivityTimeout: const Duration(seconds: 30),
+        );
+
+        await manager.start();
+        adapter.emitCloseStreamError(StateError('close stream failed'));
+        await waitForConnectAttempts(adapter, 2);
+
+        expect(disconnectReasons, <String>['WebSocketCloseStreamError']);
+        await manager.dispose();
+      }, (error, stackTrace) {
+        unhandledErrors.add(error);
+      });
+
+      expect(unhandledErrors, isEmpty);
+    });
+
     test('dispose ignores adapter close failures', () async {
       final adapter = MockWebSocketAdapter();
       final manager = WebSocketManager(

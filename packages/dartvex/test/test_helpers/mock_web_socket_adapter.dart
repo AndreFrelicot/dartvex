@@ -12,6 +12,7 @@ class MockWebSocketAdapter implements WebSocketAdapter {
   final List<String> sentMessages = <String>[];
   final List<String> connectedUrls = <String>[];
   bool _connected = false;
+  int closeCalls = 0;
 
   /// When true, [close] throws without emitting a close event, simulating a
   /// socket that fails to close cleanly (e.g. on an inactivity timeout).
@@ -50,12 +51,20 @@ class MockWebSocketAdapter implements WebSocketAdapter {
     _messagesController.add(jsonEncode(message));
   }
 
+  void emitMessageStreamError(Object error) {
+    _messagesController.addError(error, StackTrace.current);
+  }
+
   /// Emits a close event without touching the connected state, simulating a
   /// superseded socket whose delayed teardown completes only after a newer
   /// socket has already connected (e.g. a native close that timed out on a
   /// dead network and was force-destroyed by the platform later).
   void emitStaleCloseEvent({int? code, String? reason}) {
     _closeController.add(WebSocketCloseEvent(code: code, reason: reason));
+  }
+
+  void emitCloseStreamError(Object error) {
+    _closeController.addError(error, StackTrace.current);
   }
 
   void disconnect({
@@ -83,6 +92,7 @@ class MockWebSocketAdapter implements WebSocketAdapter {
 
   @override
   Future<void> close() async {
+    closeCalls += 1;
     if (throwOnClose) {
       throw StateError('Mock socket failed to close');
     }

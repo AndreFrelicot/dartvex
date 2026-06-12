@@ -114,7 +114,11 @@ class _ConvexMutationState<T> extends State<ConvexMutation<T>> {
       return rejection;
     }
     final completer = Completer<T>();
-    _inFlight = completer.future;
+    final future = completer.future;
+    // The builder API intentionally lets callers ignore the returned future
+    // and observe failures through the snapshot.
+    future.ignore();
+    _inFlight = future;
     final generation = ++_requestGeneration;
     final runtimeClient = _runtimeClient!;
     final mutationName = widget.mutation;
@@ -166,7 +170,7 @@ class _ConvexMutationState<T> extends State<ConvexMutation<T>> {
       }
     }();
 
-    return completer.future;
+    return future;
   }
 
   void _invalidateRequestState() {

@@ -145,6 +145,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pure-Dart app). The restore subscription survives the error, so a later
   offline→online edge still reconnects immediately; losing a hint only means
   falling back to the normal reconnect backoff.
+- Errors emitted by a custom `WebSocketAdapter.messages` or `closeEvents`
+  stream are now treated as a client-detected disconnect and drive the normal
+  reconnect path instead of hanging the manager or surfacing as uncaught zone
+  errors. The manager also closes the adapter on these failures even during a
+  half-open connect, so built-in adapters can discard any late socket before
+  the replacement reconnect proceeds.
 - Closing the late socket of a superseded native connect attempt now ignores
   close failures. That close typically runs on an already-dead network, and a
   failure on a socket nobody owns must not surface as an uncaught zone error.

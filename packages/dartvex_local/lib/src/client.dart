@@ -632,6 +632,7 @@ class ConvexLocalClient {
     _rebuildPendingWriteCounts();
     _remoteConnectionSubscription = _remoteClient.connectionState.listen(
       _handleRemoteConnectionState,
+      onError: _handleRemoteConnectionError,
     );
 
     _networkModeController.add(_networkMode);
@@ -728,7 +729,10 @@ class ConvexLocalClient {
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) {
     _assertNotDisposed();
-    final result = _mutateChain.then((_) => _mutateInternal(name, args));
+    final normalizedArgs = _snapshotArgs(args);
+    final result = _mutateChain.then(
+      (_) => _mutateInternal(name, normalizedArgs),
+    );
     // Keep the chain alive across failures without leaking a prior call's error
     // to the next caller.
     _mutateChain = result.then((_) {}, onError: (_) {});
@@ -736,11 +740,10 @@ class ConvexLocalClient {
   }
 
   Future<LocalMutationResult> _mutateInternal(
-    String name, [
-    Map<String, dynamic> args = const <String, dynamic>{},
-  ]) async {
+    String name,
+    Map<String, dynamic> normalizedArgs,
+  ) async {
     _assertNotDisposed();
-    final normalizedArgs = _snapshotArgs(args);
     if (_networkMode == LocalNetworkMode.auto &&
         _lastRemoteConnectionState == LocalRemoteConnectionState.connected &&
         _pendingMutations.isEmpty &&
@@ -829,7 +832,8 @@ class ConvexLocalClient {
         'Actions are unavailable while forced offline',
       );
     }
-    return _remoteClient.action(name, args);
+    final normalizedArgs = _snapshotArgs(args);
+    return _remoteClient.action(name, normalizedArgs);
   }
 
   /// Updates the active network mode.
@@ -1020,15 +1024,31 @@ class ConvexLocalClient {
     _updateConnectionState();
   }
 
+  void _handleRemoteConnectionError(Object error, StackTrace stackTrace) {
+    _log('remote-conn:error', '$error\n$stackTrace');
+    _lastRemoteConnectionState = LocalRemoteConnectionState.disconnected;
+    _updateConnectionState();
+  }
+
   void _ensureRemoteSubscription(_LocalQueryState queryState) {
     if (_networkMode == LocalNetworkMode.offline ||
         queryState.remoteSubscription != null) {
       return;
     }
-    final subscription = _remoteClient.subscribe(
-      queryState.descriptor.name,
-      queryState.descriptor.args,
-    );
+    final LocalRemoteSubscription subscription;
+    try {
+      subscription = _remoteClient.subscribe(
+        queryState.descriptor.name,
+        queryState.descriptor.args,
+      );
+    } catch (error, stackTrace) {
+      _log('remote-subscribe:error', '$error\n$stackTrace');
+      _runDetached(
+        _emitRemoteSubscribeError(queryState, error),
+        'remote-subscribe',
+      );
+      return;
+    }
     queryState.remoteSubscription = subscription;
     queryState.remoteEventSubscription = subscription.stream.listen(
       (event) {
@@ -1047,6 +1067,25 @@ class ConvexLocalClient {
           ),
         );
       },
+    );
+  }
+
+  Future<void> _emitRemoteSubscribeError(
+    _LocalQueryState queryState,
+    Object error,
+  ) async {
+    await Future<void>.value();
+    if (_disposed ||
+        !identical(_queryStates[queryState.descriptor.key], queryState)) {
+      return;
+    }
+    _emitToQueryKey(
+      queryState.descriptor.key,
+      LocalQueryError(
+        error,
+        source: LocalQuerySource.unknown,
+        hasPendingWrites: _hasPendingWrites(queryState.descriptor.key),
+      ),
     );
   }
 

@@ -5,7 +5,9 @@ import 'package:dartvex/dartvex.dart'
         ConnectionStatus,
         ConvexPaginatedResult,
         ConvexPaginationStatus,
-        OptimisticUpdate;
+        OptimisticUpdate,
+        convexToJson,
+        jsonToConvex;
 
 import '../runtime_client.dart';
 
@@ -213,7 +215,7 @@ class FakeConvexClient implements ConvexRuntimeClient {
     if (handler == null) {
       throw StateError('No query handler registered for "$name"');
     }
-    return handler(args);
+    return handler(_snapshotArgs(args));
   }
 
   @override
@@ -230,6 +232,7 @@ class FakeConvexClient implements ConvexRuntimeClient {
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) {
+    final normalizedArgs = _snapshotArgs(args);
     final controller =
         StreamController<ConvexRuntimeQueryEvent>.broadcast(sync: true);
     _subscriptionControllers
@@ -245,7 +248,7 @@ class FakeConvexClient implements ConvexRuntimeClient {
     if (handler != null) {
       scheduleMicrotask(() {
         if (!controller.isClosed) {
-          controller.add(ConvexRuntimeQuerySuccess(handler(args)));
+          controller.add(ConvexRuntimeQuerySuccess(handler(normalizedArgs)));
         }
       });
     }
@@ -288,7 +291,7 @@ class FakeConvexClient implements ConvexRuntimeClient {
     if (handler == null) {
       throw StateError('No mutation handler registered for "$name"');
     }
-    return handler(args);
+    return handler(_snapshotArgs(args));
   }
 
   @override
@@ -300,7 +303,7 @@ class FakeConvexClient implements ConvexRuntimeClient {
     if (handler == null) {
       throw StateError('No action handler registered for "$name"');
     }
-    return handler(args);
+    return handler(_snapshotArgs(args));
   }
 
   @override
@@ -357,6 +360,10 @@ class FakeConvexClient implements ConvexRuntimeClient {
     if (queries.isEmpty) {
       _paginatedQueries.remove(name);
     }
+  }
+
+  Map<String, dynamic> _snapshotArgs(Map<String, dynamic> args) {
+    return jsonToConvex(convexToJson(args)) as Map<String, dynamic>;
   }
 }
 
