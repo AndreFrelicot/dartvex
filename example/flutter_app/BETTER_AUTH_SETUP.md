@@ -6,6 +6,9 @@ Better Auth runs as a self-hosted Convex component — no external auth service 
 
 1. **Install dependencies** in `example/convex-backend/`:
 
+   Requires Node.js 20.19.0 or newer. Use npm; the backend commits an npm
+   `package-lock.json`.
+
    ```bash
    cd example/convex-backend
    npm install better-auth@1.6.17 @convex-dev/better-auth@0.12.3

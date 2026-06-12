@@ -23,6 +23,9 @@ these patterns in your own app.
 
 ## Install
 
+Requires Node.js 20.19.0 or newer. Use npm; this example commits an npm
+`package-lock.json`.
+
 ```bash
 cd example/convex-backend
 npm install

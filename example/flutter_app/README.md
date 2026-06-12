@@ -95,6 +95,8 @@ provider implementation differs.
 Uses `DemoAuthProvider`, a deterministic in-memory provider with no external
 service. Public screens and Better Auth work without this provider, but Demo
 mode requires a JWT generated locally from the example backend key material.
+The backend example requires Node.js 20.19.0 or newer and uses npm with the
+committed `package-lock.json`.
 
 1. Configure the demo JWT provider in Convex:
 
@@ -144,38 +146,41 @@ needed — credentials are stored in the Convex database.
 
 1. Install the Better Auth component in the Convex backend:
 
-```bash
-cd example/convex-backend
-npm install better-auth@1.6.17 @convex-dev/better-auth@0.12.3
-```
+   The backend example requires Node.js 20.19.0 or newer and uses npm with the
+   committed `package-lock.json`.
+
+   ```bash
+   cd example/convex-backend
+   npm install better-auth@1.6.17 @convex-dev/better-auth@0.12.3
+   ```
 
 2. Set the secret:
 
-```bash
-npx convex env set BETTER_AUTH_SECRET "$(openssl rand -base64 32)"
-```
+   ```bash
+   npx convex env set BETTER_AUTH_SECRET "$(openssl rand -base64 32)"
+   ```
 
 3. If you host the Flutter web build somewhere other than localhost, allow that
    origin:
 
-```bash
-npx convex env set BETTER_AUTH_TRUSTED_ORIGINS=https://your-web-demo.example
-```
+   ```bash
+   npx convex env set BETTER_AUTH_TRUSTED_ORIGINS=https://your-web-demo.example
+   ```
 
-Flutter web on `localhost` or `127.0.0.1` is allowed automatically.
+   Flutter web on `localhost` or `127.0.0.1` is allowed automatically.
 
 4. Deploy:
 
-```bash
-npx convex dev   # or npx convex deploy
-```
+   ```bash
+   npx convex dev   # or npx convex deploy
+   ```
 
 5. Run the demo (no extra `--dart-define` needed beyond `CONVEX_DEMO_URL`):
 
-```bash
-flutter run \
-  --dart-define=CONVEX_DEMO_URL=https://your-deployment.convex.cloud
-```
+   ```bash
+   flutter run \
+     --dart-define=CONVEX_DEMO_URL=https://your-deployment.convex.cloud
+   ```
 
 If the Convex backend does not have the Better Auth component installed, the
 app shows a setup checklist with the steps above.

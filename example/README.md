@@ -15,11 +15,11 @@ will emit that spec. To keep this repo reproducible without assuming your local
 Convex project is already configured, the example checks in a versioned
 `function_spec.json` derived from the demo backend contract.
 
-Once your backend is configured, you can refresh it with:
+Once your backend is configured, refresh it through the scrub script so the
+committed spec keeps the placeholder deployment URL:
 
 ```bash
-cd example/convex-backend
-npx convex function-spec > function_spec.json
+bash example/refresh-function-spec.sh
 ```
 
 ## Generate Dart bindings
@@ -31,6 +31,9 @@ bash example/generate_bindings.sh
 ```
 
 ## Run the backend
+
+The backend example requires Node.js 20.19.0 or newer and uses npm with the
+committed `package-lock.json`.
 
 ```bash
 cd example/convex-backend
