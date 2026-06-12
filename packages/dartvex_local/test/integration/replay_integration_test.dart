@@ -7,7 +7,7 @@
 // Web is not supported for dartvex_local.
 //
 // Run:
-//   CONVEX_DEPLOYMENT_URL=https://your.convex.cloud \
+//   CONVEX_DEPLOYMENT_URL=https://your-deployment.convex.cloud \
 //     dart test test/integration/replay_integration_test.dart
 
 import 'dart:async';

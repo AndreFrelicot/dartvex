@@ -94,7 +94,7 @@ Example:
 import 'package:dartvex/dartvex.dart';
 import 'package:my_app/convex_api/api.dart';
 
-final client = ConvexClient('https://example.convex.cloud');
+final client = ConvexClient('https://your-deployment.convex.cloud');
 final api = ConvexApi(client);
 
 final messages = await api.messages.list();

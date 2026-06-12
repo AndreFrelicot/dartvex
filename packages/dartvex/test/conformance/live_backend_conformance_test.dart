@@ -15,7 +15,7 @@ import 'package:test/test.dart';
 /// env vars at it:
 ///
 /// ```sh
-/// CONVEX_DEPLOYMENT_URL=https://your.convex.cloud \
+/// CONVEX_DEPLOYMENT_URL=https://your-deployment.convex.cloud \
 /// CONVEX_TEST_QUERY=messages:listPublic \
 /// dart test test/conformance/live_backend_conformance_test.dart
 /// ```

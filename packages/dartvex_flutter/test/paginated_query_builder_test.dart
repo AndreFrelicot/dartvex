@@ -206,6 +206,37 @@ void main() {
     expect(capturedStatus, PaginationStatus.error);
   });
 
+  testWidgets('maps raw paginated stream errors to error status', (
+    tester,
+  ) async {
+    final client = connectedClient();
+    PaginationStatus? capturedStatus;
+
+    await tester.pumpWidget(
+      buildPaginated(
+        client: client,
+        onBuild: (_, status) => capturedStatus = status,
+      ),
+    );
+
+    client.paginatedQueryCalls.single.query.emitStreamError(
+      StateError('stream failed'),
+    );
+    await tester.pump();
+
+    expect(capturedStatus, PaginationStatus.error);
+    expect(tester.takeException(), isNull);
+
+    await tester.pumpWidget(
+      buildPaginated(
+        client: client,
+        onBuild: (_, status) => capturedStatus = status,
+      ),
+    );
+
+    expect(capturedStatus, PaginationStatus.error);
+  });
+
   testWidgets('maps item decode failures to error status without throwing', (
     tester,
   ) async {

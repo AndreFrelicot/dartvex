@@ -290,6 +290,12 @@ class FakeRuntimePaginatedQuery implements ConvexRuntimePaginatedQuery {
     }
   }
 
+  void emitStreamError(Object error) {
+    if (!_controller.isClosed) {
+      _controller.addError(error, StackTrace.current);
+    }
+  }
+
   void emitPage(
     List<dynamic> results, {
     required ConvexPaginationStatus status,
@@ -318,6 +324,12 @@ class FakeRuntimeSubscription implements ConvexRuntimeSubscription {
 
   @override
   Stream<ConvexRuntimeQueryEvent> get stream => _controller.stream;
+
+  void emitStreamError(Object error) {
+    if (!isCanceled) {
+      _controller.addError(error, StackTrace.current);
+    }
+  }
 
   void emitError(
     Object error, {

@@ -5,7 +5,7 @@ import 'package:dartvex_local/dartvex_local.dart';
 /// Example: Use dartvex_local for offline-first Convex access with SQLite cache.
 void main() async {
   // 1. Create a standard Convex client
-  final convex = ConvexClient('https://your-app.convex.cloud');
+  final convex = ConvexClient('https://your-deployment.convex.cloud');
 
   // 2. Create a shared SQLite store for cache + mutation queue.
   final store = await SqliteLocalStore.open('convex_cache.db');

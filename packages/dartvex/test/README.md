@@ -53,7 +53,7 @@ a real backend (the demo lives in `example/convex-backend`, runnable with
 `npx convex dev`). Point the env vars at it, e.g.:
 
 ```sh
-CONVEX_DEPLOYMENT_URL=https://your.convex.cloud \
+CONVEX_DEPLOYMENT_URL=https://your-deployment.convex.cloud \
 CONVEX_TEST_QUERY=messages:listPublic \
 CONVEX_TEST_MUTATION=messages:sendPublic \
 dart test -t integration

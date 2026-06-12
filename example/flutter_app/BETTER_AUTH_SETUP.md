@@ -45,7 +45,7 @@ Run the demo app with your Convex deployment URL:
 
 ```bash
 cd example/flutter_app
-flutter run --dart-define=CONVEX_DEMO_URL=https://your-app.convex.cloud
+flutter run --dart-define=CONVEX_DEMO_URL=https://your-deployment.convex.cloud
 ```
 
 Select **Better Auth** in the Auth tab's mode selector to use the self-hosted auth flow.

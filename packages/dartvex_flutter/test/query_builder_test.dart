@@ -135,6 +135,32 @@ void main() {
     expect(snapshot.error, isA<StateError>());
   });
 
+  testWidgets('ConvexQuery maps raw stream errors to the snapshot', (
+    tester,
+  ) async {
+    final client = FakeRuntimeClient();
+    late ConvexQuerySnapshot<String> snapshot;
+
+    await tester.pumpWidget(
+      buildTestWidget(
+        client: client,
+        query: 'messages:list',
+        args: const <String, dynamic>{},
+        onSnapshot: (value) => snapshot = value,
+      ),
+    );
+
+    client.subscribeCalls.single.subscription.emitStreamError(
+      StateError('stream failed'),
+    );
+    await tester.pump();
+
+    expect(snapshot.isLoading, isFalse);
+    expect(snapshot.hasError, isTrue);
+    expect(snapshot.error, isA<StateError>());
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('ConvexQuery resubscribes when args change', (tester) async {
     final client = FakeRuntimeClient();
     late ConvexQuerySnapshot<String> snapshot;

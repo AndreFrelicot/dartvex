@@ -119,6 +119,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reactive query and paginated-query widgets now ignore late events from
   canceled subscriptions after inputs change, preventing stale results from
   overwriting the newest subscription state.
+- Raw errors emitted by custom runtime query or paginated-query streams are now
+  mapped into widget error state instead of escaping as unhandled Flutter stream
+  errors.
 - Action and mutation builders now ignore stale in-flight completions after
   their action/mutation or client changes, so old results cannot overwrite the
   new request state.

@@ -140,6 +140,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   query-set replay, so an update mutating them could silently poison the
   replayed query set. The official client is immune by construction (it
   re-parses args from the query token); dartvex now matches that guarantee.
+- `ConvexPaginatedQuery` now deep-snapshots its base args at construction, so
+  later caller-side mutation cannot change arguments used by future
+  `loadMore()` page subscriptions.
+- Raw errors emitted by custom `PageSubscription.results` streams are now
+  surfaced as `ConvexPaginationStatus.error` snapshots instead of escaping as
+  unhandled zone errors or leaving the paginated query stuck loading.
 - Errors emitted by a configured `ConnectivitySignal` stream are now caught and
   logged instead of surfacing as uncaught zone errors (isolate-fatal in a
   pure-Dart app). The restore subscription survives the error, so a later

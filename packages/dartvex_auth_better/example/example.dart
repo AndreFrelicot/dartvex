@@ -5,7 +5,7 @@ import 'package:dartvex_auth_better/dartvex_auth_better.dart';
 Future<void> main() async {
   // 1. Create the Better Auth HTTP client
   final authClient = BetterAuthClient(
-    baseUrl: 'https://your-app.convex.cloud',
+    baseUrl: 'https://your-deployment.convex.cloud',
   );
 
   // 2. Create the Convex auth provider
@@ -17,7 +17,7 @@ Future<void> main() async {
 
   // 4. Create an authenticated Convex client wrapper
   final convex = ConvexClient(
-    'https://your-app.convex.cloud',
+    'https://your-deployment.convex.cloud',
   );
   final authedConvex = convex.withAuth(authProvider);
 

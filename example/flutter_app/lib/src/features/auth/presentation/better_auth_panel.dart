@@ -390,7 +390,7 @@ class BetterAuthSetupPanel extends StatelessWidget {
             title: 'Run the demo',
             detail:
                 'flutter run '
-                '--dart-define=CONVEX_DEMO_URL=https://your.convex.cloud',
+                '--dart-define=CONVEX_DEMO_URL=https://your-deployment.convex.cloud',
           ),
         ],
       ),

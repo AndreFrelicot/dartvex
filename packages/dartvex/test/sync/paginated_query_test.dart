@@ -59,6 +59,10 @@ class _FakePage implements PageSubscription {
     );
   }
 
+  void emitStreamError(Object error) {
+    _controller.addError(error, StackTrace.current);
+  }
+
   void emitLoading() {
     _controller.add(const StoredQueryLoading());
   }
@@ -203,6 +207,34 @@ void main() {
       query.cancel();
     });
 
+    test('loadMore uses the original args snapshot after caller mutation', () {
+      final source = _FakeSource();
+      final args = <String, dynamic>{
+        'filter': <String, dynamic>{'status': 'active'},
+      };
+      final query = ConvexPaginatedQuery(
+        subscribe: source.subscribe,
+        name: 'messages:list',
+        args: args,
+        pageSize: 3,
+      );
+      source.pages[0].emitPage(
+        <dynamic>['a'],
+        continueCursor: 'X',
+        isDone: false,
+      );
+
+      (args['filter'] as Map<String, dynamic>)['status'] = 'archived';
+
+      expect(query.loadMore(), isTrue);
+      expect(
+        source.pages[1].args['filter'],
+        containsPair('status', 'active'),
+      );
+
+      query.cancel();
+    });
+
     test('an earlier page updates reactively without gaps or dupes', () {
       final source = _FakeSource();
       final query = ConvexPaginatedQuery(
@@ -328,6 +360,33 @@ void main() {
       expect((query.current.error! as ConvexException).message, 'boom');
 
       query.cancel();
+    });
+
+    test('raw page stream errors surface as query errors without escaping',
+        () async {
+      final unhandledErrors = <Object>[];
+
+      await runZonedGuarded(() async {
+        final source = _FakeSource();
+        final query = ConvexPaginatedQuery(
+          subscribe: source.subscribe,
+          name: 'messages:list',
+          args: const <String, dynamic>{},
+          pageSize: 3,
+        );
+
+        source.pages[0].emitStreamError(StateError('page stream failed'));
+        await Future<void>.delayed(Duration.zero);
+
+        expect(query.status, ConvexPaginationStatus.error);
+        expect(query.current.error, isA<StateError>());
+
+        query.cancel();
+      }, (error, stackTrace) {
+        unhandledErrors.add(error);
+      });
+
+      expect(unhandledErrors, isEmpty);
     });
 
     test('rejects missing continueCursor when more pages are available', () {

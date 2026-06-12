@@ -8,7 +8,7 @@
 //   cd example/convex-backend && npx convex deploy
 //
 // Run:
-//   CONVEX_DEPLOYMENT_URL=https://your.convex.cloud \
+//   CONVEX_DEPLOYMENT_URL=https://your-deployment.convex.cloud \
 //     dart test test/integration/value_integration_test.dart
 
 @Tags(['integration'])

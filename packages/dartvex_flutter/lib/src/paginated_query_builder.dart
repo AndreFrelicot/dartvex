@@ -168,6 +168,19 @@ class _PaginatedQueryBuilderState<T> extends State<PaginatedQueryBuilder<T>> {
         return;
       }
       _apply(result);
+    }, onError: (Object error, StackTrace stackTrace) {
+      if (generation != _queryGeneration || !mounted) {
+        return;
+      }
+      _lastResult = convex.ConvexPaginatedResult(
+        results: _lastResult?.results ?? const <dynamic>[],
+        status: convex.ConvexPaginationStatus.error,
+        isDone: false,
+        error: error,
+      );
+      setState(() {
+        _status = PaginationStatus.error;
+      });
     });
   }
 

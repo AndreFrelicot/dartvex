@@ -22,7 +22,7 @@ class BetterAuthClient {
         _http = httpClient ?? createDefaultHttpClient(),
         _ownsHttp = httpClient == null;
 
-  /// The Convex deployment URL (e.g. "https://your-app.convex.cloud").
+  /// The Convex deployment URL (e.g. "https://your-deployment.convex.cloud").
   final String baseUrl;
   final http.Client _http;
   final bool _ownsHttp;

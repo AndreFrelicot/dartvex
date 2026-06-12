@@ -202,6 +202,11 @@ class _ConvexQueryState<T> extends State<ConvexQuery<T>> {
         return;
       }
       _handleEvent(event);
+    }, onError: (Object error, StackTrace stackTrace) {
+      if (generation != _subscriptionGeneration) {
+        return;
+      }
+      _handleEvent(ConvexRuntimeQueryError(error, stackTrace: stackTrace));
     });
   }
 }

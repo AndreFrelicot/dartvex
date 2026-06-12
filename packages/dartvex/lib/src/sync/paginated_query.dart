@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../exceptions.dart';
+import '../values/json_codec.dart';
 import 'remote_query_set.dart';
 
 /// Status of a reactive paginated query.
@@ -123,7 +124,7 @@ class ConvexPaginatedQuery {
   })  : _subscribe = subscribe,
         _readInitialResult = readInitialResult,
         _name = name,
-        _args = Map<String, dynamic>.from(args),
+        _args = canonicalizeConvexArgs(args),
         _pageSize = pageSize {
     _current = const ConvexPaginatedResult(
       results: <dynamic>[],
@@ -248,8 +249,22 @@ class ConvexPaginatedQuery {
     );
     page.streamSub = subscription.results.listen(
       (result) => _onPageResult(page, result),
+      onError: (Object error, StackTrace stackTrace) {
+        _onPageStreamError(page, error);
+      },
     );
     return page;
+  }
+
+  void _onPageStreamError(_Page page, Object error) {
+    if (_disposed) {
+      return;
+    }
+    _cancelSplitsForOriginal(page);
+    page.data = null;
+    page.error = error;
+    _reconcileSplits();
+    _emit();
   }
 
   void _onPageResult(_Page page, StoredQueryResult result) {
