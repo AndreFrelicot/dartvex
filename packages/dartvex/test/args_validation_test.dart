@@ -16,6 +16,20 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 10));
     }
 
+    Future<void> waitUntil(
+      bool Function() condition,
+      String description, {
+      Duration timeout = const Duration(seconds: 1),
+    }) async {
+      final stopwatch = Stopwatch()..start();
+      while (!condition()) {
+        if (stopwatch.elapsed >= timeout) {
+          fail('Timed out waiting for $description');
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      }
+    }
+
     (ConvexClient, MockWebSocketAdapter) makeClient() {
       final adapter = MockWebSocketAdapter();
       final client = ConvexClient(
@@ -160,9 +174,23 @@ void main() {
       // the replayed Add must carry the subscribe-time snapshot.
       filter.add('b');
       adapter.disconnect();
-      await settle();
+      await waitUntil(
+        () => adapter.connectedUrls.length >= 2,
+        'query replay reconnect',
+      );
       expect(adapter.connectedUrls.length, 2);
 
+      await waitUntil(
+        () =>
+            adapter.decodedSentMessages
+                .where((message) => message['type'] == 'ModifyQuerySet')
+                .expand((message) => message['modifications'] as List<dynamic>)
+                .cast<Map<String, dynamic>>()
+                .where((modification) => modification['type'] == 'Add')
+                .length >=
+            2,
+        'query replay Add messages',
+      );
       final adds = adapter.decodedSentMessages
           .where((message) => message['type'] == 'ModifyQuerySet')
           .expand((message) => message['modifications'] as List<dynamic>)

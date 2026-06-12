@@ -76,6 +76,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Widen the `dartvex` dev-dependency to `^0.2.0` for golden fixture validation.
   Generated output is unchanged.
+- Require Dart `^3.7.0`, matching the minimum SDK required by the
+  `dart_style` formatter versions accepted by the CLI.
 
 ## [0.1.3] - 2026-04-30
 

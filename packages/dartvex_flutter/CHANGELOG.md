@@ -69,6 +69,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Requires `dartvex` `^0.2.0` so web consumers resolve the current
   JavaScript-compatible value codec.
+- Requires Dart `^3.8.0` and Flutter `>=3.32.0`, matching the minimums
+  required by the Cupertino transport dependencies.
 - Clarifies in the README and API docs that disk-backed file/image cache
   helpers (`ConvexAssetCache`, `ConvexCachedImage`, `ConvexOfflineImage`, and
   progress-download image helpers) are native-only; web apps should render

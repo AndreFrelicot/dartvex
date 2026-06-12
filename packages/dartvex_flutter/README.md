@@ -63,6 +63,8 @@ dependencies:
   dartvex_flutter: ^0.2.0
 ```
 
+Requires Dart `^3.8.0` and Flutter `>=3.32.0`.
+
 ## Platform Transports
 
 On iOS and macOS the plugin automatically installs NSURLSession-backed

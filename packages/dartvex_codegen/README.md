@@ -33,6 +33,8 @@ dev_dependencies:
   dartvex_codegen: ^0.2.0
 ```
 
+Requires Dart `^3.7.0`.
+
 The generated bindings call APIs introduced in `dartvex` 0.2.0 (such as
 `ConvexFunctionCaller.paginatedQuery` and `QueryLoading`), so the application
 consuming the generated code needs:
