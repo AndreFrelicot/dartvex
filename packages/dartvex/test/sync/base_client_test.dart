@@ -33,6 +33,47 @@ void main() {
       expect(result.events.single, isA<QueryUpdateEvent>());
     });
 
+    test('getAllQueries hands optimistic updates copies of the stored args',
+        () {
+      final client = BaseClient();
+      final registration = client.subscribe('messages:list', <String, dynamic>{
+        'filter': <String, dynamic>{'status': 'active'},
+      });
+      client.drainOutgoing();
+      client.receive(
+        Transition(
+          startVersion: const StateVersion.initial(),
+          endVersion: StateVersion(querySet: 1, identity: 0, ts: encodeTs(1)),
+          modifications: <StateModification>[
+            QueryUpdated(queryId: registration.queryId, value: 'v1'),
+          ],
+        ),
+      );
+
+      final request = client.trackMutation(
+        'messages:send',
+        const <String, dynamic>{},
+      );
+      client.applyOptimisticUpdate((store) {
+        final entry = store.getAllQueries('messages:list').single;
+        // A misbehaving update mutates the args it was handed; the stored
+        // subscription args replayed on reconnect must not be affected.
+        (entry.args['filter'] as Map<String, dynamic>)['status'] = 'poisoned';
+      }, request.requestId);
+
+      final replay = client.prepareReconnect();
+      final add = replay
+          .whereType<ModifyQuerySet>()
+          .expand((message) => message.modifications)
+          .whereType<Add>()
+          .single;
+      final replayedArgs = add.args.single as Map<String, dynamic>;
+      expect(
+        replayedArgs['filter'],
+        <String, dynamic>{'status': 'active'},
+      );
+    });
+
     test('transition surfaces query function logs once, before the update', () {
       final client = BaseClient();
       final registration = client.subscribe('messages:list', <String, dynamic>{

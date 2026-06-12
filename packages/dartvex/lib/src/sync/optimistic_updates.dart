@@ -1,3 +1,4 @@
+import '../values/json_codec.dart';
 import 'local_state.dart';
 import 'remote_query_set.dart';
 
@@ -122,7 +123,13 @@ class _OptimisticLocalStoreImpl implements OptimisticLocalStore {
       if (query.udfPath == canonicalPath) {
         matches.add(
           OptimisticQueryEntry(
-            args: query.args,
+            // Hand out a deep copy: for server-backed entries these are the
+            // very args the sync layer re-encodes into every reconnect's
+            // query-set replay, and a misbehaving update mutating the live
+            // map would poison that replay (and detach the entry from its
+            // token). The official client is immune by construction — it
+            // re-parses args from the query token on each call.
+            args: canonicalizeConvexArgs(query.args),
             value: _queryValue(query.result),
             isLoading: query.result == null,
           ),

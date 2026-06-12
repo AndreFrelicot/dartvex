@@ -134,6 +134,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   query's optimistic or cached value and emit it to the new subscriber. The
   wire path was already snapshot-protected inside the sync layer; the local
   read path now carries the same guarantee.
+- `OptimisticLocalStore.getAllQueries` hands optimistic updates deep copies of
+  each query's args instead of the live stored maps. For server-backed
+  entries those maps are the very args re-encoded into every reconnect's
+  query-set replay, so an update mutating them could silently poison the
+  replayed query set. The official client is immune by construction (it
+  re-parses args from the query token); dartvex now matches that guarantee.
 - Errors emitted by a configured `ConnectivitySignal` stream are now caught and
   logged instead of surfacing as uncaught zone errors (isolate-fatal in a
   pure-Dart app). The restore subscription survives the error, so a later
