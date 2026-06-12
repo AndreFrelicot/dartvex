@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Caller-provided args are now deep-snapshotted at the `query`, `subscribe`,
+  and `mutate` entry points. A `LocalQueryDescriptor` key is recomputed from
+  its stored args on every use, and the previous shallow copy shared nested
+  values with the caller — so mutating a nested value after subscribing made
+  the recomputed key diverge, orphaned the query state on cancel, and leaked
+  its remote subscription.
 - Disposing the client while a `setNetworkMode(LocalNetworkMode.offline)` or
   `clearQueue` call was emitting cached snapshots no longer routes an event
   into a just-closed subscription controller, which failed the in-flight

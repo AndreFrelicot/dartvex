@@ -95,6 +95,30 @@ void main() {
       expect(received, containsAll(<String>['first', 'second']));
     });
 
+    test('cancelling a subscription survives caller-side mutation of nested '
+        'args', () async {
+      final feed = StreamController<LocalRemoteQueryEvent>.broadcast();
+      addTearDown(feed.close);
+      remoteClient.subscriptionStreams['tasks:list'] = feed.stream;
+
+      final args = <String, dynamic>{
+        'filter': <String, dynamic>{'status': 'active'},
+      };
+      final subscription = localClient.subscribe('tasks:list', args);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      // The caller reuses its args map after subscribing; nested values used
+      // to be shared with the descriptor's shallow snapshot, so this mutation
+      // made the recomputed query key diverge and orphaned the query state —
+      // leaking the remote subscription.
+      (args['filter'] as Map<String, dynamic>)['status'] = 'archived';
+
+      subscription.cancel();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(remoteClient.subscriptionCancelCounts['tasks:list'], 1);
+    });
+
     test('disposing while a subscription cancel is in flight does not throw '
         'ConcurrentModificationError', () async {
       // Cancelling a query's last subscriber removes its entry from the

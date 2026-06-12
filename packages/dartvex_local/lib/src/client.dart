@@ -635,12 +635,9 @@ class ConvexLocalClient {
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) async {
     _assertNotDisposed();
-    final descriptor = LocalQueryDescriptor(
-      name,
-      Map<String, dynamic>.from(args),
-    );
+    final descriptor = LocalQueryDescriptor(name, _snapshotArgs(args));
     if (_networkMode == LocalNetworkMode.offline) {
-      final cached = await _queryCache.read(name, args);
+      final cached = await _queryCache.read(descriptor.name, descriptor.args);
       if (cached != null) {
         return cached.value;
       }
@@ -654,7 +651,7 @@ class ConvexLocalClient {
       if (!error.retryable) {
         rethrow;
       }
-      final cached = await _queryCache.read(name, args);
+      final cached = await _queryCache.read(descriptor.name, descriptor.args);
       if (cached != null) {
         return cached.value;
       }
@@ -663,7 +660,7 @@ class ConvexLocalClient {
       if (!_shouldQueueRemoteFailure(error)) {
         rethrow;
       }
-      final cached = await _queryCache.read(name, args);
+      final cached = await _queryCache.read(descriptor.name, descriptor.args);
       if (cached != null) {
         return cached.value;
       }
@@ -677,10 +674,7 @@ class ConvexLocalClient {
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) {
     _assertNotDisposed();
-    final descriptor = LocalQueryDescriptor(
-      name,
-      Map<String, dynamic>.from(args),
-    );
+    final descriptor = LocalQueryDescriptor(name, _snapshotArgs(args));
     final subscriptionId = _nextSubscriptionId++;
     final state = _LocalSubscriptionState(
       id: subscriptionId,
@@ -735,7 +729,7 @@ class ConvexLocalClient {
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) async {
     _assertNotDisposed();
-    final normalizedArgs = Map<String, dynamic>.from(args);
+    final normalizedArgs = _snapshotArgs(args);
     if (_networkMode == LocalNetworkMode.auto &&
         _lastRemoteConnectionState == LocalRemoteConnectionState.connected &&
         _pendingMutations.isEmpty &&
@@ -1984,6 +1978,20 @@ class ConvexLocalClient {
     _operationCounter += 1;
     final micros = DateTime.now().toUtc().microsecondsSinceEpoch;
     return 'local-$micros-$_operationCounter';
+  }
+
+  /// Deep-snapshots caller-provided args so later caller-side mutation cannot
+  /// change the query key, the cache identity, or what replay sends.
+  ///
+  /// A [LocalQueryDescriptor]'s key is recomputed from its stored args on
+  /// every use; a shallow copy shares nested values with the caller, so
+  /// mutating one of those after subscribing made the key diverge and
+  /// orphaned the query state (leaking its remote subscription). Mirrors the
+  /// core client's eager canonicalization; unsupported values throw here,
+  /// synchronously, exactly as they previously did when the key was first
+  /// serialized.
+  static Map<String, dynamic> _snapshotArgs(Map<String, dynamic> args) {
+    return jsonToConvex(convexToJson(args)) as Map<String, dynamic>;
   }
 
   static String? _generatedOperationId(PendingMutation mutation) {
