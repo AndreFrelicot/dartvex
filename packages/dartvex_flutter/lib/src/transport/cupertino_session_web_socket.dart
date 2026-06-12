@@ -172,7 +172,15 @@ class OwnedSessionCupertinoWebSocket implements WebSocket {
 
   void _connectionClosed(int? closeCode, objc.NSData? reason) {
     if (!_events.isClosed) {
-      final closeReason = reason == null ? '' : utf8.decode(reason.toList());
+      // allowMalformed: the close reason is peer-controlled NSData with no
+      // UTF-8 guarantee. A strict decode would throw out of the session
+      // delegate callback, skipping both the CloseReceived event (leaving the
+      // sync layer blind to the close until its inactivity timeout) and the
+      // session invalidation below (leaking the native session). The reason
+      // is diagnostic-only, so replacement characters are harmless.
+      final closeReason = reason == null
+          ? ''
+          : utf8.decode(reason.toList(), allowMalformed: true);
 
       _events
         ..add(CloseReceived(closeCode, closeReason))

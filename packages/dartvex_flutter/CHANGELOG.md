@@ -82,6 +82,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The NSURLSession WebSocket decodes peer close reasons with `allowMalformed`.
+  A close frame carrying invalid UTF-8 previously threw out of the session
+  delegate callback, which skipped the close event entirely — leaving the sync
+  layer blind to the disconnect until its inactivity timeout — and leaked the
+  owned native session. The close reason is diagnostic-only, so replacement
+  characters are harmless.
 - Inline closures no longer reset widget state on parent rebuilds: `decode`
   (`ConvexQuery`, `ConvexMutation`, `ConvexAction`), `fromJson`
   (`PaginatedQueryBuilder`), and `optimisticUpdate` (`ConvexMutation`) are
