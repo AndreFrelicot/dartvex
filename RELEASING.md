@@ -66,7 +66,10 @@ For each package you actually intend to publish:
 2. add a matching entry to that package's `CHANGELOG.md`
 3. if an internal dependency now needs a newer version range, update the constraint in the dependent package and bump that dependent package too
 4. run package tests and analysis
-5. commit the release-prep changes before pub.dev dry-runs or publish
+5. sweep `skills/` for API drift: snippets and version ranges in the agent
+   skills must match the versions being published (skills describe the
+   published API, not unreleased `main`)
+6. commit the release-prep changes before pub.dev dry-runs or publish
 
 Typical order:
 
