@@ -108,14 +108,15 @@ void main() {
 
     test('watch ignore filter treats output path as a directory boundary', () {
       final tempRoot = path.normalize(path.absolute('tmp', 'dartvex_codegen'));
-      final config = GenerateConfig(
-        projectDirectory: path.join(tempRoot, 'project'),
-        outputDirectory: path.join(tempRoot, 'build'),
-        clientImport: 'package:dartvex/dartvex.dart',
-        dryRun: false,
-        verbose: false,
-        watch: true,
-      ).normalize();
+      final config =
+          GenerateConfig(
+            projectDirectory: path.join(tempRoot, 'project'),
+            outputDirectory: path.join(tempRoot, 'build'),
+            clientImport: 'package:dartvex/dartvex.dart',
+            dryRun: false,
+            verbose: false,
+            watch: true,
+          ).normalize();
 
       expect(
         internal.shouldIgnoreWatchEvent(

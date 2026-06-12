@@ -172,7 +172,7 @@ String extractFunctionSpecJson(String stdoutText) {
   throw ProcessRunnerException(
     foundJsonObject
         ? 'convex function-spec did not emit a Convex function spec JSON '
-              'object.'
+            'object.'
         : lastError == null
         ? 'convex function-spec did not emit a complete JSON object.'
         : 'convex function-spec output contains invalid JSON: $lastError',

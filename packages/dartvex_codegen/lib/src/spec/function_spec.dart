@@ -86,9 +86,10 @@ class FunctionSpec extends BaseFunctionSpec {
   List<String> get modulePathSegments {
     final rawPath = convexFunctionName.split(':').first;
     final segments = rawPath.split('/').where((segment) => segment.isNotEmpty);
-    final result = segments
-        .map((segment) => segment.replaceAll(RegExp(r'\.[^.]+$'), ''))
-        .toList();
+    final result =
+        segments
+            .map((segment) => segment.replaceAll(RegExp(r'\.[^.]+$'), ''))
+            .toList();
     if (result.isNotEmpty && result.last == 'index') {
       result.removeLast();
     }

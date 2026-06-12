@@ -9,9 +9,10 @@ import 'package:dartvex_codegen/dartvex_codegen.dart';
 import 'package:path/path.dart' as path;
 
 void main() async {
-  final fixture = await File(
-    path.join('test', 'fixtures', 'function_spec.json'),
-  ).readAsString();
+  final fixture =
+      await File(
+        path.join('test', 'fixtures', 'function_spec.json'),
+      ).readAsString();
   final spec = const SpecParser().parseString(fixture);
   final output = DartGenerator().generate(spec);
 

@@ -9,9 +9,10 @@ void main() {
     late FunctionsSpec spec;
 
     setUpAll(() async {
-      final fixture = await File(
-        path.join('test', 'fixtures', 'function_spec.json'),
-      ).readAsString();
+      final fixture =
+          await File(
+            path.join('test', 'fixtures', 'function_spec.json'),
+          ).readAsString();
       spec = const SpecParser().parseString(fixture);
     });
 
@@ -51,28 +52,33 @@ void main() {
     test('matches golden files for core outputs', () async {
       final output = DartGenerator().generate(spec);
 
-      final expectedApi = await File(
-        path.join('test', 'goldens', 'sample', 'api.dart'),
-      ).readAsString();
-      final expectedMessages = await File(
-        path.join('test', 'goldens', 'sample', 'modules', 'messages.dart'),
-      ).readAsString();
-      final expectedUsers = await File(
-        path.join(
-          'test',
-          'goldens',
-          'sample',
-          'modules',
-          'admin',
-          'users.dart',
-        ),
-      ).readAsString();
-      final expectedSchema = await File(
-        path.join('test', 'goldens', 'sample', 'schema.dart'),
-      ).readAsString();
-      final expectedRuntime = await File(
-        path.join('test', 'goldens', 'sample', 'runtime.dart'),
-      ).readAsString();
+      final expectedApi =
+          await File(
+            path.join('test', 'goldens', 'sample', 'api.dart'),
+          ).readAsString();
+      final expectedMessages =
+          await File(
+            path.join('test', 'goldens', 'sample', 'modules', 'messages.dart'),
+          ).readAsString();
+      final expectedUsers =
+          await File(
+            path.join(
+              'test',
+              'goldens',
+              'sample',
+              'modules',
+              'admin',
+              'users.dart',
+            ),
+          ).readAsString();
+      final expectedSchema =
+          await File(
+            path.join('test', 'goldens', 'sample', 'schema.dart'),
+          ).readAsString();
+      final expectedRuntime =
+          await File(
+            path.join('test', 'goldens', 'sample', 'runtime.dart'),
+          ).readAsString();
 
       expect(output.files['api.dart'], expectedApi);
       expect(output.files['modules/messages.dart'], expectedMessages);

@@ -191,9 +191,10 @@ class GenerateCommand {
   }
 
   Stream<void> _watchEvents(GenerateConfig config) async* {
-    final stream = config.specFile != null
-        ? File(config.specFile!).watch(events: FileSystemEvent.modify)
-        : Directory(config.projectDirectory!).watch(recursive: true);
+    final stream =
+        config.specFile != null
+            ? File(config.specFile!).watch(events: FileSystemEvent.modify)
+            : Directory(config.projectDirectory!).watch(recursive: true);
     Timer? debounce;
     final controller = StreamController<void>();
 

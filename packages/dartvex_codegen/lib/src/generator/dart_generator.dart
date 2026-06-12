@@ -92,8 +92,9 @@ class DartGenerator {
 
   _ModuleNode _buildTree(FunctionsSpec spec) {
     final root = _ModuleNode(pathSegments: const <String>[]);
-    final publicFunctions = spec.publicFunctions.toList()
-      ..sort((left, right) => left.identifier.compareTo(right.identifier));
+    final publicFunctions =
+        spec.publicFunctions.toList()
+          ..sort((left, right) => left.identifier.compareTo(right.identifier));
 
     for (final baseFunction in spec.functions) {
       if (baseFunction is HttpFunctionSpec) {
@@ -193,11 +194,12 @@ class DartGenerator {
 
   Iterable<_ModuleNode> _flattenNodes(_ModuleNode root) sync* {
     yield root;
-    final children = root.children.values.toList()
-      ..sort(
-        (left, right) =>
-            left.pathSegments.join('/').compareTo(right.pathSegments.join('/')),
-      );
+    final children =
+        root.children.values.toList()..sort(
+          (left, right) => left.pathSegments
+              .join('/')
+              .compareTo(right.pathSegments.join('/')),
+        );
     for (final child in children) {
       yield* _flattenNodes(child);
     }
@@ -205,20 +207,27 @@ class DartGenerator {
 
   String _renderNode(_ModuleNode node, {required bool isRoot}) {
     final filePath = isRoot ? 'api.dart' : _moduleFilePath(node);
-    final imports = ImportManager()
-      ..add(clientImport)
-      ..add(
-        _naming.relativeImport(fromFile: filePath, targetFile: 'runtime.dart'),
-      )
-      ..add(
-        _naming.relativeImport(fromFile: filePath, targetFile: 'schema.dart'),
-      );
+    final imports =
+        ImportManager()
+          ..add(clientImport)
+          ..add(
+            _naming.relativeImport(
+              fromFile: filePath,
+              targetFile: 'runtime.dart',
+            ),
+          )
+          ..add(
+            _naming.relativeImport(
+              fromFile: filePath,
+              targetFile: 'schema.dart',
+            ),
+          );
 
-    final childNodes = node.children.values.toList()
-      ..sort(
-        (left, right) =>
-            left.pathSegments.last.compareTo(right.pathSegments.last),
-      );
+    final childNodes =
+        node.children.values.toList()..sort(
+          (left, right) =>
+              left.pathSegments.last.compareTo(right.pathSegments.last),
+        );
     for (final child in childNodes) {
       final target = _moduleFilePath(child);
       imports.add(
@@ -240,12 +249,13 @@ class DartGenerator {
       imports.add('dart:typed_data');
     }
 
-    final buffer = StringBuffer()
-      ..writeln(generatedFileHeader)
-      ..writeln(generatedFileIgnores)
-      ..writeln()
-      ..writeln(imports.render())
-      ..writeln();
+    final buffer =
+        StringBuffer()
+          ..writeln(generatedFileHeader)
+          ..writeln(generatedFileIgnores)
+          ..writeln()
+          ..writeln(imports.render())
+          ..writeln();
 
     if (isRoot) {
       buffer
@@ -320,9 +330,8 @@ class DartGenerator {
       'Query' => 'query',
       'Mutation' => 'mutate',
       'Action' => 'action',
-      _ => throw StateError(
-        'Unsupported function type ${function.functionType}',
-      ),
+      _ =>
+        throw StateError('Unsupported function type ${function.functionType}'),
     };
 
     final methodBuffer = StringBuffer();
@@ -574,26 +583,30 @@ class DartGenerator {
     }
 
     final signature = <String>[...argsFields, 'int pageSize = 20'].join(', ');
-    final argsMap = argsMapEntries.isEmpty
-        ? 'const <String, dynamic>{}'
-        : '<String, dynamic>{${argsMapEntries.join(' ')}}';
+    final argsMap =
+        argsMapEntries.isEmpty
+            ? 'const <String, dynamic>{}'
+            : '<String, dynamic>{${argsMapEntries.join(' ')}}';
 
-    final methodBuffer = StringBuffer()
-      ..writeln(
-        'TypedConvexPaginatedQuery<$elementAnnotation> '
-        '$methodName({$signature}) {',
-      )
-      // No intermediate local: a user argument named `query` must stay
-      // referencable inside the args map below.
-      ..writeln('  return TypedConvexPaginatedQuery<$elementAnnotation>(')
-      ..writeln('    _client.paginatedQuery(')
-      ..writeln('      ${dartSingleQuotedString(function.convexFunctionName)},')
-      ..writeln('      $argsMap,')
-      ..writeln('      pageSize: pageSize,')
-      ..writeln('    ),')
-      ..writeln('    (dynamic raw) => $elementDecode,')
-      ..writeln('  );')
-      ..write('}');
+    final methodBuffer =
+        StringBuffer()
+          ..writeln(
+            'TypedConvexPaginatedQuery<$elementAnnotation> '
+            '$methodName({$signature}) {',
+          )
+          // No intermediate local: a user argument named `query` must stay
+          // referencable inside the args map below.
+          ..writeln('  return TypedConvexPaginatedQuery<$elementAnnotation>(')
+          ..writeln('    _client.paginatedQuery(')
+          ..writeln(
+            '      ${dartSingleQuotedString(function.convexFunctionName)},',
+          )
+          ..writeln('      $argsMap,')
+          ..writeln('      pageSize: pageSize,')
+          ..writeln('    ),')
+          ..writeln('    (dynamic raw) => $elementDecode,')
+          ..writeln('  );')
+          ..write('}');
 
     return _RenderedFunction(methods: methodBuffer.toString(), helpers: '');
   }
@@ -614,12 +627,13 @@ class DartGenerator {
       tableIdClasses[typeName] = table;
     }
 
-    final buffer = StringBuffer()
-      ..writeln(generatedFileHeader)
-      ..writeln(generatedFileIgnores)
-      ..writeln()
-      ..writeln("import 'runtime.dart';")
-      ..writeln();
+    final buffer =
+        StringBuffer()
+          ..writeln(generatedFileHeader)
+          ..writeln(generatedFileIgnores)
+          ..writeln()
+          ..writeln("import 'runtime.dart';")
+          ..writeln();
 
     for (final table in sortedTables) {
       final typeName = '${_naming.typeName(table)}Id';

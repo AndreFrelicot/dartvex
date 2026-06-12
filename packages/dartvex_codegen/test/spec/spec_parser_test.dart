@@ -7,9 +7,10 @@ import 'package:test/test.dart';
 void main() {
   group('SpecParser', () {
     test('parses representative function-spec JSON', () async {
-      final fixture = await File(
-        path.join('test', 'fixtures', 'function_spec.json'),
-      ).readAsString();
+      final fixture =
+          await File(
+            path.join('test', 'fixtures', 'function_spec.json'),
+          ).readAsString();
       final spec = const SpecParser().parseString(fixture);
 
       expect(spec.url, 'https://sample.convex.cloud');
