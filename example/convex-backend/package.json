@@ -10,9 +10,12 @@
     "token": "node ./scripts/generate-demo-jwt.mjs"
   },
   "dependencies": {
-    "@convex-dev/better-auth": "^0.11.1",
-    "better-auth": "1.5.3",
-    "convex": "^1.40.0"
+    "@convex-dev/better-auth": "^0.12.3",
+    "better-auth": "1.6.17",
+    "convex": "^1.41.0"
+  },
+  "overrides": {
+    "kysely": "0.28.17"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",

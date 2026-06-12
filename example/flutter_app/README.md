@@ -146,7 +146,7 @@ needed — credentials are stored in the Convex database.
 
 ```bash
 cd example/convex-backend
-npm install better-auth@1.5.3 @convex-dev/better-auth
+npm install better-auth@1.6.17 @convex-dev/better-auth@0.12.3
 ```
 
 2. Set the secret:

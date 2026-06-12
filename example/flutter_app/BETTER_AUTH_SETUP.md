@@ -8,7 +8,7 @@ Better Auth runs as a self-hosted Convex component — no external auth service 
 
    ```bash
    cd example/convex-backend
-   npm install better-auth@1.5.3 @convex-dev/better-auth --legacy-peer-deps
+   npm install better-auth@1.6.17 @convex-dev/better-auth@0.12.3
    ```
 
 2. **Set the secret** in your Convex deployment:
