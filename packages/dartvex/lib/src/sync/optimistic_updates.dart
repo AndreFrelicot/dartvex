@@ -127,8 +127,9 @@ class _OptimisticLocalStoreImpl implements OptimisticLocalStore {
             // very args the sync layer re-encodes into every reconnect's
             // query-set replay, and a misbehaving update mutating the live
             // map would poison that replay (and detach the entry from its
-            // token). The official client is immune by construction — it
-            // re-parses args from the query token on each call.
+            // token). This is a stricter immutability guard than the official
+            // JS client, which returns the stored args object from its local
+            // query result map.
             args: canonicalizeConvexArgs(query.args),
             value: _queryValue(query.result),
             isLoading: query.result == null,

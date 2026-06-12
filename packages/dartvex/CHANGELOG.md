@@ -138,8 +138,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   each query's args instead of the live stored maps. For server-backed
   entries those maps are the very args re-encoded into every reconnect's
   query-set replay, so an update mutating them could silently poison the
-  replayed query set. The official client is immune by construction (it
-  re-parses args from the query token); dartvex now matches that guarantee.
+  replayed query set. This is a stricter immutability guard than the official
+  JS client, which currently returns the stored args object from its local query
+  result map.
 - `OptimisticLocalStore.setQuery` now deep-snapshots args before storing
   optimistic-only entries, so later caller-side mutation of nested args cannot
   change what `getAllQueries` reports for that local overlay.
