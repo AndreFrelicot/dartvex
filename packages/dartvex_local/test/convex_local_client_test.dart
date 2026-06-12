@@ -95,6 +95,77 @@ void main() {
       expect(received, containsAll(<String>['first', 'second']));
     });
 
+    test('rapid remote results for one query are rebased and committed in '
+        'event order while an optimistic patch is pending', () async {
+      // Each remote result spans several awaits (base write, rollback
+      // re-snapshot, rebased write). Without per-key serialization, freezing
+      // the first event's rebased write let the second event finish first,
+      // so the first event's stale rebased value landed last in the cache
+      // and was the subscribers' final emission.
+      final innerStore = await SqliteLocalStore.openInMemory();
+      final gate = GatedWriteCacheStorage(innerStore);
+      final gatedRemote = FakeRemoteClient();
+      final client = await ConvexLocalClient.openWithRemote(
+        remoteClient: gatedRemote,
+        config: LocalClientConfig(
+          cacheStorage: gate,
+          queueStorage: innerStore,
+          mutationHandlers: const <LocalMutationHandler>[CreateTaskHandler()],
+        ),
+      );
+      addTearDown(() async {
+        gate.releaseBlockedUpsert();
+        await client.dispose();
+        gatedRemote.dispose();
+      });
+
+      // Queue an optimistic mutation while disconnected so every remote
+      // snapshot for tasks:list runs the pending-patch rebase path.
+      gatedRemote.setConnectionState(LocalRemoteConnectionState.disconnected);
+      final queued = await client.mutate('tasks:create', <String, dynamic>{
+        'title': 'queued',
+      });
+      expect(queued, isA<LocalMutationQueued>());
+
+      final feed = StreamController<LocalRemoteQueryEvent>.broadcast();
+      addTearDown(feed.close);
+      gatedRemote.subscriptionStreams['tasks:list'] = feed.stream;
+      final events = <LocalQueryEvent>[];
+      final subscription = client.subscribe('tasks:list');
+      addTearDown(subscription.cancel);
+      subscription.stream.listen(events.add);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      // Freeze exactly the first event's rebased write — the only upsert whose
+      // value carries both the v1 base and the optimistic task — then deliver
+      // both results in one synchronous burst.
+      final taskListKey = const LocalQueryDescriptor('tasks:list').key;
+      gate.blockUpsertWhere(
+        (entry) =>
+            entry.key == taskListKey &&
+            entry.valueJson.contains('v1') &&
+            entry.valueJson.contains('queued'),
+      );
+      feed.add(const LocalRemoteQuerySuccess(<dynamic>['v1']));
+      feed.add(const LocalRemoteQuerySuccess(<dynamic>['v2']));
+      await gate.upsertBlocked;
+      // Give the second event every chance to run ahead of the frozen first
+      // one; with per-key serialization it must wait its turn instead.
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      gate.releaseBlockedUpsert();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      final lastSuccess = events.whereType<LocalQuerySuccess>().last;
+      final lastValue = lastSuccess.value as List<dynamic>;
+      expect(lastValue.first, 'v2');
+      expect(lastValue.last, containsPair('title', 'queued'));
+
+      final stored = await innerStore.read(taskListKey);
+      expect(stored, isNotNull);
+      expect(stored!.valueJson, contains('v2'));
+      expect(stored.valueJson, isNot(contains('v1')));
+    });
+
     test('cancelling a subscription survives caller-side mutation of nested '
         'args', () async {
       final feed = StreamController<LocalRemoteQueryEvent>.broadcast();
@@ -2566,6 +2637,61 @@ class ThrowingCacheStorage implements CacheStorage {
 
 /// Delegating cache storage whose next read can be frozen until explicitly
 /// released, exposing dispose/transition interleavings deterministically.
+/// Wraps a [CacheStorage] so one designated upsert can be frozen, exposing
+/// write-ordering interleavings deterministically.
+class GatedWriteCacheStorage implements CacheStorage {
+  GatedWriteCacheStorage(this._inner);
+
+  final CacheStorage _inner;
+  bool Function(StoredCacheEntry entry)? _armedPredicate;
+  Completer<void>? _releaseGate;
+  Completer<void>? _blockedSignal;
+
+  /// Arms the gate: the first upsert matching [predicate] blocks until
+  /// [releaseBlockedUpsert].
+  void blockUpsertWhere(bool Function(StoredCacheEntry entry) predicate) {
+    _armedPredicate = predicate;
+    _releaseGate = Completer<void>();
+    _blockedSignal = Completer<void>();
+  }
+
+  /// Completes once an armed upsert has started blocking.
+  Future<void> get upsertBlocked =>
+      _blockedSignal?.future ?? Future<void>.value();
+
+  /// Releases an upsert frozen by [blockUpsertWhere]; safe to call repeatedly.
+  void releaseBlockedUpsert() {
+    final gate = _releaseGate;
+    if (gate != null && !gate.isCompleted) {
+      gate.complete();
+    }
+  }
+
+  @override
+  Future<void> upsert(StoredCacheEntry entry) async {
+    final predicate = _armedPredicate;
+    if (predicate != null && predicate(entry)) {
+      _armedPredicate = null;
+      _blockedSignal?.complete();
+      await _releaseGate!.future;
+    }
+    return _inner.upsert(entry);
+  }
+
+  @override
+  Future<StoredCacheEntry?> read(String key) => _inner.read(key);
+
+  @override
+  Future<void> deleteCacheEntry(String key, {int? updatedAtMillis}) =>
+      _inner.deleteCacheEntry(key, updatedAtMillis: updatedAtMillis);
+
+  @override
+  Future<void> clearCache() => _inner.clearCache();
+
+  @override
+  Future<void> close() => _inner.close();
+}
+
 class GatedReadCacheStorage implements CacheStorage {
   GatedReadCacheStorage(this._inner);
 

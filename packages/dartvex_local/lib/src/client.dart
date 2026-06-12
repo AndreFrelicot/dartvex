@@ -587,6 +587,17 @@ class ConvexLocalClient {
   // after the resume, leaving them unsubscribed in auto mode.
   Future<void> _networkModeChain = Future<void>.value();
 
+  // Serializes write-rebase sequences per query key: a remote snapshot write
+  // and its pending-patch rebase span several awaits, and two rapid remote
+  // events for the same query used to interleave those spans — when the
+  // rebase iterations diverged (a replay removing a pending mutation
+  // mid-flight), the older event's final write could land after the newer
+  // one's, leaving a stale rebased value in the cache and as the subscribers'
+  // latest emission until the next remote event. Entries are removed once
+  // their chain drains, so one-shot query() keys do not accumulate.
+  final Map<String, Future<void>> _snapshotChainsByKey =
+      <String, Future<void>>{};
+
   /// Callback invoked when replay drops a permanently failed queued mutation.
   void Function(LocalMutationConflict conflict)? onConflict;
 
@@ -1405,6 +1416,30 @@ class ConvexLocalClient {
     LocalQueryDescriptor target,
     dynamic value, {
     bool emit = false,
+  }) {
+    final key = target.key;
+    final previous = _snapshotChainsByKey[key] ?? Future<void>.value();
+    final result = previous.then(
+      (_) => _writeRemoteSnapshotAndRebasePendingNow(target, value, emit: emit),
+    );
+    // Keep the chain alive across failures without leaking a prior call's
+    // error to the next caller.
+    final guard = result.then((_) {}, onError: (_) {});
+    _snapshotChainsByKey[key] = guard;
+    unawaited(
+      guard.whenComplete(() {
+        if (identical(_snapshotChainsByKey[key], guard)) {
+          _snapshotChainsByKey.remove(key);
+        }
+      }),
+    );
+    return result;
+  }
+
+  Future<dynamic> _writeRemoteSnapshotAndRebasePendingNow(
+    LocalQueryDescriptor target,
+    dynamic value, {
+    required bool emit,
   }) async {
     await _queryCache.write(name: target.name, args: target.args, value: value);
     final effectiveValue = await _rebasePendingOptimisticPatchesForTarget(

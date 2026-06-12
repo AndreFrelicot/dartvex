@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Remote snapshot writes and their pending-patch rebases are now serialized
+  per query key. Two rapid remote results for the same query used to
+  interleave those multi-await spans, and when their rebase iterations
+  diverged (a replay dropping a pending mutation mid-flight) the older
+  event's rebased value could land last — leaving a stale value in the cache
+  and as the subscribers' latest emission until the next remote event.
 - Caller-provided args are now deep-snapshotted at the `query`, `subscribe`,
   and `mutate` entry points. A `LocalQueryDescriptor` key is recomputed from
   its stored args on every use, and the previous shallow copy shared nested
