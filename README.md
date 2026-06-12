@@ -66,6 +66,31 @@ void main() async {
 | [`dartvex_local`](packages/dartvex_local/) | Offline support — SQLite cache, mutation queue | 0.2.0 |
 | [`dartvex_auth_better`](packages/dartvex_auth_better/) | Better Auth adapter | 0.2.0 |
 
+## Agent Skills
+
+This repo ships [Agent Skills](https://agentskills.io) that teach AI coding
+agents (Claude Code, Cursor, Copilot, Codex, …) how to build apps with
+Dartvex:
+
+```bash
+npx skills add AndreFrelicot/dartvex
+```
+
+| Skill | Use it to |
+|-------|-----------|
+| `dartvex` | Route any Dartvex task to the right skill |
+| `dartvex-quickstart` | Connect a Dart/Flutter app to Convex |
+| `dartvex-generate-bindings` | Generate a type-safe API with `dartvex_codegen` |
+| `dartvex-setup-auth` | Better Auth login, session restore, manual JWT auth |
+| `dartvex-build-realtime-ui` | Live queries, optimistic mutations, pagination widgets |
+| `dartvex-setup-offline` | SQLite cache and offline mutation queue |
+| `dartvex-upload-files` | Convex file storage and cached image widgets |
+| `dartvex-test-with-fakes` | Widget tests with `FakeConvexClient` |
+
+They pair with the official [`get-convex/agent-skills`](https://github.com/get-convex/agent-skills)
+(backend authoring) and [`flutter/skills`](https://github.com/flutter/skills)
+(general Flutter UI).
+
 ## Architecture
 
 ```text
