@@ -116,6 +116,63 @@ void main() {
       await localClient.dispose();
     });
 
+    test('disposing while setNetworkMode(offline) is emitting cached snapshots '
+        'does not add to a closed subscription controller', () async {
+      // A dedicated client whose cache reads can be frozen, so the offline
+      // transition can be held inside its cached-snapshot emission loop while
+      // dispose() closes the subscription controllers.
+      final gatedStore = await SqliteLocalStore.openInMemory();
+      final gate = GatedReadCacheStorage(gatedStore);
+      final gatedRemote = FakeRemoteClient();
+      gatedRemote.queryResults['messages:listPublic'] = <dynamic>['hello'];
+      final client = await ConvexLocalClient.openWithRemote(
+        remoteClient: gatedRemote,
+        config: LocalClientConfig(cacheStorage: gate, queueStorage: gatedStore),
+      );
+      addTearDown(gatedRemote.dispose);
+
+      final subscription = client.subscribe('messages:listPublic');
+      final firstEvent = Completer<void>();
+      subscription.stream.listen(
+        (event) {
+          if (!firstEvent.isCompleted) {
+            firstEvent.complete();
+          }
+        },
+        // dispose() closes this controller mid-transition; releasing the gate
+        // from its done event resumes the offline emission loop exactly while
+        // dispose is still tearing the client down.
+        onDone: gate.releaseBlockedRead,
+      );
+      // Additional subscriptions keep dispose()'s controller-close loop busy
+      // for several more microtask turns after the first controller closes,
+      // so the resumed emission loop lands while teardown is still mid-flight.
+      for (var index = 0; index < 4; index += 1) {
+        gatedRemote.queryResults['messages:extra$index'] = index;
+        client.subscribe('messages:extra$index').stream.listen((_) {});
+      }
+      // Wait for the remote value to land in the cache, then drain stragglers
+      // so the armed gate is consumed by the offline transition's read only.
+      await firstEvent.future;
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      gate.blockNextRead();
+      Object? offlineError;
+      final wentOffline = client
+          .setNetworkMode(LocalNetworkMode.offline)
+          .catchError((Object error) {
+            offlineError = error;
+          });
+      await gate.readBlocked;
+
+      await client.dispose();
+      await wentOffline;
+      // With the bug, the resumed emission loop added to the just-closed
+      // subscription controller and the transition future failed with
+      // "Cannot add new events after calling close".
+      expect(offlineError, isNull);
+    });
+
     test('detached cache seed errors are logged instead of escaping', () async {
       await localClient.dispose();
       final queueStore = await SqliteLocalStore.openInMemory();
@@ -2481,6 +2538,59 @@ class ThrowingCacheStorage implements CacheStorage {
 
   @override
   Future<void> upsert(StoredCacheEntry entry) async {}
+}
+
+/// Delegating cache storage whose next read can be frozen until explicitly
+/// released, exposing dispose/transition interleavings deterministically.
+class GatedReadCacheStorage implements CacheStorage {
+  GatedReadCacheStorage(this._inner);
+
+  final CacheStorage _inner;
+  Completer<void>? _releaseGate;
+  Completer<void>? _blockedSignal;
+  bool _armed = false;
+
+  /// Arms the gate: the next [read] blocks until [releaseBlockedRead].
+  void blockNextRead() {
+    _armed = true;
+    _releaseGate = Completer<void>();
+    _blockedSignal = Completer<void>();
+  }
+
+  /// Completes once an armed [read] has started blocking.
+  Future<void> get readBlocked =>
+      _blockedSignal?.future ?? Future<void>.value();
+
+  /// Releases a read frozen by [blockNextRead]; safe to call repeatedly.
+  void releaseBlockedRead() {
+    final gate = _releaseGate;
+    if (gate != null && !gate.isCompleted) {
+      gate.complete();
+    }
+  }
+
+  @override
+  Future<StoredCacheEntry?> read(String key) async {
+    if (_armed) {
+      _armed = false;
+      _blockedSignal?.complete();
+      await _releaseGate!.future;
+    }
+    return _inner.read(key);
+  }
+
+  @override
+  Future<void> upsert(StoredCacheEntry entry) => _inner.upsert(entry);
+
+  @override
+  Future<void> deleteCacheEntry(String key, {int? updatedAtMillis}) =>
+      _inner.deleteCacheEntry(key, updatedAtMillis: updatedAtMillis);
+
+  @override
+  Future<void> clearCache() => _inner.clearCache();
+
+  @override
+  Future<void> close() => _inner.close();
 }
 
 class FakeRemoteClient implements LocalRemoteClient {

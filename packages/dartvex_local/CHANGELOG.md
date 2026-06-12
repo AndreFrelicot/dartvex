@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Disposing the client while a `setNetworkMode(LocalNetworkMode.offline)` or
+  `clearQueue` call was emitting cached snapshots no longer routes an event
+  into a just-closed subscription controller, which failed the in-flight
+  call's future with "Cannot add new events after calling close". Dispose now
+  clears the subscription registry before closing its controllers, and the
+  emission loops stop once the client is disposed.
 - `setNetworkMode` transitions are now serialized. A mode change issued while
   the previous transition was still suspending or resuming remote
   subscriptions could interleave with it — re-attaching some queries

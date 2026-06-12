@@ -904,10 +904,18 @@ class ConvexLocalClient {
     // subscription, which removes its query state, mutating `_queryStates`
     // mid-iteration.
     for (final queryState in _queryStates.values.toList(growable: false)) {
+      // Re-checked around every await: a dispose() racing this loop closes
+      // the storage and the subscription controllers mid-iteration.
+      if (_disposed) {
+        return;
+      }
       final cached = await _queryCache.read(
         queryState.descriptor.name,
         queryState.descriptor.args,
       );
+      if (_disposed) {
+        return;
+      }
       if (cached != null) {
         _emitToQueryKey(
           queryState.descriptor.key,
@@ -1091,10 +1099,18 @@ class ConvexLocalClient {
     // Snapshot: a synchronous cancel triggered by the emit below mutates
     // `_queryStates` while we iterate it.
     for (final queryState in _queryStates.values.toList(growable: false)) {
+      // Re-checked around every await: a dispose() racing this loop closes
+      // the storage and the subscription controllers mid-iteration.
+      if (_disposed) {
+        return;
+      }
       final cached = await _queryCache.read(
         queryState.descriptor.name,
         queryState.descriptor.args,
       );
+      if (_disposed) {
+        return;
+      }
       if (cached == null) {
         continue;
       }
@@ -2149,11 +2165,16 @@ class ConvexLocalClient {
     final controllers = _subscriptionStates.values
         .map((state) => state.controller)
         .toList(growable: false);
+    // Clear the maps before closing, mirroring ConvexClient.close(): an
+    // in-flight emission loop (setNetworkMode(offline) or clearQueue racing
+    // this dispose) resumes between two controller closes, and a populated map
+    // would route its event into a just-closed controller — throwing "Cannot
+    // add new events after calling close" out of the caller's future.
+    _subscriptionStates.clear();
+    _queryStates.clear();
     for (final controller in controllers) {
       await controller.close();
     }
-    _subscriptionStates.clear();
-    _queryStates.clear();
 
     if (identical(_config.cacheStorage, _config.queueStorage)) {
       await _config.cacheStorage.close();
