@@ -10,7 +10,13 @@ import 'better_auth_session.dart';
 /// `ConvexClient.withAuth<BetterAuthSession>()`.
 class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
   /// Creates a [ConvexBetterAuthProvider] using the given [client].
-  ConvexBetterAuthProvider({required this.client});
+  ///
+  /// Pass [initialSessionToken] to seed a Better Auth session token persisted
+  /// from a previous run (the `sessionToken` of an earlier
+  /// [BetterAuthSession]), so [loginFromCache] can restore the session across
+  /// process restarts without re-entering credentials.
+  ConvexBetterAuthProvider({required this.client, String? initialSessionToken})
+      : _sessionToken = initialSessionToken;
 
   /// The [BetterAuthClient] used for HTTP communication with Better Auth.
   final BetterAuthClient client;

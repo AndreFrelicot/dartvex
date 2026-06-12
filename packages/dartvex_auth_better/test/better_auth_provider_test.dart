@@ -164,6 +164,35 @@ void main() {
       );
     });
 
+    test(
+        'loginFromCache restores a session seeded via initialSessionToken '
+        'without a prior login in this process', () async {
+      final sessionRequests = <String?>[];
+      final mock = buildMock(
+        convexToken: 'jwt_restored',
+        onRequest: (request) {
+          if (request.url.path == '/api/auth/get-session') {
+            sessionRequests.add(request.headers['Authorization']);
+          }
+        },
+      );
+      final client = BetterAuthClient(baseUrl: baseUrl, httpClient: mock);
+      final provider = ConvexBetterAuthProvider(
+        client: client,
+        initialSessionToken: 'ses_persisted',
+      );
+
+      String? restoredToken;
+      final session = await provider.loginFromCache(
+        onIdToken: (token) => restoredToken = token,
+      );
+
+      expect(sessionRequests, ['Bearer ses_persisted']);
+      expect(session.token, 'jwt_restored');
+      expect(restoredToken, 'jwt_restored');
+      expect(provider.cachedSession, same(session));
+    });
+
     test('loginFromCache propagates server errors and keeps cached session',
         () async {
       final mock = buildMock(

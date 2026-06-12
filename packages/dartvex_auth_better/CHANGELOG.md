@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] - 2026-06-12
 
+### Added
+
+- `ConvexBetterAuthProvider` accepts an `initialSessionToken` so a session
+  token persisted from a previous run can be restored across process restarts
+  via `loginFromCache()`. Previously the provider had no public way to seed
+  the persisted token, so the documented persistence flow could not drive the
+  provider-based `withAuth` restore.
+
 ### Fixed
 
 - `BetterAuthClient.getSession()` now treats 401/403 as an expired or absent

@@ -122,15 +122,23 @@ Store `session.sessionToken` in secure storage after login. On app restart, use 
 final session = await authedClient.login();
 await secureStorage.write(key: 'session_token', value: session.sessionToken);
 
-// On app restart — restore from cache
+// On app restart — seed the provider with the persisted token, then restore
 final stored = await secureStorage.read(key: 'session_token');
+final provider = ConvexBetterAuthProvider(
+  client: authClient,
+  initialSessionToken: stored,
+);
+final authedClient = convexClient.withAuth(provider);
 if (stored != null) {
-  final session = await authClient.getSession(sessionToken: stored);
-  if (session != null) {
-    // Session restored — session.token has a fresh Convex JWT
-  }
+  final session = await authedClient.loginFromCache();
+  // Session restored — session.token has a fresh Convex JWT, and the
+  // Convex client is authenticated with automatic token refresh.
 }
 ```
+
+For one-off validation outside the provider flow,
+`authClient.getSession(sessionToken: stored)` also returns a fresh session (or
+`null` when the session has expired).
 
 ### 5. Sign out
 
@@ -178,8 +186,10 @@ final session = await authClient.verifyMagicLink(token: magicLinkToken);
 
 Implements `AuthProvider<BetterAuthSession>` from `dartvex`:
 
+- `ConvexBetterAuthProvider({client, initialSessionToken?})` — pass a
+  persisted session token to restore the session across app restarts
 - `login()` — sign in with stored email/password
-- `loginFromCache()` — restore session from cached token
+- `loginFromCache()` — restore session from the cached (or seeded) token
 - `logout()` — sign out and clear cache
 - `signUp({name, email, password, onIdToken})` — create account and
   authenticate, reporting the Convex JWT through `onIdToken`
