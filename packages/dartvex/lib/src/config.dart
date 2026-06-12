@@ -10,9 +10,9 @@ class ConvexClientConfig {
   /// Creates a client configuration.
   const ConvexClientConfig({
     this.clientId = 'dart-dartvex',
-    this.apiVersion = '1.40.0',
+    this.apiVersion = '1.41.0',
     this.authTokenType = 'User',
-    this.refreshTokenLeewaySeconds = 2,
+    this.refreshTokenLeewaySeconds = 10,
     this.inactivityTimeout = const Duration(seconds: 60),
     this.connectTimeout = const Duration(seconds: 10),
     this.queryTimeout,
@@ -48,7 +48,8 @@ class ConvexClientConfig {
   /// The refresh is scheduled from the token's own lifetime (`exp - iat`) minus
   /// this leeway rather than from the device wall clock, so scheduling stays
   /// correct even when the device clock is skewed. If the leeway is larger than
-  /// the token's lifetime the client refreshes immediately. Defaults to `2`.
+  /// the token's lifetime the client refreshes immediately. Defaults to `10`,
+  /// matching the official Convex client.
   final int refreshTokenLeewaySeconds;
 
   /// Maximum time to wait for server messages before reconnecting.

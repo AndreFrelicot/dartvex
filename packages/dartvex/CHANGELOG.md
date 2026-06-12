@@ -64,7 +64,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   backoff-reset and auth-gating work and is not part of the public API.
 - `ConnectionState.fatalError`, a terminal connection state entered when the
   server reports an unrecoverable error.
-- `ConvexClientConfig.refreshTokenLeewaySeconds` (default `2`) controls how
+- `ConvexClientConfig.refreshTokenLeewaySeconds` (default `10`, matching the
+  official Convex client) controls how
   early a token is proactively refreshed before it expires.
 - `ConvexClient.authRefreshing` (a `Stream<bool>`) and `isAuthRefreshing`
   report when the client is recovering auth after a server rejection — `true`

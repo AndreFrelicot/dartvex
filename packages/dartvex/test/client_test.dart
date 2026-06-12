@@ -32,6 +32,23 @@ void main() {
       );
     }
 
+    Future<void> waitForConnectedUrlCount(
+      MockWebSocketAdapter adapter,
+      int count,
+    ) async {
+      final deadline = DateTime.now().add(const Duration(seconds: 1));
+      while (DateTime.now().isBefore(deadline)) {
+        if (adapter.connectedUrls.length == count) {
+          return;
+        }
+        await settle();
+      }
+      fail(
+        'Timed out waiting for $count connected URL(s). '
+        'Observed: ${adapter.connectedUrls}',
+      );
+    }
+
     test('accepts empty reconnect backoff (selects exponential mode)', () {
       expect(
         () => ConvexClient(
@@ -50,6 +67,10 @@ void main() {
         const ConvexClientConfig().inactivityTimeout,
         const Duration(seconds: 60),
       );
+    });
+
+    test('defaults auth refresh leeway to official 10 second threshold', () {
+      expect(const ConvexClientConfig().refreshTokenLeewaySeconds, 10);
     });
 
     test('rejects negative reconnect backoff entries', () {
@@ -232,7 +253,7 @@ void main() {
 
       expect(
         adapter.connectedUrls.single,
-        'wss://demo.convex.cloud/api/1.40.0/sync',
+        'wss://demo.convex.cloud/api/1.41.0/sync',
       );
 
       subscription.cancel();
@@ -2300,7 +2321,7 @@ void main() {
       await settle();
 
       signal.restore();
-      await settle();
+      await waitForConnectedUrlCount(adapter, 2);
       expect(adapter.connectedUrls, hasLength(2));
 
       subscription.cancel();
@@ -2337,7 +2358,7 @@ void main() {
       expect(adapter.connectedUrls, hasLength(1));
 
       signal.restore();
-      await settle();
+      await waitForConnectedUrlCount(adapter, 2);
       expect(adapter.connectedUrls, hasLength(2));
 
       subscription.cancel();
