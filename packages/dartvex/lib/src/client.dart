@@ -11,6 +11,7 @@ import 'sync/base_client.dart';
 import 'sync/optimistic_updates.dart';
 import 'sync/paginated_query.dart';
 import 'sync/remote_query_set.dart';
+import 'values/json_codec.dart';
 import 'transport/ws_factory.dart';
 import 'transport/ws_manager.dart';
 
@@ -714,33 +715,42 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) {
     _assertNotDisposed();
+    // Deep-snapshot the args before anything else: the onListen microtask
+    // below recomputes the query token from this map, and a caller mutating
+    // it between subscribe() and the first listen would otherwise resolve a
+    // *different* query's local result and emit it to this subscriber. The
+    // wire path is already snapshot-protected inside the sync layer; this
+    // extends the same guarantee to the local read path. Unsupported values
+    // throw here, synchronously, exactly as they did inside the sync layer.
+    final snapshotArgs = canonicalizeConvexArgs(args);
     _log(
       DartvexLogLevel.debug,
       'Subscribing query',
-      data: _requestData(name, args),
+      data: _requestData(name, snapshotArgs),
     );
-    final registration = _baseClient.subscribe(name, args);
+    final registration = _baseClient.subscribe(name, snapshotArgs);
     late final StreamController<QueryResult> controller;
     controller = StreamController<QueryResult>.broadcast(
       sync: true,
       onListen: () {
         scheduleMicrotask(() {
-          if (_baseClient.optimisticQueryIsLoading(name, args)) {
+          if (_baseClient.optimisticQueryIsLoading(name, snapshotArgs)) {
             if (!controller.isClosed) {
               controller.add(
                 QueryLoading(
                   hasPendingWrites: _baseClient.hasOptimisticUpdateForQuery(
                     name,
-                    args,
+                    snapshotArgs,
                   ),
                 ),
               );
             }
             return;
           }
-          final initial = _baseClient.optimisticResultForQuery(name, args) ??
-              _baseClient.currentResultForQuery(registration.queryId) ??
-              _baseClient.cachedResultForQuery(name, args);
+          final initial =
+              _baseClient.optimisticResultForQuery(name, snapshotArgs) ??
+                  _baseClient.currentResultForQuery(registration.queryId) ??
+                  _baseClient.cachedResultForQuery(name, snapshotArgs);
           if (initial == null) {
             return;
           }
@@ -750,7 +760,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
                 initial,
                 hasPendingWrites: _baseClient.hasOptimisticUpdateForQuery(
                   name,
-                  args,
+                  snapshotArgs,
                 ),
               ),
             );
@@ -768,7 +778,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
         _log(
           DartvexLogLevel.debug,
           'Unsubscribing query',
-          data: _requestData(name, args),
+          data: _requestData(name, snapshotArgs),
         );
         final removed = _subscriptionControllers.remove(
           registration.subscriberId,

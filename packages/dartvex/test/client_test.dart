@@ -303,6 +303,51 @@ void main() {
       client.dispose();
     });
 
+    test('initial local emit uses the args captured at subscribe time',
+        () async {
+      final adapter = MockWebSocketAdapter();
+      final client = ConvexClient(
+        'https://demo.convex.cloud',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          connectImmediately: false,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+
+      // Set an optimistic value for query B while its mutation stays pending.
+      final pendingMutation = client.mutate(
+        'messages:send',
+        const <String, dynamic>{'body': 'hi'},
+        (store) => store.setQuery(
+          'messages:list',
+          <String, dynamic>{'channel': 'b'},
+          'optimistic-b',
+        ),
+      );
+      pendingMutation.ignore();
+      await settle();
+
+      // Subscribe to query A, then mutate the very same args map so it looks
+      // like query B before the first listener attaches.
+      final args = <String, dynamic>{'channel': 'a'};
+      final subscription = client.subscribe('messages:list', args);
+      args['channel'] = 'b';
+
+      final events = <QueryResult>[];
+      subscription.stream.listen(events.add);
+      await settle();
+
+      // The subscriber belongs to query A, which has no local value; query
+      // B's optimistic value must not leak into this stream as the initial
+      // emit.
+      expect(events, isEmpty);
+
+      subscription.cancel();
+      client.dispose();
+      await pendingMutation.catchError((_) => null);
+    });
+
     test('first lazy mutation starts socket and sends mutation', () async {
       final adapter = MockWebSocketAdapter();
       final client = ConvexClient(

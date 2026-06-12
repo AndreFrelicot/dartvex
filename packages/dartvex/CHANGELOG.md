@@ -127,6 +127,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The initial local emit of a fresh subscription now uses a deep snapshot of
+  the args captured at `subscribe()` time. The first-listen microtask used to
+  recompute the query token from the caller's live args map, so mutating that
+  map between `subscribe()` and the first listen could resolve a *different*
+  query's optimistic or cached value and emit it to the new subscriber. The
+  wire path was already snapshot-protected inside the sync layer; the local
+  read path now carries the same guarantee.
 - Errors emitted by a configured `ConnectivitySignal` stream are now caught and
   logged instead of surfacing as uncaught zone errors (isolate-fatal in a
   pure-Dart app). The restore subscription survives the error, so a later
