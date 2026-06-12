@@ -23,10 +23,7 @@ const generatedFileIgnores =
 /// Result of a single code generation pass.
 class GeneratedOutput {
   /// Creates generated output metadata.
-  const GeneratedOutput({
-    required this.files,
-    required this.warnings,
-  });
+  const GeneratedOutput({required this.files, required this.warnings});
 
   /// Generated file contents keyed by relative output path.
   final Map<String, String> files;
@@ -70,19 +67,25 @@ class DartGenerator {
 
     for (final node in _flattenNodes(root)) {
       if (node.pathSegments.isEmpty) {
-        files['api.dart'] =
-            _formatOrThrow(_renderNode(node, isRoot: true), 'api.dart');
+        files['api.dart'] = _formatOrThrow(
+          _renderNode(node, isRoot: true),
+          'api.dart',
+        );
       } else {
         final filePath = _moduleFilePath(node);
-        files[filePath] =
-            _formatOrThrow(_renderNode(node, isRoot: false), filePath);
+        files[filePath] = _formatOrThrow(
+          _renderNode(node, isRoot: false),
+          filePath,
+        );
       }
       warnings.addAll(node.renderWarnings);
       warnings.addAll(node.typeWarnings);
     }
 
-    files['schema.dart'] =
-        _formatOrThrow(_buildSchemaFile(root.tableNames), 'schema.dart');
+    files['schema.dart'] = _formatOrThrow(
+      _buildSchemaFile(root.tableNames),
+      'schema.dart',
+    );
     warnings.addAll(root.warnings);
     return GeneratedOutput(files: files, warnings: warnings);
   }
@@ -108,7 +111,8 @@ class DartGenerator {
         node = node.children.putIfAbsent(
           segment,
           () => _ModuleNode(
-              pathSegments: <String>[...node.pathSegments, segment]),
+            pathSegments: <String>[...node.pathSegments, segment],
+          ),
         );
       }
       node.functions.add(function);
@@ -203,10 +207,12 @@ class DartGenerator {
     final filePath = isRoot ? 'api.dart' : _moduleFilePath(node);
     final imports = ImportManager()
       ..add(clientImport)
-      ..add(_naming.relativeImport(
-          fromFile: filePath, targetFile: 'runtime.dart'))
-      ..add(_naming.relativeImport(
-          fromFile: filePath, targetFile: 'schema.dart'));
+      ..add(
+        _naming.relativeImport(fromFile: filePath, targetFile: 'runtime.dart'),
+      )
+      ..add(
+        _naming.relativeImport(fromFile: filePath, targetFile: 'schema.dart'),
+      );
 
     final childNodes = node.children.values.toList()
       ..sort(
@@ -224,10 +230,7 @@ class DartGenerator {
     final methods = <String>[];
     final helpers = <String>[];
     for (final function in node.functions) {
-      final rendered = _renderFunction(
-        function,
-        context: typeContext,
-      );
+      final rendered = _renderFunction(function, context: typeContext);
       methods.add(rendered.methods);
       helpers.add(rendered.helpers);
     }
@@ -295,8 +298,10 @@ class DartGenerator {
     FunctionSpec function, {
     required TypeRenderContext context,
   }) {
-    final pagination =
-        _detectPagination(function, onSkip: context.warnings.add);
+    final pagination = _detectPagination(
+      function,
+      onSkip: context.warnings.add,
+    );
     if (pagination != null) {
       return _renderPaginatedQuery(function, pagination, context: context);
     }
@@ -315,8 +320,9 @@ class DartGenerator {
       'Query' => 'query',
       'Mutation' => 'mutate',
       'Action' => 'action',
-      _ =>
-        throw StateError('Unsupported function type ${function.functionType}'),
+      _ => throw StateError(
+        'Unsupported function type ${function.functionType}',
+      ),
     };
 
     final methodBuffer = StringBuffer();
@@ -349,8 +355,9 @@ class DartGenerator {
         }
         recordAssignments.add('$fieldName: $fieldName');
       }
-      requestArgsExpression =
-          argsObject.encode('(${recordAssignments.join(', ')})');
+      requestArgsExpression = argsObject.encode(
+        '(${recordAssignments.join(', ')})',
+      );
       signature = '{${argsFields.join(', ')}}';
     } else if (argsType is ConvexObjectType && argsType.value.isEmpty) {
       signature = '';
@@ -407,21 +414,13 @@ class DartGenerator {
           '${dartSingleQuotedString(function.convexFunctionName)}, '
           '$requestArgsExpression);',
         )
-        ..writeln(
-          '  final typedStream\$ = subscription\$.stream.map((event) {',
-        )
-        ..writeln(
-          '    switch (event) {',
-        )
-        ..writeln(
-          '      case QuerySuccess(:final value):',
-        )
+        ..writeln('  final typedStream\$ = subscription\$.stream.map((event) {')
+        ..writeln('    switch (event) {')
+        ..writeln('      case QuerySuccess(:final value):')
         ..writeln(
           '        return TypedQuerySuccess<${resultType.annotation}>(${resultType.decode('value')});',
         )
-        ..writeln(
-          '      case QueryLoading(:final hasPendingWrites):',
-        )
+        ..writeln('      case QueryLoading(:final hasPendingWrites):')
         ..writeln(
           '        return TypedQueryLoading<${resultType.annotation}>('
           'hasPendingWrites: hasPendingWrites);',
@@ -596,10 +595,7 @@ class DartGenerator {
       ..writeln('  );')
       ..write('}');
 
-    return _RenderedFunction(
-      methods: methodBuffer.toString(),
-      helpers: '',
-    );
+    return _RenderedFunction(methods: methodBuffer.toString(), helpers: '');
   }
 
   String _buildSchemaFile(Set<String> tables) {
@@ -928,10 +924,7 @@ class _ModuleNode {
 }
 
 class _RenderedFunction {
-  const _RenderedFunction({
-    required this.methods,
-    required this.helpers,
-  });
+  const _RenderedFunction({required this.methods, required this.helpers});
 
   final String methods;
   final String helpers;

@@ -29,9 +29,10 @@ class FakeConvexClient implements ConvexRuntimeClient {
   FakeConvexClient({
     ConvexConnectionState initialConnectionState =
         ConvexConnectionState.connected,
-  })  : _currentConnectionState = initialConnectionState,
-        _currentConnectionStatus =
-            ConnectionStatus.fromState(initialConnectionState);
+  }) : _currentConnectionState = initialConnectionState,
+       _currentConnectionStatus = ConnectionStatus.fromState(
+         initialConnectionState,
+       );
 
   final Map<String, dynamic Function(Map<String, dynamic>)> _queryHandlers =
       <String, dynamic Function(Map<String, dynamic>)>{};
@@ -40,7 +41,7 @@ class FakeConvexClient implements ConvexRuntimeClient {
   final Map<String, dynamic Function(Map<String, dynamic>)> _actionHandlers =
       <String, dynamic Function(Map<String, dynamic>)>{};
   final Map<String, List<StreamController<ConvexRuntimeQueryEvent>>>
-      _subscriptionControllers =
+  _subscriptionControllers =
       <String, List<StreamController<ConvexRuntimeQueryEvent>>>{};
   final Map<String, List<FakeConvexPaginatedQuery>> _paginatedQueries =
       <String, List<FakeConvexPaginatedQuery>>{};
@@ -233,13 +234,11 @@ class FakeConvexClient implements ConvexRuntimeClient {
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) {
     final normalizedArgs = _snapshotArgs(args);
-    final controller =
-        StreamController<ConvexRuntimeQueryEvent>.broadcast(sync: true);
+    final controller = StreamController<ConvexRuntimeQueryEvent>.broadcast(
+      sync: true,
+    );
     _subscriptionControllers
-        .putIfAbsent(
-          name,
-          () => <StreamController<ConvexRuntimeQueryEvent>>[],
-        )
+        .putIfAbsent(name, () => <StreamController<ConvexRuntimeQueryEvent>>[])
         .add(controller);
 
     // Auto-emit initial value from handler if registered.
@@ -318,8 +317,8 @@ class FakeConvexClient implements ConvexRuntimeClient {
     // collections — iterate snapshots, like the paginated branch below.
     for (final controllers
         in List<List<StreamController<ConvexRuntimeQueryEvent>>>.of(
-      _subscriptionControllers.values,
-    )) {
+          _subscriptionControllers.values,
+        )) {
       for (final controller
           in List<StreamController<ConvexRuntimeQueryEvent>>.of(controllers)) {
         unawaited(controller.close());

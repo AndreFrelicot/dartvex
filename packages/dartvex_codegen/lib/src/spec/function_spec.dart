@@ -108,10 +108,7 @@ class Visibility {
 /// Object-field metadata used inside record and object schemas.
 class ConvexField {
   /// Creates a field specification.
-  const ConvexField({
-    required this.fieldType,
-    required this.optional,
-  });
+  const ConvexField({required this.fieldType, required this.optional});
 
   /// The field's schema.
   final ConvexType fieldType;
@@ -192,10 +189,8 @@ class ConvexUnionType extends ConvexType {
 /// Represents a map-like record type.
 class ConvexRecordType extends ConvexType {
   /// Creates a record type descriptor.
-  const ConvexRecordType({
-    required this.keys,
-    required this.values,
-  }) : super('record');
+  const ConvexRecordType({required this.keys, required this.values})
+    : super('record');
 
   /// The schema used for keys.
   final ConvexType keys;

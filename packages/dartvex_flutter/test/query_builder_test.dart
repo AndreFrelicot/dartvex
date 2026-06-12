@@ -193,38 +193,40 @@ void main() {
     expect(snapshot.data, 'first');
   });
 
-  testWidgets('ConvexQuery resubscribes when the args map is mutated in place',
-      (tester) async {
-    final client = FakeRuntimeClient();
-    final args = <String, dynamic>{'channel': 'general'};
+  testWidgets(
+    'ConvexQuery resubscribes when the args map is mutated in place',
+    (tester) async {
+      final client = FakeRuntimeClient();
+      final args = <String, dynamic>{'channel': 'general'};
 
-    await tester.pumpWidget(
-      buildTestWidget(
-        client: client,
-        query: 'messages:list',
-        args: args,
-        onSnapshot: (_) {},
-      ),
-    );
+      await tester.pumpWidget(
+        buildTestWidget(
+          client: client,
+          query: 'messages:list',
+          args: args,
+          onSnapshot: (_) {},
+        ),
+      );
 
-    final firstSubscription = client.subscribeCalls.single.subscription;
-    args['channel'] = 'random';
+      final firstSubscription = client.subscribeCalls.single.subscription;
+      args['channel'] = 'random';
 
-    await tester.pumpWidget(
-      buildTestWidget(
-        client: client,
-        query: 'messages:list',
-        args: args,
-        onSnapshot: (_) {},
-      ),
-    );
+      await tester.pumpWidget(
+        buildTestWidget(
+          client: client,
+          query: 'messages:list',
+          args: args,
+          onSnapshot: (_) {},
+        ),
+      );
 
-    expect(firstSubscription.isCanceled, isTrue);
-    expect(client.subscribeCalls, hasLength(2));
-    expect(client.subscribeCalls.last.args, const <String, dynamic>{
-      'channel': 'random',
-    });
-  });
+      expect(firstSubscription.isCanceled, isTrue);
+      expect(client.subscribeCalls, hasLength(2));
+      expect(client.subscribeCalls.last.args, const <String, dynamic>{
+        'channel': 'random',
+      });
+    },
+  );
 
   testWidgets(
     'ConvexQuery does not resubscribe on rebuild with equivalent inputs',

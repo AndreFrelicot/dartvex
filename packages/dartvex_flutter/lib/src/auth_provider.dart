@@ -73,10 +73,7 @@ class _ConvexAuthProviderState<TUser> extends State<ConvexAuthProvider<TUser>> {
 }
 
 class _ConvexAuthProviderScope<TUser> extends InheritedWidget {
-  const _ConvexAuthProviderScope({
-    required this.client,
-    required super.child,
-  });
+  const _ConvexAuthProviderScope({required this.client, required super.child});
 
   final ConvexAuthClient<TUser> client;
 

@@ -116,7 +116,8 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
         (_loading || _file != null || _error != null)) {
       return;
     }
-    final shouldBypassCache = loadedGetUrlAction != null &&
+    final shouldBypassCache =
+        loadedGetUrlAction != null &&
         (loadedGetUrlAction != widget.getUrlAction ||
             loadedUseAction != widget.useAction ||
             !identical(loadedClient, client));
@@ -187,11 +188,7 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
 
       final urlStr = requireStorageUrl(url, storageId);
 
-      final file = await cache.prefetch(
-        storageId,
-        urlStr,
-        force: bypassCache,
-      );
+      final file = await cache.prefetch(storageId, urlStr, force: bypassCache);
       if (!_isCurrentRequest(
         generation,
         storageId,

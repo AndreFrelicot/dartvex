@@ -1,5 +1,6 @@
 import 'transport/cupertino_web_socket_adapter_stub.dart'
-    if (dart.library.io) 'transport/cupertino_web_socket_adapter.dart' as impl;
+    if (dart.library.io) 'transport/cupertino_web_socket_adapter.dart'
+    as impl;
 
 /// Dart plugin entry point for `dartvex_flutter`.
 ///

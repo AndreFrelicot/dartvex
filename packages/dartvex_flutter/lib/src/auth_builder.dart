@@ -4,17 +4,13 @@ import 'package:flutter/widgets.dart';
 import 'auth_provider.dart';
 
 /// Builder callback for [ConvexAuthBuilder].
-typedef ConvexAuthWidgetBuilder<TUser> = Widget Function(
-    BuildContext context, AuthState<TUser> state);
+typedef ConvexAuthWidgetBuilder<TUser> =
+    Widget Function(BuildContext context, AuthState<TUser> state);
 
 /// Widget that rebuilds when the current authentication state changes.
 class ConvexAuthBuilder<TUser> extends StatelessWidget {
   /// Creates a [ConvexAuthBuilder].
-  const ConvexAuthBuilder({
-    super.key,
-    required this.builder,
-    this.client,
-  });
+  const ConvexAuthBuilder({super.key, required this.builder, this.client});
 
   /// Optional auth client override.
   final ConvexAuthClient<TUser>? client;

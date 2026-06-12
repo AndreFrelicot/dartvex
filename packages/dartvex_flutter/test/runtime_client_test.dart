@@ -23,92 +23,94 @@ void main() {
       client.dispose();
     });
 
-    test('maps optimistic core query events to pending runtime snapshots',
-        () async {
-      final adapter = _MockWebSocketAdapter();
-      final client = convex.ConvexClient(
-        'https://example.com',
-        config: convex.ConvexClientConfig(
-          adapterFactory: (_) => adapter,
-        ),
-      );
-      final runtime = ConvexClientRuntime(client);
-      await _settle();
+    test(
+      'maps optimistic core query events to pending runtime snapshots',
+      () async {
+        final adapter = _MockWebSocketAdapter();
+        final client = convex.ConvexClient(
+          'https://example.com',
+          config: convex.ConvexClientConfig(adapterFactory: (_) => adapter),
+        );
+        final runtime = ConvexClientRuntime(client);
+        await _settle();
 
-      final subscription = runtime.subscribe('messages:list');
-      final events = <ConvexRuntimeQueryEvent>[];
-      final listener = subscription.stream.listen(events.add);
-      await _settle();
+        final subscription = runtime.subscribe('messages:list');
+        final events = <ConvexRuntimeQueryEvent>[];
+        final listener = subscription.stream.listen(events.add);
+        await _settle();
 
-      final querySet = adapter.decodedSentMessages
-          .where((message) => message['type'] == 'ModifyQuerySet')
-          .last;
-      final queryId = (((querySet['modifications'] as List<dynamic>).single
-          as Map<String, dynamic>)['queryId']) as int;
+        final querySet = adapter.decodedSentMessages
+            .where((message) => message['type'] == 'ModifyQuerySet')
+            .last;
+        final queryId =
+            (((querySet['modifications'] as List<dynamic>).single
+                    as Map<String, dynamic>)['queryId'])
+                as int;
 
-      adapter.pushServerMessage(<String, dynamic>{
-        'type': 'Transition',
-        'startVersion': _version(querySet: 0, ts: 'AAAAAAAAAAA='),
-        'endVersion': _version(querySet: 1, ts: 'AQAAAAAAAAA='),
-        'modifications': <Map<String, dynamic>>[
-          <String, dynamic>{
-            'type': 'QueryUpdated',
-            'queryId': queryId,
-            'value': <String>['a'],
-            'logLines': <String>['server-log'],
+        adapter.pushServerMessage(<String, dynamic>{
+          'type': 'Transition',
+          'startVersion': _version(querySet: 0, ts: 'AAAAAAAAAAA='),
+          'endVersion': _version(querySet: 1, ts: 'AQAAAAAAAAA='),
+          'modifications': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'type': 'QueryUpdated',
+              'queryId': queryId,
+              'value': <String>['a'],
+              'logLines': <String>['server-log'],
+            },
+          ],
+        });
+        await _settle();
+
+        final remote = events.last as ConvexRuntimeQuerySuccess;
+        expect(remote.source, ConvexQuerySource.remote);
+        expect(remote.hasPendingWrites, isFalse);
+        expect(remote.logLines, <String>['server-log']);
+
+        final mutation = runtime.mutate(
+          'messages:send',
+          const <String, dynamic>{'body': 'b'},
+          (store) {
+            final list =
+                (store.getQuery('messages:list') as List<dynamic>?) ??
+                const <dynamic>[];
+            store.setQuery(
+              'messages:list',
+              const <String, dynamic>{},
+              <dynamic>[...list, 'b'],
+            );
           },
-        ],
-      });
-      await _settle();
+        );
+        await _settle();
 
-      final remote = events.last as ConvexRuntimeQuerySuccess;
-      expect(remote.source, ConvexQuerySource.remote);
-      expect(remote.hasPendingWrites, isFalse);
-      expect(remote.logLines, <String>['server-log']);
+        final optimistic = events.last as ConvexRuntimeQuerySuccess;
+        expect(optimistic.value, <String>['a', 'b']);
+        expect(optimistic.source, ConvexQuerySource.cache);
+        expect(optimistic.hasPendingWrites, isTrue);
 
-      final mutation = runtime.mutate(
-        'messages:send',
-        const <String, dynamic>{'body': 'b'},
-        (store) {
-          final list = (store.getQuery('messages:list') as List<dynamic>?) ??
-              const <dynamic>[];
-          store.setQuery('messages:list', const <String, dynamic>{}, <dynamic>[
-            ...list,
-            'b',
-          ]);
-        },
-      );
-      await _settle();
+        final mutationMessage = adapter.decodedSentMessages
+            .where((message) => message['type'] == 'Mutation')
+            .last;
+        adapter.pushServerMessage(<String, dynamic>{
+          'type': 'MutationResponse',
+          'requestId': mutationMessage['requestId'],
+          'success': false,
+          'errorMessage': 'rejected',
+        });
 
-      final optimistic = events.last as ConvexRuntimeQuerySuccess;
-      expect(optimistic.value, <String>['a', 'b']);
-      expect(optimistic.source, ConvexQuerySource.cache);
-      expect(optimistic.hasPendingWrites, isTrue);
-
-      final mutationMessage = adapter.decodedSentMessages
-          .where((message) => message['type'] == 'Mutation')
-          .last;
-      adapter.pushServerMessage(<String, dynamic>{
-        'type': 'MutationResponse',
-        'requestId': mutationMessage['requestId'],
-        'success': false,
-        'errorMessage': 'rejected',
-      });
-
-      await expectLater(mutation, throwsA(isA<convex.ConvexException>()));
-      await listener.cancel();
-      subscription.cancel();
-      runtime.dispose();
-      client.dispose();
-    });
+        await expectLater(mutation, throwsA(isA<convex.ConvexException>()));
+        await listener.cancel();
+        subscription.cancel();
+        runtime.dispose();
+        client.dispose();
+      },
+    );
 
     test('maps optimistic clear to runtime loading events', () async {
       final adapter = _MockWebSocketAdapter();
       final client = convex.ConvexClient(
         'https://example.com',
-        config: convex.ConvexClientConfig(
-          adapterFactory: (_) => adapter,
-        ),
+        config: convex.ConvexClientConfig(adapterFactory: (_) => adapter),
       );
       final runtime = ConvexClientRuntime(client);
       await _settle();
@@ -121,8 +123,10 @@ void main() {
       final querySet = adapter.decodedSentMessages
           .where((message) => message['type'] == 'ModifyQuerySet')
           .last;
-      final queryId = (((querySet['modifications'] as List<dynamic>).single
-          as Map<String, dynamic>)['queryId']) as int;
+      final queryId =
+          (((querySet['modifications'] as List<dynamic>).single
+                  as Map<String, dynamic>)['queryId'])
+              as int;
 
       adapter.pushServerMessage(<String, dynamic>{
         'type': 'Transition',
@@ -142,10 +146,7 @@ void main() {
       final mutation = runtime.mutate(
         'messages:send',
         const <String, dynamic>{'body': 'b'},
-        (store) => store.clearQuery(
-          'messages:list',
-          const <String, dynamic>{},
-        ),
+        (store) => store.clearQuery('messages:list', const <String, dynamic>{}),
       );
       await _settle();
 

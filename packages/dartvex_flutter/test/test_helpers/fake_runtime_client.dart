@@ -6,9 +6,10 @@ class FakeRuntimeClient implements ConvexRuntimeClient {
   FakeRuntimeClient({
     ConvexConnectionState initialConnectionState =
         ConvexConnectionState.connecting,
-  })  : _currentConnectionState = initialConnectionState,
-        _currentConnectionStatus =
-            ConnectionStatus.fromState(initialConnectionState);
+  }) : _currentConnectionState = initialConnectionState,
+       _currentConnectionStatus = ConnectionStatus.fromState(
+         initialConnectionState,
+       );
 
   final List<FakeRequestCall> queryCalls = <FakeRequestCall>[];
   final List<FakeSubscriptionCall> subscribeCalls = <FakeSubscriptionCall>[];
@@ -232,12 +233,7 @@ class FakeSubscriptionCall extends FakeRequestCall {
 }
 
 class FakePaginatedQueryCall {
-  const FakePaginatedQueryCall(
-    this.name,
-    this.args,
-    this.pageSize,
-    this.query,
-  );
+  const FakePaginatedQueryCall(this.name, this.args, this.pageSize, this.query);
 
   final String name;
   final Map<String, dynamic> args;
@@ -251,12 +247,13 @@ class FakeRuntimePaginatedQuery implements ConvexRuntimePaginatedQuery {
     this.args,
     this.pageSize, {
     ConvexPaginatedResult? initial,
-  }) : _current = initial ??
-            const ConvexPaginatedResult(
-              results: <dynamic>[],
-              status: ConvexPaginationStatus.loadingFirstPage,
-              isDone: false,
-            );
+  }) : _current =
+           initial ??
+           const ConvexPaginatedResult(
+             results: <dynamic>[],
+             status: ConvexPaginationStatus.loadingFirstPage,
+             isDone: false,
+           );
 
   final String name;
   final Map<String, dynamic> args;

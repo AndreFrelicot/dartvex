@@ -55,10 +55,7 @@ class DartListType extends DartType {
 /// A `Map<K, V>` Dart type.
 class DartMapType extends DartType {
   /// Creates a map type wrapper.
-  const DartMapType({
-    required this.keyType,
-    required this.valueType,
-  });
+  const DartMapType({required this.keyType, required this.valueType});
 
   /// The key type.
   final DartType keyType;
@@ -74,10 +71,7 @@ class DartMapType extends DartType {
 /// A named field in a generated record type.
 class DartRecordField {
   /// Creates a record field definition.
-  const DartRecordField({
-    required this.name,
-    required this.type,
-  });
+  const DartRecordField({required this.name, required this.type});
 
   /// The generated field name.
   final String name;

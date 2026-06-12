@@ -45,10 +45,10 @@ class GenerateCommand {
     required FileEmitter fileEmitter,
     required void Function(String message) log,
     void Function(String message)? errorLog,
-  })  : _processRunner = processRunner,
-        _fileEmitter = fileEmitter,
-        _log = log,
-        _errorLog = errorLog ?? log;
+  }) : _processRunner = processRunner,
+       _fileEmitter = fileEmitter,
+       _log = log,
+       _errorLog = errorLog ?? log;
 
   final ProcessRunner _processRunner;
   final FileEmitter _fileEmitter;
@@ -62,10 +62,7 @@ class GenerateCommand {
       ..addOption('project')
       ..addOption('spec-file')
       ..addOption('output')
-      ..addOption(
-        'client-import',
-        defaultsTo: 'package:dartvex/dartvex.dart',
-      )
+      ..addOption('client-import', defaultsTo: 'package:dartvex/dartvex.dart')
       ..addFlag('watch', negatable: false)
       ..addFlag('dry-run', negatable: false)
       ..addFlag('verbose', negatable: false);
@@ -145,8 +142,9 @@ class GenerateCommand {
   Future<void> _generateOnce(GenerateConfig config) async {
     final specSource = await _loadSpecSource(config);
     final spec = const SpecParser().parseString(specSource);
-    final output =
-        DartGenerator(clientImport: config.clientImport).generate(spec);
+    final output = DartGenerator(
+      clientImport: config.clientImport,
+    ).generate(spec);
 
     if (config.dryRun) {
       final sortedPaths = output.files.keys.toList()..sort();
@@ -183,7 +181,8 @@ class GenerateCommand {
     final project = Directory(projectDirectory);
     if (!await project.exists()) {
       throw ArgumentError(
-          'Project directory does not exist: $projectDirectory');
+        'Project directory does not exist: $projectDirectory',
+      );
     }
     return _processRunner.runFunctionSpec(
       projectDirectory: projectDirectory,

@@ -15,9 +15,9 @@ class ScrubCommand {
     Future<String> Function()? readStdin,
     void Function(String output)? writeOutput,
     void Function(String message)? errorLog,
-  })  : _readStdin = readStdin ?? _defaultReadStdin,
-        _writeOutput = writeOutput ?? stdout.write,
-        _errorLog = errorLog ?? stderr.writeln;
+  }) : _readStdin = readStdin ?? _defaultReadStdin,
+       _writeOutput = writeOutput ?? stdout.write,
+       _errorLog = errorLog ?? stderr.writeln;
 
   final Future<String> Function() _readStdin;
   final void Function(String output) _writeOutput;

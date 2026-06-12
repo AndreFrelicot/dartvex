@@ -188,7 +188,7 @@ class TypeMapper {
         decode: (expression) => literalType.annotation == 'Null'
             ? 'null'
             : 'expectLiteral<${literalType.annotation}>($expression, '
-                '$expectedCode, label: \'$suggestedName\')',
+                  '$expectedCode, label: \'$suggestedName\')',
       );
     }
     if (type is ConvexIdType) {
@@ -286,9 +286,10 @@ class TypeMapper {
       final fields = <DartRecordField>[];
       final fieldDecodeLines = <String>[];
       final encodeBuffer = StringBuffer('<String, dynamic>{');
-      final decodeBuffer =
-          StringBuffer('$typeName _decode$typeName(dynamic raw) {\n'
-              "  final map = expectMap(raw, label: '$typeName');\n");
+      final decodeBuffer = StringBuffer(
+        '$typeName _decode$typeName(dynamic raw) {\n'
+        "  final map = expectMap(raw, label: '$typeName');\n",
+      );
 
       for (final entry in type.value.entries) {
         final rawName = entry.key;
@@ -323,9 +324,7 @@ class TypeMapper {
               ');',
             )
             ..writeln('  }');
-          encodeBuffer.write(
-            '$fieldKey: ${mappedField.encode(safeName)},',
-          );
+          encodeBuffer.write('$fieldKey: ${mappedField.encode(safeName)},');
           fieldDecodeLines.add(
             "    $safeName: ${mappedField.decode('map[$fieldKey]')},",
           );
@@ -343,7 +342,9 @@ class TypeMapper {
 
       final typedef = DartRecordType(fields);
       context.addDefinition(
-          typeName, 'typedef $typeName = ${typedef.annotation};');
+        typeName,
+        'typedef $typeName = ${typedef.annotation};',
+      );
       // The parameter is `value$` (not `value`): the destructured locals are
       // named after the user's fields, so a field named `value` would
       // otherwise shadow the parameter inside its own initializer.
@@ -491,8 +492,9 @@ class TypeMapper {
           " return $typeName.${enumNames[index]};",
         );
       }
-      final expectedValues =
-          literals.map((literal) => _literalMessage(literal.value)).join(', ');
+      final expectedValues = literals
+          .map((literal) => _literalMessage(literal.value))
+          .join(', ');
       enumBuffer
         ..writeln('      default:')
         ..writeln(
@@ -545,12 +547,7 @@ class TypeMapper {
         context: context,
       );
       final caseName = '$typeName${index + 1}Value';
-      cases.add(
-        _UnionCase(
-          className: caseName,
-          mappedType: mappedMember,
-        ),
-      );
+      cases.add(_UnionCase(className: caseName, mappedType: mappedMember));
       buffer
         ..writeln('class $caseName extends $typeName {')
         ..writeln('  const $caseName(this.value);')
@@ -595,13 +592,15 @@ class TypeMapper {
     if (innerEncode(probe) == probe) {
       return _identityExpression;
     }
-    return (expression) => 'switch ($expression) { null => null, final v\$ => '
+    return (expression) =>
+        'switch ($expression) { null => null, final v\$ => '
         '${innerEncode(r'v$')} }';
   }
 
   String _renderUnionEncode(String typeName, List<_UnionCase> cases) {
-    final buffer =
-        StringBuffer('dynamic _encode$typeName($typeName value) {\n');
+    final buffer = StringBuffer(
+      'dynamic _encode$typeName($typeName value) {\n',
+    );
     buffer.writeln('  switch (value) {');
     for (final unionCase in cases) {
       buffer.writeln(
@@ -626,7 +625,8 @@ class TypeMapper {
           '(${unionCase.mappedType.decode('raw')});',
         )
         ..writeln(
-            "  } catch (e) { errors.add('${unionCase.className}: \$e'); }");
+          "  } catch (e) { errors.add('${unionCase.className}: \$e'); }",
+        );
     }
     buffer
       ..writeln(
@@ -664,8 +664,8 @@ class TypeMapper {
         continue;
       }
       final alreadySeen = result.whereType<ConvexLiteralType>().any(
-            (existing) => _literalValuesEqual(existing.value, member.value),
-          );
+        (existing) => _literalValuesEqual(existing.value, member.value),
+      );
       if (!alreadySeen) {
         result.add(member);
       }
@@ -678,9 +678,11 @@ class TypeMapper {
     String suggestedName,
   ) {
     for (var leftIndex = 0; leftIndex < members.length; leftIndex += 1) {
-      for (var rightIndex = leftIndex + 1;
-          rightIndex < members.length;
-          rightIndex += 1) {
+      for (
+        var rightIndex = leftIndex + 1;
+        rightIndex < members.length;
+        rightIndex += 1
+      ) {
         final left = members[leftIndex];
         final right = members[rightIndex];
         final leftTag = _runtimeTag(left);
@@ -867,10 +869,7 @@ class TypeMapper {
 }
 
 class _UnionCase {
-  const _UnionCase({
-    required this.className,
-    required this.mappedType,
-  });
+  const _UnionCase({required this.className, required this.mappedType});
 
   final String className;
   final MappedType mappedType;

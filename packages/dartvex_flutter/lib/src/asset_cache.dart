@@ -20,36 +20,36 @@ class ConvexAssetCache {
     Duration stalePeriod = const Duration(days: 30),
     int maxNrOfCacheObjects = 200,
   }) : this._owned(
-          createDefaultHttpClient(),
-          cacheKey: cacheKey,
-          stalePeriod: stalePeriod,
-          maxNrOfCacheObjects: maxNrOfCacheObjects,
-        );
+         createDefaultHttpClient(),
+         cacheKey: cacheKey,
+         stalePeriod: stalePeriod,
+         maxNrOfCacheObjects: maxNrOfCacheObjects,
+       );
 
   ConvexAssetCache._owned(
     http.Client httpClient, {
     required String cacheKey,
     required Duration stalePeriod,
     required int maxNrOfCacheObjects,
-  })  : _ownedHttpClient = httpClient,
-        _cacheManager = CacheManager(
-          Config(
-            cacheKey,
-            stalePeriod: stalePeriod,
-            maxNrOfCacheObjects: maxNrOfCacheObjects,
-            // Route downloads through the SDK's default HTTP client so they
-            // share the platform transport (NSURLSession on iOS/macOS)
-            // instead of cache_manager's raw dart:io default.
-            fileService: HttpFileService(httpClient: httpClient),
-          ),
-        );
+  }) : _ownedHttpClient = httpClient,
+       _cacheManager = CacheManager(
+         Config(
+           cacheKey,
+           stalePeriod: stalePeriod,
+           maxNrOfCacheObjects: maxNrOfCacheObjects,
+           // Route downloads through the SDK's default HTTP client so they
+           // share the platform transport (NSURLSession on iOS/macOS)
+           // instead of cache_manager's raw dart:io default.
+           fileService: HttpFileService(httpClient: httpClient),
+         ),
+       );
 
   /// Creates an [ConvexAssetCache] wrapping an existing [BaseCacheManager].
   ///
   /// Useful for testing or custom cache configurations.
   ConvexAssetCache.custom(BaseCacheManager cacheManager)
-      : _cacheManager = cacheManager,
-        _ownedHttpClient = null;
+    : _cacheManager = cacheManager,
+      _ownedHttpClient = null;
 
   final BaseCacheManager _cacheManager;
 

@@ -46,7 +46,6 @@ class SystemProcessRunner implements ProcessRunner {
   ];
 
   @override
-
   /// Executes `convex function-spec` using the first available CLI candidate.
   Future<String> runFunctionSpec({
     required String projectDirectory,
@@ -173,10 +172,10 @@ String extractFunctionSpecJson(String stdoutText) {
   throw ProcessRunnerException(
     foundJsonObject
         ? 'convex function-spec did not emit a Convex function spec JSON '
-            'object.'
+              'object.'
         : lastError == null
-            ? 'convex function-spec did not emit a complete JSON object.'
-            : 'convex function-spec output contains invalid JSON: $lastError',
+        ? 'convex function-spec did not emit a complete JSON object.'
+        : 'convex function-spec output contains invalid JSON: $lastError',
     stdout: stdoutText,
   );
 }

@@ -177,11 +177,12 @@ class Naming {
         .split(RegExp(r'[^a-zA-Z0-9]+'))
         .where((part) => part.isNotEmpty)
         .map((part) {
-      if (part.length == 1) {
-        return part.toLowerCase();
-      }
-      return '${part[0].toLowerCase()}${part.substring(1)}';
-    }).toList(growable: false);
+          if (part.length == 1) {
+            return part.toLowerCase();
+          }
+          return '${part[0].toLowerCase()}${part.substring(1)}';
+        })
+        .toList(growable: false);
   }
 
   String _lowerFirst(String value) {

@@ -76,11 +76,9 @@ class FileEmitter {
     }
 
     await manifestFile.writeAsString(
-      const JsonEncoder.withIndent('  ').convert(
-        <String, Object?>{
-          'files': files.keys.toList()..sort(),
-        },
-      ),
+      const JsonEncoder.withIndent(
+        '  ',
+      ).convert(<String, Object?>{'files': files.keys.toList()..sort()}),
     );
   }
 

@@ -26,8 +26,8 @@ class ConvexProvider extends StatefulWidget {
 
   /// Returns the nearest [ConvexRuntimeClient] from the widget tree.
   static ConvexRuntimeClient of(BuildContext context) {
-    final scope =
-        context.dependOnInheritedWidgetOfExactType<_ConvexProviderScope>();
+    final scope = context
+        .dependOnInheritedWidgetOfExactType<_ConvexProviderScope>();
     if (scope == null) {
       throw FlutterError(
         'ConvexProvider.of() called with no ConvexProvider in the widget tree.\n'
@@ -39,8 +39,8 @@ class ConvexProvider extends StatefulWidget {
 
   /// Returns the nearest [ConvexRuntimeClient], or `null` if absent.
   static ConvexRuntimeClient? maybeOf(BuildContext context) {
-    final scope =
-        context.dependOnInheritedWidgetOfExactType<_ConvexProviderScope>();
+    final scope = context
+        .dependOnInheritedWidgetOfExactType<_ConvexProviderScope>();
     return scope?.client;
   }
 
@@ -63,7 +63,8 @@ class _ConvexProviderState extends State<ConvexProvider>
       if (client.currentConnectionState != ConvexConnectionState.connected) {
         try {
           unawaited(
-              _ignoreDisposedReconnect(client.reconnectNow('AppResumed')));
+            _ignoreDisposedReconnect(client.reconnectNow('AppResumed')),
+          );
         } on ConvexException {
           // An externally owned client (disposeClient: false) can be disposed
           // while the app is backgrounded with this provider still mounted —

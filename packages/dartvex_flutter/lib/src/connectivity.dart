@@ -23,19 +23,22 @@ class ConnectivityPlusSignal implements ConnectivitySignal {
   /// [changes] defaults to `Connectivity().onConnectivityChanged` and can be
   /// overridden in tests.
   ConnectivityPlusSignal({Stream<List<ConnectivityResult>>? changes})
-      : _changes = changes ?? Connectivity().onConnectivityChanged;
+    : _changes = changes ?? Connectivity().onConnectivityChanged;
 
   final Stream<List<ConnectivityResult>> _changes;
 
   @override
   Stream<void> get onRestored {
     var online = false;
-    return _changes.where((results) {
-      final nowOnline =
-          results.any((result) => result != ConnectivityResult.none);
-      final restored = nowOnline && !online;
-      online = nowOnline;
-      return restored;
-    }).map<void>((_) {});
+    return _changes
+        .where((results) {
+          final nowOnline = results.any(
+            (result) => result != ConnectivityResult.none,
+          );
+          final restored = nowOnline && !online;
+          online = nowOnline;
+          return restored;
+        })
+        .map<void>((_) {});
   }
 }

@@ -70,7 +70,7 @@ class ConvexImage extends StatefulWidget {
   /// Builder for a custom progress indicator during image download.
   /// When provided, replaces the default loading indicator during download.
   final Widget Function(BuildContext context, ConvexDownloadProgress progress)?
-      progressBuilder;
+  progressBuilder;
 
   /// Callback for download progress.
   final ConvexDownloadProgressCallback? onProgress;

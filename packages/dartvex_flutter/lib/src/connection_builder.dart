@@ -5,12 +5,12 @@ import 'provider.dart';
 import 'runtime_client.dart';
 
 /// Builder callback for [ConvexConnectionBuilder].
-typedef ConvexConnectionWidgetBuilder = Widget Function(
-    BuildContext context, ConvexConnectionState state);
+typedef ConvexConnectionWidgetBuilder =
+    Widget Function(BuildContext context, ConvexConnectionState state);
 
 /// Builder callback for [ConvexConnectionStatusBuilder].
-typedef ConvexConnectionStatusWidgetBuilder = Widget Function(
-    BuildContext context, ConnectionStatus status);
+typedef ConvexConnectionStatusWidgetBuilder =
+    Widget Function(BuildContext context, ConnectionStatus status);
 
 /// Widget that rebuilds when the Convex connection state changes.
 class ConvexConnectionBuilder extends StatelessWidget {

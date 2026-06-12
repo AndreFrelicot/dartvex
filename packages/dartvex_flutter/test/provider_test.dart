@@ -62,10 +62,7 @@ void main() {
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: ConvexProvider(
-            client: client,
-            child: const SizedBox(),
-          ),
+          child: ConvexProvider(client: client, child: const SizedBox()),
         ),
       );
 
@@ -88,10 +85,7 @@ void main() {
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: ConvexProvider(
-            client: client,
-            child: const SizedBox(),
-          ),
+          child: ConvexProvider(client: client, child: const SizedBox()),
         ),
       );
 
@@ -110,18 +104,18 @@ void main() {
       // An externally owned client (disposeClient: false) can be disposed
       // while the app is backgrounded with the provider still mounted; the
       // disposed assertion must not escape into the lifecycle dispatch.
-      final client = FakeRuntimeClient(
-        initialConnectionState: ConvexConnectionState.disconnected,
-      )..reconnectNowSyncError =
-          const ConvexException('ConvexClient has been disposed');
+      final client =
+          FakeRuntimeClient(
+              initialConnectionState: ConvexConnectionState.disconnected,
+            )
+            ..reconnectNowSyncError = const ConvexException(
+              'ConvexClient has been disposed',
+            );
 
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: ConvexProvider(
-            client: client,
-            child: const SizedBox(),
-          ),
+          child: ConvexProvider(client: client, child: const SizedBox()),
         ),
       );
 
@@ -138,18 +132,18 @@ void main() {
   testWidgets(
     'ConvexProvider swallows an async disposed-client error on app resume',
     (tester) async {
-      final client = FakeRuntimeClient(
-        initialConnectionState: ConvexConnectionState.disconnected,
-      )..reconnectNowAsyncError =
-          const ConvexException('ConvexClient has been disposed');
+      final client =
+          FakeRuntimeClient(
+              initialConnectionState: ConvexConnectionState.disconnected,
+            )
+            ..reconnectNowAsyncError = const ConvexException(
+              'ConvexClient has been disposed',
+            );
 
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: ConvexProvider(
-            client: client,
-            child: const SizedBox(),
-          ),
+          child: ConvexProvider(client: client, child: const SizedBox()),
         ),
       );
 

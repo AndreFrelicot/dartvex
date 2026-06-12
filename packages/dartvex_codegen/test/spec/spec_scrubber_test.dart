@@ -55,8 +55,10 @@ void main() {
     });
 
     test('honors a custom placeholder URL', () {
-      final scrubbed =
-          scrubFunctionSpec(rawDump, placeholderUrl: 'https://x.example');
+      final scrubbed = scrubFunctionSpec(
+        rawDump,
+        placeholderUrl: 'https://x.example',
+      );
 
       expect(
         (jsonDecode(scrubbed) as Map<String, dynamic>)['url'],
@@ -65,10 +67,7 @@ void main() {
     });
 
     test('throws a clear error on non-object roots', () {
-      expect(
-        () => scrubFunctionSpec('[]'),
-        throwsA(isA<FormatException>()),
-      );
+      expect(() => scrubFunctionSpec('[]'), throwsA(isA<FormatException>()));
     });
   });
 }

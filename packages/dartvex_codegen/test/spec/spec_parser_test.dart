@@ -15,13 +15,14 @@ void main() {
       expect(spec.url, 'https://sample.convex.cloud');
       expect(spec.functions, hasLength(14));
       expect(
-          spec.publicFunctions.map((function) => function.identifier),
-          containsAll(<String>[
-            'messages.ts:list',
-            'messages.ts:send',
-            'admin/users.ts:sync',
-            'index.ts:health',
-          ]));
+        spec.publicFunctions.map((function) => function.identifier),
+        containsAll(<String>[
+          'messages.ts:list',
+          'messages.ts:send',
+          'admin/users.ts:sync',
+          'index.ts:health',
+        ]),
+      );
 
       final listMessages = spec.publicFunctions.firstWhere(
         (function) => function.identifier == 'messages.ts:list',
@@ -43,16 +44,12 @@ void main() {
 
     test('throws when required fields are missing', () {
       expect(
-        () => const SpecParser().parseMap(
-          <String, dynamic>{
-            'url': 'https://sample.convex.cloud',
-            'functions': <dynamic>[
-              <String, dynamic>{
-                'functionType': 'Query',
-              },
-            ],
-          },
-        ),
+        () => const SpecParser().parseMap(<String, dynamic>{
+          'url': 'https://sample.convex.cloud',
+          'functions': <dynamic>[
+            <String, dynamic>{'functionType': 'Query'},
+          ],
+        }),
         throwsA(isA<SpecParserException>()),
       );
     });
@@ -166,10 +163,12 @@ void main() {
       expect(future.returns, isA<ConvexAnyType>());
       expect(
         spec.warnings,
-        anyElement(allOf(
-          contains('messages.ts:future'),
-          contains('Unknown Convex type "quantum"'),
-        )),
+        anyElement(
+          allOf(
+            contains('messages.ts:future'),
+            contains('Unknown Convex type "quantum"'),
+          ),
+        ),
       );
     });
   });

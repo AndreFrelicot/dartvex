@@ -26,12 +26,13 @@ enum PaginationStatus {
 }
 
 /// Builder callback for [PaginatedQueryBuilder].
-typedef PaginatedQueryWidgetBuilder<T> = Widget Function(
-  BuildContext context,
-  List<T> items,
-  VoidCallback loadMore,
-  PaginationStatus status,
-);
+typedef PaginatedQueryWidgetBuilder<T> =
+    Widget Function(
+      BuildContext context,
+      List<T> items,
+      VoidCallback loadMore,
+      PaginationStatus status,
+    );
 
 /// Widget that manages cursor-based pagination with Convex.
 ///
@@ -169,25 +170,28 @@ class _PaginatedQueryBuilderState<T> extends State<PaginatedQueryBuilder<T>> {
       _items = const <Never>[];
       _status = PaginationStatus.error;
     }
-    _subscription = query.stream.listen((result) {
-      if (generation != _queryGeneration) {
-        return;
-      }
-      _apply(result);
-    }, onError: (Object error, StackTrace stackTrace) {
-      if (generation != _queryGeneration || !mounted) {
-        return;
-      }
-      _lastResult = convex.ConvexPaginatedResult(
-        results: _lastResult?.results ?? const <dynamic>[],
-        status: convex.ConvexPaginationStatus.error,
-        isDone: false,
-        error: error,
-      );
-      setState(() {
-        _status = PaginationStatus.error;
-      });
-    });
+    _subscription = query.stream.listen(
+      (result) {
+        if (generation != _queryGeneration) {
+          return;
+        }
+        _apply(result);
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        if (generation != _queryGeneration || !mounted) {
+          return;
+        }
+        _lastResult = convex.ConvexPaginatedResult(
+          results: _lastResult?.results ?? const <dynamic>[],
+          status: convex.ConvexPaginationStatus.error,
+          isDone: false,
+          error: error,
+        );
+        setState(() {
+          _status = PaginationStatus.error;
+        });
+      },
+    );
   }
 
   void _apply(convex.ConvexPaginatedResult result) {
@@ -233,8 +237,9 @@ class _PaginatedQueryBuilderState<T> extends State<PaginatedQueryBuilder<T>> {
 
   Map<String, dynamic> _snapshotArgs(Map<String, dynamic>? args) {
     return convex.jsonToConvex(
-      convex.convexToJson(args ?? const <String, dynamic>{}),
-    ) as Map<String, dynamic>;
+          convex.convexToJson(args ?? const <String, dynamic>{}),
+        )
+        as Map<String, dynamic>;
   }
 
   void _loadMore() {

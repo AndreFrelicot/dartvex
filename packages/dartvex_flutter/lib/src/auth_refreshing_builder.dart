@@ -4,8 +4,8 @@ import 'provider.dart';
 import 'runtime_client.dart';
 
 /// Builder callback for [ConvexAuthRefreshingBuilder].
-typedef ConvexAuthRefreshingWidgetBuilder = Widget Function(
-    BuildContext context, bool isRefreshing);
+typedef ConvexAuthRefreshingWidgetBuilder =
+    Widget Function(BuildContext context, bool isRefreshing);
 
 /// Widget that rebuilds when the Convex auth-refreshing state changes.
 ///

@@ -18,10 +18,9 @@ void main() {
           return ['msg-${args['channel']}'];
         });
 
-      final result = await client.query(
-        'messages:list',
-        {'channel': 'general'},
-      );
+      final result = await client.query('messages:list', {
+        'channel': 'general',
+      });
       expect(result, ['msg-general']);
     });
 
@@ -67,8 +66,10 @@ void main() {
 
     test('whenAction returns mocked data', () async {
       final client = FakeConvexClient()
-        ..whenAction('files:generateUploadUrl',
-            returns: 'https://upload.convex.cloud/abc');
+        ..whenAction(
+          'files:generateUploadUrl',
+          returns: 'https://upload.convex.cloud/abc',
+        );
 
       final result = await client.action('files:generateUploadUrl');
       expect(result, 'https://upload.convex.cloud/abc');
@@ -92,10 +93,7 @@ void main() {
 
     test('query throws when no handler registered', () {
       final client = FakeConvexClient();
-      expect(
-        () => client.query('missing:query'),
-        throwsA(isA<StateError>()),
-      );
+      expect(() => client.query('missing:query'), throwsA(isA<StateError>()));
     });
 
     test('queryOnce returns typed result', () async {
@@ -147,14 +145,8 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(events, hasLength(2));
-      expect(
-        (events[0] as ConvexRuntimeQuerySuccess).value,
-        ['msg1'],
-      );
-      expect(
-        (events[1] as ConvexRuntimeQuerySuccess).value,
-        ['msg1', 'msg2'],
-      );
+      expect((events[0] as ConvexRuntimeQuerySuccess).value, ['msg1']);
+      expect((events[1] as ConvexRuntimeQuerySuccess).value, ['msg1', 'msg2']);
     });
 
     test('emitSubscription broadcasts to duplicate subscriptions', () async {
@@ -196,10 +188,7 @@ void main() {
 
     test('emitConnectionState updates connection state', () async {
       final client = FakeConvexClient();
-      expect(
-        client.currentConnectionState,
-        ConvexConnectionState.connected,
-      );
+      expect(client.currentConnectionState, ConvexConnectionState.connected);
 
       final states = <ConvexConnectionState>[];
       client.connectionState.listen(states.add);
@@ -208,10 +197,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(states, [ConvexConnectionState.disconnected]);
-      expect(
-        client.currentConnectionState,
-        ConvexConnectionState.disconnected,
-      );
+      expect(client.currentConnectionState, ConvexConnectionState.disconnected);
     });
 
     test('emitConnectionStatus emits coarse state changes', () async {
@@ -227,10 +213,7 @@ void main() {
       expect(states, <ConvexConnectionState>[
         ConvexConnectionState.reconnecting,
       ]);
-      expect(
-        client.currentConnectionState,
-        ConvexConnectionState.reconnecting,
-      );
+      expect(client.currentConnectionState, ConvexConnectionState.reconnecting);
       expect(
         client.currentConnectionStatus.state,
         ConvexConnectionState.reconnecting,
@@ -250,15 +233,17 @@ void main() {
       expect(client.dispose, returnsNormally);
     });
 
-    test('dispose survives a done listener canceling a sibling subscription',
-        () {
-      final client = FakeConvexClient();
-      final first = client.subscribe('messages:list');
-      final second = client.subscribe('messages:list');
-      first.stream.listen(null, onDone: second.cancel);
+    test(
+      'dispose survives a done listener canceling a sibling subscription',
+      () {
+        final client = FakeConvexClient();
+        final first = client.subscribe('messages:list');
+        final second = client.subscribe('messages:list');
+        first.stream.listen(null, onDone: second.cancel);
 
-      expect(client.dispose, returnsNormally);
-    });
+        expect(client.dispose, returnsNormally);
+      },
+    );
 
     test('emit helpers are no-ops after dispose', () {
       final client = FakeConvexClient();

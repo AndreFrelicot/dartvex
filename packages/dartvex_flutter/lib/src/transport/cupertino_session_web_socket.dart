@@ -125,11 +125,11 @@ class OwnedSessionCupertinoWebSocket implements WebSocket {
     late WebSocketEvent event;
     switch (value.type) {
       case NSURLSessionWebSocketMessageType
-            .NSURLSessionWebSocketMessageTypeString:
+          .NSURLSessionWebSocketMessageTypeString:
         event = TextDataReceived(value.string!);
         break;
       case NSURLSessionWebSocketMessageType
-            .NSURLSessionWebSocketMessageTypeData:
+          .NSURLSessionWebSocketMessageTypeData:
         event = BinaryDataReceived(Uint8List.fromList(value.data!.toList()));
         break;
     }
@@ -140,9 +140,9 @@ class OwnedSessionCupertinoWebSocket implements WebSocket {
   void _scheduleReceive() {
     unawaited(
       _task.receiveMessage().then(
-            _handleMessage,
-            onError: _closeConnectionWithError,
-          ),
+        _handleMessage,
+        onError: _closeConnectionWithError,
+      ),
     );
   }
 
@@ -158,9 +158,9 @@ class OwnedSessionCupertinoWebSocket implements WebSocket {
       }
       final (int code, String reason) = switch ([domain, e.code]) {
         ['NSPOSIXErrorDomain', 100] => (
-            1002,
-            e.localizedDescription.toDartString(),
-          ),
+          1002,
+          e.localizedDescription.toDartString(),
+        ),
         _ => (1006, e.localizedDescription.toDartString()),
       };
       _task.cancel();

@@ -7,11 +7,12 @@ import 'runtime_client.dart';
 import 'snapshot.dart';
 
 /// Builder callback for [ConvexAction].
-typedef ConvexActionBuilder<T> = Widget Function(
-  BuildContext context,
-  ConvexRequestExecutor<T> action,
-  ConvexRequestSnapshot<T> snapshot,
-);
+typedef ConvexActionBuilder<T> =
+    Widget Function(
+      BuildContext context,
+      ConvexRequestExecutor<T> action,
+      ConvexRequestSnapshot<T> snapshot,
+    );
 
 /// Widget that exposes an imperative Convex action and request snapshot to its child.
 class ConvexAction<T> extends StatefulWidget {

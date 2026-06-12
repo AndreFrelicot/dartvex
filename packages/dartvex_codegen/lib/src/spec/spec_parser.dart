@@ -8,17 +8,14 @@ class SpecParserException implements FormatException {
   SpecParserException(this.message, {this.source, this.offset});
 
   @override
-
   /// A human-readable parse failure message.
   final String message;
 
   @override
-
   /// The original source object associated with the parse failure, if any.
   final Object? source;
 
   @override
-
   /// The character offset of the failure, if known.
   final int? offset;
 
@@ -45,14 +42,16 @@ class SpecParser {
     final url = _readString(map, 'url');
     final rawFunctions = _readList(map, 'functions');
     final warnings = <String>[];
-    final functions = rawFunctions.map((item) {
-      if (item is! Map<String, dynamic>) {
-        throw SpecParserException(
-          'Each function entry must be a JSON object',
-        );
-      }
-      return _parseBaseFunctionSpec(item, warnings);
-    }).toList(growable: false);
+    final functions = rawFunctions
+        .map((item) {
+          if (item is! Map<String, dynamic>) {
+            throw SpecParserException(
+              'Each function entry must be a JSON object',
+            );
+          }
+          return _parseBaseFunctionSpec(item, warnings);
+        })
+        .toList(growable: false);
     return FunctionsSpec(url: url, functions: functions, warnings: warnings);
   }
 
@@ -72,13 +71,22 @@ class SpecParser {
     try {
       return FunctionSpec(
         functionType: functionType,
-        args: _parseTypeOrAny(map, 'args',
-            context: _appendContext(identifier, 'args'), warnings: warnings),
-        returns: _parseTypeOrAny(map, 'returns',
-            context: _appendContext(identifier, 'returns'), warnings: warnings),
+        args: _parseTypeOrAny(
+          map,
+          'args',
+          context: _appendContext(identifier, 'args'),
+          warnings: warnings,
+        ),
+        returns: _parseTypeOrAny(
+          map,
+          'returns',
+          context: _appendContext(identifier, 'returns'),
+          warnings: warnings,
+        ),
         identifier: identifier,
-        visibility:
-            Visibility(_readString(_readMap(map, 'visibility'), 'kind')),
+        visibility: Visibility(
+          _readString(_readMap(map, 'visibility'), 'kind'),
+        ),
       );
     } on SpecParserException catch (error) {
       // Guarantee the offending function is always named, even for failures
@@ -137,52 +145,62 @@ class SpecParser {
         final parsed = <ConvexType>[];
         for (var index = 0; index < members.length; index += 1) {
           final item = members[index];
-          final memberContext =
-              _appendContext(context, 'union member ${index + 1}');
+          final memberContext = _appendContext(
+            context,
+            'union member ${index + 1}',
+          );
           if (item is! Map<String, dynamic>) {
             throw SpecParserException(
               _withContext('Union members must be JSON objects', memberContext),
             );
           }
           parsed.add(
-              _parseType(item, context: memberContext, warnings: warnings));
+            _parseType(item, context: memberContext, warnings: warnings),
+          );
         }
         return ConvexUnionType(parsed);
       case 'record':
         return ConvexRecordType(
-          keys: _parseType(_readMap(map, 'keys'),
-              context: _appendContext(context, 'record key'),
-              warnings: warnings),
-          values: _parseField(_readMap(map, 'values'),
-              context: _appendContext(context, 'record value'),
-              warnings: warnings),
+          keys: _parseType(
+            _readMap(map, 'keys'),
+            context: _appendContext(context, 'record key'),
+            warnings: warnings,
+          ),
+          values: _parseField(
+            _readMap(map, 'values'),
+            context: _appendContext(context, 'record value'),
+            warnings: warnings,
+          ),
         );
       case 'object':
         final value = _readMap(map, 'value');
         return ConvexObjectType(
-          value.map(
-            (key, rawField) {
-              if (rawField is! Map<String, dynamic>) {
-                throw SpecParserException(
-                  _withContext(
-                    'Object field "$key" must be a JSON object',
-                    context,
-                  ),
-                );
-              }
-              return MapEntry(
-                key,
-                _parseField(rawField,
-                    context: _appendContext(context, 'field "$key"'),
-                    warnings: warnings),
+          value.map((key, rawField) {
+            if (rawField is! Map<String, dynamic>) {
+              throw SpecParserException(
+                _withContext(
+                  'Object field "$key" must be a JSON object',
+                  context,
+                ),
               );
-            },
-          ),
+            }
+            return MapEntry(
+              key,
+              _parseField(
+                rawField,
+                context: _appendContext(context, 'field "$key"'),
+                warnings: warnings,
+              ),
+            );
+          }),
         );
       case 'array':
         return ConvexArrayType(
-          _parseType(_readMap(map, 'value'),
-              context: _appendContext(context, 'element'), warnings: warnings),
+          _parseType(
+            _readMap(map, 'value'),
+            context: _appendContext(context, 'element'),
+            warnings: warnings,
+          ),
         );
       case 'id':
         return ConvexIdType(_readString(map, 'tableName'));
@@ -192,7 +210,9 @@ class SpecParser {
     // the offending location is reported instead of crashing generation.
     warnings.add(
       _withContext(
-          'Unknown Convex type "$type"; generated as dynamic.', context),
+        'Unknown Convex type "$type"; generated as dynamic.',
+        context,
+      ),
     );
     return const ConvexAnyType();
   }
@@ -203,8 +223,11 @@ class SpecParser {
     required List<String> warnings,
   }) {
     return ConvexField(
-      fieldType: _parseType(_readMap(map, 'fieldType'),
-          context: context, warnings: warnings),
+      fieldType: _parseType(
+        _readMap(map, 'fieldType'),
+        context: context,
+        warnings: warnings,
+      ),
       optional: _readBool(map, 'optional'),
     );
   }

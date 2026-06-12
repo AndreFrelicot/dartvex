@@ -2,8 +2,8 @@
 typedef ConvexDecoder<T> = T Function(dynamic value);
 
 /// Executes a request-like Convex operation with optional arguments.
-typedef ConvexRequestExecutor<T> = Future<T> Function(
-    [Map<String, dynamic> args]);
+typedef ConvexRequestExecutor<T> =
+    Future<T> Function([Map<String, dynamic> args]);
 
 /// Indicates where a query result originated.
 enum ConvexQuerySource {
@@ -35,14 +35,14 @@ class ConvexQuerySnapshot<T> {
 
   /// Creates the initial loading snapshot for a query.
   const ConvexQuerySnapshot.initial()
-      : data = null,
-        error = null,
-        isLoading = true,
-        isRefreshing = false,
-        hasData = false,
-        hasError = false,
-        source = ConvexQuerySource.unknown,
-        hasPendingWrites = false;
+    : data = null,
+      error = null,
+      isLoading = true,
+      isRefreshing = false,
+      hasData = false,
+      hasError = false,
+      source = ConvexQuerySource.unknown,
+      hasPendingWrites = false;
 
   /// Latest decoded data, if available.
   final T? data;
@@ -106,11 +106,11 @@ class ConvexRequestSnapshot<T> {
 
   /// Creates the initial idle snapshot for a request.
   const ConvexRequestSnapshot.initial()
-      : data = null,
-        error = null,
-        isLoading = false,
-        hasData = false,
-        hasError = false;
+    : data = null,
+      error = null,
+      isLoading = false,
+      hasData = false,
+      hasError = false;
 
   /// Latest decoded data, if available.
   final T? data;

@@ -9,8 +9,8 @@ import 'runtime_client.dart';
 import 'snapshot.dart';
 
 /// Builder callback for [ConvexQuery].
-typedef ConvexQueryWidgetBuilder<T> = Widget Function(
-    BuildContext context, ConvexQuerySnapshot<T> snapshot);
+typedef ConvexQueryWidgetBuilder<T> =
+    Widget Function(BuildContext context, ConvexQuerySnapshot<T> snapshot);
 
 /// Widget that subscribes to a Convex query and rebuilds from its snapshot.
 class ConvexQuery<T> extends StatefulWidget {
@@ -201,17 +201,20 @@ class _ConvexQueryState<T> extends State<ConvexQuery<T>> {
     final subscription = resolvedClient.subscribe(widget.query, argsSnapshot);
     final generation = ++_subscriptionGeneration;
     _runtimeSubscription = subscription;
-    _eventSubscription = subscription.stream.listen((event) {
-      if (generation != _subscriptionGeneration) {
-        return;
-      }
-      _handleEvent(event);
-    }, onError: (Object error, StackTrace stackTrace) {
-      if (generation != _subscriptionGeneration) {
-        return;
-      }
-      _handleEvent(ConvexRuntimeQueryError(error, stackTrace: stackTrace));
-    });
+    _eventSubscription = subscription.stream.listen(
+      (event) {
+        if (generation != _subscriptionGeneration) {
+          return;
+        }
+        _handleEvent(event);
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        if (generation != _subscriptionGeneration) {
+          return;
+        }
+        _handleEvent(ConvexRuntimeQueryError(error, stackTrace: stackTrace));
+      },
+    );
   }
 
   Map<String, dynamic> _snapshotArgs(Map<String, dynamic> args) {

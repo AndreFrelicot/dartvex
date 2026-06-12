@@ -18,18 +18,15 @@ void main() {
     test('generates deterministic file tree and warnings', () {
       final output = DartGenerator().generate(spec);
 
-      expect(
-        output.files.keys.toList()..sort(),
-        <String>[
-          'api.dart',
-          'modules/admin.dart',
-          'modules/admin/users.dart',
-          'modules/kv.dart',
-          'modules/messages.dart',
-          'runtime.dart',
-          'schema.dart',
-        ],
-      );
+      expect(output.files.keys.toList()..sort(), <String>[
+        'api.dart',
+        'modules/admin.dart',
+        'modules/admin/users.dart',
+        'modules/kv.dart',
+        'modules/messages.dart',
+        'runtime.dart',
+        'schema.dart',
+      ]);
       expect(output.warnings, hasLength(3));
       expect(output.warnings, anyElement(contains('Skipping HTTP action')));
       expect(
@@ -106,15 +103,19 @@ void main() {
       );
       expect(api, contains('QueryLoading(:final hasPendingWrites)'));
       expect(
-          messages,
-          contains(
-              "if (attachment.isDefined) 'attachment': attachment.value,"));
-      expect(users,
-          contains('typedef SyncTypeResult = ({bool success, BigInt count});'));
+        messages,
+        contains("if (attachment.isDefined) 'attachment': attachment.value,"),
+      );
       expect(
-          users,
-          contains(
-              "count: expectBigInt(map['count'], label: 'SyncTypeResultCount')"));
+        users,
+        contains('typedef SyncTypeResult = ({bool success, BigInt count});'),
+      );
+      expect(
+        users,
+        contains(
+          "count: expectBigInt(map['count'], label: 'SyncTypeResultCount')",
+        ),
+      );
     });
 
     test('throws when function names generate duplicate methods', () {
@@ -229,14 +230,8 @@ void main() {
       final module = output.files[r"modules/weird$module's.dart"]!;
       final schema = output.files['schema.dart']!;
 
-      expect(
-        api,
-        contains(r"import './modules/weird\$module\'s.dart';"),
-      );
-      expect(
-        module,
-        contains(r"'weird\$module\'s:send\$public'"),
-      );
+      expect(api, contains(r"import './modules/weird\$module\'s.dart';"));
+      expect(module, contains(r"'weird\$module\'s:send\$public'"));
       expect(
         schema,
         contains(r"static const String tableName = 'price\$table\'s';"),
@@ -295,8 +290,9 @@ void main() {
       );
 
       expect(
-        () => DartGenerator(naming: const _InvalidMethodNaming())
-            .generate(invalidSpec),
+        () => DartGenerator(
+          naming: const _InvalidMethodNaming(),
+        ).generate(invalidSpec),
         throwsA(
           isA<GenerationException>().having(
             (error) => error.message,
@@ -307,9 +303,10 @@ void main() {
       );
     });
 
-    test('surfaces parser warnings and degrades unknown types without throwing',
-        () {
-      final degradedSpec = const SpecParser().parseString('''
+    test(
+      'surfaces parser warnings and degrades unknown types without throwing',
+      () {
+        final degradedSpec = const SpecParser().parseString('''
 {
   "url": "https://sample.convex.cloud",
   "functions": [
@@ -332,19 +329,22 @@ void main() {
 }
 ''');
 
-      final output = DartGenerator().generate(degradedSpec);
+        final output = DartGenerator().generate(degradedSpec);
 
-      expect(
-        output.warnings,
-        anyElement(allOf(
-          contains('messages.ts:future'),
-          contains('field "mystery"'),
-          contains('Unknown Convex type "quantum"'),
-        )),
-      );
-      // The unknown field degraded to a dynamic value rather than aborting.
-      expect(output.files['modules/messages.dart'], contains('mystery'));
-    });
+        expect(
+          output.warnings,
+          anyElement(
+            allOf(
+              contains('messages.ts:future'),
+              contains('field "mystery"'),
+              contains('Unknown Convex type "quantum"'),
+            ),
+          ),
+        );
+        // The unknown field degraded to a dynamic value rather than aborting.
+        expect(output.files['modules/messages.dart'], contains('mystery'));
+      },
+    );
 
     test('generates typed and untyped paginated query bindings', () {
       final output = DartGenerator().generate(spec);
@@ -379,10 +379,13 @@ void main() {
       expect(
         messages,
         contains(
-            'TypedConvexPaginatedQuery<Map<String, dynamic>> paginateRaw({'),
+          'TypedConvexPaginatedQuery<Map<String, dynamic>> paginateRaw({',
+        ),
       );
       expect(
-          messages, contains("expectMap(raw, label: 'PaginateRawPageItem')"));
+        messages,
+        contains("expectMap(raw, label: 'PaginateRawPageItem')"),
+      );
     });
 
     test('demotes a paginated query whose argument collides with pageSize', () {
@@ -393,9 +396,10 @@ void main() {
             optional: false,
           ),
           'cursor': ConvexField(
-            fieldType: ConvexUnionType(
-              <ConvexType>[ConvexStringType(), ConvexNullType()],
-            ),
+            fieldType: ConvexUnionType(<ConvexType>[
+              ConvexStringType(),
+              ConvexNullType(),
+            ]),
             optional: false,
           ),
         }),
@@ -431,31 +435,32 @@ void main() {
       expect(messages, contains('paginateOddSubscribe'));
       expect(
         output.warnings,
-        anyElement(allOf(
-          contains('messages.ts:paginateOdd'),
-          contains('pageSize'),
-        )),
-      );
-    });
-
-    test('covers the full surface: number enum, unknown type, exotic literal',
-        () {
-      final output = DartGenerator().generate(spec);
-      final users = output.files['modules/admin/users.dart']!;
-
-      // A number-literal union becomes a typed enum.
-      expect(users, contains('enum DiagnoseArgsLevel'));
-      expect(users, contains('required DiagnoseArgsLevel level'));
-
-      // An unknown type tag and an exotic ($integer-encoded) literal both
-      // degrade to dynamic instead of crashing generation.
-      expect(
-        users,
-        contains(
-          'typedef DiagnoseResult = ({dynamic future, dynamic bigLiteral});',
+        anyElement(
+          allOf(contains('messages.ts:paginateOdd'), contains('pageSize')),
         ),
       );
     });
+
+    test(
+      'covers the full surface: number enum, unknown type, exotic literal',
+      () {
+        final output = DartGenerator().generate(spec);
+        final users = output.files['modules/admin/users.dart']!;
+
+        // A number-literal union becomes a typed enum.
+        expect(users, contains('enum DiagnoseArgsLevel'));
+        expect(users, contains('required DiagnoseArgsLevel level'));
+
+        // An unknown type tag and an exotic ($integer-encoded) literal both
+        // degrade to dynamic instead of crashing generation.
+        expect(
+          users,
+          contains(
+            'typedef DiagnoseResult = ({dynamic future, dynamic bigLiteral});',
+          ),
+        );
+      },
+    );
   });
 }
 

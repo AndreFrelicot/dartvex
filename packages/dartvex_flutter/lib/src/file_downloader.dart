@@ -28,9 +28,8 @@ class ConvexDownloadProgress {
 }
 
 /// Callback that reports download progress.
-typedef ConvexDownloadProgressCallback = void Function(
-  ConvexDownloadProgress progress,
-);
+typedef ConvexDownloadProgressCallback =
+    void Function(ConvexDownloadProgress progress);
 
 /// Downloads files from URLs with byte-level progress tracking.
 ///
@@ -78,8 +77,9 @@ class ConvexFileDownloader {
       // The send() timeout bounds connection establishment and response
       // headers together — the same stall window dart:io's connectionTimeout
       // plus close().timeout() used to cover.
-      final response =
-          await client.send(http.Request('GET', uri)).timeout(idleTimeout);
+      final response = await client
+          .send(http.Request('GET', uri))
+          .timeout(idleTimeout);
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
         try {
@@ -103,11 +103,13 @@ class ConvexFileDownloader {
       await for (final chunk in response.stream.timeout(idleTimeout)) {
         builder.add(chunk);
         received += chunk.length;
-        onProgress?.call(ConvexDownloadProgress(
-          received: received,
-          total: hasLength ? contentLength : -1,
-          progress: hasLength ? received / contentLength : -1,
-        ));
+        onProgress?.call(
+          ConvexDownloadProgress(
+            received: received,
+            total: hasLength ? contentLength : -1,
+            progress: hasLength ? received / contentLength : -1,
+          ),
+        );
       }
 
       return builder.toBytes();

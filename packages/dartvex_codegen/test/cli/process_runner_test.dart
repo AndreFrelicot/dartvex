@@ -40,33 +40,39 @@ void main() {
       const input = '{"level":"warn","message":"no spec here"}';
       expect(
         () => extractFunctionSpecJson(input),
-        throwsA(isA<ProcessRunnerException>().having(
-          (e) => e.message,
-          'message',
-          contains('Convex function spec'),
-        )),
+        throwsA(
+          isA<ProcessRunnerException>().having(
+            (e) => e.message,
+            'message',
+            contains('Convex function spec'),
+          ),
+        ),
       );
     });
 
     test('throws clear error when no JSON present', () {
       expect(
         () => extractFunctionSpecJson('no json here'),
-        throwsA(isA<ProcessRunnerException>().having(
-          (e) => e.message,
-          'message',
-          contains('did not emit valid JSON'),
-        )),
+        throwsA(
+          isA<ProcessRunnerException>().having(
+            (e) => e.message,
+            'message',
+            contains('did not emit valid JSON'),
+          ),
+        ),
       );
     });
 
     test('throws clear error on empty output', () {
       expect(
         () => extractFunctionSpecJson(''),
-        throwsA(isA<ProcessRunnerException>().having(
-          (e) => e.message,
-          'message',
-          contains('produced no output'),
-        )),
+        throwsA(
+          isA<ProcessRunnerException>().having(
+            (e) => e.message,
+            'message',
+            contains('produced no output'),
+          ),
+        ),
       );
     });
 
@@ -75,11 +81,13 @@ void main() {
       const input = 'prefix {not: valid json} suffix {extra}';
       expect(
         () => extractFunctionSpecJson(input),
-        throwsA(isA<ProcessRunnerException>().having(
-          (e) => e.message,
-          'message',
-          contains('invalid JSON'),
-        )),
+        throwsA(
+          isA<ProcessRunnerException>().having(
+            (e) => e.message,
+            'message',
+            contains('invalid JSON'),
+          ),
+        ),
       );
     });
   });

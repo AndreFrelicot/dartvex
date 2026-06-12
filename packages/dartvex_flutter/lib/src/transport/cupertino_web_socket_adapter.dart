@@ -24,8 +24,8 @@ void installCupertinoTransport() {
   if (!Platform.isIOS && !Platform.isMacOS) {
     return;
   }
-  defaultWebSocketAdapterOverride =
-      (String clientId) => CupertinoWebSocketAdapter(clientId: clientId);
+  defaultWebSocketAdapterOverride = (String clientId) =>
+      CupertinoWebSocketAdapter(clientId: clientId);
   defaultHttpClientFactory = CupertinoClient.defaultSessionConfiguration;
 }
 
@@ -33,10 +33,8 @@ void installCupertinoTransport() {
 ///
 /// Injectable so contract tests can substitute a fake [WebSocket] without
 /// touching NSURLSession (which is unavailable under `flutter test`).
-typedef CupertinoWebSocketConnector = Future<WebSocket> Function(
-  Uri url,
-  String clientId,
-);
+typedef CupertinoWebSocketConnector =
+    Future<WebSocket> Function(Uri url, String clientId);
 
 Future<WebSocket> _defaultConnector(Uri url, String clientId) {
   final config = URLSessionConfiguration.defaultSessionConfiguration()
@@ -151,10 +149,7 @@ class CupertinoWebSocketAdapter implements WebSocketAdapter {
           return;
         }
         emitClose(
-          WebSocketCloseEvent(
-            code: 1006,
-            errorMessage: error.toString(),
-          ),
+          WebSocketCloseEvent(code: 1006, errorMessage: error.toString()),
         );
         unawaited(_closeSocketAfterStreamError(socket));
       },
@@ -191,10 +186,9 @@ class CupertinoWebSocketAdapter implements WebSocketAdapter {
     final socket = _socket;
     _socket = null;
     if (socket != null) {
-      await _closeSocketQuietly(socket).timeout(
-        const Duration(seconds: 2),
-        onTimeout: () {},
-      );
+      await _closeSocketQuietly(
+        socket,
+      ).timeout(const Duration(seconds: 2), onTimeout: () {});
     }
   }
 

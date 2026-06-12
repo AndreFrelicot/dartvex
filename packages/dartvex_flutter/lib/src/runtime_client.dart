@@ -175,7 +175,7 @@ class ConvexClientRuntime implements ConvexRuntimeClient {
   ///
   /// When [disposeClient] is true, disposing this runtime also disposes the client.
   ConvexClientRuntime(this._client, {this.disposeClient = false})
-      : _currentConnectionState = _client.currentConnectionState {
+    : _currentConnectionState = _client.currentConnectionState {
     _connectionStateSubscription = _client.connectionState.listen((state) {
       _currentConnectionState = state;
     });
@@ -186,44 +186,37 @@ class ConvexClientRuntime implements ConvexRuntimeClient {
   /// Whether disposing this runtime should also dispose the wrapped client.
   final bool disposeClient;
   late final StreamSubscription<ConvexConnectionState>
-      _connectionStateSubscription;
+  _connectionStateSubscription;
   ConvexConnectionState _currentConnectionState;
   bool _disposed = false;
 
   @override
-
   /// Broadcasts connection state changes from the wrapped client.
   Stream<ConvexConnectionState> get connectionState => _client.connectionState;
 
   @override
-
   /// The current connection state observed from the wrapped client.
   ConvexConnectionState get currentConnectionState => _currentConnectionState;
 
   @override
-
   /// Broadcasts rich connection status changes from the wrapped client.
   Stream<convex.ConnectionStatus> get connectionStatus =>
       _client.connectionStatus;
 
   @override
-
   /// The current rich connection status observed from the wrapped client.
   convex.ConnectionStatus get currentConnectionStatus =>
       _client.currentConnectionStatus;
 
   @override
-
   /// Broadcasts auth-refreshing changes from the wrapped client.
   Stream<bool> get authRefreshing => _client.authRefreshing;
 
   @override
-
   /// Whether the wrapped client is currently refreshing auth.
   bool get currentAuthRefreshing => _client.isAuthRefreshing;
 
   @override
-
   /// Executes an action through the wrapped client.
   Future<dynamic> action(
     String name, [
@@ -233,12 +226,10 @@ class ConvexClientRuntime implements ConvexRuntimeClient {
   }
 
   @override
-
   /// Forces an immediate reconnect through the wrapped client.
   Future<void> reconnectNow(String reason) => _client.reconnectNow(reason);
 
   @override
-
   /// Disposes subscriptions and optionally the wrapped client.
   void dispose() {
     if (_disposed) {
@@ -252,7 +243,6 @@ class ConvexClientRuntime implements ConvexRuntimeClient {
   }
 
   @override
-
   /// Executes a mutation through the wrapped client.
   Future<dynamic> mutate(
     String name, [
@@ -263,7 +253,6 @@ class ConvexClientRuntime implements ConvexRuntimeClient {
   }
 
   @override
-
   /// Executes a query through the wrapped client.
   Future<dynamic> query(
     String name, [
@@ -273,7 +262,6 @@ class ConvexClientRuntime implements ConvexRuntimeClient {
   }
 
   @override
-
   /// Executes a typed one-shot query through the wrapped client.
   Future<T> queryOnce<T>(
     String name, [
@@ -283,7 +271,6 @@ class ConvexClientRuntime implements ConvexRuntimeClient {
   }
 
   @override
-
   /// Subscribes to a query through the wrapped client.
   ConvexRuntimeSubscription subscribe(
     String name, [
@@ -293,7 +280,6 @@ class ConvexClientRuntime implements ConvexRuntimeClient {
   }
 
   @override
-
   /// Subscribes to a paginated query through the wrapped client.
   ConvexRuntimePaginatedQuery paginatedQuery(
     String name,
@@ -328,40 +314,32 @@ class _ConvexClientRuntimePaginatedQuery
 
 class _ConvexClientRuntimeSubscription implements ConvexRuntimeSubscription {
   _ConvexClientRuntimeSubscription(this._subscription)
-      : _stream = _subscription.stream.map((event) {
-          switch (event) {
-            case convex.QuerySuccess(
-                :final value,
-                :final logLines,
-                :final hasPendingWrites
-              ):
-              return ConvexRuntimeQuerySuccess(
-                value,
-                logLines: logLines,
-                source: hasPendingWrites
-                    ? ConvexQuerySource.cache
-                    : ConvexQuerySource.remote,
-                hasPendingWrites: hasPendingWrites,
-              );
-            case convex.QueryLoading(:final hasPendingWrites):
-              return ConvexRuntimeQueryLoading(
-                source: ConvexQuerySource.cache,
-                hasPendingWrites: hasPendingWrites,
-              );
-            case convex.QueryError(
-                :final message,
-                :final data,
-                :final logLines
-              ):
-              return ConvexRuntimeQueryError(
-                convex.ConvexException(
-                  message,
-                  data: data,
-                  logLines: logLines,
-                ),
-              );
-          }
-        });
+    : _stream = _subscription.stream.map((event) {
+        switch (event) {
+          case convex.QuerySuccess(
+            :final value,
+            :final logLines,
+            :final hasPendingWrites,
+          ):
+            return ConvexRuntimeQuerySuccess(
+              value,
+              logLines: logLines,
+              source: hasPendingWrites
+                  ? ConvexQuerySource.cache
+                  : ConvexQuerySource.remote,
+              hasPendingWrites: hasPendingWrites,
+            );
+          case convex.QueryLoading(:final hasPendingWrites):
+            return ConvexRuntimeQueryLoading(
+              source: ConvexQuerySource.cache,
+              hasPendingWrites: hasPendingWrites,
+            );
+          case convex.QueryError(:final message, :final data, :final logLines):
+            return ConvexRuntimeQueryError(
+              convex.ConvexException(message, data: data, logLines: logLines),
+            );
+        }
+      });
 
   final convex.ConvexSubscription _subscription;
   final Stream<ConvexRuntimeQueryEvent> _stream;

@@ -49,11 +49,9 @@ void main() {
       await File(
         path.join(outputDirectory.path, FileEmitter.manifestName),
       ).writeAsString(
-        const JsonEncoder.withIndent('  ').convert(
-          <String, Object?>{
-            'files': <String>['../stale.dart'],
-          },
-        ),
+        const JsonEncoder.withIndent('  ').convert(<String, Object?>{
+          'files': <String>['../stale.dart'],
+        }),
       );
       final staleFile = File(path.join(tempRoot.path, 'stale.dart'));
       await staleFile.writeAsString('$generatedFileHeader\n');
@@ -61,9 +59,7 @@ void main() {
       await expectLater(
         const FileEmitter().emit(
           outputDirectory: outputDirectory.path,
-          files: const <String, String>{
-            'api.dart': '$generatedFileHeader\n',
-          },
+          files: const <String, String>{'api.dart': '$generatedFileHeader\n'},
           dryRun: false,
         ),
         throwsA(

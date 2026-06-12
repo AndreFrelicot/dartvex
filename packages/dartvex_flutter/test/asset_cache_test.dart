@@ -27,10 +27,7 @@ void main() {
 
       expect(file, isNotNull);
       expect(fakeCacheManager.getSingleFileCalls, hasLength(1));
-      expect(
-        fakeCacheManager.getSingleFileCalls.first.key,
-        'cache-123',
-      );
+      expect(fakeCacheManager.getSingleFileCalls.first.key, 'cache-123');
       expect(
         fakeCacheManager.getSingleFileCalls.first.url,
         'https://example.com/img.png',
@@ -104,14 +101,16 @@ void main() {
       expect(fakeCacheManager.emptyCacheCalled, isTrue);
     });
 
-    test('getSizeBytes returns cache size from metrics-aware managers',
-        () async {
-      fakeCacheManager.putInCache('cache-size', byteCount: 42);
+    test(
+      'getSizeBytes returns cache size from metrics-aware managers',
+      () async {
+        fakeCacheManager.putInCache('cache-size', byteCount: 42);
 
-      final size = await cache.getSizeBytes();
+        final size = await cache.getSizeBytes();
 
-      expect(size, 42);
-    });
+        expect(size, 42);
+      },
+    );
   });
 
   group('ConvexOfflineImage', () {
@@ -317,8 +316,9 @@ void main() {
   });
 
   group('ConvexImage', () {
-    testWidgets('resolves storage URLs with actions when requested',
-        (tester) async {
+    testWidgets('resolves storage URLs with actions when requested', (
+      tester,
+    ) async {
       final client = FakeRuntimeClient(
         initialConnectionState: ConvexConnectionState.connected,
       );
@@ -348,8 +348,9 @@ void main() {
       expect(find.text('error'), findsOneWidget);
     });
 
-    testWidgets('reloads when the explicit client changes after an error',
-        (tester) async {
+    testWidgets('reloads when the explicit client changes after an error', (
+      tester,
+    ) async {
       final firstClient = FakeRuntimeClient(
         initialConnectionState: ConvexConnectionState.connected,
       );
@@ -395,8 +396,9 @@ void main() {
       cache = ConvexAssetCache.custom(fakeCacheManager);
     });
 
-    testWidgets('resolves cache-miss URLs with actions when requested',
-        (tester) async {
+    testWidgets('resolves cache-miss URLs with actions when requested', (
+      tester,
+    ) async {
       final client = FakeRuntimeClient(
         initialConnectionState: ConvexConnectionState.connected,
       );
@@ -425,13 +427,16 @@ void main() {
       });
       expect(client.queryCalls, isEmpty);
       expect(fakeCacheManager.getSingleFileCalls, hasLength(1));
-      expect(fakeCacheManager.getSingleFileCalls.single.url,
-          'https://example.com/img.png');
+      expect(
+        fakeCacheManager.getSingleFileCalls.single.url,
+        'https://example.com/img.png',
+      );
       expect(find.text('loaded'), findsOneWidget);
     });
 
-    testWidgets('reloads when the provider client changes after load',
-        (tester) async {
+    testWidgets('reloads when the provider client changes after load', (
+      tester,
+    ) async {
       final firstClient = FakeRuntimeClient(
         initialConnectionState: ConvexConnectionState.connected,
       );
@@ -479,8 +484,9 @@ void main() {
       expect(find.text('loaded'), findsOneWidget);
     });
 
-    testWidgets('reloads when the cache instance changes after load',
-        (tester) async {
+    testWidgets('reloads when the cache instance changes after load', (
+      tester,
+    ) async {
       final firstCacheManager = FakeCacheManager()..putInCache('img-1');
       final secondCacheManager = FakeCacheManager();
       final firstCache = ConvexAssetCache.custom(firstCacheManager);

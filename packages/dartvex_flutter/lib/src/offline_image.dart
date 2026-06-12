@@ -52,7 +52,7 @@ class ConvexOfflineImage extends StatefulWidget {
 
   /// Builds the widget tree from the current [ConvexAssetSnapshot].
   final Widget Function(BuildContext context, ConvexAssetSnapshot snapshot)
-      builder;
+  builder;
 
   @override
   State<ConvexOfflineImage> createState() => _ConvexOfflineImageState();
@@ -172,11 +172,11 @@ class ConvexAssetSnapshot {
 
   /// Creates a loading snapshot with no file or error.
   const ConvexAssetSnapshot.loading()
-      : file = null,
-        error = null,
-        isLoading = true,
-        hasError = false,
-        isCached = false;
+    : file = null,
+      error = null,
+      isLoading = true,
+      hasError = false,
+      isCached = false;
 
   /// The resolved file, or `null` if still loading or failed.
   final File? file;

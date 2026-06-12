@@ -18,22 +18,20 @@ void main() {
       addTearDown(() => tempDir.delete(recursive: true));
       final logs = <String>[];
 
-      final exitCode = await runConvexCodegen(
-        <String>[
-          'generate',
-          '--spec-file',
-          fixtureFile.path,
-          '--output',
-          tempDir.path,
-        ],
-        log: logs.add,
-      );
+      final exitCode = await runConvexCodegen(<String>[
+        'generate',
+        '--spec-file',
+        fixtureFile.path,
+        '--output',
+        tempDir.path,
+      ], log: logs.add);
 
       expect(exitCode, 0);
       expect(File(path.join(tempDir.path, 'api.dart')).existsSync(), isTrue);
       expect(
-        File(path.join(tempDir.path, '.dartvex_codegen_manifest.json'))
-            .existsSync(),
+        File(
+          path.join(tempDir.path, '.dartvex_codegen_manifest.json'),
+        ).existsSync(),
         isTrue,
       );
       expect(logs.first, contains('Generated'));
@@ -44,17 +42,14 @@ void main() {
       addTearDown(() => tempDir.delete(recursive: true));
       final logs = <String>[];
 
-      final exitCode = await runConvexCodegen(
-        <String>[
-          'generate',
-          '--spec-file',
-          fixtureFile.path,
-          '--output',
-          tempDir.path,
-          '--dry-run',
-        ],
-        log: logs.add,
-      );
+      final exitCode = await runConvexCodegen(<String>[
+        'generate',
+        '--spec-file',
+        fixtureFile.path,
+        '--output',
+        tempDir.path,
+        '--dry-run',
+      ], log: logs.add);
 
       expect(exitCode, 0);
       expect(logs.first, '=== api.dart ===');
@@ -89,11 +84,7 @@ void main() {
       final logs = <String>[];
 
       final exitCode = await runConvexCodegen(
-        <String>[
-          'generate',
-          '--output',
-          tempDir.path,
-        ],
+        <String>['generate', '--output', tempDir.path],
         log: (_) {},
         errorLog: logs.add,
       );
@@ -106,11 +97,7 @@ void main() {
       final logs = <String>[];
 
       final exitCode = await runConvexCodegen(
-        <String>[
-          'generate',
-          '--spec-file',
-          fixtureFile.path,
-        ],
+        <String>['generate', '--spec-file', fixtureFile.path],
         log: (_) {},
         errorLog: logs.add,
       );

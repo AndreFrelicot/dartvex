@@ -40,8 +40,9 @@ class GenerateConfig {
       projectDirectory: projectDirectory == null
           ? null
           : path.normalize(path.absolute(projectDirectory!)),
-      specFile:
-          specFile == null ? null : path.normalize(path.absolute(specFile!)),
+      specFile: specFile == null
+          ? null
+          : path.normalize(path.absolute(specFile!)),
       outputDirectory: path.normalize(path.absolute(outputDirectory)),
       clientImport: clientImport,
       dryRun: dryRun,

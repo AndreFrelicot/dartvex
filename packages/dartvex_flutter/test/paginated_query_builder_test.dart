@@ -10,7 +10,7 @@ void main() {
   Widget buildPaginated({
     required FakeRuntimeClient client,
     required void Function(List<Map<String, dynamic>>, PaginationStatus)
-        onBuild,
+    onBuild,
     String query = 'items:list',
     Map<String, dynamic>? args,
     int pageSize = 2,
@@ -37,11 +37,12 @@ void main() {
   }
 
   FakeRuntimeClient connectedClient() => FakeRuntimeClient(
-        initialConnectionState: ConvexConnectionState.connected,
-      );
+    initialConnectionState: ConvexConnectionState.connected,
+  );
 
-  testWidgets('starts in loading state and opens one paginated query',
-      (tester) async {
+  testWidgets('starts in loading state and opens one paginated query', (
+    tester,
+  ) async {
     final client = connectedClient();
     PaginationStatus? capturedStatus;
 
@@ -58,8 +59,9 @@ void main() {
     expect(client.paginatedQueryCalls.single.pageSize, 2);
   });
 
-  testWidgets('seeds the first build from a warm paginated result',
-      (tester) async {
+  testWidgets('seeds the first build from a warm paginated result', (
+    tester,
+  ) async {
     final client = connectedClient();
     client.nextPaginatedInitialResult = const ConvexPaginatedResult(
       results: <dynamic>[
@@ -103,21 +105,19 @@ void main() {
       ),
     );
 
-    client.paginatedQueryCalls.single.query.emitPage(
-      <dynamic>[
-        <String, dynamic>{'id': '1'},
-        <String, dynamic>{'id': '2'},
-      ],
-      status: ConvexPaginationStatus.canLoadMore,
-    );
+    client.paginatedQueryCalls.single.query.emitPage(<dynamic>[
+      <String, dynamic>{'id': '1'},
+      <String, dynamic>{'id': '2'},
+    ], status: ConvexPaginationStatus.canLoadMore);
     await tester.pump();
 
     expect(capturedItems, hasLength(2));
     expect(capturedStatus, PaginationStatus.idle);
   });
 
-  testWidgets('loadMore requests the next page and updates reactively',
-      (tester) async {
+  testWidgets('loadMore requests the next page and updates reactively', (
+    tester,
+  ) async {
     final client = connectedClient();
     List<Map<String, dynamic>>? capturedItems;
     PaginationStatus? capturedStatus;
@@ -133,12 +133,9 @@ void main() {
     );
 
     final query = client.paginatedQueryCalls.single.query;
-    query.emitPage(
-      <dynamic>[
-        <String, dynamic>{'id': '1'},
-      ],
-      status: ConvexPaginationStatus.canLoadMore,
-    );
+    query.emitPage(<dynamic>[
+      <String, dynamic>{'id': '1'},
+    ], status: ConvexPaginationStatus.canLoadMore);
     await tester.pump();
     expect(capturedItems, hasLength(1));
     expect(capturedStatus, PaginationStatus.idle);
@@ -161,8 +158,9 @@ void main() {
     expect(capturedStatus, PaginationStatus.allLoaded);
   });
 
-  testWidgets('shows allLoaded when the first page is exhausted',
-      (tester) async {
+  testWidgets('shows allLoaded when the first page is exhausted', (
+    tester,
+  ) async {
     final client = connectedClient();
     PaginationStatus? capturedStatus;
 
@@ -261,12 +259,9 @@ void main() {
     );
 
     expect(
-      () => client.paginatedQueryCalls.single.query.emitPage(
-        <dynamic>[
-          <String, dynamic>{'id': 'bad'},
-        ],
-        status: ConvexPaginationStatus.canLoadMore,
-      ),
+      () => client.paginatedQueryCalls.single.query.emitPage(<dynamic>[
+        <String, dynamic>{'id': 'bad'},
+      ], status: ConvexPaginationStatus.canLoadMore),
       returnsNormally,
     );
     await tester.pump();
@@ -275,8 +270,9 @@ void main() {
     expect(capturedStatus, PaginationStatus.error);
   });
 
-  testWidgets('updates a loaded page reactively without duplicates',
-      (tester) async {
+  testWidgets('updates a loaded page reactively without duplicates', (
+    tester,
+  ) async {
     final client = connectedClient();
     List<Map<String, dynamic>>? capturedItems;
 
@@ -288,33 +284,28 @@ void main() {
     );
 
     final query = client.paginatedQueryCalls.single.query;
-    query.emitPage(
-      <dynamic>[
-        <String, dynamic>{'id': 'a'},
-        <String, dynamic>{'id': 'b'},
-      ],
-      status: ConvexPaginationStatus.canLoadMore,
-    );
+    query.emitPage(<dynamic>[
+      <String, dynamic>{'id': 'a'},
+      <String, dynamic>{'id': 'b'},
+    ], status: ConvexPaginationStatus.canLoadMore);
     await tester.pump();
-    expect(
-      capturedItems!.map((item) => item['id']).toList(),
-      <String>['a', 'b'],
-    );
+    expect(capturedItems!.map((item) => item['id']).toList(), <String>[
+      'a',
+      'b',
+    ]);
 
     // An insert into an already-loaded page flows through reactively.
-    query.emitPage(
-      <dynamic>[
-        <String, dynamic>{'id': 'a'},
-        <String, dynamic>{'id': 'x'},
-        <String, dynamic>{'id': 'b'},
-      ],
-      status: ConvexPaginationStatus.canLoadMore,
-    );
+    query.emitPage(<dynamic>[
+      <String, dynamic>{'id': 'a'},
+      <String, dynamic>{'id': 'x'},
+      <String, dynamic>{'id': 'b'},
+    ], status: ConvexPaginationStatus.canLoadMore);
     await tester.pump();
-    expect(
-      capturedItems!.map((item) => item['id']).toList(),
-      <String>['a', 'x', 'b'],
-    );
+    expect(capturedItems!.map((item) => item['id']).toList(), <String>[
+      'a',
+      'x',
+      'b',
+    ]);
   });
 
   testWidgets('resets the query when args change', (tester) async {
@@ -340,46 +331,38 @@ void main() {
 
     expect(client.paginatedQueryCalls, hasLength(2));
     expect(firstQuery.isCanceled, isTrue);
-    expect(
-      client.paginatedQueryCalls.last.args,
-      const <String, dynamic>{'channel': 'b'},
-    );
+    expect(client.paginatedQueryCalls.last.args, const <String, dynamic>{
+      'channel': 'b',
+    });
   });
 
-  testWidgets('resets the query when the args map is mutated in place',
-      (tester) async {
+  testWidgets('resets the query when the args map is mutated in place', (
+    tester,
+  ) async {
     final client = connectedClient();
     final args = <String, dynamic>{'channel': 'a'};
 
     await tester.pumpWidget(
-      buildPaginated(
-        client: client,
-        args: args,
-        onBuild: (_, __) {},
-      ),
+      buildPaginated(client: client, args: args, onBuild: (_, __) {}),
     );
     expect(client.paginatedQueryCalls, hasLength(1));
     final firstQuery = client.paginatedQueryCalls.first.query;
 
     args['channel'] = 'b';
     await tester.pumpWidget(
-      buildPaginated(
-        client: client,
-        args: args,
-        onBuild: (_, __) {},
-      ),
+      buildPaginated(client: client, args: args, onBuild: (_, __) {}),
     );
 
     expect(client.paginatedQueryCalls, hasLength(2));
     expect(firstQuery.isCanceled, isTrue);
-    expect(
-      client.paginatedQueryCalls.last.args,
-      const <String, dynamic>{'channel': 'b'},
-    );
+    expect(client.paginatedQueryCalls.last.args, const <String, dynamic>{
+      'channel': 'b',
+    });
   });
 
-  testWidgets('ignores stale page events from canceled queries',
-      (tester) async {
+  testWidgets('ignores stale page events from canceled queries', (
+    tester,
+  ) async {
     final client = _StalePaginatedRuntimeClient(
       initialConnectionState: ConvexConnectionState.connected,
     );
@@ -407,24 +390,18 @@ void main() {
       ),
     );
     final secondQuery = client.stalePaginatedQueries.last;
-    secondQuery.emitPage(
-      <dynamic>[
-        <String, dynamic>{'id': 'fresh'},
-      ],
-      status: ConvexPaginationStatus.canLoadMore,
-    );
+    secondQuery.emitPage(<dynamic>[
+      <String, dynamic>{'id': 'fresh'},
+    ], status: ConvexPaginationStatus.canLoadMore);
     await tester.pump();
     expect(capturedItems!.map((item) => item['id']).toList(), <String>[
       'fresh',
     ]);
 
     expect(firstQuery.isCanceled, isTrue);
-    firstQuery.emitPage(
-      <dynamic>[
-        <String, dynamic>{'id': 'stale'},
-      ],
-      status: ConvexPaginationStatus.canLoadMore,
-    );
+    firstQuery.emitPage(<dynamic>[
+      <String, dynamic>{'id': 'stale'},
+    ], status: ConvexPaginationStatus.canLoadMore);
     await tester.pump();
 
     expect(capturedItems!.map((item) => item['id']).toList(), <String>[
@@ -434,9 +411,7 @@ void main() {
 }
 
 class _StalePaginatedRuntimeClient extends FakeRuntimeClient {
-  _StalePaginatedRuntimeClient({
-    required super.initialConnectionState,
-  });
+  _StalePaginatedRuntimeClient({required super.initialConnectionState});
 
   final List<_StaleRuntimePaginatedQuery> stalePaginatedQueries =
       <_StaleRuntimePaginatedQuery>[];

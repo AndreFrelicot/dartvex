@@ -4,8 +4,8 @@ import 'connection_builder.dart';
 import 'runtime_client.dart';
 
 /// Builder used by [ConvexConnectionIndicator] for a specific connection state.
-typedef ConvexConnectionIndicatorBuilder = Widget Function(
-    BuildContext context);
+typedef ConvexConnectionIndicatorBuilder =
+    Widget Function(BuildContext context);
 
 /// Widget that switches between builders for connected and disconnected states.
 class ConvexConnectionIndicator extends StatelessWidget {

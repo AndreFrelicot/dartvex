@@ -8,11 +8,12 @@ import 'runtime_client.dart';
 import 'snapshot.dart';
 
 /// Builder callback for [ConvexMutation].
-typedef ConvexMutationBuilder<T> = Widget Function(
-  BuildContext context,
-  ConvexRequestExecutor<T> mutate,
-  ConvexRequestSnapshot<T> snapshot,
-);
+typedef ConvexMutationBuilder<T> =
+    Widget Function(
+      BuildContext context,
+      ConvexRequestExecutor<T> mutate,
+      ConvexRequestSnapshot<T> snapshot,
+    );
 
 /// Widget that exposes an imperative Convex mutation and request snapshot.
 class ConvexMutation<T> extends StatefulWidget {
@@ -75,7 +76,8 @@ class _ConvexMutationState<T> extends State<ConvexMutation<T>> {
     // decode and optimisticUpdate are captured per request, not part of the
     // mutation identity — inline closures differ on every parent rebuild and
     // must not wipe the snapshot or orphan an in-flight request.
-    final identityChanged = oldWidget.mutation != widget.mutation ||
+    final identityChanged =
+        oldWidget.mutation != widget.mutation ||
         _runtimeClient != resolvedClient;
     _runtimeClient = resolvedClient;
     if (identityChanged) {
