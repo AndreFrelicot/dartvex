@@ -1058,6 +1058,7 @@ class ConvexLocalClient {
         );
       },
       onError: (Object error, StackTrace stackTrace) {
+        _markRemoteEventSeen(queryState);
         _emitToQueryKey(
           queryState.descriptor.key,
           LocalQueryError(

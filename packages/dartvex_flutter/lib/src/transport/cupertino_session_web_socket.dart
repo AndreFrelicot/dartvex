@@ -166,7 +166,8 @@ class OwnedSessionCupertinoWebSocket implements WebSocket {
       _task.cancel();
       _connectionClosed(code, reason.codeUnits.toNSData());
     } else {
-      throw StateError('unexpected error: $e');
+      _task.cancel();
+      _connectionClosed(1006, e.toString().codeUnits.toNSData());
     }
   }
 

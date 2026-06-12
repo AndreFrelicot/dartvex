@@ -62,7 +62,8 @@ class _ConvexProviderState extends State<ConvexProvider>
       final client = widget.client;
       if (client.currentConnectionState != ConvexConnectionState.connected) {
         try {
-          unawaited(client.reconnectNow('AppResumed'));
+          unawaited(
+              _ignoreDisposedReconnect(client.reconnectNow('AppResumed')));
         } on ConvexException {
           // An externally owned client (disposeClient: false) can be disposed
           // while the app is backgrounded with this provider still mounted —
@@ -71,6 +72,15 @@ class _ConvexProviderState extends State<ConvexProvider>
           // effort; a torn-down client has nothing to reconnect.
         }
       }
+    }
+  }
+
+  Future<void> _ignoreDisposedReconnect(Future<void> reconnect) async {
+    try {
+      await reconnect;
+    } on ConvexException {
+      // Same disposed-client race as the synchronous path above, but surfaced
+      // by a Future rejected after lifecycle dispatch has already returned.
     }
   }
 

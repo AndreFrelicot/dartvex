@@ -22,6 +22,8 @@ class _FakeWebSocket implements WebSocket {
   void receiveBinary(List<int> data) =>
       _events.add(BinaryDataReceived(Uint8List.fromList(data)));
 
+  void emitError(Object error) => _events.addError(error);
+
   void remoteClose(int code, [String reason = '']) {
     _events
       ..add(CloseReceived(code, reason))
@@ -137,6 +139,34 @@ void main() {
             'garbled message then fails JSON parsing upstream, which drives '
             'the InvalidServerMessage reconnect instead of a crash',
       );
+    });
+
+    test('a socket event stream error surfaces as a close event', () async {
+      final closes = <WebSocketCloseEvent>[];
+      final errors = <Object>[];
+      await runZonedGuarded(() async {
+        await adapter.connect('wss://example.convex.cloud/sync');
+        final sub = adapter.closeEvents.listen(closes.add);
+        fake.emitError(StateError('stream failed'));
+        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
+        await sub.cancel();
+      }, (error, stackTrace) {
+        errors.add(error);
+      });
+
+      expect(
+        errors,
+        isEmpty,
+        reason: 'socket stream errors must reach the sync layer as close '
+            'events instead of escaping as uncaught zone errors',
+      );
+      expect(adapter.isConnected, isFalse);
+      expect(fake.closed, isTrue);
+      expect(fake.closeCode, 1000);
+      expect(closes, hasLength(1));
+      expect(closes.single.code, 1006);
+      expect(closes.single.errorMessage, contains('stream failed'));
     });
 
     test('send forwards to the socket; throws StateError when disconnected',

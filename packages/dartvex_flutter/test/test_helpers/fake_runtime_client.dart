@@ -78,6 +78,9 @@ class FakeRuntimeClient implements ConvexRuntimeClient {
   /// client's disposed assertion (which throws before returning a future).
   Object? reconnectNowSyncError;
 
+  /// When set, [reconnectNow] returns a failed future after recording the call.
+  Object? reconnectNowAsyncError;
+
   @override
   Future<void> reconnectNow(String reason) {
     final error = reconnectNowSyncError;
@@ -85,6 +88,10 @@ class FakeRuntimeClient implements ConvexRuntimeClient {
       throw error;
     }
     reconnectNowCalls.add(reason);
+    final asyncError = reconnectNowAsyncError;
+    if (asyncError != null) {
+      return Future<void>.error(asyncError);
+    }
     return Future<void>.value();
   }
 

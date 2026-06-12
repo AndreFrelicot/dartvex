@@ -140,6 +140,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   query-set replay, so an update mutating them could silently poison the
   replayed query set. The official client is immune by construction (it
   re-parses args from the query token); dartvex now matches that guarantee.
+- `OptimisticLocalStore.setQuery` now deep-snapshots args before storing
+  optimistic-only entries, so later caller-side mutation of nested args cannot
+  change what `getAllQueries` reports for that local overlay.
 - `ConvexPaginatedQuery` now deep-snapshots its base args at construction, so
   later caller-side mutation cannot change arguments used by future
   `loadMore()` page subscriptions.

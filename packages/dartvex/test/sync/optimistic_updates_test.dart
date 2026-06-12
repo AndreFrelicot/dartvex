@@ -176,6 +176,30 @@ void main() {
       expect((result! as StoredQuerySuccess).value, isNull);
     });
 
+    test('setQuery snapshots args before storing optimistic-only entries', () {
+      final results = OptimisticQueryResults();
+      final filter = <String, dynamic>{'status': 'active'};
+      final args = <String, dynamic>{'filter': filter};
+
+      results.applyOptimisticUpdate((store) {
+        store.setQuery('messages:list', args, <String>['m1']);
+      }, 0);
+      filter['status'] = 'archived';
+
+      List<OptimisticQueryEntry> all = const <OptimisticQueryEntry>[];
+      results.applyOptimisticUpdate((store) {
+        all = store.getAllQueries('messages:list');
+      }, 1);
+
+      expect(all, hasLength(1));
+      expect(
+        all.single.args,
+        <String, dynamic>{
+          'filter': <String, dynamic>{'status': 'active'},
+        },
+      );
+    });
+
     test('clearQuery marks a query as loading', () {
       final results = OptimisticQueryResults();
       results.ingestQueryResultsFromServer(

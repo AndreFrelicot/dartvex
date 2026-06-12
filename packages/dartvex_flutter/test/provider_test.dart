@@ -135,6 +135,35 @@ void main() {
     },
   );
 
+  testWidgets(
+    'ConvexProvider swallows an async disposed-client error on app resume',
+    (tester) async {
+      final client = FakeRuntimeClient(
+        initialConnectionState: ConvexConnectionState.disconnected,
+      )..reconnectNowAsyncError =
+          const ConvexException('ConvexClient has been disposed');
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: ConvexProvider(
+            client: client,
+            child: const SizedBox(),
+          ),
+        ),
+      );
+
+      simulateAppLifecycleState(tester, AppLifecycleState.paused);
+      await tester.pump();
+      simulateAppLifecycleState(tester, AppLifecycleState.resumed);
+      await tester.pump();
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      expect(client.reconnectNowCalls, contains('AppResumed'));
+    },
+  );
+
   testWidgets('ConvexProvider disposes owned clients', (tester) async {
     final client = FakeRuntimeClient();
 

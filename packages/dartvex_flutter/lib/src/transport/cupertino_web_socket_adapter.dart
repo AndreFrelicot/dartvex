@@ -146,6 +146,18 @@ class CupertinoWebSocketAdapter implements WebSocketAdapter {
             );
         }
       },
+      onError: (Object error, StackTrace stackTrace) {
+        if (!identical(_socket, socket)) {
+          return;
+        }
+        emitClose(
+          WebSocketCloseEvent(
+            code: 1006,
+            errorMessage: error.toString(),
+          ),
+        );
+        unawaited(_closeSocketAfterStreamError(socket));
+      },
       // The underlying stream always ends with a CloseReceived event; this is
       // a defensive fallback so a silently-ended stream still surfaces as a
       // close (emitClose dedupes).
@@ -194,6 +206,15 @@ class CupertinoWebSocketAdapter implements WebSocketAdapter {
       await socket.close(1000);
     } on WebSocketConnectionClosed {
       // Already closed.
+    }
+  }
+
+  Future<void> _closeSocketAfterStreamError(WebSocket socket) async {
+    try {
+      await _closeSocketQuietly(socket);
+    } catch (_) {
+      // The stream error is already being reported to the sync layer as an
+      // abnormal close. A best-effort cleanup failure must not escape the zone.
     }
   }
 

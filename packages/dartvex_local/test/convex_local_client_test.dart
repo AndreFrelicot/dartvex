@@ -312,6 +312,52 @@ void main() {
       await listener.cancel();
     });
 
+    test('remote stream errors suppress stale cache seed events', () async {
+      final innerStore = await SqliteLocalStore.openInMemory();
+      await QueryCache(
+        storage: innerStore,
+        codec: const JsonValueCodec(),
+      ).write(
+        name: 'tasks:list',
+        args: const <String, dynamic>{},
+        value: const <String>['cached'],
+      );
+      final gatedStore = GatedReadCacheStorage(innerStore)..blockNextRead();
+      final gatedRemote = FakeRemoteClient();
+      final feed = StreamController<LocalRemoteQueryEvent>.broadcast(
+        sync: true,
+      );
+      gatedRemote.subscriptionStreams['tasks:list'] = feed.stream;
+      final client = await ConvexLocalClient.openWithRemote(
+        remoteClient: gatedRemote,
+        config: LocalClientConfig(
+          cacheStorage: gatedStore,
+          queueStorage: innerStore,
+        ),
+      );
+      addTearDown(() async {
+        gatedStore.releaseBlockedRead();
+        await feed.close();
+        await client.dispose();
+        gatedRemote.dispose();
+      });
+
+      final events = <LocalQueryEvent>[];
+      final subscription = client.subscribe('tasks:list');
+      addTearDown(subscription.cancel);
+      subscription.stream.listen(events.add);
+      await gatedStore.readBlocked;
+
+      feed.addError(StateError('remote stream failed'), StackTrace.current);
+      await pumpEventQueue();
+      gatedStore.releaseBlockedRead();
+      await pumpEventQueue();
+
+      expect(events, hasLength(1));
+      expect(events.single, isA<LocalQueryError>());
+      expect((events.single as LocalQueryError).error, isA<StateError>());
+    });
+
     test('remote connection stream errors mark the local client offline '
         'without escaping', () async {
       final errors = <Object>[];

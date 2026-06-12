@@ -159,11 +159,13 @@ class _OptimisticLocalStoreImpl implements OptimisticLocalStore {
     StoredQueryResult? result,
   ) {
     final canonicalPath = LocalSyncState.canonicalizeUdfPath(name);
-    final token = LocalSyncState.serializeQueryToken(canonicalPath, args);
+    final canonicalArgs = canonicalizeConvexArgs(args);
+    final token =
+        LocalSyncState.serializeQueryToken(canonicalPath, canonicalArgs);
     _queryResults[token] = (
       result: result,
       udfPath: canonicalPath,
-      args: Map<String, dynamic>.from(args),
+      args: canonicalArgs,
     );
     modifiedQueries.add(token);
   }

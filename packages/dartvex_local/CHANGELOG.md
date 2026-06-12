@@ -118,6 +118,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   local query error event instead of escaping from `ConvexLocalClient.subscribe`
   after local subscription state has already been registered. The returned
   local subscription remains cancellable.
+- Raw errors emitted by a remote query stream now count as remote events before
+  they are surfaced locally, so a delayed cache seed cannot overwrite the
+  remote error with stale cached data.
 - Errors emitted by a custom `LocalRemoteClient.connectionState` stream are
   now logged and treated as a remote disconnect instead of surfacing as
   unhandled zone errors while leaving the local client marked online.
