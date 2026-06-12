@@ -365,6 +365,19 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     );
     _connectivitySubscription = _config.connectivitySignal?.onRestored.listen(
       (_) => _wsManager.reconnectImmediatelyIfWaiting(),
+      onError: (Object error, StackTrace stackTrace) {
+        // A failing connectivity signal (a platform channel error, or any
+        // user-supplied implementation that throws) must not surface as an
+        // uncaught zone error — that is isolate-fatal in a pure Dart app.
+        // Losing the restore hint only means reconnects wait out the normal
+        // backoff instead of firing immediately.
+        _log(
+          DartvexLogLevel.warn,
+          'Connectivity signal error; relying on reconnect backoff',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      },
     );
     if (_config.connectImmediately) {
       _currentConnectionState = ConnectionState.connecting;

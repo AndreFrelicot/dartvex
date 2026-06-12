@@ -127,6 +127,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Errors emitted by a configured `ConnectivitySignal` stream are now caught and
+  logged instead of surfacing as uncaught zone errors (isolate-fatal in a
+  pure-Dart app). The restore subscription survives the error, so a later
+  offline→online edge still reconnects immediately; losing a hint only means
+  falling back to the normal reconnect backoff.
 - The native WebSocket adapter decodes binary frames with `allowMalformed`, so
   a peer sending invalid UTF-8 can no longer crash a pure-Dart isolate with an
   uncaught `FormatException` thrown from the socket listener. The garbled

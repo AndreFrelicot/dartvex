@@ -2263,6 +2263,43 @@ void main() {
       signal.dispose();
     });
 
+    test(
+        'connectivity signal errors are swallowed and the restore '
+        'subscription survives them', () async {
+      final adapter = MockWebSocketAdapter();
+      final signal = _FakeConnectivitySignal();
+      final client = ConvexClient(
+        'https://demo.convex.cloud',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          connectivitySignal: signal,
+          reconnectBackoff: const <Duration>[Duration(hours: 1)],
+        ),
+      );
+
+      final subscription = client.subscribe('messages:list');
+      await settle();
+      expect(adapter.connectedUrls, hasLength(1));
+
+      adapter.disconnect();
+      await settle();
+
+      // A platform-channel failure (or any throwing user implementation) must
+      // not surface as an uncaught zone error, and must not cancel the
+      // subscription: a later restore still reconnects immediately.
+      signal.fail(StateError('connectivity platform channel failed'));
+      await settle();
+      expect(adapter.connectedUrls, hasLength(1));
+
+      signal.restore();
+      await settle();
+      expect(adapter.connectedUrls, hasLength(2));
+
+      subscription.cancel();
+      client.dispose();
+      signal.dispose();
+    });
+
     group('connection status', () {
       test('fromState derives a coarse-only snapshot', () {
         final connected = ConnectionStatus.fromState(ConnectionState.connected);
@@ -2539,6 +2576,8 @@ class _FakeConnectivitySignal implements ConnectivitySignal {
   Stream<void> get onRestored => _controller.stream;
 
   void restore() => _controller.add(null);
+
+  void fail(Object error) => _controller.addError(error);
 
   void dispose() => _controller.close();
 }
