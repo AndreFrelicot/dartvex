@@ -23,10 +23,19 @@ class TypeMapperException implements Exception {
 /// Mutable context shared while rendering generated Dart types.
 class TypeRenderContext {
   /// Creates a render context with optional naming overrides.
-  TypeRenderContext({Naming? naming}) : naming = naming ?? const Naming();
+  ///
+  /// [tableIdClassNames] maps Convex table names to their generated
+  /// `ConvexTableId` subclass names. Tables missing from the map use the
+  /// default `<TableName>Id` naming.
+  TypeRenderContext({Naming? naming, Map<String, String>? tableIdClassNames})
+    : naming = naming ?? const Naming(),
+      tableIdClassNames = tableIdClassNames ?? const <String, String>{};
 
   /// Naming helper used while reserving generated symbols.
   final Naming naming;
+
+  /// Generated ID class names keyed by Convex table name.
+  final Map<String, String> tableIdClassNames;
 
   /// Table names referenced by generated ID wrappers.
   final Set<String> tableNames = <String>{};
@@ -58,6 +67,44 @@ class TypeRenderContext {
     _suggestedToReserved[normalized] = candidate;
     return candidate;
   }
+
+  final Map<String, List<String>> _unionCaseNames = <String, List<String>>{};
+
+  /// Claims the case class names of the sealed union [unionTypeName].
+  ///
+  /// Each name in [desiredNames] is reserved exactly as given unless another
+  /// generated type already took it, in which case a numeric suffix is
+  /// appended. Unlike [reserveTypeName], the claim is not memoized by
+  /// suggestion, so a nested type later requesting the same name (for example
+  /// an object member's `value` enum, `<Union>1Value`) is deduplicated to
+  /// `<Union>1Value2` instead of colliding with the case class. Repeated
+  /// claims for the same union return the original names.
+  List<String> claimUnionCaseNames(
+    String unionTypeName,
+    List<String> desiredNames,
+  ) {
+    final existing = _unionCaseNames[unionTypeName];
+    if (existing != null) {
+      return existing;
+    }
+    final claimed = <String>[];
+    for (final desired in desiredNames) {
+      var candidate = desired;
+      var suffix = 2;
+      while (_reservedTypeNames.contains(candidate)) {
+        candidate = '$desired$suffix';
+        suffix += 1;
+      }
+      _reservedTypeNames.add(candidate);
+      claimed.add(candidate);
+    }
+    _unionCaseNames[unionTypeName] = claimed;
+    return claimed;
+  }
+
+  /// Returns the generated ID class name for the Convex table [tableName].
+  String tableIdClassName(String tableName) =>
+      tableIdClassNames[tableName] ?? '${naming.typeName(tableName)}Id';
 
   /// Registers a generated type/helper definition if it has not been added yet.
   void addDefinition(String name, String code) {
@@ -107,6 +154,48 @@ class TypeMapper {
 
   final Naming _naming;
 
+  /// Resolves the Dart names of the fields [rawNames] of one object (or one
+  /// function's arguments) owned by [ownerName], keyed by raw name.
+  ///
+  /// System fields that collide with a user field are disambiguated by
+  /// [Naming.resolveFieldNames] (`_id` next to `id` becomes `systemId`); any
+  /// collision that remains throws a [TypeMapperException] instead of
+  /// emitting duplicate record fields or parameters.
+  Map<String, String> resolveObjectFieldNames(
+    Iterable<String> rawNames, {
+    required String ownerName,
+  }) {
+    final resolved = _naming.resolveFieldNames(rawNames);
+    final safeNameToRaw = <String, List<String>>{};
+    for (final entry in resolved.entries) {
+      (safeNameToRaw[entry.value] ??= <String>[]).add(entry.key);
+    }
+    for (final entry in safeNameToRaw.entries) {
+      if (entry.value.length > 1) {
+        throw TypeMapperException(
+          'Field name collision in "$ownerName": fields '
+          '${entry.value.map((name) => '"$name"').join(', ')} '
+          'all map to Dart name "${entry.key}".',
+        );
+      }
+    }
+    return resolved;
+  }
+
+  /// Returns the type-name suffix used for nested types of the field
+  /// [rawName], whose resolved Dart name is [resolvedName].
+  ///
+  /// Normally this is derived from the raw name (keeping existing generated
+  /// type names stable); a disambiguated system field (`_id` resolved to
+  /// `systemId`) uses its resolved name so it cannot share nested type names
+  /// with the colliding user field.
+  String fieldTypeSuffix(String rawName, String resolvedName) {
+    if (resolvedName == _naming.fieldName(rawName)) {
+      return _naming.typeName(rawName);
+    }
+    return _naming.typeName(resolvedName);
+  }
+
   /// Maps a Convex [type] into Dart using [suggestedName] within [context].
   MappedType mapType(
     ConvexType type, {
@@ -128,7 +217,9 @@ class TypeMapper {
             (expression) => "expectBool($expression, label: '$suggestedName')",
       );
     }
-    if (type is ConvexStringType) {
+    if (type is ConvexStringType || type is ConvexFunctionHandleType) {
+      // A `v.function()` value is a function handle string; its declared
+      // fnType/args/returns are informational only.
       return MappedType(
         dartType: const DartPrimitiveType('String'),
         encode: (expression) => expression,
@@ -153,7 +244,9 @@ class TypeMapper {
         decode: (_) => 'null',
       );
     }
-    if (type is ConvexBigIntType) {
+    if (type is ConvexBigIntType || type is ConvexCommitTsType) {
+      // `v.commitTs()` is an int64 commit timestamp on the wire, decoded by
+      // dartvex as a BigInt exactly like `v.int64()`.
       return MappedType(
         dartType: const DartPrimitiveType('BigInt'),
         encode: (expression) => expression,
@@ -198,7 +291,7 @@ class TypeMapper {
     }
     if (type is ConvexIdType) {
       context.tableNames.add(type.tableName);
-      final typeName = '${_naming.typeName(type.tableName)}Id';
+      final typeName = context.tableIdClassName(type.tableName);
       return MappedType(
         dartType: DartNamedType(typeName),
         encode: (expression) => '$expression.value',
@@ -225,10 +318,11 @@ class TypeMapper {
       );
     }
     if (type is ConvexRecordType) {
-      if (type.keys is! ConvexStringType) {
+      if (!_isStringKey(type.keys)) {
         context.warnings.add(
-          'Record keys for "$suggestedName" are not strings. Falling back to '
-          'Map<String, dynamic>.',
+          'Record keys for "$suggestedName" use an unsupported key validator '
+          '"${_describeConvexType(type.keys)}" (expected a string, an id, or '
+          'a union of those). Falling back to Map<String, dynamic>.',
         );
         return MappedType(
           dartType: const DartMapType(
@@ -277,21 +371,10 @@ class TypeMapper {
       }
       final typeName = context.reserveTypeName(suggestedName);
 
-      // Detect field name collisions before generating code.
-      final safeNameToRaw = <String, List<String>>{};
-      for (final rawName in type.value.keys) {
-        final safeName = _naming.fieldName(rawName);
-        (safeNameToRaw[safeName] ??= <String>[]).add(rawName);
-      }
-      for (final entry in safeNameToRaw.entries) {
-        if (entry.value.length > 1) {
-          throw TypeMapperException(
-            'Field name collision in "$typeName": fields '
-            '${entry.value.map((name) => '"$name"').join(', ')} '
-            'all map to Dart name "${entry.key}".',
-          );
-        }
-      }
+      final fieldNames = resolveObjectFieldNames(
+        type.value.keys,
+        ownerName: typeName,
+      );
 
       final fields = <DartRecordField>[];
       final fieldDecodeLines = <String>[];
@@ -304,11 +387,11 @@ class TypeMapper {
       for (final entry in type.value.entries) {
         final rawName = entry.key;
         final fieldKey = dartSingleQuotedString(rawName);
-        final safeName = _naming.fieldName(rawName);
+        final safeName = fieldNames[rawName]!;
         final field = entry.value;
         final mappedField = mapType(
           field.fieldType,
-          suggestedName: '$typeName${_naming.typeName(rawName)}',
+          suggestedName: '$typeName${fieldTypeSuffix(rawName, safeName)}',
           context: context,
         );
         final fieldType =
@@ -377,6 +460,22 @@ class TypeMapper {
       return _mapUnion(type, suggestedName: suggestedName, context: context);
     }
     throw TypeMapperException('Unsupported Convex type "${type.type}"');
+  }
+
+  /// Whether [keys] is a record key validator whose values are always Dart
+  /// strings on the wire: `v.string()`, `v.id(...)`, a string literal, or a
+  /// union of those (the shapes Convex accepts as `RecordKeyValidatorJSON`).
+  bool _isStringKey(ConvexType keys) {
+    if (keys is ConvexStringType || keys is ConvexIdType) {
+      return true;
+    }
+    if (keys is ConvexLiteralType) {
+      return keys.value is String;
+    }
+    if (keys is ConvexUnionType) {
+      return keys.value.isNotEmpty && keys.value.every(_isStringKey);
+    }
+    return false;
   }
 
   MappedType _mapUnion(
@@ -549,6 +648,14 @@ class TypeMapper {
     _assertUnionCanBeDecoded(nonNull, suggestedName);
 
     final typeName = context.reserveTypeName(suggestedName);
+    // Claim the case class names before mapping the members: a member's
+    // nested types are named from the same `<Union><n>` prefix (an object
+    // field `value` or a record value would request `<Union><n>Value`), so
+    // they must dedupe against the case classes rather than redeclare them.
+    final caseNames = context.claimUnionCaseNames(typeName, <String>[
+      for (var index = 0; index < nonNull.length; index += 1)
+        '$typeName${index + 1}Value',
+    ]);
     final cases = <_UnionCase>[];
     final buffer = StringBuffer('sealed class $typeName {\n');
     buffer.writeln('  const $typeName();');
@@ -562,7 +669,7 @@ class TypeMapper {
         suggestedName: '$typeName${index + 1}',
         context: context,
       );
-      final caseName = '$typeName${index + 1}Value';
+      final caseName = caseNames[index];
       cases.add(_UnionCase(className: caseName, mappedType: mappedMember));
       buffer
         ..writeln('class $caseName extends $typeName {')
@@ -715,6 +822,14 @@ class TypeMapper {
             _hasDistinctRequiredLiteralDiscriminator(left, right)) {
           continue;
         }
+        // Distinct literals of the same runtime shape (`'auto'` and `'none'`)
+        // never overlap: each case decodes through expectLiteral, which
+        // compares the value itself.
+        if (left is ConvexLiteralType &&
+            right is ConvexLiteralType &&
+            !_literalValuesEqual(left.value, right.value)) {
+          continue;
+        }
         throw TypeMapperException(
           'Ambiguous union "$suggestedName": '
           '${_describeConvexType(left)} and ${_describeConvexType(right)} '
@@ -773,10 +888,12 @@ class TypeMapper {
     if (type is ConvexNumberType) {
       return 'number';
     }
-    if (type is ConvexBigIntType) {
+    if (type is ConvexBigIntType || type is ConvexCommitTsType) {
       return 'bigint';
     }
-    if (type is ConvexStringType || type is ConvexIdType) {
+    if (type is ConvexStringType ||
+        type is ConvexIdType ||
+        type is ConvexFunctionHandleType) {
       return 'string';
     }
     if (type is ConvexBytesType) {

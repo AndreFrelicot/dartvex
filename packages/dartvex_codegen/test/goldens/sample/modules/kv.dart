@@ -3,6 +3,7 @@
 
 import '../runtime.dart';
 import '../schema.dart';
+
 import 'package:dartvex/dartvex.dart';
 
 class KvApi {
@@ -13,10 +14,12 @@ class KvApi {
   Future<Null> link({
     Optional<UsersId?> target = const Optional.absent(),
     Optional<List<String>?> tags = const Optional.absent(),
+    OptimisticUpdate? optimisticUpdate,
   }) async {
     await _client.mutate(
       'kv:link',
       _encodeLinkArgs((target: target, tags: tags)),
+      optimisticUpdate,
     );
     return null;
   }
@@ -25,10 +28,12 @@ class KvApi {
     required String key,
     required String value,
     Optional<bool> raw = const Optional.absent(),
+    OptimisticUpdate? optimisticUpdate,
   }) async {
     final raw$ = await _client.mutate(
       'kv:set',
       _encodeSetTypeArgs((key: key, value: value, raw: raw)),
+      optimisticUpdate,
     );
     return expectBool(raw$, label: 'SetTypeResult');
   }
@@ -46,17 +51,12 @@ class KvApi {
       'kv:watch',
       _encodeWatchArgs((subscription: subscription)),
     );
-    final typedStream$ = subscription$.stream.map((event) {
-      switch (event) {
-        case QuerySuccess(:final value):
-          return TypedQuerySuccess<Null>(null);
-        case QueryLoading(:final hasPendingWrites):
-          return TypedQueryLoading<Null>(hasPendingWrites: hasPendingWrites);
-        case QueryError(:final message, :final data, :final logLines):
-          return TypedQueryError<Null>(message, data: data, logLines: logLines);
-      }
-    });
-    return TypedConvexSubscription<Null>(subscription$, typedStream$);
+    return TypedConvexSubscription<Null>(
+      subscription$,
+      subscription$.stream.map(
+        (event$) => typedQueryResult<Null>(event$, (raw$) => null, 'kv:watch'),
+      ),
+    );
   }
 }
 

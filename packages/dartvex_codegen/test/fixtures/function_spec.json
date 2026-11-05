@@ -427,6 +427,354 @@
       "visibility": { "kind": "internal" }
     },
     {
+      "functionType": "Query",
+      "identifier": "events.ts:latest",
+      "visibility": {
+        "kind": "public"
+      },
+      "args": {
+        "type": "object",
+        "value": {
+          "scores": {
+            "fieldType": {
+              "type": "record",
+              "keys": {
+                "type": "id",
+                "tableName": "users"
+              },
+              "values": {
+                "fieldType": {
+                  "type": "number"
+                },
+                "optional": false
+              }
+            },
+            "optional": false
+          },
+          "labels": {
+            "fieldType": {
+              "type": "record",
+              "keys": {
+                "type": "union",
+                "value": [
+                  {
+                    "type": "literal",
+                    "value": "primary"
+                  },
+                  {
+                    "type": "literal",
+                    "value": "secondary"
+                  }
+                ]
+              },
+              "values": {
+                "fieldType": {
+                  "type": "string"
+                },
+                "optional": false
+              }
+            },
+            "optional": true
+          }
+        }
+      },
+      "returns": {
+        "type": "object",
+        "value": {
+          "_id": {
+            "fieldType": {
+              "type": "id",
+              "tableName": "events"
+            },
+            "optional": false
+          },
+          "_creationTime": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "id": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "creationTime": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "ts": {
+            "fieldType": {
+              "type": "commitTs"
+            },
+            "optional": false
+          },
+          "callback": {
+            "fieldType": {
+              "type": "function",
+              "fnType": "mutation",
+              "args": {
+                "type": "object",
+                "value": {
+                  "eventId": {
+                    "fieldType": {
+                      "type": "id",
+                      "tableName": "events"
+                    },
+                    "optional": false
+                  }
+                }
+              },
+              "returns": {
+                "type": "null"
+              }
+            },
+            "optional": false
+          },
+          "payload": {
+            "fieldType": {
+              "type": "any"
+            },
+            "optional": false
+          },
+          "fileId": {
+            "fieldType": {
+              "type": "id",
+              "tableName": "_storage"
+            },
+            "optional": false
+          },
+          "storageId": {
+            "fieldType": {
+              "type": "id",
+              "tableName": "storage"
+            },
+            "optional": false
+          },
+          "toString": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      }
+    },
+    {
+      "functionType": "Query",
+      "identifier": "events.ts:field",
+      "visibility": {
+        "kind": "public"
+      },
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "returns": {
+        "type": "union",
+        "value": [
+          {
+            "type": "object",
+            "value": {
+              "kind": {
+                "fieldType": {
+                  "type": "literal",
+                  "value": "choice"
+                },
+                "optional": false
+              },
+              "value": {
+                "fieldType": {
+                  "type": "union",
+                  "value": [
+                    {
+                      "type": "literal",
+                      "value": "a"
+                    },
+                    {
+                      "type": "literal",
+                      "value": "b"
+                    }
+                  ]
+                },
+                "optional": false
+              }
+            }
+          },
+          {
+            "type": "object",
+            "value": {
+              "kind": {
+                "fieldType": {
+                  "type": "literal",
+                  "value": "text"
+                },
+                "optional": false
+              },
+              "value": {
+                "fieldType": {
+                  "type": "string"
+                },
+                "optional": false
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "functionType": "Query",
+      "identifier": "events.ts:labels",
+      "visibility": {
+        "kind": "public"
+      },
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "returns": {
+        "type": "union",
+        "value": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "record",
+            "keys": {
+              "type": "string"
+            },
+            "values": {
+              "fieldType": {
+                "type": "object",
+                "value": {
+                  "count": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  }
+                }
+              },
+              "optional": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "functionType": "Mutation",
+      "identifier": "events.ts:resize",
+      "visibility": {
+        "kind": "public"
+      },
+      "args": {
+        "type": "object",
+        "value": {
+          "width": {
+            "fieldType": {
+              "type": "union",
+              "value": [
+                {
+                  "type": "literal",
+                  "value": "auto"
+                },
+                {
+                  "type": "literal",
+                  "value": "none"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "optional": false
+          },
+          "at": {
+            "fieldType": {
+              "type": "commitTs"
+            },
+            "optional": true
+          }
+        }
+      },
+      "returns": {
+        "type": "null"
+      }
+    },
+    {
+      "functionType": "Mutation",
+      "identifier": "events.ts:dispatch",
+      "visibility": {
+        "kind": "public"
+      },
+      "args": {
+        "type": "union",
+        "value": [
+          {
+            "type": "object",
+            "value": {
+              "kind": {
+                "fieldType": {
+                  "type": "literal",
+                  "value": "a"
+                },
+                "optional": false
+              },
+              "x": {
+                "fieldType": {
+                  "type": "number"
+                },
+                "optional": false
+              }
+            }
+          },
+          {
+            "type": "object",
+            "value": {
+              "kind": {
+                "fieldType": {
+                  "type": "literal",
+                  "value": "b"
+                },
+                "optional": false
+              },
+              "y": {
+                "fieldType": {
+                  "type": "string"
+                },
+                "optional": false
+              }
+            }
+          }
+        ]
+      },
+      "returns": {
+        "type": "commitTs"
+      }
+    },
+    {
+      "functionType": "Mutation",
+      "identifier": "events.ts:internalTick",
+      "visibility": {
+        "kind": "internal"
+      },
+      "args": {
+        "type": "object",
+        "value": {
+          "handle": {
+            "fieldType": {
+              "type": "nebula"
+            },
+            "optional": false
+          }
+        }
+      },
+      "returns": null
+    },
+    {
       "functionType": "HttpAction",
       "method": "GET",
       "path": "/healthz"
