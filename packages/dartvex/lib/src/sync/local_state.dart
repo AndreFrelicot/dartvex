@@ -576,10 +576,14 @@ class LocalSyncState {
   /// [udfPath] and JSON-encoded [args].
   ///
   /// Used as the key under which subscriptions to the same query are coalesced.
+  /// Numbers are normalized with [convexToCanonicalJson], so `{'limit': 10}`
+  /// and `{'limit': 10.0}` — the same Convex `float64` on the wire — map to the
+  /// same token on every platform (the Dart VM would otherwise encode them as
+  /// `10` and `10.0`).
   static String serializeQueryToken(String udfPath, Map<String, dynamic> args) {
     final normalized = <String, dynamic>{
       'udfPath': udfPath,
-      'args': convexToJson(args),
+      'args': convexToCanonicalJson(args),
     };
     return jsonEncode(normalized);
   }

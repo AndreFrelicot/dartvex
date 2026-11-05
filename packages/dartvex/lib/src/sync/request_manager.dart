@@ -252,6 +252,20 @@ class RequestManager {
       return <int>[response.requestId];
     }
 
+    final decodeError = response.resultDecodeError;
+    if (decodeError != null) {
+      // The mutation committed on the server, but its result cannot be
+      // represented in Dart. Fail only this caller (it must not be replayed:
+      // the server would answer the same way on every reconnect) and drop its
+      // optimistic layer; the committed write arrives through a transition.
+      pending.completer.completeError(
+        ConvexException(decodeError, logLines: response.logLines),
+      );
+      _pendingMutations.remove(response.requestId);
+      _requestsOlderThanRestart.remove(response.requestId);
+      return <int>[response.requestId];
+    }
+
     pending.result = response.result;
     pending.serverTs = response.ts;
     pending.logLines = response.logLines;
@@ -282,6 +296,13 @@ class RequestManager {
       return;
     }
     if (response.success) {
+      final decodeError = response.resultDecodeError;
+      if (decodeError != null) {
+        pending.completer.completeError(
+          ConvexException(decodeError, logLines: response.logLines),
+        );
+        return;
+      }
       pending.completer.complete(response.result);
       return;
     }
