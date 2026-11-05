@@ -380,6 +380,14 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
         );
       },
     );
+    if (_config.expectAuth) {
+      // Hold every query-set change and request until the first auth call
+      // decides the identity; each auth entry point releases the pause through
+      // the auth manager's resume path. Mirrors the official client, which
+      // pauses its socket in the constructor when `expectAuth` is set.
+      _wsManager.pause();
+      _baseClient.pause();
+    }
     if (_config.connectImmediately) {
       _currentConnectionState = ConnectionState.connecting;
     }
@@ -428,6 +436,17 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
         deploymentUrl,
         'deploymentUrl',
         'must be a Convex deployment origin without path, query, or fragment',
+      );
+    }
+    if (uri.host.toLowerCase().endsWith('.convex.site')) {
+      // `.convex.site` serves HTTP Actions, not the sync API: every WebSocket
+      // upgrade would fail and the client would retry silently forever.
+      // Mirrors the official client's validateDeploymentUrl.
+      throw ArgumentError.value(
+        deploymentUrl,
+        'deploymentUrl',
+        'is a .convex.site (HTTP Actions) URL; use the deployment\'s '
+            '.convex.cloud URL for ConvexClient',
       );
     }
     return uri.replace(path: '', query: null, fragment: null).toString();
@@ -504,6 +523,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       maxBackoff: config.maxBackoff,
       backoffJitter: config.backoffJitter,
       connectImmediately: config.connectImmediately,
+      expectAuth: config.expectAuth,
       adapterFactory: config.adapterFactory,
       connectivitySignal: config.connectivitySignal,
       logLevel: config.logLevel,

@@ -18,7 +18,12 @@ export 'src/client.dart'
         QueryLoading,
         QueryResult,
         QuerySuccess;
-export 'src/config.dart' show ConvexClientConfig, WebSocketAdapterFactory;
+export 'src/config.dart'
+    show
+        ConvexClientConfig,
+        WebSocketAdapterFactory,
+        convexSyncApiVersion,
+        dartvexVersion;
 export 'src/exceptions.dart'
     show ConvexException, ConvexFileUploadException, ConvexStorageException;
 export 'src/logging.dart' show DartvexLogEvent, DartvexLogger, DartvexLogLevel;
@@ -43,4 +48,9 @@ export 'src/transport/ws_interface.dart'
 export 'src/transport/ws_manager.dart'
     show TransitionMetrics, TransitionMetricsCallback;
 export 'src/values/json_codec.dart'
-    show convexInt64, convexToJson, jsonToConvex;
+    show
+        ConvexCommitTsPlaceholder,
+        convexInt64,
+        convexToCanonicalJson,
+        convexToJson,
+        jsonToConvex;

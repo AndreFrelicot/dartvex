@@ -2,6 +2,24 @@ import 'logging.dart';
 import 'transport/connectivity.dart';
 import 'transport/ws_interface.dart';
 
+/// The Dartvex package version, kept in sync with `pubspec.yaml`.
+///
+/// Sent as part of the default [ConvexClientConfig.clientId]
+/// (`dartvex-<version>`) so Convex can tell Dartvex releases apart. A test
+/// asserts it matches the pubspec version, so bump both together.
+const String dartvexVersion = '0.2.0';
+
+/// The Convex sync protocol version Dartvex reports by default.
+///
+/// Used as the default [ConvexClientConfig.apiVersion], which becomes the
+/// `/api/<version>/sync` path segment of the WebSocket URL — the only client
+/// version signal browsers (and Dart web) can send, since they cannot set
+/// headers. It is pinned to the official Convex JavaScript client release whose
+/// sync protocol (`protocol.ts`, `web_socket_manager.ts`) and value encoding
+/// Dartvex implements, and is bumped deliberately as part of a release after
+/// diffing those sources against the targeted Convex release.
+const String convexSyncApiVersion = '1.49.0';
+
 /// Factory for creating a platform-specific [WebSocketAdapter].
 typedef WebSocketAdapterFactory = WebSocketAdapter Function(String clientId);
 
@@ -9,8 +27,8 @@ typedef WebSocketAdapterFactory = WebSocketAdapter Function(String clientId);
 class ConvexClientConfig {
   /// Creates a client configuration.
   const ConvexClientConfig({
-    this.clientId = 'dart-dartvex',
-    this.apiVersion = '1.41.0',
+    this.clientId = 'dartvex-$dartvexVersion',
+    this.apiVersion = convexSyncApiVersion,
     this.authTokenType = 'User',
     this.refreshTokenLeewaySeconds = 10,
     this.inactivityTimeout = const Duration(seconds: 60),
@@ -23,6 +41,7 @@ class ConvexClientConfig {
     this.maxBackoff = const Duration(seconds: 16),
     this.backoffJitter = 0.5,
     this.connectImmediately = true,
+    this.expectAuth = false,
     this.adapterFactory,
     this.connectivitySignal,
     this.logLevel = DartvexLogLevel.off,
@@ -30,13 +49,20 @@ class ConvexClientConfig {
   });
 
   /// Client identifier sent when establishing the WebSocket connection.
+  ///
+  /// Native adapters send it as the `Convex-Client` header. The default,
+  /// `dartvex-<version>` (see [dartvexVersion]), follows the
+  /// `<client>-<semver>` format the Convex backend parses, so deployments can
+  /// tell Dartvex releases apart.
   final String clientId;
 
   /// Convex sync API version path segment.
   ///
-  /// The default tracks the current Convex JavaScript client version because
-  /// Convex uses this path segment for client compatibility checks, especially
-  /// for browser WebSockets where custom headers cannot be sent.
+  /// Defaults to [convexSyncApiVersion]: the official Convex JavaScript client
+  /// release whose sync protocol Dartvex implements. Convex uses this path
+  /// segment for client compatibility checks, especially for browser
+  /// WebSockets where custom headers cannot be sent. Override it only to pin a
+  /// different protocol level.
   final String apiVersion;
 
   /// Token type used when authenticating with Convex.
@@ -114,6 +140,20 @@ class ConvexClientConfig {
   /// Set to `false` to defer opening the socket until the first backend
   /// operation, auth update, or explicit reconnect request.
   final bool connectImmediately;
+
+  /// Whether the client should hold every query, mutation, and action until
+  /// auth has been decided.
+  ///
+  /// When `true`, the client starts paused: the socket may open, but nothing is
+  /// sent until the first `setAuth`, `setAuthWithRefresh`, or `clearAuth` call
+  /// releases the pause. Queries subscribed during app start (for example
+  /// while `ConvexClientWithAuth.loginFromCache` waits on the auth provider)
+  /// then run authenticated from the start instead of running unauthenticated
+  /// first and again once the token lands. A client created with
+  /// `expectAuth: true` that never receives an auth call stays paused — call
+  /// `clearAuth()` when the user is known to be signed out. Defaults to
+  /// `false`. Mirrors the official client's `expectAuth` option.
+  final bool expectAuth;
 
   /// Optional override for the platform WebSocket adapter.
   ///
