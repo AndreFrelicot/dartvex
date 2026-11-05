@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/widgets.dart';
@@ -99,6 +100,17 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
   ConvexRuntimeClient? _loadedClient;
   int _requestGeneration = 0;
 
+  /// Whether the current load skips the cached file (a refresh after the
+  /// client or URL resolver changed); a retry of a failed load keeps it.
+  bool _loadedBypassCache = false;
+
+  /// This widget's last cache write still in flight, with the entry it
+  /// writes. A newer load of the same entry waits for it, so a superseded
+  /// download can never land after (and overwrite) the newer file.
+  Future<void>? _pendingPrefetch;
+  String? _pendingPrefetchStorageId;
+  ConvexAssetCache? _pendingPrefetchCache;
+
   ConvexAssetCache get _cache => widget.cache ?? ConvexAssetCache.shared;
 
   @override
@@ -144,6 +156,7 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
     _loadedUseAction = widget.useAction;
     _loadedCache = cache;
     _loadedClient = client;
+    _loadedBypassCache = shouldBypassCache;
     _fetchAndCache(
       ++_requestGeneration,
       client,
@@ -158,7 +171,14 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
     if (!mounted || client == null || cache == null) {
       return;
     }
-    _fetchAndCache(++_requestGeneration, client, cache: cache);
+    // A failed refresh must not fall back to the file cached for the
+    // previous client or resolver.
+    _fetchAndCache(
+      ++_requestGeneration,
+      client,
+      cache: cache,
+      bypassCache: _loadedBypassCache,
+    );
   }
 
   Future<void> _fetchAndCache(
@@ -215,7 +235,37 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
 
       final urlStr = requireStorageUrl(url, storageId);
 
-      final file = await cache.prefetch(storageId, urlStr, force: bypassCache);
+      final previousWrite = _pendingPrefetch;
+      if (previousWrite != null &&
+          _pendingPrefetchStorageId == storageId &&
+          identical(_pendingPrefetchCache, cache)) {
+        await previousWrite;
+        if (!_isCurrentRequest(
+          generation,
+          storageId,
+          getUrlAction,
+          useAction,
+          client,
+          cache,
+        )) {
+          return;
+        }
+      }
+      final prefetch = cache.prefetch(storageId, urlStr, force: bypassCache);
+      final write = prefetch.then<void>((_) {}, onError: (Object _) {});
+      _pendingPrefetch = write;
+      _pendingPrefetchStorageId = storageId;
+      _pendingPrefetchCache = cache;
+      unawaited(
+        write.whenComplete(() {
+          if (identical(_pendingPrefetch, write)) {
+            _pendingPrefetch = null;
+            _pendingPrefetchStorageId = null;
+            _pendingPrefetchCache = null;
+          }
+        }),
+      );
+      final file = await prefetch;
       if (!_isCurrentRequest(
         generation,
         storageId,

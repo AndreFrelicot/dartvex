@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:dartvex_flutter/dartvex_flutter.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 void main() {
   group('ConvexFileDownloader.download', () {
@@ -71,6 +72,48 @@ void main() {
         );
       },
     );
+
+    group('errors carry the URL reduced to its origin', () {
+      const url =
+          'https://files.example.com:8443/api/storage/abc-123?sig=s3cr3t';
+
+      test('status errors', () async {
+        final client = MockClient((_) async => http.Response('denied', 403));
+
+        final error = await ConvexFileDownloader.download(
+          url,
+          client: client,
+        ).then<Object?>((_) => null, onError: (Object e) => e);
+
+        expect(error, isA<HttpException>());
+        final httpError = error! as HttpException;
+        expect(httpError.uri, Uri.parse('https://files.example.com:8443'));
+        expect(httpError.toString(), isNot(contains('abc-123')));
+        expect(httpError.toString(), isNot(contains('s3cr3t')));
+      });
+
+      test('transport errors', () async {
+        final client = MockClient(
+          (request) async => throw http.ClientException(
+            'Connection failed for $url',
+            request.url,
+          ),
+        );
+
+        final error = await ConvexFileDownloader.download(
+          url,
+          client: client,
+        ).then<Object?>((_) => null, onError: (Object e) => e);
+
+        expect(error, isA<http.ClientException>());
+        expect(error.toString(), isNot(contains('abc-123')));
+        expect(error.toString(), isNot(contains('s3cr3t')));
+        expect(
+          (error! as http.ClientException).uri,
+          Uri.parse('https://files.example.com:8443'),
+        );
+      });
+    });
 
     test('uses an injected client and leaves it open', () async {
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);

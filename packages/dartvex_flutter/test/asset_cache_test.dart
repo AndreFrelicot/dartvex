@@ -510,6 +510,105 @@ void main() {
       expect(find.text('loaded'), findsOneWidget);
     });
 
+    testWidgets('a retry after a failed client-change refresh still bypasses '
+        'the cache', (tester) async {
+      final firstClient = FakeRuntimeClient(
+        initialConnectionState: ConvexConnectionState.connected,
+      );
+      final secondClient = FakeRuntimeClient(
+        initialConnectionState: ConvexConnectionState.connected,
+      );
+      firstClient.onQuery = (name, args) async => 'https://example.com/a.png';
+      var secondCalls = 0;
+      secondClient.onQuery = (name, args) async {
+        secondCalls += 1;
+        if (secondCalls == 1) {
+          throw const ConvexStorageException('offline');
+        }
+        return 'https://example.com/b.png';
+      };
+
+      Widget build(FakeRuntimeClient client) {
+        return Directionality(
+          textDirection: TextDirection.ltr,
+          child: ConvexCachedImage(
+            storageId: 'img-1',
+            getUrlAction: 'files:getUrl',
+            cache: cache,
+            client: client,
+            errorBuilder: (context, error, retry) =>
+                GestureDetector(onTap: retry, child: const Text('retry')),
+            builder: (context, image) => const Text('loaded'),
+          ),
+        );
+      }
+
+      await tester.pumpWidget(build(firstClient));
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(build(secondClient));
+      await tester.pumpAndSettle();
+      expect(find.text('retry'), findsOneWidget);
+
+      await tester.tap(find.text('retry'));
+      await tester.pumpAndSettle();
+
+      // The retry refreshes from the new client instead of serving the file
+      // cached for the previous one.
+      expect(secondCalls, 2);
+      expect(
+        fakeCacheManager.downloadFileCalls.single.url,
+        'https://example.com/b.png',
+      );
+      expect(find.text('loaded'), findsOneWidget);
+    });
+
+    testWidgets('a superseded download cannot overwrite the newer file', (
+      tester,
+    ) async {
+      final firstClient = FakeRuntimeClient(
+        initialConnectionState: ConvexConnectionState.connected,
+      );
+      final secondClient = FakeRuntimeClient(
+        initialConnectionState: ConvexConnectionState.connected,
+      );
+      firstClient.onQuery = (name, args) async => 'https://example.com/a.png';
+      secondClient.onQuery = (name, args) async => 'https://example.com/b.png';
+      final slowA = Completer<void>();
+      fakeCacheManager.urlGates['https://example.com/a.png'] = slowA;
+
+      Widget build(FakeRuntimeClient client) {
+        return Directionality(
+          textDirection: TextDirection.ltr,
+          child: ConvexCachedImage(
+            storageId: 'img-1',
+            getUrlAction: 'files:getUrl',
+            cache: cache,
+            client: client,
+            placeholder: const Text('loading'),
+            builder: (context, image) => const Text('loaded'),
+          ),
+        );
+      }
+
+      await tester.pumpWidget(build(firstClient));
+      await tester.pump();
+      await tester.pump();
+      expect(fakeCacheManager.getSingleFileCalls, hasLength(1));
+
+      await tester.pumpWidget(build(secondClient));
+      await tester.pump();
+      await tester.pump();
+      slowA.complete();
+      await tester.pumpAndSettle();
+
+      expect(fakeCacheManager.writtenUrls, <String>[
+        'https://example.com/a.png',
+        'https://example.com/b.png',
+      ]);
+      expect(fakeCacheManager.cachedUrl('img-1'), 'https://example.com/b.png');
+      expect(find.text('loaded'), findsOneWidget);
+    });
+
     testWidgets('reloads when the cache instance changes after load', (
       tester,
     ) async {
@@ -962,6 +1061,15 @@ class FakeCacheManager implements BaseCacheManager, ConvexAssetCacheMetrics {
   bool emptyCacheCalled = false;
   Object? downloadError;
 
+  /// Downloads of these URLs wait for their completer before writing.
+  final Map<String, Completer<void>> urlGates = {};
+
+  /// URLs in the order their downloads wrote the cache.
+  final List<String> writtenUrls = [];
+
+  /// The URL the cache entry for a key was last written from.
+  String? cachedUrl(String key) => _cache[key]?.originalUrl;
+
   File _createFile(String key) {
     final file = _fs.file('/cache/$key')
       ..createSync(recursive: true)
@@ -1005,6 +1113,8 @@ class FakeCacheManager implements BaseCacheManager, ConvexAssetCacheMetrics {
     Map<String, String> headers = const {},
   }) async {
     getSingleFileCalls.add(GetSingleFileCall(url, key));
+    await urlGates[url]?.future;
+    writtenUrls.add(url);
     final file = _createFile(key);
     _cache[key] = FileInfo(
       file,
@@ -1028,6 +1138,8 @@ class FakeCacheManager implements BaseCacheManager, ConvexAssetCacheMetrics {
     if (error != null) {
       throw error;
     }
+    await urlGates[url]?.future;
+    writtenUrls.add(url);
     final info = FileInfo(
       _fs.file('/cache/$cacheKey.${downloadFileCalls.length}')
         ..createSync(recursive: true)

@@ -119,6 +119,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `ConvexFileDownloader` errors (`HttpException`, `ClientException`,
+  `RequestAbortedException`) carry the URL reduced to its origin. File URLs
+  are bearer capabilities (a storage URL's path, a presigned URL's query),
+  and these errors reach `FlutterError.reportError` and crash reporters
+  through `ConvexImage`/`ConvexCachedImage`.
+- `ConvexCachedImage`: retrying a failed refresh after a client or URL
+  resolver change still bypasses the cache instead of serving the file
+  cached for the previous client, and a superseded download of the same
+  entry can no longer finish after (and overwrite) the newer one.
 - On iOS and macOS the default HTTP client (used by storage uploads, asset
   downloads and auth adapters such as `dartvex_auth_better`) kept cookies in
   the shared, persistent `HTTPCookieStorage` and attached them to later

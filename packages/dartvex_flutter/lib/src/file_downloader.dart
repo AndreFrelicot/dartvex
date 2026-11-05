@@ -89,7 +89,7 @@ class ConvexFileDownloader {
         } catch (_) {}
         throw HttpException(
           'Failed to download file (status ${response.statusCode})',
-          uri: uri,
+          uri: _redactUrl(uri),
         );
       }
 
@@ -112,6 +112,16 @@ class ConvexFileDownloader {
       }
 
       return builder.toBytes();
+    } on http.RequestAbortedException {
+      fireAbort();
+      // Rethrown with the URL reduced to its origin, like every error below.
+      throw http.RequestAbortedException(_redactUrl(uri));
+    } on http.ClientException catch (error) {
+      fireAbort();
+      throw http.ClientException(
+        error.message.replaceAll(url, _redactUrl(uri)?.toString() ?? '<url>'),
+        _redactUrl(uri),
+      );
     } catch (_) {
       fireAbort();
       rethrow;
@@ -120,5 +130,23 @@ class ConvexFileDownloader {
         httpClient.close();
       }
     }
+  }
+
+  /// Reduces [uri] to its origin (scheme, host and port) for error reports.
+  ///
+  /// File URLs are bearer capabilities: a Convex storage URL's path, or a
+  /// presigned URL's query, is enough to download the file. Download errors
+  /// reach `FlutterError.reportError` and crash reporters, so they carry this
+  /// redacted form instead of the URL. Returns `null` for a URL without a
+  /// host.
+  static Uri? _redactUrl(Uri uri) {
+    if (uri.host.isEmpty) {
+      return null;
+    }
+    return Uri(
+      scheme: uri.scheme,
+      host: uri.host,
+      port: uri.hasPort ? uri.port : null,
+    );
   }
 }
