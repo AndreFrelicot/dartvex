@@ -18,7 +18,14 @@
 ///   retried briefly and then signs the user out.
 /// * The `onIdToken` callback passed to [login] / [loginFromCache] may be
 ///   invoked later to push a rotated token (or `null` to sign out) for the
-///   session that call started.
+///   session that call started. Tokens pushed while that call is still
+///   running are ignored: the token of its returned result is the one used.
+/// * When [login] or [loginFromCache] fails because the provider's session
+///   definitively no longer exists (expired, revoked, never created), throw
+///   an error implementing [AuthSessionEndedError]. A replacement login that
+///   fails with such an error signs the client out instead of keeping the
+///   previous session, which is presumed dead too. Any other error is treated
+///   as transient (or a cancelled login) and keeps a healthy previous session.
 abstract class AuthProvider<TUser> {
   /// Creates an auth provider.
   AuthProvider();
@@ -41,3 +48,14 @@ abstract class AuthProvider<TUser> {
   /// Extracts the Convex ID token from an auth result.
   String extractIdToken(TUser authResult);
 }
+
+/// Marks an error thrown by [AuthProvider.login] or
+/// [AuthProvider.loginFromCache] as definitive: the provider no longer has a
+/// session (it expired, was revoked, or was never created).
+///
+/// `ConvexClientWithAuth` signs out when a replacement login or restore fails
+/// with such an error, instead of keeping the previous session as
+/// authenticated. Implement it on the error types your provider throws in
+/// that case, for example
+/// `class SessionGone extends StateError implements AuthSessionEndedError`.
+abstract interface class AuthSessionEndedError {}

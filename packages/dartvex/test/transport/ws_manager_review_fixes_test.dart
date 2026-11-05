@@ -587,6 +587,48 @@ void main() {
   });
 
   test(
+      'a pause raised synchronously while the handshake messages are built '
+      'does not drop them', () async {
+    final adapter = _ScriptedAdapter();
+    var builds = 0;
+    late WebSocketManager manager;
+    const restore = ModifyQuerySet(
+      baseVersion: 0,
+      newVersion: 1,
+      modifications: <QuerySetOperation>[],
+    );
+    manager = buildManager(
+      adapter,
+      onConnected: () {
+        builds += 1;
+        if (builds == 1) {
+          // A listener notified while the reconnect state is rebuilt starts
+          // an auth flow, which pauses the socket before the messages are
+          // sent.
+          manager.pause();
+        }
+        return const <ClientMessage>[restore];
+      },
+    );
+
+    await manager.start();
+    await settle();
+    // The socket is paused: nothing may be sent until resume().
+    await manager.resume();
+    await waitUntil(
+      () => adapter.decoded.any((m) => m['type'] == 'ModifyQuerySet'),
+      reason: 'session-restoring messages sent after resume',
+    );
+
+    // The restoring messages follow a Connect on the socket they reach.
+    final types = adapter.decoded.map((m) => m['type']).toList();
+    final restoreIndex = types.lastIndexOf('ModifyQuerySet');
+    expect(types.sublist(0, restoreIndex).contains('Connect'), isTrue);
+    expect(types.where((t) => t == 'ModifyQuerySet'), hasLength(1));
+    await manager.dispose();
+  });
+
+  test(
       'a connectivity-restore reconnect reports NetworkRecoveryReconnect '
       '(F233)', () async {
     final adapter = _ScriptedAdapter();

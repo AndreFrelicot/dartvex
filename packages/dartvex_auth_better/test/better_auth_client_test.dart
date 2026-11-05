@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:dartvex_auth_better/dartvex_auth_better.dart';
+import 'package:dartvex_auth_better/src/better_auth_client.dart'
+    show followMagicLinkRedirects;
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:test/test.dart';
@@ -1135,6 +1137,50 @@ void main() {
       expect(followRedirects, isFalse);
     });
 
+    test(
+        'verifyMagicLink follows the redirect in browsers and reads the code '
+        'from the final URL', () async {
+      final previous = followMagicLinkRedirects;
+      followMagicLinkRedirects = true;
+      addTearDown(() => followMagicLinkRedirects = previous);
+      final client = BetterAuthClient(
+        baseUrl: baseUrl,
+        httpClient: _BrowserLikeClient(
+          Uri.parse('https://test-app.convex.site/?error=EXPIRED_TOKEN'),
+        ),
+      );
+
+      await expectLater(
+        () => client.verifyMagicLink(token: 'used-token'),
+        throwsA(
+          isA<BetterAuthException>()
+              .having((error) => error.code, 'code', 'EXPIRED_TOKEN')
+              .having((error) => error.retryable, 'retryable', isFalse),
+        ),
+      );
+    });
+
+    test('a timed-out request is aborted, not left running', () async {
+      final stalling = _StallingClient();
+      final client = BetterAuthClient(
+        baseUrl: baseUrl,
+        httpClient: stalling,
+        requestTimeout: const Duration(milliseconds: 20),
+      );
+
+      await expectLater(
+        () => client.signIn(email: 'a@b.com', password: 'p'),
+        throwsA(
+          isA<BetterAuthException>().having(
+            (error) => error.retryable,
+            'retryable',
+            isTrue,
+          ),
+        ),
+      );
+      expect(await stalling.aborted.future, isTrue);
+    });
+
     test('signOut non-200 throws', () async {
       final mock = MockClient(
         (request) async => http.Response(
@@ -1388,3 +1434,62 @@ const _defaultSignInResponse = {
     'userId': 'user_123',
   },
 };
+
+/// Mimics package:http's BrowserClient: a request that does not follow
+/// redirects fails (fetch `redirect: 'error'`), and a followed redirect
+/// reports the final URL.
+class _BrowserLikeClient extends http.BaseClient {
+  _BrowserLikeClient(this.finalUrl);
+
+  final Uri finalUrl;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    if (!request.followRedirects) {
+      throw http.ClientException('Redirect was blocked', request.url);
+    }
+    return _ResponseWithUrl(
+      Stream<List<int>>.value(utf8.encode('<html></html>')),
+      200,
+      url: finalUrl,
+      request: request,
+    );
+  }
+}
+
+/// Never answers; records whether the request was aborted.
+class _StallingClient extends http.BaseClient {
+  final Completer<bool> aborted = Completer<bool>();
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) {
+    final response = Completer<http.StreamedResponse>();
+    if (request is http.Abortable) {
+      request.abortTrigger?.then((_) {
+        if (!aborted.isCompleted) {
+          aborted.complete(true);
+        }
+        response.completeError(http.RequestAbortedException(request.url));
+      });
+    }
+    Timer(const Duration(seconds: 1), () {
+      if (!aborted.isCompleted) {
+        aborted.complete(false);
+      }
+    });
+    return response.future;
+  }
+}
+
+class _ResponseWithUrl extends http.StreamedResponse
+    implements http.BaseResponseWithUrl {
+  _ResponseWithUrl(
+    super.stream,
+    super.statusCode, {
+    required this.url,
+    super.request,
+  });
+
+  @override
+  final Uri url;
+}

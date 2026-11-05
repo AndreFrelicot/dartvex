@@ -7,6 +7,18 @@ import 'package:http/http.dart' as http;
 import 'better_auth_exception.dart';
 import 'better_auth_session.dart';
 
+/// Whether [BetterAuthClient.verifyMagicLink] lets the HTTP client follow
+/// Better Auth's error redirect.
+///
+/// Not following it keeps the `Location` header, which carries the error
+/// code. Browsers cannot do that: package:http's `BrowserClient` turns a
+/// non-followed redirect into a `ClientException` (fetch `redirect: 'error'`),
+/// so on the web the redirect is followed and the code is read from the final
+/// URL instead. Not exported; tests override it.
+bool followMagicLinkRedirects = const bool.fromEnvironment(
+  'dart.library.js_interop',
+);
+
 /// HTTP client for Better Auth endpoints hosted on a Convex deployment.
 ///
 /// Better Auth runs as a Convex component and exposes HTTP endpoints
@@ -251,8 +263,13 @@ class BetterAuthClient {
       queryParameters: {'token': token},
     );
     // Better Auth reports verification failures as a redirect to
-    // `<errorCallbackURL>?error=CODE`; do not follow it so the code survives.
-    final reply = await _send('GET', uri, followRedirects: false);
+    // `<errorCallbackURL>?error=CODE`; do not follow it so the code survives
+    // (except in browsers, see [followMagicLinkRedirects]).
+    final reply = await _send(
+      'GET',
+      uri,
+      followRedirects: followMagicLinkRedirects,
+    );
     final response = reply.response;
 
     final status = response.statusCode;
@@ -447,8 +464,15 @@ class BetterAuthClient {
     String? body,
     bool followRedirects = true,
   }) async {
-    final request = http.Request(method, uri)
-      ..followRedirects = followRedirects;
+    // Completed when the timeout fires: bounding only the wait would leave
+    // the request running (and, for sign-in, creating a session nobody
+    // receives) after the caller was told it failed.
+    final abort = Completer<void>();
+    final request = http.AbortableRequest(
+      method,
+      uri,
+      abortTrigger: abort.future,
+    )..followRedirects = followRedirects;
     if (headers != null) {
       request.headers.addAll(headers);
     }
@@ -472,6 +496,9 @@ class BetterAuthClient {
     try {
       return timeout == null ? await run() : await run().timeout(timeout);
     } on TimeoutException {
+      if (!abort.isCompleted) {
+        abort.complete();
+      }
       throw BetterAuthException(
         'Better Auth request to $path timed out'
         '${timeout == null ? '' : ' after ${timeout.inMilliseconds} ms'}.',

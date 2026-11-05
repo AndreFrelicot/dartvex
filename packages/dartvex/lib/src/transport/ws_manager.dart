@@ -794,20 +794,23 @@ class WebSocketManager {
         // own full handshake, so these messages must not be sent onto it.
         return false;
       }
-      if (_pauseState != _SocketPauseState.no) {
-        // Paused while an asynchronous [onConnected] was building the
-        // handshake messages, with the Connect frame already on the wire.
-        // They cannot be buffered here, and resume() must not replay a second
-        // Connect on this socket, so force a clean reconnect: the fresh
-        // socket opens paused and defers its full handshake to resume().
-        _log(
-          DartvexLogLevel.warn,
-          'Socket paused during the connect handshake; forcing a clean '
-          'reconnect so the session-restoring messages are not dropped',
-        );
-        await reconnectNow('PausedDuringHandshake');
-        return false;
-      }
+    }
+    if (_pauseState != _SocketPauseState.no) {
+      // Paused while [onConnected] was building the handshake messages, with
+      // the Connect frame already on the wire: by an asynchronous builder, or
+      // synchronously by a listener it notified (the production builder
+      // dispatches rolled-back optimistic updates, and a listener may start
+      // an auth flow). The messages cannot be buffered here, and resume()
+      // must not replay a second Connect on this socket, so force a clean
+      // reconnect: the fresh socket opens paused and defers its full
+      // handshake to resume().
+      _log(
+        DartvexLogLevel.warn,
+        'Socket paused during the connect handshake; forcing a clean '
+        'reconnect so the session-restoring messages are not dropped',
+      );
+      await reconnectNow('PausedDuringHandshake');
+      return false;
     }
     await sendMessages(reconnectMessages);
     if (epoch != _socketEpoch || !adapter.isConnected) {

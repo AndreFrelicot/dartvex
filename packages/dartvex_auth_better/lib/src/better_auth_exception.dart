@@ -1,4 +1,5 @@
-import 'package:dartvex/dartvex.dart' show ConvexException;
+import 'package:dartvex/dartvex.dart'
+    show AuthSessionEndedError, ConvexException;
 
 /// Exception thrown by the Better Auth adapter.
 ///
@@ -50,7 +51,8 @@ class BetterAuthException extends ConvexException {
 /// Note that `ConvexBetterAuthProvider.loginFromCache()` reports a session
 /// that Better Auth's `get-session` no longer recognizes as a [StateError]
 /// (`'Better Auth session expired.'`), not as this exception.
-class BetterAuthSessionExpiredException extends BetterAuthException {
+class BetterAuthSessionExpiredException extends BetterAuthException
+    implements AuthSessionEndedError {
   /// Creates a session-expired exception.
   const BetterAuthSessionExpiredException(super.message);
 

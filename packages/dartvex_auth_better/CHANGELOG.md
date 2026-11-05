@@ -11,6 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `loginFromCache()`'s `'No cached Better Auth session.'` and
+  `'Better Auth session expired.'` errors (still `StateError`s) and
+  `BetterAuthSessionExpiredException` implement `AuthSessionEndedError`: a
+  restore of an expired session on an authenticated `ConvexClientWithAuth`
+  now signs out instead of keeping the dead session as authenticated.
+- Timed-out requests are aborted (`http.AbortableRequest`) instead of only
+  no longer being awaited, so a sign-in that times out cannot still create a
+  session in the background. Requires `http` ^1.5.0.
+- `verifyMagicLink()` on Flutter web follows Better Auth's error redirect
+  and reads the error code from the final URL: package:http's `BrowserClient`
+  fails a request that does not follow redirects, so the code path that
+  reads `INVALID_TOKEN`/`EXPIRED_TOKEN` was unreachable in browsers.
 - Compatibility with `@convex-dev/better-auth` 0.12.7+ / 0.13: an emptied or
   expired `convex_jwt` cookie (`Max-Age=0`, empty value, or a past `Expires`)
   on sign-in, sign-up and magic-link responses is no longer returned as the

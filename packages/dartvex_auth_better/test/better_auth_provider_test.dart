@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:dartvex/dartvex.dart' show AuthSessionEndedError;
 import 'package:dartvex_auth_better/dartvex_auth_better.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -158,11 +159,9 @@ void main() {
 
       expect(
         () => provider.loginFromCache(onIdToken: (_) {}),
-        throwsA(isA<StateError>().having(
-          (e) => e.message,
-          'message',
-          contains('No cached'),
-        )),
+        throwsA(isA<StateError>()
+            .having((e) => e.message, 'message', contains('No cached'))
+            .having((e) => e, 'error', isA<AuthSessionEndedError>())),
       );
     });
 
@@ -214,6 +213,8 @@ void main() {
         throwsA(
           isA<BetterAuthException>()
               .having((error) => error.retryable, 'retryable', isTrue)
+              .having((error) => error is AuthSessionEndedError,
+                  'is AuthSessionEndedError', isFalse)
               .having(
                 (error) => error.message,
                 'message',
@@ -280,6 +281,8 @@ void main() {
         throwsA(
           isA<BetterAuthException>()
               .having((error) => error.retryable, 'retryable', isTrue)
+              .having((error) => error is AuthSessionEndedError,
+                  'is AuthSessionEndedError', isFalse)
               .having(
                 (error) => error.message,
                 'message',
@@ -304,21 +307,18 @@ void main() {
 
       await expectLater(
         () => provider.loginFromCache(onIdToken: (_) {}),
-        throwsA(isA<StateError>().having(
-          (e) => e.message,
-          'message',
-          contains('expired'),
-        )),
+        throwsA(isA<StateError>()
+            .having((e) => e.message, 'message', contains('expired'))
+            // Definitive: a replacement restore signs the client out.
+            .having((e) => e, 'error', isA<AuthSessionEndedError>())),
       );
       // The dead session is cleared so it is not retried.
       expect(provider.cachedSession, isNull);
       await expectLater(
         () => provider.loginFromCache(onIdToken: (_) {}),
-        throwsA(isA<StateError>().having(
-          (e) => e.message,
-          'message',
-          contains('No cached'),
-        )),
+        throwsA(isA<StateError>()
+            .having((e) => e.message, 'message', contains('No cached'))
+            .having((e) => e, 'error', isA<AuthSessionEndedError>())),
       );
     });
 
@@ -618,7 +618,9 @@ void main() {
           staleRefresh,
           throwsA(
             isA<BetterAuthException>()
-                .having((error) => error.retryable, 'retryable', isTrue),
+                .having((error) => error.retryable, 'retryable', isTrue)
+                .having((error) => error is AuthSessionEndedError,
+                    'is AuthSessionEndedError', isFalse),
           ),
         );
         expect(staleToken, isNull);

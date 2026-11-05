@@ -19,7 +19,10 @@ import 'better_auth_session.dart';
 /// - [loginFromCache] throws a [StateError] when there is no cached session
 ///   token (`'No cached Better Auth session.'`) or when Better Auth no longer
 ///   recognizes the session (`'Better Auth session expired.'`; the dead token
-///   is then cleared). Treat both as "sign in again".
+///   is then cleared). Treat both as "sign in again". Both errors implement
+///   [AuthSessionEndedError], so a replacement `loginFromCache()` that fails
+///   with them signs the Convex client out instead of keeping the previous
+///   (same, now dead) session as authenticated.
 /// - A [BetterAuthSessionExpiredException] means the Convex token endpoint
 ///   rejected the session; also "sign in again".
 /// - Any other [BetterAuthException] with `retryable: true` (5xx, 429,
@@ -114,7 +117,7 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
   }) async {
     final sessionToken = _sessionToken;
     if (sessionToken == null) {
-      throw StateError('No cached Better Auth session.');
+      throw _SessionEndedStateError('No cached Better Auth session.');
     }
     final epoch = _sessionEpoch;
     final refreshed = await client.getSession(sessionToken: sessionToken);
@@ -127,7 +130,7 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
     }
     if (refreshed == null) {
       _clearSession();
-      throw StateError('Better Auth session expired.');
+      throw _SessionEndedStateError('Better Auth session expired.');
     }
     _clearPendingLoginSession();
     _cachedSession = refreshed;
@@ -251,4 +254,11 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
     _pendingLoginEmail = null;
     _pendingLoginPassword = null;
   }
+}
+
+/// The [StateError] thrown when the provider has no usable session; marked
+/// as definitive for `ConvexClientWithAuth`.
+final class _SessionEndedStateError extends StateError
+    implements AuthSessionEndedError {
+  _SessionEndedStateError(super.message);
 }

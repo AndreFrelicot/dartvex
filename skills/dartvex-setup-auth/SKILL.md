@@ -279,6 +279,11 @@ issuer must be trusted in `auth.config.ts`.
 To wrap such a provider in the same `login`/`loginFromCache`/`logout` API as
 Better Auth, implement `AuthProvider<T>` and use `client.withAuth(provider)`:
 `loginFromCache` is the refresh hook and must return a freshly issued token.
+When the session no longer exists, throw an error implementing
+`AuthSessionEndedError` (for example
+`class SessionGone extends StateError implements AuthSessionEndedError`):
+a failed re-login or restore then signs out instead of keeping the previous
+session as authenticated. Any other error is treated as transient.
 
 ## C. Deployment-issued JWTs (`ctx.auth.signJwt`)
 
@@ -349,5 +354,5 @@ Tokens cannot be revoked individually — keep lifetimes short and make
   `authedClient.currentAuthToken`.
 - Hardcoding the deployment/auth URL — inject at run time.
 - Treating a transient failure as "signed out" — only `StateError` /
-  `BetterAuthSessionExpiredException` mean the session is gone; keep the
-  token on `retryable` errors.
+  `BetterAuthSessionExpiredException` mean the session is gone (both
+  implement `AuthSessionEndedError`); keep the token on `retryable` errors.

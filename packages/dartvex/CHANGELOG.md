@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `AuthSessionEndedError`: a marker interface for errors thrown by
+  `AuthProvider.login`/`loginFromCache` when the provider's session no longer
+  exists. A replacement login or restore failing with such an error signs
+  the client out instead of keeping the previous session (which ran on the
+  same, now dead, session) as authenticated. Other errors still keep a
+  healthy previous session.
 - `ConvexFunctionCaller.mutate` takes an optional `OptimisticUpdate`, so code
   written against the interface (and `ConvexClientWithAuth`) can apply
   optimistic updates. **Breaking for implementors:** classes that
@@ -123,6 +129,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `ConvexClientWithAuth.logout()` starts the provider's sign-out in the same
+  synchronous step that stops the refresh flow, instead of after awaiting
+  it. A `login()` started while the logout was pending could otherwise have
+  its new session captured and revoked by the provider.
+- A token pushed by a login that is still running is no longer applied to
+  the session it is replacing: it was written into the previous flow's
+  bridge and sent to the server while the previous user was still
+  installed, and kept if the login then failed. Pushes are now applied only
+  to the flow's own bridge, once its provider call returned (the result's
+  token is the one installed).
+- The WebSocket handshake checks for a pause raised while its
+  session-restoring messages were being built on the synchronous path too
+  (a listener notified of rolled-back optimistic updates may start an auth
+  flow): it forces a clean reconnect instead of dropping the restored query
+  set and replayed requests until the next reconnect.
 - `query()` / `queryOnce()` no longer resolve from the after-unsubscribe
   cache, which could return a stale value or re-throw an old error. Live
   `subscribe()` still seeds from the warm cache.

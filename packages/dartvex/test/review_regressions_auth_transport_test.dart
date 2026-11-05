@@ -213,6 +213,101 @@ void main() {
       expect(client.currentAuthToken, 'rotated-token');
     });
   });
+
+  group('identity races between flows', () {
+    late _ConfirmingAdapter adapter;
+    late _IdentityProvider provider;
+    late ConvexClient client;
+    late ConvexClientWithAuth<_Session> auth;
+
+    setUp(() async {
+      adapter = _ConfirmingAdapter();
+      provider = _IdentityProvider();
+      client = ConvexClient(
+        'https://demo.convex.cloud',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+      auth = client.withAuth<_Session>(provider);
+      addTearDown(() async {
+        auth.dispose();
+        await client.close();
+      });
+      await auth.login();
+      await _until(() => auth.currentAuthState is AuthAuthenticated<_Session>);
+      expect(client.currentAuthToken, 'alice-token-1');
+    });
+
+    test('a login started while logout() is pending keeps its own session',
+        () async {
+      provider.nextUser = 'bob';
+      final logout = auth.logout();
+      final login = auth.login();
+      await logout;
+      await login;
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(provider.revoked, <String>['alice'],
+          reason: 'logout() revoked the session of the login that followed');
+      final state = auth.currentAuthState;
+      expect(state, isA<AuthAuthenticated<_Session>>());
+      expect((state as AuthAuthenticated<_Session>).userInfo.user, 'bob');
+      expect(client.currentAuthToken, 'bob-token-2');
+    });
+
+    test(
+        'a token pushed by a pending login is not applied to the live '
+        'session, which is restored intact when that login fails', () async {
+      provider
+        ..nextUser = 'bob'
+        ..pushDuringLogin = true
+        ..loginGate = Completer<void>()
+        ..loginError = StateError('user cancelled');
+      final gate = provider.loginGate!;
+      final relogin = auth.login();
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+
+      expect(client.currentAuthToken, 'alice-token-1',
+          reason: "bob's token was sent while alice's session was installed");
+
+      gate.complete();
+      await expectLater(relogin, throwsStateError);
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+
+      final state = auth.currentAuthState;
+      expect(state, isA<AuthAuthenticated<_Session>>());
+      expect((state as AuthAuthenticated<_Session>).userInfo.user, 'alice');
+      expect(client.currentAuthToken, 'alice-token-1');
+    });
+
+    test(
+        'a restore that reports the session as ended signs out instead of '
+        'keeping the previous session', () async {
+      provider.cacheError = _SessionEnded('session expired');
+
+      await expectLater(
+        auth.loginFromCache(),
+        throwsA(isA<AuthSessionEndedError>()),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+
+      expect(auth.currentAuthState, isA<AuthUnauthenticated<_Session>>());
+      expect(client.currentAuthToken, isNull);
+    });
+
+    test('a restore failing with a transient error keeps the session',
+        () async {
+      provider.cacheError = StateError('offline');
+
+      await expectLater(auth.loginFromCache(), throwsStateError);
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+
+      expect(auth.currentAuthState, isA<AuthAuthenticated<_Session>>());
+      expect(client.currentAuthToken, 'alice-token-1');
+    });
+  });
 }
 
 Future<void> _until(bool Function() condition, {String? reason}) async {
@@ -385,6 +480,76 @@ class _SlowCloseConfirmingAdapter extends _ConfirmingAdapter {
     await super.close();
     if (gate != null) {
       await gate.future;
+    }
+  }
+}
+
+final class _SessionEnded extends StateError implements AuthSessionEndedError {
+  _SessionEnded(super.message);
+}
+
+/// Provider whose sessions belong to [nextUser]. Like Better Auth, it adopts
+/// the new session as soon as login() is called and reads the session to
+/// revoke when logout() is called.
+class _IdentityProvider implements AuthProvider<_Session> {
+  String nextUser = 'alice';
+  _Session? session;
+  final List<String> revoked = <String>[];
+  int _logins = 0;
+  bool pushDuringLogin = false;
+  Completer<void>? loginGate;
+  Object? loginError;
+  Object? cacheError;
+
+  @override
+  String extractIdToken(_Session authResult) => authResult.token;
+
+  @override
+  Future<_Session> login({
+    required void Function(String? token) onIdToken,
+  }) async {
+    _logins += 1;
+    final next = _Session(user: nextUser, token: '$nextUser-token-$_logins');
+    session = next;
+    if (pushDuringLogin) {
+      onIdToken(next.token);
+    }
+    final gate = loginGate;
+    loginGate = null;
+    if (gate != null) {
+      await gate.future;
+    }
+    final error = loginError;
+    if (error != null) {
+      loginError = null;
+      throw error;
+    }
+    return next;
+  }
+
+  @override
+  Future<_Session> loginFromCache({
+    required void Function(String? token) onIdToken,
+  }) async {
+    final error = cacheError;
+    if (error != null) {
+      cacheError = null;
+      throw error;
+    }
+    final current = session;
+    if (current == null) {
+      throw _SessionEnded('no session');
+    }
+    return current;
+  }
+
+  @override
+  Future<void> logout() async {
+    final current = session;
+    session = null;
+    if (current != null) {
+      await Future<void>.delayed(Duration.zero);
+      revoked.add(current.user);
     }
   }
 }

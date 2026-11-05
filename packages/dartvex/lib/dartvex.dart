@@ -3,7 +3,7 @@ library;
 
 export 'src/auth/auth_client.dart' show ConvexAuthClient;
 export 'src/auth/auth_manager.dart' show AuthHandle, AuthTokenFetcher;
-export 'src/auth/auth_provider.dart' show AuthProvider;
+export 'src/auth/auth_provider.dart' show AuthProvider, AuthSessionEndedError;
 export 'src/auth/auth_state.dart'
     show AuthAuthenticated, AuthLoading, AuthState, AuthUnauthenticated;
 export 'src/auth/client_with_auth.dart' show ConvexClientWithAuth;

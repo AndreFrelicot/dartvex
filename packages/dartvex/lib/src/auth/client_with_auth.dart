@@ -25,6 +25,11 @@ final class _AuthFlowBinding {
 
   int generation;
 
+  /// The token bridge this flow installs, set once its provider call
+  /// returned. Token pushes are applied to this bridge only, so a flow never
+  /// writes its token into another flow's bridge.
+  AuthTokenBridge<Object?>? bridge;
+
   /// Whether the base client reported this flow's auth as failed, or the
   /// provider ended it (a `null` token push) while a replacement login was
   /// pending. Such a flow is never restored after that login fails.
@@ -195,11 +200,14 @@ class ConvexClientWithAuth<TUser>
     _authHandle = null;
     try {
       // Stop background refreshes (which call the provider) before signing
-      // out; the token stays applied until the clear below.
-      if (handle != null) {
-        await handle.cancel();
-      }
-      await _authProvider.logout();
+      // out; the token stays applied until the clear below. cancel() stops
+      // them synchronously, and the provider's logout() is started in the
+      // same synchronous step: a provider reads the session to revoke when
+      // logout() is called, so a login() started while this logout awaits
+      // must not have its new session captured and revoked.
+      final cancelling = handle?.cancel() ?? Future<void>.value();
+      final signingOut = Future<void>.sync(_authProvider.logout);
+      await Future.wait<void>(<Future<void>>[cancelling, signingOut]);
     } finally {
       if (_isCurrentAuthFlow(generation)) {
         await _client.clearAuth();
@@ -277,6 +285,7 @@ class ConvexClientWithAuth<TUser>
         authProvider: _authProvider,
         initialToken: token,
       );
+      binding.bridge = bridge;
       final authenticatedState = AuthAuthenticated<TUser>(authResult);
 
       final handleToReplace = _authHandle;
@@ -307,9 +316,12 @@ class ConvexClientWithAuth<TUser>
       _authHandle = authHandle;
       _installedBinding = binding;
       return authResult;
-    } catch (_) {
+    } catch (error) {
       if (_isCurrentAuthFlow(binding.generation)) {
         if (!strategyCompleted &&
+            // The provider reports its session as gone: the previous flow
+            // ran on that same session, so it is not kept as authenticated.
+            error is! AuthSessionEndedError &&
             _canKeepPreviousFlow(
               previousState,
               previousBinding,
@@ -432,6 +444,14 @@ class ConvexClientWithAuth<TUser>
     if (!_acceptsTokenPushesFrom(binding)) {
       return;
     }
+    final bridge = binding.bridge;
+    if (bridge == null) {
+      // The flow's provider call is still running. Its result carries the
+      // token to install; applying a push now would write it into the bridge
+      // (and the transport) of the session this login may yet fail to
+      // replace, mixing the two identities.
+      return;
+    }
     if (!_isCurrentAuthFlow(binding.generation)) {
       // The live session, while a replacement login is pending.
       if (token == null) {
@@ -454,8 +474,7 @@ class ConvexClientWithAuth<TUser>
       return;
     }
 
-    final bridge = _authBridge;
-    if (bridge == null) {
+    if (!identical(_authBridge, bridge)) {
       return;
     }
     await bridge.updateToken(token);
