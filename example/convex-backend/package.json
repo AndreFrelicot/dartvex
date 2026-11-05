@@ -10,18 +10,15 @@
     "token": "node ./scripts/generate-demo-jwt.mjs"
   },
   "engines": {
-    "node": ">=20.19.0"
+    "node": ">=22.0.0"
   },
   "dependencies": {
-    "@convex-dev/better-auth": "^0.12.3",
-    "better-auth": "1.6.17",
-    "convex": "^1.41.0"
-  },
-  "overrides": {
-    "kysely": "0.28.17"
+    "@convex-dev/better-auth": "^0.13.0",
+    "better-auth": "1.7.17",
+    "convex": "^1.49.0"
   },
   "devDependencies": {
-    "@types/node": "^25.5.0",
+    "@types/node": "^22.19.0",
     "typescript": "^5.9.0"
   },
   "packageManager": "npm@11.5.2"

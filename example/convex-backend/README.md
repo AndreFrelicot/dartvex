@@ -23,8 +23,15 @@ these patterns in your own app.
 
 ## Install
 
-Requires Node.js 20.19.0 or newer. Use npm; this example commits an npm
-`package-lock.json`.
+Requires Node.js 22 or newer (Convex 1.49 dropped Node.js 20). Use npm; this
+example commits an npm `package-lock.json`.
+
+Pinned auth stack: `better-auth` 1.7.17 (exact) with
+`@convex-dev/better-auth` ^0.13.0 and `convex` ^1.49.0. Component 0.13
+requires `better-auth` >=1.7.16 <1.8.0; keep the two in step when upgrading.
+`dartvex_auth_better` releases before the `convex_jwt` cookie fix misread the
+expired cookie that component 0.12.7+ sends on sign-in, so pair this backend
+with a current `dartvex_auth_better`.
 
 ```bash
 cd example/convex-backend
