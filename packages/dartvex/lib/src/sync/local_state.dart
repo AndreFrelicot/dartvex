@@ -138,6 +138,11 @@ class LocalSyncState {
   /// replayed together by [resume]. See [pause].
   bool get isPaused => _paused;
 
+  /// Whether [resume] will emit an [Authenticate] (advancing [authVersion])
+  /// for the auth captured while paused.
+  bool get willEmitAuthOnResume =>
+      _paused && (_pendingAuthModification || _authState != null);
+
   /// Whether every query and auth update that predates the most recent
   /// reconnect has been confirmed by the server.
   ///

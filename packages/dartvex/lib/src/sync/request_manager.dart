@@ -87,6 +87,22 @@ class RequestManager {
   /// and have not yet been resolved. Backs [hasSyncedPastLastReconnect].
   final Set<int> _requestsOlderThanRestart = <int>{};
 
+  /// Requests with an id below this marker were issued before the most recent
+  /// public auth identity change. See [markIdentityChange].
+  int _identityChangeMarker = 0;
+
+  /// Whether [prepareReconnect] ran before, i.e. whether the client has had a
+  /// connection whose requests could have gone out under an earlier identity.
+  bool _hasPreparedConnection = false;
+
+  /// Mutations failed by the last [prepareReconnect] because they predate an
+  /// identity change. See [takeIdentityFailedMutationIds].
+  List<int> _identityFailedMutationIds = <int>[];
+
+  /// Message used to fail requests that predate an auth identity change.
+  static const String authChangedMessage =
+      'Authentication changed before the request completed';
+
   /// Begins tracking [message] and returns a future that completes with the
   /// mutation's result (or an error on failure).
   ///
@@ -329,7 +345,11 @@ class RequestManager {
         return;
       }
       if (compareEncodedTs(pendingTs, transitionTs) <= 0) {
-        pending.completer.complete(pending.result);
+        // The caller may already hold the result (see
+        // [completeConfirmedMutation]); the layer is dropped either way.
+        if (!pending.completer.isCompleted) {
+          pending.completer.complete(pending.result);
+        }
         completedIds.add(requestId);
       }
     });
@@ -340,8 +360,58 @@ class RequestManager {
     return completedIds;
   }
 
-  /// Fails any already-sent actions because the connection dropped for [reason];
-  /// such actions are not idempotent and cannot be safely retried.
+  /// Completes a mutation whose success response already arrived and is parked
+  /// awaiting its read-your-writes transition, handing the caller the
+  /// server-confirmed result now (for example when the mutation timeout fires
+  /// in that window). The mutation stays tracked — and its optimistic layer
+  /// applied — until the transition resolves it, so nothing flickers.
+  ///
+  /// Returns `false` when the mutation is unknown or has no response yet.
+  bool completeConfirmedMutation(int requestId) {
+    final pending = _pendingMutations[requestId];
+    if (pending == null ||
+        pending.status != _RequestStatus.completedMutationAwaitingTransition) {
+      return false;
+    }
+    if (!pending.completer.isCompleted) {
+      pending.completer.complete(pending.result);
+    }
+    return true;
+  }
+
+  /// Records that the auth identity changed, at the moment the request id
+  /// [nextRequestId] is the next one to be issued.
+  ///
+  /// At the next reconnect ([prepareReconnect] after the first connection),
+  /// every mutation and action with a lower id that has not completed yet is
+  /// failed with [authChangedMessage] instead of being replayed as the new user
+  /// (or anonymously after a sign-out). Mutations that already succeeded and
+  /// only await their transition are still replayed. Requests queued before
+  /// the client's very first connection were never sent under any identity, so
+  /// they go out with the identity in effect when it connects (this is what
+  /// `expectAuth` relies on). Must not be called for same-user token
+  /// refreshes.
+  void markIdentityChange(int nextRequestId) {
+    if (nextRequestId > _identityChangeMarker) {
+      _identityChangeMarker = nextRequestId;
+    }
+  }
+
+  /// Returns and clears the ids of the mutations the last [prepareReconnect]
+  /// failed because they predate an identity change, so their optimistic
+  /// layers can be rolled back.
+  List<int> takeIdentityFailedMutationIds() {
+    final ids = _identityFailedMutationIds;
+    _identityFailedMutationIds = <int>[];
+    return ids;
+  }
+
+  /// Fails any already-sent actions because the connection dropped for [reason].
+  ///
+  /// Such actions are not idempotent: the server may already have run them, so
+  /// they are never replayed automatically. The failure is marked
+  /// [ConvexException.retryable] because the operation may succeed if sent
+  /// again — but retrying is only safe when the action itself is idempotent.
   void handleDisconnect(String reason) {
     _failRequestedActions(
       'Connection lost while action was in flight: $reason',
@@ -355,8 +425,20 @@ class RequestManager {
   /// idempotent); every replayed request — all mutations plus unsent actions —
   /// is added to the set behind [hasSyncedPastLastReconnect] until its response
   /// or read-your-writes transition resolves it.
+  ///
+  /// Requests issued before the last [markIdentityChange] that have not
+  /// completed are failed instead of replayed (mutations already confirmed by
+  /// the server and awaiting their transition are kept); the failed mutation
+  /// ids are available from [takeIdentityFailedMutationIds].
   List<ClientMessage> prepareReconnect() {
     _failRequestedActions('Connection lost while action was in flight');
+    if (_hasPreparedConnection) {
+      _failRequestsOlderThanIdentityChange();
+    }
+    _hasPreparedConnection = true;
+    // Everything replayed below goes out under the current identity, so no
+    // surviving request predates an identity change any more.
+    _identityChangeMarker = 0;
     final messagesByRequestId = <int, ClientMessage>{
       for (final entry in _pendingMutations.entries)
         entry.key: entry.value.message,
@@ -427,8 +509,12 @@ class RequestManager {
 
   /// Fails every tracked mutation and action with [message] and clears all
   /// pending state, typically on a fatal client shutdown.
-  void failAll(String message) {
+  ///
+  /// Returns the ids of the failed mutations so their optimistic layers can be
+  /// rolled back.
+  List<int> failAll(String message) {
     final error = ConvexException(message);
+    final mutationIds = _pendingMutations.keys.toList(growable: false);
     for (final pending in _pendingMutations.values) {
       if (!pending.completer.isCompleted) {
         pending.completer.completeError(error);
@@ -442,6 +528,49 @@ class RequestManager {
     _pendingMutations.clear();
     _pendingActions.clear();
     _requestsOlderThanRestart.clear();
+    return mutationIds;
+  }
+
+  void _failRequestsOlderThanIdentityChange() {
+    final marker = _identityChangeMarker;
+    if (marker == 0) {
+      return;
+    }
+    const error = ConvexException(authChangedMessage);
+    final failedMutations = <int>[];
+    _pendingMutations.forEach((requestId, pending) {
+      if (requestId >= marker ||
+          pending.status ==
+              _RequestStatus.completedMutationAwaitingTransition) {
+        return;
+      }
+      if (!pending.completer.isCompleted) {
+        pending.completer.completeError(error);
+      }
+      failedMutations.add(requestId);
+    });
+    for (final requestId in failedMutations) {
+      _pendingMutations.remove(requestId);
+      _requestsOlderThanRestart.remove(requestId);
+    }
+    final failedActions = <int>[];
+    _pendingActions.forEach((requestId, pending) {
+      if (requestId >= marker) {
+        return;
+      }
+      if (!pending.completer.isCompleted) {
+        pending.completer.completeError(error);
+      }
+      failedActions.add(requestId);
+    });
+    for (final requestId in failedActions) {
+      _pendingActions.remove(requestId);
+      _requestsOlderThanRestart.remove(requestId);
+    }
+    _identityFailedMutationIds = <int>[
+      ..._identityFailedMutationIds,
+      ...failedMutations,
+    ];
   }
 
   void _failRequestedActions(String message) {
