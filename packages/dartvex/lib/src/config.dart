@@ -31,6 +31,7 @@ class ConvexClientConfig {
     this.apiVersion = convexSyncApiVersion,
     this.authTokenType = 'User',
     this.refreshTokenLeewaySeconds = 10,
+    this.initialAuthTokenReuse = false,
     this.inactivityTimeout = const Duration(seconds: 60),
     this.connectTimeout = const Duration(seconds: 10),
     this.queryTimeout,
@@ -66,17 +67,43 @@ class ConvexClientConfig {
   final String apiVersion;
 
   /// Token type used when authenticating with Convex.
+  ///
+  /// Must be `'User'` (the default), the only token type a client-side app
+  /// can send; validated by `ConvexClient`.
   final String authTokenType;
 
   /// How many seconds before a token's expiration the client proactively
   /// refreshes it.
   ///
-  /// The refresh is scheduled from the token's own lifetime (`exp - iat`) minus
-  /// this leeway rather than from the device wall clock, so scheduling stays
-  /// correct even when the device clock is skewed. If the leeway is larger than
-  /// the token's lifetime the client refreshes immediately. Defaults to `10`,
-  /// matching the official Convex client.
+  /// For a token freshly issued by `setAuthWithRefresh`'s fetcher, the refresh
+  /// is scheduled from the token's own lifetime (`exp - iat`) minus this
+  /// leeway, without consulting any clock, so a skewed device clock cannot
+  /// shift it. For a token of unknown age (one pushed with
+  /// `updateAuthToken`, or a cached token reused under
+  /// [initialAuthTokenReuse]) the delay is also bounded by the token's
+  /// remaining lifetime, judged against the server's clock (estimated from
+  /// the server-reported clock skew) when available. If the leeway is larger
+  /// than the token's lifetime the client refreshes immediately. Defaults to
+  /// `10`, matching the official Convex client.
   final int refreshTokenLeewaySeconds;
+
+  /// Experimental: reuse the cached token from `setAuthWithRefresh` once the
+  /// server confirms it, instead of immediately fetching a fresh one.
+  ///
+  /// By default (`false`), when the server accepts the token returned by
+  /// `fetchToken(forceRefresh: false)`, the client immediately fetches a fresh
+  /// token and sends it, which makes the server re-run every authenticated
+  /// query. With this enabled, the confirmed cached token is kept and its
+  /// refresh is scheduled [refreshTokenLeewaySeconds] before it expires, with
+  /// the remaining lifetime judged against the server's clock (the server's
+  /// clock-skew estimate from the confirming transition). When the server
+  /// reports no skew, the client falls back to the immediate refetch.
+  /// Mirrors the official client's experimental `initialAuthTokenReuse`
+  /// option.
+  ///
+  /// Useful with `ConvexClientWithAuth`, whose cached token was issued moments
+  /// earlier by `login()` / `loginFromCache()`.
+  final bool initialAuthTokenReuse;
 
   /// Maximum time to wait for server messages before reconnecting.
   ///

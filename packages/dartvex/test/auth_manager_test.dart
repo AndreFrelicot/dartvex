@@ -157,7 +157,8 @@ void main() {
         currentAuthVersion: 1,
       );
 
-      expect(events, <String>['authState:false', 'sendAuth:null']);
+      // Transport auth is cleared before listeners hear about it (F49).
+      expect(events, <String>['sendAuth:null', 'authState:false']);
       await manager.stopRefreshing();
     });
 
@@ -229,8 +230,8 @@ void main() {
       expect(events, <String>[
         'stop',
         'fetch:true',
-        'authState:false',
         'sendAuth:null',
+        'authState:false',
         'restart',
       ]);
       await manager.stopRefreshing();
@@ -534,7 +535,7 @@ void main() {
         iat: 1000000,
         exp: 1001000,
         leewaySeconds: 2,
-        now: now,
+        nowMillis: now.millisecondsSinceEpoch,
       );
       expect(delay, const Duration(milliseconds: 998000));
     });
@@ -545,7 +546,7 @@ void main() {
         iat: 997000,
         exp: 1000600,
         leewaySeconds: 300,
-        now: now,
+        nowMillis: now.millisecondsSinceEpoch,
       );
       expect(delay, const Duration(minutes: 5));
     });
@@ -575,7 +576,7 @@ void main() {
         iat: 0,
         exp: 1000000000,
         leewaySeconds: 2,
-        now: DateTime.fromMillisecondsSinceEpoch(0),
+        nowMillis: 0,
       );
       expect(delay, const Duration(days: 20));
     });
@@ -586,7 +587,7 @@ void main() {
         iat: null,
         exp: 1000100,
         leewaySeconds: 2,
-        now: now,
+        nowMillis: now.millisecondsSinceEpoch,
       );
       expect(delay, isNull);
     });
@@ -597,7 +598,7 @@ void main() {
         iat: null,
         exp: 999999,
         leewaySeconds: 2,
-        now: now,
+        nowMillis: now.millisecondsSinceEpoch,
       );
       expect(delay, isNull);
     });
@@ -607,6 +608,7 @@ void main() {
     AuthManager managerRecording(
       List<String> events, {
       required AuthTokenFetcher fetchToken,
+      List<Duration> reauthFetchRetryDelays = const <Duration>[],
     }) {
       return AuthManager(
         config: const ConvexClientConfig(connectImmediately: false),
@@ -616,6 +618,7 @@ void main() {
         resumeSocket: () async => events.add('resume'),
         stopSocket: () async => events.add('stop'),
         restartSocket: () async => events.add('restart'),
+        reauthFetchRetryDelays: reauthFetchRetryDelays,
       );
     }
 
@@ -909,7 +912,9 @@ void main() {
 
       expect(refreshing, <bool>[true, false]);
       expect(authStates, isEmpty);
-      expect(authChanges, <bool>[true]);
+      // onAuthChange(true) is reported once per flow, not on every refresh
+      // confirmation (F137, official parity).
+      expect(authChanges, isEmpty);
       await manager.stopRefreshing();
     });
 

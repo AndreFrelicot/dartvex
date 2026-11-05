@@ -24,10 +24,15 @@ enum ConnectionState {
   /// The WebSocket connection is established.
   connected,
 
-  /// The client is reconnecting after a disconnect.
+  /// A reconnect attempt is in flight after a disconnect.
+  ///
+  /// Covers the connect attempt itself; while the client waits out a
+  /// reconnect backoff between attempts the state is [disconnected].
   reconnecting,
 
-  /// The client is disconnected.
+  /// The client is disconnected: not yet started, waiting out a reconnect
+  /// backoff, or stopped while a server-rejected auth token is refreshed
+  /// (see [ConvexClient.authRefreshing]).
   disconnected,
 
   /// The connection ended on an unrecoverable server error and will not
@@ -323,10 +328,19 @@ abstract interface class ConvexFunctionCaller {
 /// Main Dartvex client for communicating with a Convex deployment.
 class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   /// Creates a [ConvexClient] for [deploymentUrl].
+  ///
+  /// [onTransitionMetrics] receives transit-time and size metrics for each
+  /// Transition. [onServerDisconnectError] is an experimental telemetry hook
+  /// that receives a description of each abnormal server disconnect (a server
+  /// close carrying a reason, with a close code other than 1000, 1001, 1005,
+  /// or 4040); mirrors the official client's unstable option of the same name,
+  /// and which reasons are reported may change. Exceptions thrown by either
+  /// callback are logged and otherwise ignored.
   ConvexClient(
     String deploymentUrl, {
     ConvexClientConfig? config,
     TransitionMetricsCallback? onTransitionMetrics,
+    void Function(String message)? onServerDisconnectError,
   })  : _deploymentUrl = _normalizeDeploymentUrl(deploymentUrl),
         _config = _normalizeConfig(config ?? const ConvexClientConfig()),
         _baseClient = BaseClient(),
@@ -363,6 +377,8 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       maxBackoff: _config.maxBackoff,
       backoffJitter: _config.backoffJitter,
       onTransitionMetrics: onTransitionMetrics,
+      onStatusChanged: () => _publishConnectionStatus(),
+      onServerDisconnectError: onServerDisconnectError,
       logLevel: _config.logLevel,
       logger: _config.logger,
     );
@@ -382,7 +398,13 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       },
       resumeSocket: _resumeSocketForAuth,
       stopSocket: () => _wsManager.stop(),
-      restartSocket: () => _wsManager.restart(),
+      restartSocket: () async {
+        if (_disposed) {
+          return;
+        }
+        await _wsManager.restart();
+      },
+      clientNowMillis: () => _wsManager.clientNowMillis,
       onRefreshingChange: (isRefreshing) {
         _currentAuthRefreshing = isRefreshing;
         _dispatch(() {
@@ -504,6 +526,15 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   }
 
   static ConvexClientConfig _normalizeConfig(ConvexClientConfig config) {
+    if (config.authTokenType != 'User') {
+      // 'None' would make the client report authenticated while the server
+      // treats it as anonymous, and 'Admin' is deliberately not a client API.
+      throw ArgumentError.value(
+        config.authTokenType,
+        'config.authTokenType',
+        "must be 'User'",
+      );
+    }
     _requireNonNegativeInt(
       config.refreshTokenLeewaySeconds,
       'config.refreshTokenLeewaySeconds',
@@ -564,6 +595,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       apiVersion: config.apiVersion,
       authTokenType: config.authTokenType,
       refreshTokenLeewaySeconds: config.refreshTokenLeewaySeconds,
+      initialAuthTokenReuse: config.initialAuthTokenReuse,
       inactivityTimeout: config.inactivityTimeout,
       connectTimeout: config.connectTimeout,
       queryTimeout: config.queryTimeout,
@@ -641,7 +673,23 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       _connectionStatusController.stream;
 
   /// Broadcasts whether the backend currently considers the client authenticated.
+  ///
+  /// Does not replay the latest value to new listeners; read [isAuthenticated]
+  /// for the current value.
   Stream<bool> get authState => _authStateController.stream;
+
+  /// Whether the backend currently considers the client authenticated.
+  ///
+  /// The latest value emitted on [authState].
+  bool get isAuthenticated => _authManager.isAuthenticated;
+
+  /// The auth token the client currently sends to Convex, if any.
+  ///
+  /// Reflects every refresh, so use it (rather than a token captured at login)
+  /// when calling Convex HTTP actions with `Authorization: Bearer <token>`.
+  /// The token may still be awaiting server confirmation. Mirrors the official
+  /// client's `getAuth()`.
+  String? get currentAuthToken => _authManager.currentToken;
 
   /// Broadcasts whether the client is currently refreshing auth after a
   /// rejection.
@@ -1430,11 +1478,19 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
         case QueryLoadingEvent():
           _emitCurrentQueryState(event.queryId);
         case AuthConfirmedEvent():
-          _authManager.handleAuthConfirmed();
+          _authManager.handleAuthConfirmed(
+            clientClockSkew: event.clientClockSkew,
+          );
         case AuthErrorEvent():
-          await _authManager.handleAuthError(
-            event.error,
-            currentAuthVersion: _baseClient.authVersion,
+          // Not awaited, like the official client: the reauth stops the socket
+          // synchronously (frames still queued from it are then dropped by the
+          // transport) and its token fetch may be slow or hang, which must not
+          // block handling of the restarted connection's messages.
+          unawaited(
+            _authManager.handleAuthError(
+              event.error,
+              currentAuthVersion: _baseClient.authVersion,
+            ),
           );
         case ReconnectRequiredEvent():
           await _wsManager.reconnectNow(event.reason);
