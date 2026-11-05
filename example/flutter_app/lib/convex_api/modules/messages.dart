@@ -10,18 +10,22 @@ class MessagesApi {
 
   final ConvexFunctionCaller _client;
 
-  Future<double> clearPrivate() async {
+  Future<double> clearPrivate({OptimisticUpdate? optimisticUpdate}) async {
     final raw$ = await _client.mutate(
       'messages:clearPrivate',
       const <String, dynamic>{},
+      optimisticUpdate,
     );
     return expectDouble(raw$, label: 'ClearPrivateResult');
   }
 
-  Future<double> clearPublicMessages() async {
+  Future<double> clearPublicMessages({
+    OptimisticUpdate? optimisticUpdate,
+  }) async {
     final raw$ = await _client.mutate(
       'messages:clearPublicMessages',
       const <String, dynamic>{},
+      optimisticUpdate,
     );
     return expectDouble(raw$, label: 'ClearPublicMessagesResult');
   }
@@ -39,32 +43,27 @@ class MessagesApi {
       'messages:countPublic',
       const <String, dynamic>{},
     );
-    final typedStream$ = subscription$.stream.map((event) {
-      switch (event) {
-        case QuerySuccess(:final value):
-          return TypedQuerySuccess<double>(
-            expectDouble(value, label: 'CountPublicResult'),
-          );
-        case QueryLoading(:final hasPendingWrites):
-          return TypedQueryLoading<double>(hasPendingWrites: hasPendingWrites);
-        case QueryError(:final message, :final data, :final logLines):
-          return TypedQueryError<double>(
-            message,
-            data: data,
-            logLines: logLines,
-          );
-      }
-    });
-    return TypedConvexSubscription<double>(subscription$, typedStream$);
+    return TypedConvexSubscription<double>(
+      subscription$,
+      subscription$.stream.map(
+        (event$) => typedQueryResult<double>(
+          event$,
+          (raw$) => expectDouble(raw$, label: 'CountPublicResult'),
+          'messages:countPublic',
+        ),
+      ),
+    );
   }
 
   Future<Null> failingSend({
     required String author,
     required String text,
+    OptimisticUpdate? optimisticUpdate,
   }) async {
     await _client.mutate(
       'messages:failingSend',
       _encodeFailingSendArgs((author: author, text: text)),
+      optimisticUpdate,
     );
     return null;
   }
@@ -85,30 +84,18 @@ class MessagesApi {
       'messages:listPrivate',
       const <String, dynamic>{},
     );
-    final typedStream$ = subscription$.stream.map((event) {
-      switch (event) {
-        case QuerySuccess(:final value):
-          return TypedQuerySuccess<List<ListPrivateResultItem>>(
-            expectList(
-              value,
-              label: 'ListPrivateResult',
-            ).map((item) => _decodeListPrivateResultItem(item)).toList(),
-          );
-        case QueryLoading(:final hasPendingWrites):
-          return TypedQueryLoading<List<ListPrivateResultItem>>(
-            hasPendingWrites: hasPendingWrites,
-          );
-        case QueryError(:final message, :final data, :final logLines):
-          return TypedQueryError<List<ListPrivateResultItem>>(
-            message,
-            data: data,
-            logLines: logLines,
-          );
-      }
-    });
     return TypedConvexSubscription<List<ListPrivateResultItem>>(
       subscription$,
-      typedStream$,
+      subscription$.stream.map(
+        (event$) => typedQueryResult<List<ListPrivateResultItem>>(
+          event$,
+          (raw$) => expectList(
+            raw$,
+            label: 'ListPrivateResult',
+          ).map((item) => _decodeListPrivateResultItem(item)).toList(),
+          'messages:listPrivate',
+        ),
+      ),
     );
   }
 
@@ -128,30 +115,18 @@ class MessagesApi {
       'messages:listPublic',
       const <String, dynamic>{},
     );
-    final typedStream$ = subscription$.stream.map((event) {
-      switch (event) {
-        case QuerySuccess(:final value):
-          return TypedQuerySuccess<List<ListPublicResultItem>>(
-            expectList(
-              value,
-              label: 'ListPublicResult',
-            ).map((item) => _decodeListPublicResultItem(item)).toList(),
-          );
-        case QueryLoading(:final hasPendingWrites):
-          return TypedQueryLoading<List<ListPublicResultItem>>(
-            hasPendingWrites: hasPendingWrites,
-          );
-        case QueryError(:final message, :final data, :final logLines):
-          return TypedQueryError<List<ListPublicResultItem>>(
-            message,
-            data: data,
-            logLines: logLines,
-          );
-      }
-    });
     return TypedConvexSubscription<List<ListPublicResultItem>>(
       subscription$,
-      typedStream$,
+      subscription$.stream.map(
+        (event$) => typedQueryResult<List<ListPublicResultItem>>(
+          event$,
+          (raw$) => expectList(
+            raw$,
+            label: 'ListPublicResult',
+          ).map((item) => _decodeListPublicResultItem(item)).toList(),
+          'messages:listPublic',
+        ),
+      ),
     );
   }
 
@@ -168,10 +143,11 @@ class MessagesApi {
     );
   }
 
-  Future<double> seedPublic() async {
+  Future<double> seedPublic({OptimisticUpdate? optimisticUpdate}) async {
     final raw$ = await _client.mutate(
       'messages:seedPublic',
       const <String, dynamic>{},
+      optimisticUpdate,
     );
     return expectDouble(raw$, label: 'SeedPublicResult');
   }
@@ -179,10 +155,12 @@ class MessagesApi {
   Future<PrivateMessagesId> sendPrivate({
     Optional<String> author = const Optional.absent(),
     required String text,
+    OptimisticUpdate? optimisticUpdate,
   }) async {
     final raw$ = await _client.mutate(
       'messages:sendPrivate',
       _encodeSendPrivateArgs((author: author, text: text)),
+      optimisticUpdate,
     );
     return PrivateMessagesId(expectString(raw$, label: 'SendPrivateResult'));
   }
@@ -190,10 +168,12 @@ class MessagesApi {
   Future<PublicMessagesId> sendPublic({
     required String author,
     required String text,
+    OptimisticUpdate? optimisticUpdate,
   }) async {
     final raw$ = await _client.mutate(
       'messages:sendPublic',
       _encodeSendPublicArgs((author: author, text: text)),
+      optimisticUpdate,
     );
     return PublicMessagesId(expectString(raw$, label: 'SendPublicResult'));
   }

@@ -35,27 +35,15 @@ class DemoApi {
       'demo:requireAuthEcho',
       _encodeRequireAuthEchoArgs((message: message)),
     );
-    final typedStream$ = subscription$.stream.map((event) {
-      switch (event) {
-        case QuerySuccess(:final value):
-          return TypedQuerySuccess<RequireAuthEchoResult>(
-            _decodeRequireAuthEchoResult(value),
-          );
-        case QueryLoading(:final hasPendingWrites):
-          return TypedQueryLoading<RequireAuthEchoResult>(
-            hasPendingWrites: hasPendingWrites,
-          );
-        case QueryError(:final message, :final data, :final logLines):
-          return TypedQueryError<RequireAuthEchoResult>(
-            message,
-            data: data,
-            logLines: logLines,
-          );
-      }
-    });
     return TypedConvexSubscription<RequireAuthEchoResult>(
       subscription$,
-      typedStream$,
+      subscription$.stream.map(
+        (event$) => typedQueryResult<RequireAuthEchoResult>(
+          event$,
+          (raw$) => _decodeRequireAuthEchoResult(raw$),
+          'demo:requireAuthEcho',
+        ),
+      ),
     );
   }
 
@@ -69,25 +57,16 @@ class DemoApi {
       'demo:whoAmI',
       const <String, dynamic>{},
     );
-    final typedStream$ = subscription$.stream.map((event) {
-      switch (event) {
-        case QuerySuccess(:final value):
-          return TypedQuerySuccess<WhoAmIResult?>(
-            value == null ? null : _decodeWhoAmIResult(value),
-          );
-        case QueryLoading(:final hasPendingWrites):
-          return TypedQueryLoading<WhoAmIResult?>(
-            hasPendingWrites: hasPendingWrites,
-          );
-        case QueryError(:final message, :final data, :final logLines):
-          return TypedQueryError<WhoAmIResult?>(
-            message,
-            data: data,
-            logLines: logLines,
-          );
-      }
-    });
-    return TypedConvexSubscription<WhoAmIResult?>(subscription$, typedStream$);
+    return TypedConvexSubscription<WhoAmIResult?>(
+      subscription$,
+      subscription$.stream.map(
+        (event$) => typedQueryResult<WhoAmIResult?>(
+          event$,
+          (raw$) => raw$ == null ? null : _decodeWhoAmIResult(raw$),
+          'demo:whoAmI',
+        ),
+      ),
+    );
   }
 }
 

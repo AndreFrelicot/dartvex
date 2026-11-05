@@ -13,23 +13,30 @@ class FilesApi {
   Future<ImagesId> add({
     required String caption,
     required StorageId storageId,
+    OptimisticUpdate? optimisticUpdate,
   }) async {
     final raw$ = await _client.mutate(
       'files:add',
       _encodeAddArgs((caption: caption, storageId: storageId)),
+      optimisticUpdate,
     );
     return ImagesId(expectString(raw$, label: 'AddResult'));
   }
 
-  Future<double> clear() async {
-    final raw$ = await _client.mutate('files:clear', const <String, dynamic>{});
+  Future<double> clear({OptimisticUpdate? optimisticUpdate}) async {
+    final raw$ = await _client.mutate(
+      'files:clear',
+      const <String, dynamic>{},
+      optimisticUpdate,
+    );
     return expectDouble(raw$, label: 'ClearResult');
   }
 
-  Future<String> generateUploadUrl() async {
+  Future<String> generateUploadUrl({OptimisticUpdate? optimisticUpdate}) async {
     final raw$ = await _client.mutate(
       'files:generateUploadUrl',
       const <String, dynamic>{},
+      optimisticUpdate,
     );
     return expectString(raw$, label: 'GenerateUploadUrlResult');
   }
@@ -49,23 +56,17 @@ class FilesApi {
       'files:getUrl',
       _encodeGetUrlArgs((storageId: storageId)),
     );
-    final typedStream$ = subscription$.stream.map((event) {
-      switch (event) {
-        case QuerySuccess(:final value):
-          return TypedQuerySuccess<String?>(
-            value == null ? null : expectString(value, label: 'GetUrlResult'),
-          );
-        case QueryLoading(:final hasPendingWrites):
-          return TypedQueryLoading<String?>(hasPendingWrites: hasPendingWrites);
-        case QueryError(:final message, :final data, :final logLines):
-          return TypedQueryError<String?>(
-            message,
-            data: data,
-            logLines: logLines,
-          );
-      }
-    });
-    return TypedConvexSubscription<String?>(subscription$, typedStream$);
+    return TypedConvexSubscription<String?>(
+      subscription$,
+      subscription$.stream.map(
+        (event$) => typedQueryResult<String?>(
+          event$,
+          (raw$) =>
+              raw$ == null ? null : expectString(raw$, label: 'GetUrlResult'),
+          'files:getUrl',
+        ),
+      ),
+    );
   }
 
   Future<List<ListResultItem>> list() async {
@@ -81,30 +82,18 @@ class FilesApi {
       'files:list',
       const <String, dynamic>{},
     );
-    final typedStream$ = subscription$.stream.map((event) {
-      switch (event) {
-        case QuerySuccess(:final value):
-          return TypedQuerySuccess<List<ListResultItem>>(
-            expectList(
-              value,
-              label: 'ListResult',
-            ).map((item) => _decodeListResultItem(item)).toList(),
-          );
-        case QueryLoading(:final hasPendingWrites):
-          return TypedQueryLoading<List<ListResultItem>>(
-            hasPendingWrites: hasPendingWrites,
-          );
-        case QueryError(:final message, :final data, :final logLines):
-          return TypedQueryError<List<ListResultItem>>(
-            message,
-            data: data,
-            logLines: logLines,
-          );
-      }
-    });
     return TypedConvexSubscription<List<ListResultItem>>(
       subscription$,
-      typedStream$,
+      subscription$.stream.map(
+        (event$) => typedQueryResult<List<ListResultItem>>(
+          event$,
+          (raw$) => expectList(
+            raw$,
+            label: 'ListResult',
+          ).map((item) => _decodeListResultItem(item)).toList(),
+          'files:list',
+        ),
+      ),
     );
   }
 }
