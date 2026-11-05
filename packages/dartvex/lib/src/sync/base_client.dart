@@ -459,6 +459,7 @@ class BaseClient {
   /// pause — so base versions still go out in ascending order — and ahead of
   /// every mutation and action, then the full outgoing queue is drained.
   List<ClientMessage> resume() {
+    _outgoingGeneration += 1;
     final (querySet, authenticate) = _localState.resume();
     final resumeMessages = <ClientMessage>[
       if (authenticate != null) authenticate,
@@ -488,6 +489,7 @@ class BaseClient {
   /// retryable), and leaving in-flight mutations pending for replay on
   /// reconnect.
   void handleDisconnect(String reason) {
+    _outgoingGeneration += 1;
     _outgoing.clear();
     _requestManager.handleDisconnect(reason);
   }
@@ -497,6 +499,7 @@ class BaseClient {
   /// Also rolls back the optimistic layers of the failed mutations, returning
   /// the query events for the subscribers whose overlaid value changed.
   List<BaseClientEvent> failPendingRequests(String message) {
+    _outgoingGeneration += 1;
     _outgoing.clear();
     final failedMutationIds = _requestManager.failAll(message);
     if (failedMutationIds.isEmpty || !_optimistic.hasActiveUpdates) {
@@ -512,6 +515,7 @@ class BaseClient {
   /// are failed instead of replayed; the rollback events of their optimistic
   /// layers are available from [takeReconnectEvents].
   List<ClientMessage> prepareReconnect() {
+    _outgoingGeneration += 1;
     _outgoing.clear();
     // Keep the last server results as the overlay base until the new
     // connection's first transition: rebuilding the overlay from the empty,
@@ -542,6 +546,18 @@ class BaseClient {
 
   /// Whether any message is queued for sending.
   bool get hasOutgoing => _outgoing.isNotEmpty;
+
+  /// Advances whenever the outgoing queue is rebuilt or discarded wholesale:
+  /// by [resume], [prepareReconnect], [handleDisconnect], or
+  /// [failPendingRequests].
+  ///
+  /// A caller that drained the queue and then awaited must compare this with
+  /// the value it captured before draining before it [requeueOutgoing]s the
+  /// unsent remainder: once it changed, the rebuild already replays (or
+  /// deliberately dropped) those messages, and requeueing them would send a
+  /// request a second time under the same request id.
+  int get outgoingGeneration => _outgoingGeneration;
+  int _outgoingGeneration = 0;
 
   /// Returns the event describing the *current* overlaid state of [queryId]:
   /// a [QueryUpdateEvent] with its result, or a [QueryLoadingEvent] when it has

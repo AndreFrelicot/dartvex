@@ -315,7 +315,14 @@ class WebSocketManager {
   int? _pendingNetworkRecoveryTimeSavedMs;
 
   /// Whether the socket adapter is currently connected.
+  ///
+  /// Only means the adapter is open: while [isPaused] the socket may still be
+  /// waiting for its deferred handshake, and [sendMessages] sends nothing.
   bool get isConnected => adapter.isConnected;
+
+  /// Whether the socket is [pause]d for auth, so [sendMessages] sends nothing
+  /// until [resume] flushes the buffered state.
+  bool get isPaused => _pauseState != _SocketPauseState.no;
 
   /// Whether the socket has ever reached the connected (ready) state.
   ///
@@ -938,7 +945,7 @@ class WebSocketManager {
     // instead of completing a handshake the restart() will redo on a fresh
     // socket. Mirrors the official client's stop(), which detaches and closes
     // a "connecting" socket.
-    _connectAttempt += 1;
+    final stopAttempt = ++_connectAttempt;
     // Frames still queued from the stopped socket must not be applied to the
     // session restart() rebuilds.
     _socketEpoch += 1;
@@ -954,7 +961,11 @@ class WebSocketManager {
     await _closeAdapterBestEffort(
       'Failed to close WebSocket while stopping for reauth',
     );
-    if (wasLive && !_disposed) {
+    // A slow close handshake can outlive the stop: a superseding restart()
+    // (or another stop/restart cycle) may already have reconnected, and a late
+    // "disconnected" would then contradict the live connection. Publish only
+    // while this stop is still the latest word on the connection.
+    if (wasLive && !_disposed && _stopped && stopAttempt == _connectAttempt) {
       onConnectionStateChanged(false, false);
     }
   }
@@ -1401,6 +1412,11 @@ class WebSocketManager {
     String reason, {
     required bool clientInitiated,
   }) async {
+    // The socket this cleanup is for. A close handshake can be slow: its real
+    // close event may already have run the disconnect bookkeeping, and the
+    // reconnect it scheduled may already have opened (and replayed the
+    // session onto) a replacement socket by the time close() returns.
+    final epoch = _socketEpoch;
     if (adapter.isConnected) {
       try {
         await adapter.close();
@@ -1412,6 +1428,16 @@ class WebSocketManager {
           stackTrace: stackTrace,
         );
       }
+    }
+    if (epoch != _socketEpoch) {
+      // The closed socket's disconnect was already handled (or a stop or a
+      // newer connection superseded it); a synthetic disconnect now would
+      // tear down the successor connection and fail its in-flight actions.
+      _log(
+        DartvexLogLevel.debug,
+        'Skipping the synthetic disconnect of an already superseded socket',
+      );
+      return;
     }
     await _handleSyntheticDisconnect(reason, clientInitiated: clientInitiated);
   }

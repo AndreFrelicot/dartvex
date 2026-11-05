@@ -230,6 +230,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the existing session instead of signing the user out.
 - Auth: a token pushed by the provider after the `ConvexClient` was closed is
   logged instead of becoming an uncaught zone error.
+- A mutation or action issued while auth holds the socket pause (for example
+  right as a `setAuthWithRefresh` token arrives, or with `expectAuth`) is no
+  longer sent twice with the same request id, nor stranded until the next
+  server message: the queue is left for the auth resume to send in order, and
+  a request whose send failed is not requeued on top of the reconnect that
+  already replays it.
+- A server `FatalError` now reaches existing subscribers: a pending `query()`
+  rejects, live subscriptions receive a `QueryError`, and paginated queries
+  move to the error status instead of loading forever.
+- Transport: when a send fails on a socket whose close is slow, the late
+  cleanup of that socket no longer tears down the connection that already
+  replaced it (a needless extra reconnect that failed actions sent on the new
+  socket as lost).
+- Transport: a reauth whose socket close is slow no longer reports
+  `disconnected` over a connection that a superseding auth call already
+  re-established.
+- Auth: a server `AuthError` handled after `close()` is logged instead of
+  becoming an uncaught zone error.
+- Auth: a `logout()` while a reauth is still stopping the socket no longer
+  calls the provider's refresh hook (`loginFromCache`) for the ended session.
+- Auth: while a `ConvexClientWithAuth.login()` / `loginFromCache()` is pending,
+  the live session's provider pushes are no longer dropped: a rotated token is
+  applied, and a sign-out (`null`) push means a failed re-login signs the user
+  out instead of restoring the dead session.
 
 ## [0.2.0] - 2026-06-12
 

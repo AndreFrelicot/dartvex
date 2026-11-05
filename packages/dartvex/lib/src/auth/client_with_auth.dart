@@ -16,14 +16,18 @@ import 'auth_token_bridge.dart';
 ///
 /// Provider token pushes and base-client auth changes are honored only while
 /// [generation] is the wrapper's current auth flow generation, so a stale flow
-/// cannot tear down a newer one. The generation is mutable so a flow that is
-/// kept after a failed replacement login can be made current again.
+/// cannot tear down a newer one — except that the installed live session's
+/// token pushes are still recorded while a replacement login is pending. The
+/// generation is mutable so a flow that is kept after a failed replacement
+/// login can be made current again.
 final class _AuthFlowBinding {
   _AuthFlowBinding(this.generation);
 
   int generation;
 
-  /// Whether the base client reported this flow's auth as failed.
+  /// Whether the base client reported this flow's auth as failed, or the
+  /// provider ended it (a `null` token push) while a replacement login was
+  /// pending. Such a flow is never restored after that login fails.
   bool baseFlowFailed = false;
 }
 
@@ -425,8 +429,21 @@ class ConvexClientWithAuth<TUser>
     _AuthFlowBinding binding,
     String? token,
   ) async {
-    if (!_isCurrentAuthFlow(binding.generation)) {
+    if (!_acceptsTokenPushesFrom(binding)) {
       return;
+    }
+    if (!_isCurrentAuthFlow(binding.generation)) {
+      // The live session, while a replacement login is pending.
+      if (token == null) {
+        // The provider ended the live session. The pending login stays in
+        // charge (and replaces it on success), but a failed or cancelled
+        // login must not restore this dead session as authenticated.
+        binding.baseFlowFailed = true;
+        return;
+      }
+      // A rotated token: the client keeps sending this session's token until
+      // the replacement succeeds, and restores it if the replacement fails,
+      // so apply it now like any other push for the live session.
     }
     if (token == null) {
       final resetGeneration = ++_authFlowGeneration;
@@ -442,11 +459,19 @@ class ConvexClientWithAuth<TUser>
       return;
     }
     await bridge.updateToken(token);
-    if (!_isCurrentAuthFlow(binding.generation) ||
-        !identical(_authBridge, bridge)) {
+    if (!_acceptsTokenPushesFrom(binding) || !identical(_authBridge, bridge)) {
       return;
     }
     await _client.updateAuthToken(token);
+  }
+
+  /// Whether provider token pushes of [binding]'s flow are honored: it is the
+  /// current flow, or it is the installed live session while a replacement
+  /// [login]/[loginFromCache] is still pending (that session is kept — with
+  /// its latest token — if the replacement fails).
+  bool _acceptsTokenPushesFrom(_AuthFlowBinding binding) {
+    return _isCurrentAuthFlow(binding.generation) ||
+        (!_disposed && identical(binding, _installedBinding));
   }
 
   Future<bool> _resetBaseAuth({int? generation}) async {

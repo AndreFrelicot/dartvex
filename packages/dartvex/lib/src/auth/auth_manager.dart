@@ -585,12 +585,24 @@ class AuthManager {
 
   /// Fetches a fresh token for a reauth, retrying a throwing fetch per
   /// [_reauthFetchRetryDelays] while the flow stays current.
+  ///
+  /// Returns `null` without calling [fetchToken] once the flow was superseded
+  /// (e.g. by a logout while the socket stop was still closing): the provider's
+  /// refresh hook must not run for a session the app already ended. The caller
+  /// ignores the result of a superseded flow.
   Future<String?> _fetchTokenForReauth(
     AuthTokenFetcher fetchToken,
     int generation,
   ) async {
     var attempt = 0;
     while (true) {
+      if (!_isCurrentFlow(generation, fetchToken)) {
+        _log(
+          DartvexLogLevel.debug,
+          'Auth refresh superseded before its token fetch; skipping it',
+        );
+        return null;
+      }
       // Invalidate any concurrent scheduled refresh or post-confirmation
       // refetch: the reauth's result is the one to apply.
       ++_tokenFetchSequence;

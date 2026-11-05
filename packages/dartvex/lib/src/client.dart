@@ -1403,6 +1403,11 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     } else {
       _baseClient.setAuth(tokenType: _config.authTokenType, token: token);
     }
+    if (_disposed) {
+      // An auth flow that settles after close() only records the token; there
+      // is no transport left to flush it to.
+      return;
+    }
     await _flushOutgoing();
   }
 
@@ -1487,12 +1492,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
           // synchronously (frames still queued from it are then dropped by the
           // transport) and its token fetch may be slow or hang, which must not
           // block handling of the restarted connection's messages.
-          unawaited(
-            _authManager.handleAuthError(
-              event.error,
-              currentAuthVersion: _baseClient.authVersion,
-            ),
-          );
+          unawaited(_handleAuthErrorDetached(event.error));
         case ReconnectRequiredEvent():
           await _wsManager.reconnectNow(event.reason);
         case FatalErrorEvent():
@@ -1507,6 +1507,14 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
           // layers, as the mutate() contract promises on failure.
           _dispatchOptimisticEvents(
             _baseClient.failPendingRequests(event.error),
+          );
+          // The connection never comes back, so every existing subscriber is
+          // told now (after the rollbacks above, so the error is the last
+          // word): a pending one-shot query() rejects and a paginated query
+          // moves to its error state instead of loading forever. Subscribers
+          // created later get the same error as their initial result.
+          _emitToAllSubscribers(
+            QueryError(_fatalException(event.error).message),
           );
           _emitConnectionState(ConnectionState.fatalError);
         case FunctionLogEvent():
@@ -1526,6 +1534,26 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       await _flushOutgoing();
     }
     return const <ClientMessage>[];
+  }
+
+  /// Runs the reauth for a server [error] detached from the message loop.
+  ///
+  /// Its failures (e.g. the auth flush of a client closed meanwhile) are
+  /// contained and logged here instead of escaping as uncaught zone errors.
+  Future<void> _handleAuthErrorDetached(AuthError error) async {
+    try {
+      await _authManager.handleAuthError(
+        error,
+        currentAuthVersion: _baseClient.authVersion,
+      );
+    } catch (error, stackTrace) {
+      _log(
+        _disposed ? DartvexLogLevel.debug : DartvexLogLevel.warn,
+        'Handling a server auth error failed',
+        error: _safeLogError(error),
+        stackTrace: stackTrace,
+      );
+    }
   }
 
   QueryResult _toPublicQueryResult(
@@ -1573,6 +1601,18 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
 
   void _emitToSubscribers(int queryId, QueryResult result) {
     _dispatch(() => _deliverToSubscribers(queryId, result));
+  }
+
+  /// Delivers [result] to every subscription that exists when the delivery
+  /// runs.
+  void _emitToAllSubscribers(QueryResult result) {
+    _dispatch(() {
+      for (final controller in _subscriptionControllers.values.toList()) {
+        if (!controller.isClosed) {
+          controller.add(result);
+        }
+      }
+    });
   }
 
   void _deliverToSubscribers(int queryId, QueryResult result) {
@@ -1696,20 +1736,46 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     });
   }
 
-  Future<void> _flushOutgoing() async {
+  Future<void> _flushOutgoing({bool isRetry = false}) async {
     await _ensureStarted();
-    if (!_wsManager.isConnected) {
+    if (!_canSendOutgoing) {
+      // While auth holds the pause the queue stays put: resume() drains it
+      // itself, in order (deferred auth and query-set delta ahead of every
+      // request). Draining it here would race that resume — the transport
+      // drops messages while paused, and requeueing them after the await
+      // could land behind a resume or reconnect that already sent or replays
+      // them, sending a request twice under the same request id (or
+      // stranding it until the next server message).
       return;
     }
+    final generation = _baseClient.outgoingGeneration;
     final messages = _baseClient.drainOutgoing(assumeSent: false);
     if (messages.isEmpty) {
       return;
     }
     final sentMessages = await _wsManager.sendMessages(messages);
-    if (sentMessages.length < messages.length) {
-      _baseClient.requeueOutgoing(messages.skip(sentMessages.length));
+    if (sentMessages.length == messages.length) {
+      return;
+    }
+    if (generation != _baseClient.outgoingGeneration) {
+      // A disconnect, reconnect, or resume rebuilt the queue meanwhile; it
+      // replays every unsent request and the current query set and auth
+      // itself, so the stale remainder must not be requeued on top of it.
+      return;
+    }
+    _baseClient.requeueOutgoing(messages.skip(sentMessages.length));
+    if (!isRetry && _canSendOutgoing) {
+      await _flushOutgoing(isRetry: true);
     }
   }
+
+  /// Whether queued messages can go out now: the socket is open and neither
+  /// the transport nor the sync layer is paused for auth.
+  bool get _canSendOutgoing =>
+      !_disposed &&
+      _wsManager.isConnected &&
+      !_wsManager.isPaused &&
+      !_baseClient.isPaused;
 
   void _assertNotDisposed() {
     if (_disposed) {

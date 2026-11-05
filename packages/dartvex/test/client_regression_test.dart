@@ -515,9 +515,19 @@ void main() {
       await settle();
       await failure;
 
-      final last = values.last as QuerySuccess;
-      expect(last.value, <String>['a']);
-      expect(last.hasPendingWrites, isFalse);
+      // The optimistic layer is rolled back first, then the existing
+      // subscriber is told the connection is gone for good.
+      final rolledBack = values[values.length - 2] as QuerySuccess;
+      expect(rolledBack.value, <String>['a']);
+      expect(rolledBack.hasPendingWrites, isFalse);
+      expect(
+        values.last,
+        isA<QueryError>().having(
+          (error) => error.message,
+          'message',
+          contains('fatal server error: boom'),
+        ),
+      );
       expect(client.currentConnectionState, ConnectionState.fatalError);
 
       await expectLater(
