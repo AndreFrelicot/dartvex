@@ -48,14 +48,20 @@ export 'src/connection_indicator.dart'
 export 'src/connectivity.dart' show ConnectivityPlusSignal;
 export 'src/mutation_builder.dart' show ConvexMutation, ConvexMutationBuilder;
 export 'src/paginated_query_builder.dart'
-    show PaginatedQueryBuilder, PaginatedQueryWidgetBuilder, PaginationStatus;
+    show
+        PaginatedQueryBuilder,
+        PaginatedQueryErrorWidgetBuilder,
+        PaginatedQueryWidgetBuilder,
+        PaginationStatus;
 export 'src/provider.dart' show ConvexProvider;
 export 'src/query_builder.dart' show ConvexQuery, ConvexQueryWidgetBuilder;
 export 'src/runtime_client.dart'
     show
         ConvexClientRuntime,
         ConvexConnectionState,
+        ConvexFunctionCallerSource,
         ConvexRuntimeClient,
+        ConvexRuntimeFunctionCaller,
         ConvexRuntimePaginatedQuery,
         ConvexRuntimeQueryError,
         ConvexRuntimeQueryEvent,
@@ -64,6 +70,7 @@ export 'src/runtime_client.dart'
         ConvexRuntimeSubscription;
 export 'src/snapshot.dart'
     show
+        ConvexDecodeException,
         ConvexDecoder,
         ConvexQuerySnapshot,
         ConvexQuerySource,

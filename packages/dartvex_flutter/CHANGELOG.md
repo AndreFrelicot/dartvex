@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `PaginatedQueryBuilder.errorBuilder` (`PaginatedQueryErrorWidgetBuilder`)
+  receives the error object of a failed query — the page's server error or a
+  decode failure — plus the items loaded so far and a `retry` callback that
+  restarts the query. The existing `builder` signature is unchanged.
+- `ConvexDecodeException` (error, stack trace and raw value), used by
+  `ConvexQuery`, `ConvexMutation`, `ConvexAction` and `PaginatedQueryBuilder`
+  when decoding a successful result fails.
+- `ConvexProvider.of(context).functionCaller` (extension
+  `ConvexRuntimeFunctionCaller`) returns a core `ConvexFunctionCaller` for the
+  provider's client, so generated `ConvexApi` bindings and `ConvexStorage`
+  can be built below a provider. `ConvexClientRuntime` returns its wrapped
+  client (now also exposed as `ConvexClientRuntime.client`); custom runtime
+  clients can opt in through `ConvexFunctionCallerSource`.
+
 ### Changed
 
 - **Breaking:** Requires Dart `^3.10.0` and Flutter `>=3.38.0`, and on Apple
@@ -24,6 +40,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   run a WebSocket task, even after invalidation, so the previous
   session-per-connection design still leaked a native session on every
   reconnect.
+- Decode failures are now a public `ConvexDecodeException` everywhere:
+  `ConvexQuery` used a private wrapper type, and `ConvexMutation` /
+  `ConvexAction` surfaced the raw decoder error, indistinguishable from a
+  rejected request even though the server had already committed the write.
+  Code catching the raw decoder error (for example `on TypeError`) from a
+  mutation or action future must catch `ConvexDecodeException` instead.
+- `PaginatedQueryBuilder` reports item decode failures to
+  `FlutterError.reportError` (still contained: no `ErrorWidget`), instead of
+  silently switching to the error status.
+- `ConvexClientRuntime` no longer keeps a `connectionState` listener (it reads
+  the wrapped client's state directly), and two wrappers around the same
+  client with the same `disposeClient` are now equal. A wrapper re-created
+  inline in a `build` method no longer makes every descendant resubscribe,
+  reset pagination, or re-download images, and no longer leaks a listener per
+  rebuild.
+- `ConvexProvider` no longer calls `reconnectNow` on app resume for a lazy
+  client (`connectImmediately: false`) that has not started yet, which opened
+  a socket before the first backend operation or auth update.
+- `ConvexMutation` and `ConvexAction` share one request state machine; their
+  single-flight behavior (a call made while another is in flight rejects with
+  a `StateError`) is unchanged and now documented.
 
 ### Fixed
 
@@ -41,6 +78,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   last request finishes.
 - The NSURLSession WebSocket close/error state machine is now covered by unit
   tests through a native-task seam.
+- `ConvexAuthBuilder`, `ConvexConnectionBuilder`,
+  `ConvexConnectionStatusBuilder` and `ConvexAuthRefreshingBuilder` kept the
+  previous client's last value after the client was swapped (for example a
+  fresh signed-out auth client kept showing the signed-in user). They now
+  re-seed from the new client's current value.
+- `ConvexQuery` kept the previous client's data (with `hasData: true`) after a
+  client swap, even next to the new client's error. A client change now resets
+  to the loading state; changing only the query or args on the same client
+  still keeps the previous data while refreshing.
+- Widgets driven by the core's synchronous streams no longer throw
+  "setState() called during build" when the client emits during a build or
+  layout pass — for example `loadMore()` called from a `ListView.itemBuilder`,
+  a lazy client connecting because a descendant subscribed, or
+  `loginFromCache()` from a descendant's `initState`. The rebuild is deferred
+  to after the frame.
+- Calling the `ConvexMutation` / `ConvexAction` executor after the widget was
+  unmounted threw before the request was sent; the request is now sent and
+  only the snapshot update is skipped.
+- `ConvexQuery` renders the client's live result in its first frame, instead
+  of a loading frame, when another widget already holds a live subscription to
+  the same query and arguments through a `ConvexClientRuntime` of the same
+  client.
+- `ConvexQuery` and `PaginatedQueryBuilder` no longer throw out of lifecycle
+  methods (replacing the subtree with an `ErrorWidget`) when the client
+  rejects the subscription synchronously, for example a disposed client. They
+  show an error state and retry on the next dependency or client change.
+- `PaginatedQueryBuilder` only decodes items whose raw value changed since the
+  previous emission, and no longer copies the item list on every build.
 
 ## [0.2.0] - 2026-06-12
 

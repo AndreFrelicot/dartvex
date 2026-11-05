@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:dartvex/dartvex.dart' as convex;
+import 'package:meta/meta.dart';
 
 import 'snapshot.dart';
 
@@ -89,6 +91,54 @@ abstract class ConvexRuntimeSubscription {
   void cancel();
 }
 
+/// Internal capability of a [ConvexRuntimeSubscription] that already knows
+/// the client's latest local result for its query when it is created, so a
+/// widget can render it in its first frame instead of a loading frame.
+@internal
+abstract interface class ConvexSeededSubscription {
+  /// The latest event the client holds for this query and arguments at
+  /// subscription time, or `null` when nothing is known locally yet.
+  ConvexRuntimeQueryEvent? get currentEvent;
+}
+
+/// Implemented by runtime clients that can hand out a core
+/// [convex.ConvexFunctionCaller] — the interface generated `ConvexApi`
+/// bindings (dartvex_codegen) and [convex.ConvexStorage] are built on.
+///
+/// Use [ConvexRuntimeFunctionCaller.functionCaller] rather than this
+/// interface directly.
+abstract interface class ConvexFunctionCallerSource {
+  /// A function caller backed by this runtime client.
+  convex.ConvexFunctionCaller get convexFunctionCaller;
+}
+
+/// Typed-API access for code below a `ConvexProvider`.
+extension ConvexRuntimeFunctionCaller on ConvexRuntimeClient {
+  /// A core [convex.ConvexFunctionCaller] for this runtime client.
+  ///
+  /// Lets widgets build generated `ConvexApi` bindings or a
+  /// [convex.ConvexStorage] from the provider's client, and lets widget tests
+  /// fake them with `FakeConvexClient`:
+  ///
+  /// ```dart
+  /// final api = ConvexApi(ConvexProvider.of(context).functionCaller);
+  /// ```
+  ///
+  /// [ConvexClientRuntime] returns its wrapped `ConvexClient`. Throws
+  /// [UnsupportedError] for runtime clients that do not implement
+  /// [ConvexFunctionCallerSource].
+  convex.ConvexFunctionCaller get functionCaller {
+    final self = this;
+    if (self is ConvexFunctionCallerSource) {
+      return (self as ConvexFunctionCallerSource).convexFunctionCaller;
+    }
+    throw UnsupportedError(
+      '${self.runtimeType} does not expose a ConvexFunctionCaller; '
+      'implement ConvexFunctionCallerSource to support typed APIs.',
+    );
+  }
+}
+
 /// Handle for a live, reactive paginated query consumed by Flutter widgets.
 ///
 /// Mirrors the core `ConvexPaginatedQuery`: [stream] emits an aggregated
@@ -170,25 +220,48 @@ class ConvexRuntimeQueryError extends ConvexRuntimeQueryEvent {
 }
 
 /// Wraps a [convex.ConvexClient] as a [ConvexRuntimeClient].
-class ConvexClientRuntime implements ConvexRuntimeClient {
+///
+/// The wrapper holds no state of its own: two wrappers around the same client
+/// (with the same [disposeClient]) are equal, so building
+/// `ConvexProvider(client: ConvexClientRuntime(client))` inline does not make
+/// descendants resubscribe on every rebuild. Creating the wrapper once is
+/// still the recommended pattern.
+class ConvexClientRuntime
+    implements ConvexRuntimeClient, ConvexFunctionCallerSource {
   /// Creates a runtime adapter around [_client].
   ///
   /// When [disposeClient] is true, disposing this runtime also disposes the client.
-  ConvexClientRuntime(this._client, {this.disposeClient = false})
-    : _currentConnectionState = _client.currentConnectionState {
-    _connectionStateSubscription = _client.connectionState.listen((state) {
-      _currentConnectionState = state;
-    });
-  }
+  ConvexClientRuntime(this._client, {this.disposeClient = false});
 
   final convex.ConvexClient _client;
 
   /// Whether disposing this runtime should also dispose the wrapped client.
   final bool disposeClient;
-  late final StreamSubscription<ConvexConnectionState>
-  _connectionStateSubscription;
-  ConvexConnectionState _currentConnectionState;
   bool _disposed = false;
+
+  /// Live query results shared by every wrapper of the same core client.
+  static final Expando<Map<String, _LiveQuery>> _liveQueries =
+      Expando<Map<String, _LiveQuery>>('dartvex_flutter live queries');
+
+  /// The wrapped core client.
+  ///
+  /// Use it for APIs that need the core client itself; for generated
+  /// `ConvexApi` bindings or `ConvexStorage`, prefer
+  /// [ConvexRuntimeFunctionCaller.functionCaller], which `FakeConvexClient`
+  /// also supports.
+  convex.ConvexClient get client => _client;
+
+  @override
+  convex.ConvexFunctionCaller get convexFunctionCaller => _client;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ConvexClientRuntime &&
+      identical(other._client, _client) &&
+      other.disposeClient == disposeClient;
+
+  @override
+  int get hashCode => Object.hash(identityHashCode(_client), disposeClient);
 
   @override
   /// Broadcasts connection state changes from the wrapped client.
@@ -196,7 +269,8 @@ class ConvexClientRuntime implements ConvexRuntimeClient {
 
   @override
   /// The current connection state observed from the wrapped client.
-  ConvexConnectionState get currentConnectionState => _currentConnectionState;
+  ConvexConnectionState get currentConnectionState =>
+      _client.currentConnectionState;
 
   @override
   /// Broadcasts rich connection status changes from the wrapped client.
@@ -236,7 +310,6 @@ class ConvexClientRuntime implements ConvexRuntimeClient {
       return;
     }
     _disposed = true;
-    unawaited(_connectionStateSubscription.cancel());
     if (disposeClient) {
       _client.dispose();
     }
@@ -276,7 +349,20 @@ class ConvexClientRuntime implements ConvexRuntimeClient {
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) {
-    return _ConvexClientRuntimeSubscription(_client.subscribe(name, args));
+    final subscription = _client.subscribe(name, args);
+    final queries = _liveQueries[_client] ??= <String, _LiveQuery>{};
+    final key = '$name:${jsonEncode(convex.convexToJson(args))}';
+    final entry = queries.putIfAbsent(key, _LiveQuery.new)..refs += 1;
+    return _ConvexClientRuntimeSubscription(
+      subscription,
+      entry,
+      onRelease: () {
+        entry.refs -= 1;
+        if (entry.refs == 0 && identical(queries[key], entry)) {
+          queries.remove(key);
+        }
+      },
+    );
   }
 
   @override
@@ -312,43 +398,74 @@ class _ConvexClientRuntimePaginatedQuery
   void cancel() => _query.cancel();
 }
 
-class _ConvexClientRuntimeSubscription implements ConvexRuntimeSubscription {
-  _ConvexClientRuntimeSubscription(this._subscription)
-    : _stream = _subscription.stream.map((event) {
-        switch (event) {
-          case convex.QuerySuccess(
-            :final value,
-            :final logLines,
-            :final hasPendingWrites,
-          ):
-            return ConvexRuntimeQuerySuccess(
-              value,
-              logLines: logLines,
-              source: hasPendingWrites
-                  ? ConvexQuerySource.cache
-                  : ConvexQuerySource.remote,
-              hasPendingWrites: hasPendingWrites,
-            );
-          case convex.QueryLoading(:final hasPendingWrites):
-            return ConvexRuntimeQueryLoading(
-              source: ConvexQuerySource.cache,
-              hasPendingWrites: hasPendingWrites,
-            );
-          case convex.QueryError(:final message, :final data, :final logLines):
-            return ConvexRuntimeQueryError(
-              convex.ConvexException(message, data: data, logLines: logLines),
-            );
-        }
-      });
+/// Latest event of a query that at least one subscription of a core client
+/// is holding live.
+class _LiveQuery {
+  int refs = 0;
+  ConvexRuntimeQueryEvent? latest;
+}
+
+class _ConvexClientRuntimeSubscription
+    implements ConvexRuntimeSubscription, ConvexSeededSubscription {
+  _ConvexClientRuntimeSubscription(
+    this._subscription,
+    _LiveQuery entry, {
+    required void Function() onRelease,
+  }) : _onRelease = onRelease,
+       // Another live subscription of the same query already holds the
+       // client's current result (the same value the core seeds new listeners
+       // with one microtask later), so widgets can render it immediately.
+       currentEvent = entry.latest,
+       _stream = _subscription.stream.map((event) {
+         final mapped = _mapEvent(event);
+         entry.latest = mapped;
+         return mapped;
+       });
 
   final convex.ConvexSubscription _subscription;
   final Stream<ConvexRuntimeQueryEvent> _stream;
+  final void Function() _onRelease;
+  bool _released = false;
+
+  @override
+  final ConvexRuntimeQueryEvent? currentEvent;
+
+  static ConvexRuntimeQueryEvent _mapEvent(convex.QueryResult event) {
+    switch (event) {
+      case convex.QuerySuccess(
+        :final value,
+        :final logLines,
+        :final hasPendingWrites,
+      ):
+        return ConvexRuntimeQuerySuccess(
+          value,
+          logLines: logLines,
+          source: hasPendingWrites
+              ? ConvexQuerySource.cache
+              : ConvexQuerySource.remote,
+          hasPendingWrites: hasPendingWrites,
+        );
+      case convex.QueryLoading(:final hasPendingWrites):
+        return ConvexRuntimeQueryLoading(
+          source: ConvexQuerySource.cache,
+          hasPendingWrites: hasPendingWrites,
+        );
+      case convex.QueryError(:final message, :final data, :final logLines):
+        return ConvexRuntimeQueryError(
+          convex.ConvexException(message, data: data, logLines: logLines),
+        );
+    }
+  }
 
   @override
   Stream<ConvexRuntimeQueryEvent> get stream => _stream;
 
   @override
   void cancel() {
+    if (!_released) {
+      _released = true;
+      _onRelease();
+    }
     _subscription.cancel();
   }
 }

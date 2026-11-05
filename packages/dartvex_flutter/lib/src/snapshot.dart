@@ -17,6 +17,32 @@ enum ConvexQuerySource {
   unknown,
 }
 
+/// A Convex call succeeded but its result could not be decoded.
+///
+/// Reported by `ConvexQuery`, `ConvexMutation`, `ConvexAction` (when their
+/// `decode` throws) and `PaginatedQueryBuilder` (when `fromJson` throws or an
+/// item is not a JSON object). It lets callers tell "the server rejected the
+/// request" (`ConvexException`) apart from "the server succeeded, the client
+/// could not read the result" — for a mutation, the write has been committed
+/// even though the request reports an error, so retrying it would apply it
+/// twice.
+class ConvexDecodeException implements Exception {
+  /// Creates a decode exception wrapping the decoder's [error].
+  const ConvexDecodeException(this.error, this.stackTrace, {this.value});
+
+  /// The error thrown by the decoder.
+  final Object error;
+
+  /// Where the decoder threw.
+  final StackTrace stackTrace;
+
+  /// The raw value that failed to decode.
+  final Object? value;
+
+  @override
+  String toString() => error.toString();
+}
+
 const Object _snapshotSentinel = Object();
 
 /// Immutable snapshot describing the state of a reactive query.

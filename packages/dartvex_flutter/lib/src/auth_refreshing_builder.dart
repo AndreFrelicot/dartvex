@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import 'client_state_builder.dart';
 import 'provider.dart';
 import 'runtime_client.dart';
 
@@ -31,14 +32,11 @@ class ConvexAuthRefreshingBuilder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final runtimeClient = client ?? ConvexProvider.of(context);
-    return StreamBuilder<bool>(
-      stream: runtimeClient.authRefreshing,
-      initialData: runtimeClient.currentAuthRefreshing,
-      builder: (context, snapshot) {
-        final isRefreshing =
-            snapshot.data ?? runtimeClient.currentAuthRefreshing;
-        return builder(context, isRefreshing);
-      },
+    return ClientStateBuilder<ConvexRuntimeClient, bool>(
+      client: runtimeClient,
+      stream: (client) => client.authRefreshing,
+      current: (client) => client.currentAuthRefreshing,
+      builder: builder,
     );
   }
 }

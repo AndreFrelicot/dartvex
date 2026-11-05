@@ -6,6 +6,25 @@ import 'package:flutter_test/flutter_test.dart';
 import 'test_helpers/fake_runtime_client.dart';
 import 'test_helpers/lifecycle_test_helpers.dart';
 
+/// A runtime client that connected before and is now disconnected — as
+/// opposed to a lazy client that has not started yet.
+FakeRuntimeClient disconnectedAfterConnecting() {
+  return FakeRuntimeClient()..emitConnectionStatus(
+    const ConnectionStatus(
+      state: ConvexConnectionState.disconnected,
+      isWebSocketConnected: false,
+      isConnected: false,
+      hasEverConnected: true,
+      connectionCount: 1,
+      connectionRetries: 0,
+      inflightMutations: 0,
+      inflightActions: 0,
+      timeOfOldestInflightRequest: null,
+      hasSyncedPastLastReconnect: false,
+    ),
+  );
+}
+
 void main() {
   testWidgets('ConvexProvider resolves runtime client from context', (
     tester,
@@ -55,9 +74,7 @@ void main() {
   testWidgets(
     'ConvexProvider calls reconnectNow on app resume when disconnected',
     (tester) async {
-      final client = FakeRuntimeClient(
-        initialConnectionState: ConvexConnectionState.disconnected,
-      );
+      final client = disconnectedAfterConnecting();
 
       await tester.pumpWidget(
         Directionality(
@@ -72,6 +89,30 @@ void main() {
       await tester.pump();
 
       expect(client.reconnectNowCalls, contains('AppResumed'));
+    },
+  );
+
+  testWidgets(
+    'ConvexProvider does not start a lazy client that has not started yet',
+    (tester) async {
+      // connectImmediately: false — disconnected, never connected, no retry.
+      final client = FakeRuntimeClient(
+        initialConnectionState: ConvexConnectionState.disconnected,
+      );
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: ConvexProvider(client: client, child: const SizedBox()),
+        ),
+      );
+
+      simulateAppLifecycleState(tester, AppLifecycleState.inactive);
+      await tester.pump();
+      simulateAppLifecycleState(tester, AppLifecycleState.resumed);
+      await tester.pump();
+
+      expect(client.reconnectNowCalls, isEmpty);
     },
   );
 
@@ -104,13 +145,10 @@ void main() {
       // An externally owned client (disposeClient: false) can be disposed
       // while the app is backgrounded with the provider still mounted; the
       // disposed assertion must not escape into the lifecycle dispatch.
-      final client =
-          FakeRuntimeClient(
-              initialConnectionState: ConvexConnectionState.disconnected,
-            )
-            ..reconnectNowSyncError = const ConvexException(
-              'ConvexClient has been disposed',
-            );
+      final client = disconnectedAfterConnecting()
+        ..reconnectNowSyncError = const ConvexException(
+          'ConvexClient has been disposed',
+        );
 
       await tester.pumpWidget(
         Directionality(
@@ -132,13 +170,10 @@ void main() {
   testWidgets(
     'ConvexProvider swallows an async disposed-client error on app resume',
     (tester) async {
-      final client =
-          FakeRuntimeClient(
-              initialConnectionState: ConvexConnectionState.disconnected,
-            )
-            ..reconnectNowAsyncError = const ConvexException(
-              'ConvexClient has been disposed',
-            );
+      final client = disconnectedAfterConnecting()
+        ..reconnectNowAsyncError = const ConvexException(
+          'ConvexClient has been disposed',
+        );
 
       await tester.pumpWidget(
         Directionality(
