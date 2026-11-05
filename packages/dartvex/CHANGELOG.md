@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Explicit auth changes clear live query results and optimistic layers until
+  the server confirms the new identity. Late transitions and reentrant
+  listeners cannot expose the previous user's data or refill a local cache
+  after `ConvexLocalClient.reset()`. Same-user token refreshes retain results.
+- Upload timeouts abort the HTTP request, including on a shared client,
+  instead of only stopping the wait. Requires `http >=1.5.0`.
+
 ## [0.3.0] - 2026-11-05
 
 ### Added

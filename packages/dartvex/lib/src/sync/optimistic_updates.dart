@@ -205,6 +205,16 @@ class OptimisticQueryResults {
   void Function(int mutationId, Object error, StackTrace stackTrace)?
       onReplayError;
 
+  /// Discards every result and optimistic layer of the previous identity.
+  /// Returns the affected tokens so active queries can report loading.
+  List<String> clear() {
+    final tokens = _queryResults.keys.toList();
+    _queryResults.clear();
+    _optimisticUpdates.clear();
+    _optimisticTokens.clear();
+    return tokens;
+  }
+
   /// Rebuilds the overlay from fresh [serverQueryResults], dropping the layers
   /// of mutations in [optimisticUpdatesToDrop], and replaying the rest on top.
   ///

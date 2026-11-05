@@ -16,6 +16,8 @@ import 'values/json_codec.dart';
 import 'transport/ws_factory.dart';
 import 'transport/ws_manager.dart';
 
+typedef _QueryEmission = ({int identity, QueryResult result});
+
 /// High-level connection state exposed by [ConvexClient].
 enum ConnectionState {
   /// The initial connection attempt is in progress.
@@ -353,7 +355,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
             StreamController<bool>.broadcast(sync: true),
         _connectionStatusController =
             StreamController<ConnectionStatus>.broadcast(sync: true),
-        _subscriptionControllers = <int, StreamController<QueryResult>>{} {
+        _subscriptionControllers = <int, StreamController<_QueryEmission>>{} {
     _wsManager = WebSocketManager(
       adapter: _config.adapterFactory?.call(_config.clientId) ??
           createDefaultWebSocketAdapter(_config.clientId),
@@ -469,7 +471,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   final StreamController<bool> _authStateController;
   final StreamController<bool> _authRefreshingController;
   final StreamController<ConnectionStatus> _connectionStatusController;
-  final Map<int, StreamController<QueryResult>> _subscriptionControllers;
+  final Map<int, StreamController<_QueryEmission>> _subscriptionControllers;
   ConnectionState _currentConnectionState = ConnectionState.disconnected;
   ConnectionStatus? _lastPublishedStatus;
   bool _currentAuthRefreshing = false;
@@ -876,7 +878,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       data: _requestData(name, snapshotArgs),
     );
     final registration = _baseClient.subscribe(name, snapshotArgs);
-    final controller = StreamController<QueryResult>.broadcast(sync: true);
+    final controller = StreamController<_QueryEmission>.broadcast(sync: true);
     _subscriptionControllers[registration.subscriberId] = controller;
 
     unawaited(_flushOutgoing());
@@ -889,7 +891,12 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     // close().
     final stream = Stream<QueryResult>.multi((listener) {
       final forwarding = controller.stream.listen(
-        listener.addSync,
+        (event) {
+          // A preceding listener of the same broadcast stream may sign out.
+          if (event.identity == _baseClient.queryIdentityGeneration) {
+            listener.addSync(event.result);
+          }
+        },
         onError: listener.addErrorSync,
         onDone: listener.closeSync,
       );
@@ -1230,7 +1237,9 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   /// have not completed by the next reconnect fail with
   /// `Authentication changed before the request completed` instead of being
   /// replayed as the new user. Use [updateAuthToken] to push a refreshed
-  /// token for the same user. On a disposed client the returned future fails
+  /// token for the same user. Live query results and optimistic layers are
+  /// discarded immediately; subscribers report loading until the server
+  /// confirms the new identity. On a disposed client the returned future fails
   /// with a [ConvexException].
   Future<void> setAuth(String? token) {
     if (_disposed) {
@@ -1241,7 +1250,9 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       DartvexLogLevel.info,
       token == null ? 'Clearing auth token' : 'Setting auth token',
     );
-    return _authManager.setAuth(token);
+    final result = _authManager.setAuth(token);
+    _dispatchOptimisticEvents(_baseClient.takeIdentityChangeEvents());
+    return result;
   }
 
   /// Configures automatic auth refresh driven by [fetchToken].
@@ -1257,10 +1268,12 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       return _disposedFuture<AuthHandle>();
     }
     _baseClient.markIdentityChange();
-    return _authManager.setAuthWithRefresh(
+    final result = _authManager.setAuthWithRefresh(
       fetchToken: fetchToken,
       onAuthChange: onAuthChange,
     );
+    _dispatchOptimisticEvents(_baseClient.takeIdentityChangeEvents());
+    return result;
   }
 
   /// Clears auth state and token refresh handling.
@@ -1274,7 +1287,9 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     }
     _baseClient.markIdentityChange();
     _log(DartvexLogLevel.info, 'Clearing auth state');
-    return _authManager.clearAuth();
+    final result = _authManager.clearAuth();
+    _dispatchOptimisticEvents(_baseClient.takeIdentityChangeEvents());
+    return result;
   }
 
   /// Updates the current auth token without recreating the refresh flow.
@@ -1408,6 +1423,14 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       // is no transport left to flush it to.
       return;
     }
+    // AuthManager finishes installing its state before user query listeners
+    // run. Public auth entry points drain this queue synchronously afterwards;
+    // this also covers sign-out from a background refresh failure.
+    scheduleMicrotask(() {
+      if (!_disposed) {
+        _dispatchOptimisticEvents(_baseClient.takeIdentityChangeEvents());
+      }
+    });
     await _flushOutgoing();
   }
 
@@ -1461,6 +1484,8 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   Future<List<ClientMessage>> _handleServerMessage(
     ServerMessage message,
   ) async {
+    final identity = _baseClient.queryIdentityGeneration;
+    final authVersion = _baseClient.authVersion;
     final result = _baseClient.receive(message);
     // Put whatever receive() drained back into the queue right away, before
     // any event is awaited: a reauth restart below runs prepareReconnect,
@@ -1484,9 +1509,13 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
         case QueryLoadingEvent():
           _emitCurrentQueryState(event.queryId);
         case AuthConfirmedEvent():
-          _authManager.handleAuthConfirmed(
-            clientClockSkew: event.clientClockSkew,
-          );
+          // Query listeners may replace the identity earlier in this batch.
+          if (identity == _baseClient.queryIdentityGeneration &&
+              authVersion == _baseClient.authVersion) {
+            _authManager.handleAuthConfirmed(
+              clientClockSkew: event.clientClockSkew,
+            );
+          }
         case AuthErrorEvent():
           // Not awaited, like the official client: the reauth stops the socket
           // synchronously (frames still queued from it are then dropped by the
@@ -1607,19 +1636,24 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   /// runs.
   void _emitToAllSubscribers(QueryResult result) {
     _dispatch(() {
+      final identity = _baseClient.queryIdentityGeneration;
       for (final controller in _subscriptionControllers.values.toList()) {
         if (!controller.isClosed) {
-          controller.add(result);
+          controller.add((identity: identity, result: result));
         }
       }
     });
   }
 
   void _deliverToSubscribers(int queryId, QueryResult result) {
+    final identity = _baseClient.queryIdentityGeneration;
     for (final subscriberId in _baseClient.subscriberIdsForQuery(queryId)) {
+      if (identity != _baseClient.queryIdentityGeneration) {
+        return;
+      }
       final controller = _subscriptionControllers[subscriberId];
       if (controller != null && !controller.isClosed) {
-        controller.add(result);
+        controller.add((identity: identity, result: result));
       }
     }
   }
@@ -1654,20 +1688,11 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   void _dispatchOptimisticEvents(List<BaseClientEvent> events) {
     for (final event in events) {
       if (event is QueryUpdateEvent) {
-        _emitToSubscribers(
-          event.queryId,
-          _toPublicQueryResult(
-            event.result,
-            hasPendingWrites: event.hasPendingWrites,
-          ),
-        );
+        _emitCurrentQueryState(event.queryId);
       } else if (event is QueryRemovedEvent) {
         _emitToSubscribers(event.queryId, const QueryError('Query removed'));
       } else if (event is QueryLoadingEvent) {
-        _emitToSubscribers(
-          event.queryId,
-          QueryLoading(hasPendingWrites: event.hasPendingWrites),
-        );
+        _emitCurrentQueryState(event.queryId);
       }
     }
   }

@@ -220,6 +220,20 @@ class BaseClient {
   /// cache that the auth change just cleared.
   int _cacheIdentityFloor = 0;
 
+  // An explicit identity change hides the old live results as well as the
+  // warm cache. Keep the protocol mirror intact: a confirming transition may
+  // leave public queries unchanged, making those results valid again.
+  bool _identityAwaitingToken = false;
+  int? _queryIdentityFloor;
+  final List<BaseClientEvent> _identityChangeEvents = <BaseClientEvent>[];
+
+  /// Changes whenever query results are invalidated for a new identity.
+  int get queryIdentityGeneration => _queryIdentityGeneration;
+  int _queryIdentityGeneration = 0;
+
+  bool get _waitingForQueryIdentity =>
+      _identityAwaitingToken || _queryIdentityFloor != null;
+
   /// Server results captured by [prepareReconnect] just before the remote query
   /// set is reset, used as the overlay's server base until the first
   /// transition of the new connection arrives. See [_buildServerResults].
@@ -409,6 +423,11 @@ class BaseClient {
   /// Clears the auth token, resetting to the unauthenticated identity and
   /// queuing the change unless emission is paused.
   void clearAuth() {
+    // A background auth failure also signs out, without going through the
+    // public clearAuth entry point that marks explicit identity changes.
+    if (!_identityAwaitingToken) {
+      _invalidateQueryIdentity();
+    }
     _resultCacheByToken.clear();
     final message = _localState.setAuth(tokenType: 'None');
     _raiseCacheIdentityFloor();
@@ -427,6 +446,31 @@ class BaseClient {
   /// as a different user").
   void markIdentityChange() {
     _requestManager.markIdentityChange(_nextRequestId);
+    _invalidateQueryIdentity();
+  }
+
+  void _invalidateQueryIdentity() {
+    _queryIdentityGeneration++;
+    _identityAwaitingToken = true;
+    _queryIdentityFloor = null;
+    // A re-subscribed query may only have a warm-cache seed, with no entry in
+    // the overlay yet. Its subscribers must lose that old value as well.
+    final tokens = <String>{
+      ..._resultCacheByToken.keys,
+      ..._optimistic.clear(),
+    };
+    _resultCacheByToken.clear();
+    _preReconnectServerResults = null;
+    _identityChangeEvents.addAll(_eventsForChangedTokens(tokens.toList()));
+  }
+
+  /// Loading events queued by an identity change, dispatched after the host
+  /// has installed the new auth flow so reentrant listeners cannot replace it
+  /// before it starts.
+  List<BaseClientEvent> takeIdentityChangeEvents() {
+    final events = List<BaseClientEvent>.of(_identityChangeEvents);
+    _identityChangeEvents.clear();
+    return events;
   }
 
   /// Only transitions computed under the identity version that carries the
@@ -439,6 +483,10 @@ class BaseClient {
         _localState.isPaused && _localState.willEmitAuthOnResume
             ? authVersion + 1
             : authVersion;
+    if (_waitingForQueryIdentity) {
+      _identityAwaitingToken = false;
+      _queryIdentityFloor = _cacheIdentityFloor;
+    }
   }
 
   /// Whether query-set and auth emission is currently paused. See [pause].
@@ -525,6 +573,9 @@ class BaseClient {
     _remoteQuerySet.reset();
     _outgoing.addAll(_localState.prepareReconnect());
     _cacheIdentityFloor = _localState.authVersion;
+    if (_queryIdentityFloor != null) {
+      _queryIdentityFloor = _localState.authVersion;
+    }
     final replay = _requestManager.prepareReconnect();
     _outgoing.addAll(replay);
     final failedMutationIds = _requestManager.takeIdentityFailedMutationIds();
@@ -597,7 +648,7 @@ class BaseClient {
   /// Returns the current authoritative server result for [queryId], or `null`
   /// when the query has no remote result yet.
   StoredQueryResult? currentResultForQuery(int queryId) {
-    return _remoteQuerySet.resultFor(queryId);
+    return _waitingForQueryIdentity ? null : _remoteQuerySet.resultFor(queryId);
   }
 
   /// Returns the last known result for a query identified by its canonical
@@ -753,6 +804,9 @@ class BaseClient {
   /// subscribed queries fall back to their last pre-reconnect result.
   Map<String, OverlayServerQuery> _buildServerResults() {
     final serverResults = <String, OverlayServerQuery>{};
+    if (_waitingForQueryIdentity) {
+      return serverResults;
+    }
     final preReconnect = _preReconnectServerResults;
     if (preReconnect != null) {
       for (final entry in preReconnect.entries) {
@@ -835,6 +889,12 @@ class BaseClient {
       case Transition():
         try {
           final deltas = _remoteQuerySet.applyTransition(message);
+          final identityFloor = _queryIdentityFloor;
+          if (!_identityAwaitingToken &&
+              identityFloor != null &&
+              message.endVersion.identity >= identityFloor) {
+            _queryIdentityFloor = null;
+          }
           _preReconnectServerResults = null;
           _localState.observeTimestamp(message.endVersion.ts);
           _localState.transition(message);
@@ -849,7 +909,8 @@ class BaseClient {
           // after-unsubscribe cache that an auth change cleared; one still in
           // flight from the previous identity must not seed a later identity's
           // reads with the previous user's data.
-          final mayCache = message.endVersion.identity >= _cacheIdentityFloor &&
+          final mayCache = !_waitingForQueryIdentity &&
+              message.endVersion.identity >= _cacheIdentityFloor &&
               _localState
                   .isCurrentOrNewerAuthVersion(message.endVersion.identity);
           for (final delta in deltas) {

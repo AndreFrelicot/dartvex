@@ -163,6 +163,12 @@ included — with `client.currentAuthToken` (also on `ConvexClientWithAuth`);
 use it for `Authorization: Bearer ...` on Convex HTTP actions, since a
 session object captured at login keeps the login-time token.
 
+`setAuth`, `setAuthWithRefresh` and `clearAuth` start a new identity: live
+queries report loading and discard previous results and optimistic layers
+until the server confirms that identity. Use `updateAuthToken` for a renewed
+token of the same user; refreshes preserve live results. With `dartvex_local`,
+apply the new auth first, then `await local.reset()` to purge persisted data.
+
 Auth-related configuration:
 
 - `ConvexClientConfig(expectAuth: true)` holds every query, mutation, and

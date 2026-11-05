@@ -45,10 +45,8 @@ class DeferredCloseClient extends http.BaseClient {
       _release();
     }
 
-    // An aborted request no longer holds the close back, whether or not the
-    // inner client honors the abort and whether or not anyone reads the
-    // response: a caller that timed out and aborted never listens to a body
-    // that arrives afterwards.
+    // A caller that timed out never listens to a body that arrives afterwards.
+    // Cancel that body too, but wait for native cancellation before closing.
     var aborted = false;
     void Function()? onAbort;
     if (request case http.Abortable(:final abortTrigger?)) {
@@ -72,7 +70,19 @@ class DeferredCloseClient extends http.BaseClient {
 
     var listened = false;
     StreamSubscription<List<int>>? subscription;
+    Future<void>? cancellation;
     late final StreamController<List<int>> controller;
+    Future<void> cancelBody() {
+      return cancellation ??= () async {
+        try {
+          subscription ??= response.stream.listen(null, onError: (Object _) {});
+          await subscription!.cancel();
+        } finally {
+          releaseOnce();
+        }
+      }();
+    }
+
     void failAborted() {
       if (!controller.isClosed) {
         controller.addError(http.RequestAbortedException(request.url));
@@ -92,40 +102,28 @@ class DeferredCloseClient extends http.BaseClient {
           controller.add,
           onError: controller.addError,
           onDone: () {
-            releaseOnce();
+            if (cancellation == null) {
+              releaseOnce();
+            }
             unawaited(controller.close());
           },
         );
       },
       onPause: () => subscription?.pause(),
       onResume: () => subscription?.resume(),
-      onCancel: () async {
-        try {
-          await subscription?.cancel();
-        } finally {
-          releaseOnce();
-        }
-      },
+      onCancel: cancelBody,
     );
 
     onAbort = () {
       if (released) {
         return;
       }
-      final active = subscription;
-      if (active != null) {
-        unawaited(active.cancel().then((_) {}, onError: (Object _) {}));
+      // onCancel may be invoked again when failAborted closes the public
+      // stream. Both paths must await the same native cancellation future.
+      unawaited(cancelBody().then((_) {}, onError: (Object _) {}));
+      if (listened) {
         failAborted();
-      } else if (!listened) {
-        // Nobody will read the body: release the inner response now.
-        unawaited(
-          response.stream
-              .listen(null, onError: (Object _) {}, cancelOnError: true)
-              .cancel()
-              .then((_) {}, onError: (Object _) {}),
-        );
       }
-      releaseOnce();
     };
     if (aborted) {
       onAbort();
@@ -179,14 +177,8 @@ class DeferredCloseClient extends http.BaseClient {
     if (_innerClosed) {
       return;
     }
+    _inner.close();
     _innerClosed = true;
-    try {
-      _inner.close();
-    } on StateError {
-      // The native task bookkeeping can lag the Dart-side stream by a callback;
-      // the session is released with its last task either way, so a late
-      // "running requests" rejection must not escape from close().
-    }
   }
 }
 

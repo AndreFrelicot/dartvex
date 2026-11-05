@@ -5,6 +5,7 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:http/http.dart' as http;
 import 'package:meta/meta.dart';
 
+import 'download_errors.dart';
 import 'media_types.dart';
 
 /// Caches binary assets (images, files) from Convex storage to disk,
@@ -41,6 +42,10 @@ class ConvexAssetCache {
   /// Tests replace it to avoid depending on a platform backend.
   @visibleForTesting
   static CacheInfoRepository Function(String cacheKey)? debugRepositoryFactory;
+
+  /// Replaces the disk filesystem in tests that exercise store lifecycle.
+  @visibleForTesting
+  static FileSystem Function(String cacheKey)? debugFileSystemFactory;
 
   /// Creates an asset cache backed by the [CacheManager] for [cacheKey].
   ///
@@ -107,19 +112,23 @@ class ConvexAssetCache {
     String url, {
     bool force = false,
   }) async {
-    if (force) {
-      final info = await _cacheManager.downloadFile(
-        url,
-        key: cacheKey,
-        force: true,
-      );
-      return info.file;
+    try {
+      if (force) {
+        final info = await _cacheManager.downloadFile(
+          url,
+          key: cacheKey,
+          force: true,
+        );
+        return info.file;
+      }
+      final existing = await _cacheManager.getFileFromCache(cacheKey);
+      if (existing != null) {
+        return existing.file;
+      }
+      return await _cacheManager.getSingleFile(url, key: cacheKey);
+    } catch (error, stackTrace) {
+      Error.throwWithStackTrace(redactDownloadError(error, url), stackTrace);
     }
-    final existing = await _cacheManager.getFileFromCache(cacheKey);
-    if (existing != null) {
-      return existing.file;
-    }
-    return _cacheManager.getSingleFile(url, key: cacheKey);
   }
 
   /// Returns the cached file for [cacheKey], or `null` if not cached.
@@ -218,6 +227,9 @@ class _SharedStore {
           stalePeriod: stalePeriod,
           maxNrOfCacheObjects: maxNrOfCacheObjects,
           repo: repository,
+          fileSystem:
+              ConvexAssetCache.debugFileSystemFactory?.call(cacheKey) ??
+              IOFileSystem(cacheKey),
           // Route downloads through the SDK's default HTTP client so they
           // share the platform transport (NSURLSession on iOS/macOS)
           // instead of cache_manager's raw dart:io default.

@@ -49,7 +49,7 @@ class ConvexStorage {
   /// passing it to the mutation that records the returned `storageId`.
   ///
   /// [timeout] bounds the upload request (sending the bytes and reading the
-  /// response); when it expires the request is abandoned and a
+  /// response); when it expires the request is aborted and a
   /// [TimeoutException] is thrown. It does not apply to the upload-URL call,
   /// which follows the client's own mutation/action timeouts. Defaults to no
   /// timeout.
@@ -106,11 +106,15 @@ class ConvexStorage {
 
     final client = _httpClient ?? createDefaultHttpClient();
     try {
-      final request = client.post(
+      final abort = Completer<void>();
+      final upload = http.AbortableRequest(
+        'POST',
         uri,
-        headers: <String, String>{'Content-Type': contentType},
-        body: bytes,
-      );
+        abortTrigger: abort.future,
+      )
+        ..headers['Content-Type'] = contentType
+        ..bodyBytes = bytes;
+      final request = client.send(upload).then(http.Response.fromStream);
       final http.Response response;
       if (timeout == null) {
         response = await request;
@@ -118,6 +122,7 @@ class ConvexStorage {
         response = await request.timeout(
           timeout,
           onTimeout: () {
+            abort.complete();
             _log(
               DartvexLogLevel.error,
               'File upload timed out',

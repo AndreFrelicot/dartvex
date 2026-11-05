@@ -4,9 +4,10 @@ import 'dart:io' as io;
 import 'package:dartvex_flutter/dartvex_flutter.dart';
 import 'package:file/file.dart'; // ignore: depend_on_referenced_packages
 import 'package:file/memory.dart'; // ignore: depend_on_referenced_packages
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart'
+    as cache_manager;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -50,6 +51,51 @@ void main() {
       // Should NOT have called getSingleFile since cache was hit.
       expect(fakeCacheManager.getSingleFileCalls, isEmpty);
     });
+
+    for (final force in <bool>[false, true]) {
+      test('prefetch redacts signed HTTP errors (force: $force)', () async {
+        const url =
+            'https://user:password@files.example.com/private/photo%2fsecret?sig=SECRET';
+        const redirected = 'https://cdn.example.com/OTHER_SECRET?token=TOKEN';
+        for (final error in <Object>[
+          HttpExceptionWithStatus(403, 'Failed: $url', uri: Uri.parse(url)),
+          io.HttpException('Failed: $url', uri: Uri.parse(url)),
+          http.ClientException(
+            'Failed: $url at $redirected',
+            Uri.parse(redirected),
+          ),
+          http.ClientException(
+            'Failed: $url/TAIL_SECRET',
+            Uri.parse('$url/TAIL_SECRET'),
+          ),
+          http.RequestAbortedException(Uri.parse(url)),
+        ]) {
+          fakeCacheManager.downloadError = error;
+          await expectLater(
+            cache.prefetch('private-photo', url, force: force),
+            throwsA(
+              predicate<Object>((redacted) {
+                final message = redacted.toString();
+                expect(redacted.runtimeType, error.runtimeType);
+                if (redacted is HttpExceptionWithStatus) {
+                  expect(redacted.statusCode, 403);
+                }
+                for (final secret in [
+                  'password',
+                  '/private/photo',
+                  'SECRET',
+                  'TOKEN',
+                ]) {
+                  expect(message, isNot(contains(secret)));
+                }
+                expect(message, contains('files.example.com'));
+                return true;
+              }),
+            ),
+          );
+        }
+      });
+    }
 
     test('prefetch can force-refresh an existing cache key', () async {
       fakeCacheManager.putInCache('cache-789');
@@ -661,11 +707,10 @@ void main() {
       setUp(() {
         TestWidgetsFlutterBinding.ensureInitialized();
         dir = io.Directory.systemTemp.createTempSync('dartvex_cache_');
-        // IOFileSystem resolves its directory through path_provider.
-        const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
-        final messenger =
-            TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-        messenger.setMockMethodCallHandler(pathProvider, (_) async => dir.path);
+        // Repository lifecycle tests do not need an IOFileSystem. Its eager,
+        // unawaited directory creation can outlive dispose and race teardown.
+        ConvexAssetCache.debugFileSystemFactory = (_) =>
+            MemoryCacheFileSystem();
         repositories = <FakeCacheInfoRepository>[];
         ConvexAssetCache.debugRepositoryFactory = (_) {
           final repository = FakeCacheInfoRepository();
@@ -674,7 +719,7 @@ void main() {
         };
         addTearDown(() {
           ConvexAssetCache.debugRepositoryFactory = null;
-          messenger.setMockMethodCallHandler(pathProvider, null);
+          ConvexAssetCache.debugFileSystemFactory = null;
           dir.deleteSync(recursive: true);
         });
       });
@@ -853,6 +898,40 @@ void main() {
 
       expect(latest.hasError, isTrue);
       expect(latest.error, isA<ConvexStorageException>());
+    });
+
+    testWidgets('ConvexCachedImage reports HTTP errors without signed URLs', (
+      tester,
+    ) async {
+      const url = 'https://files.example.com/private/photo?signature=SECRET';
+      final cache = ConvexAssetCache.custom(
+        FakeCacheManager()
+          ..downloadError = HttpExceptionWithStatus(
+            403,
+            'Invalid statusCode: 403',
+            uri: Uri.parse(url),
+          ),
+      );
+      final client = FakeRuntimeClient(
+        initialConnectionState: ConvexConnectionState.connected,
+      )..onQuery = (_, _) async => url;
+      addTearDown(cache.dispose);
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: ConvexCachedImage(
+            storageId: 'photo',
+            getUrlAction: 'files:getUrl',
+            cache: cache,
+            client: client,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final error = tester.takeException();
+      expect(error, isA<HttpExceptionWithStatus>());
+      expect(error.toString(), isNot(contains('SECRET')));
+      expect(error.toString(), isNot(contains('/private/photo')));
     });
 
     testWidgets('ConvexCachedImage errorBuilder retries the load', (
@@ -1051,6 +1130,13 @@ class GetSingleFileCall {
   final String key;
 }
 
+class MemoryCacheFileSystem implements cache_manager.FileSystem {
+  final _files = MemoryFileSystem();
+
+  @override
+  Future<File> createFile(String name) async => _files.file('/$name');
+}
+
 class FakeCacheManager implements BaseCacheManager, ConvexAssetCacheMetrics {
   final MemoryFileSystem _fs = MemoryFileSystem();
   final Map<String, FileInfo> _cache = {};
@@ -1114,6 +1200,10 @@ class FakeCacheManager implements BaseCacheManager, ConvexAssetCacheMetrics {
   }) async {
     getSingleFileCalls.add(GetSingleFileCall(url, key));
     await urlGates[url]?.future;
+    final error = downloadError;
+    if (error != null) {
+      throw error;
+    }
     writtenUrls.add(url);
     final file = _createFile(key);
     _cache[key] = FileInfo(

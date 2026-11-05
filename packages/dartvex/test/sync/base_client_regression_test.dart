@@ -570,6 +570,10 @@ void main() {
 
       client.markIdentityChange();
       client.setAuth(tokenType: 'User', token: 'user-b');
+      // Old server results and optimistic layers disappear at the identity
+      // change, before a reconnect can roll the mutation back.
+      expect(
+          client.takeIdentityChangeEvents().single, isA<QueryLoadingEvent>());
       final asUserB =
           client.trackMutation('messages:send', const <String, dynamic>{});
       asUserB.future.ignore();
@@ -599,10 +603,8 @@ void main() {
       await mutationFailure;
       await actionFailure;
 
-      final events = client.takeReconnectEvents();
-      final update = events.whereType<QueryUpdateEvent>().single;
-      expect(valueOf(update), <String>['a']);
       expect(client.takeReconnectEvents(), isEmpty);
+      expect(client.localResultForQuery('messages:list', {}), isNull);
     });
 
     test('requests queued before the very first connection are kept', () {

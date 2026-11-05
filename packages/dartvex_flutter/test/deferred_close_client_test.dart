@@ -14,6 +14,8 @@ class StrictCloseClient extends http.BaseClient {
       <StreamController<List<int>>>[];
   Completer<void>? holdHeaders;
   Object? sendError;
+  Completer<void>? cancelGate;
+  final cancelStarted = Completer<void>();
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
@@ -29,7 +31,14 @@ class StrictCloseClient extends http.BaseClient {
     }
     late final StreamController<List<int>> body;
     body = StreamController<List<int>>(
-      onCancel: () {
+      onCancel: () async {
+        if (!cancelStarted.isCompleted) {
+          cancelStarted.complete();
+        }
+        final gate = cancelGate;
+        if (gate != null) {
+          await gate.future;
+        }
         running -= 1;
       },
     );
@@ -52,6 +61,50 @@ class StrictCloseClient extends http.BaseClient {
 }
 
 void main() {
+  for (final listen in <bool>[false, true]) {
+    test(
+      'abort waits for native cancellation before close (listened: $listen)',
+      () async {
+        final inner = StrictCloseClient()..cancelGate = Completer<void>();
+        final client = DeferredCloseClient(inner);
+        final abort = Completer<void>();
+        final response = await client.send(
+          http.AbortableRequest(
+            'GET',
+            Uri.parse('https://example.com'),
+            abortTrigger: abort.future,
+          ),
+        );
+        final errors = <Object>[];
+        StreamSubscription<List<int>>? listener;
+        if (listen) {
+          listener = response.stream.listen((_) {}, onError: errors.add);
+        }
+        client.close();
+        abort.complete();
+        await inner.cancelStarted.future;
+        await pumpEventQueue();
+        expect(inner.closeCalls, 0);
+        expect(client.inFlightCount, 1);
+
+        inner.cancelGate!.complete();
+        await pumpEventQueue();
+        expect(inner.closeCalls, 1);
+        expect(inner.closed, isTrue);
+        expect(client.inFlightCount, 0);
+        if (listen) {
+          expect(errors.single, isA<http.RequestAbortedException>());
+          await listener!.cancel();
+        } else {
+          await expectLater(
+            response.stream.toList(),
+            throwsA(isA<http.RequestAbortedException>()),
+          );
+        }
+      },
+    );
+  }
+
   test('close with no request in flight closes the inner client', () {
     final inner = StrictCloseClient();
     DeferredCloseClient(inner).close();

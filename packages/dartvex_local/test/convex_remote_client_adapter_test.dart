@@ -31,6 +31,89 @@ void main() {
       client.dispose();
     });
 
+    test(
+      'clearAuth then reset cannot repopulate SQLite with the previous user',
+      () async {
+        final socket = _MockWebSocketAdapter();
+        final core = convex.ConvexClient(
+          'https://demo.convex.cloud',
+          config: convex.ConvexClientConfig(adapterFactory: (_) => socket),
+        );
+        final store = await SqliteLocalStore.openInMemory();
+        final local = await ConvexLocalClient.open(
+          client: core,
+          config: LocalClientConfig(cacheStorage: store, queueStorage: store),
+        );
+        addTearDown(() async {
+          await local.dispose();
+          await core.close();
+        });
+        await settle();
+        await core.setAuth('alice-token');
+        final subscription = local.subscribe('profile:me');
+        final events = <LocalQueryEvent>[];
+        final listener = subscription.stream.listen(events.add);
+        addTearDown(listener.cancel);
+        await settle();
+        final querySet = socket.decodedSentMessages
+            .where((m) => m['type'] == 'ModifyQuerySet')
+            .last;
+        final id = (querySet['modifications'] as List).first['queryId'] as int;
+        final version = StateVersion(
+          querySet: querySet['newVersion'] as int,
+          identity: 1,
+          ts: encodeTs(1),
+        );
+        socket.pushServerMessage(
+          Transition(
+            startVersion: const StateVersion.initial(),
+            endVersion: version,
+            modifications: [
+              QueryUpdated(queryId: id, value: 'alice private data'),
+            ],
+          ).toJson(),
+        );
+        await settle();
+        expect(
+          events.whereType<LocalQuerySuccess>().last.value,
+          'alice private data',
+        );
+
+        await core.clearAuth();
+        await local.reset();
+        events.clear();
+        var completed = false;
+        final query = local.query('profile:me').then((value) {
+          completed = true;
+          return value;
+        });
+        await settle();
+        expect(completed, isFalse);
+        expect(events.whereType<LocalQuerySuccess>(), isEmpty);
+        await local.setNetworkMode(LocalNetworkMode.offline);
+        await expectLater(local.query('profile:me'), throwsStateError);
+        await local.setNetworkMode(LocalNetworkMode.auto);
+
+        final newQuerySet = socket.decodedSentMessages
+            .where((m) => m['type'] == 'ModifyQuerySet')
+            .last;
+        socket.pushServerMessage(
+          Transition(
+            startVersion: version,
+            endVersion: StateVersion(
+              querySet: newQuerySet['newVersion'] as int,
+              identity: 2,
+              ts: encodeTs(2),
+            ),
+            modifications: [QueryUpdated(queryId: id, value: 'public data')],
+          ).toJson(),
+        );
+        expect(await query, 'public data');
+        await local.setNetworkMode(LocalNetworkMode.offline);
+        expect(await local.query('profile:me'), 'public data');
+      },
+    );
+
     test('preserves remote query error data and log lines', () async {
       final socket = _MockWebSocketAdapter();
       final client = convex.ConvexClient(

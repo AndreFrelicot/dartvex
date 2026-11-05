@@ -7,6 +7,39 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart' as http_testing;
 import 'package:test/test.dart';
 
+/// Models a transport that stays active until the request is aborted.
+class _StalledUploadClient extends http.BaseClient {
+  _StalledUploadClient({required this.waitForHeaders});
+
+  final bool waitForHeaders;
+  final aborted = Completer<void>();
+  bool active = false;
+  bool closed = false;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    active = true;
+    final abort = (request as http.Abortable).abortTrigger!;
+    if (waitForHeaders) {
+      await abort;
+      active = false;
+      aborted.complete();
+      throw http.RequestAbortedException(request.url);
+    }
+    final body = StreamController<List<int>>();
+    unawaited(abort.then((_) async {
+      active = false;
+      body.addError(http.RequestAbortedException(request.url));
+      await body.close();
+      aborted.complete();
+    }));
+    return http.StreamedResponse(body.stream, 200);
+  }
+
+  @override
+  void close() => closed = true;
+}
+
 /// Minimal fake that implements [ConvexFunctionCaller] for unit tests.
 class _FakeCaller implements ConvexFunctionCaller {
   final Map<String, dynamic Function(Map<String, dynamic>)> mutations =
@@ -78,6 +111,7 @@ void main() {
       final mockHttp = http_testing.MockClient((request) async {
         expect(request.url.toString(), 'https://upload.convex.cloud/abc123');
         expect(request.headers['Content-Type'], 'image/jpeg');
+        expect(request.bodyBytes, <int>[1, 2, 3]);
         return http.Response(
           jsonEncode({'storageId': 'kg2abc123'}),
           200,
@@ -190,6 +224,29 @@ void main() {
         throwsArgumentError,
       );
     });
+
+    for (final waitForHeaders in <bool>[false, true]) {
+      test(
+          'upload timeout aborts a shared client request (headers: $waitForHeaders)',
+          () async {
+        final caller = _FakeCaller()
+          ..mutations['files:upload'] =
+              (_) => 'https://upload.convex.cloud/slow';
+        final transport = _StalledUploadClient(waitForHeaders: waitForHeaders);
+        final storage = ConvexStorage(caller, httpClient: transport);
+        await expectLater(
+            storage.uploadFile(
+              uploadUrlAction: 'files:upload',
+              bytes: Uint8List.fromList([1, 2, 3]),
+              contentType: 'image/jpeg',
+              timeout: const Duration(milliseconds: 20),
+            ),
+            throwsA(isA<TimeoutException>()));
+        await transport.aborted.future;
+        expect(transport.closed, isFalse);
+        expect(transport.active, isFalse);
+      });
+    }
 
     test('uploadFile throws ConvexFileUploadException on non-200', () async {
       final caller = _FakeCaller()
