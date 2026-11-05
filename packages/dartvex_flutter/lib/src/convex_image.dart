@@ -1,17 +1,33 @@
+import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:dartvex/dartvex.dart' show createDefaultHttpClient;
 import 'package:flutter/widgets.dart';
+import 'package:http/http.dart' as http;
 
 import 'file_downloader.dart';
 import 'provider.dart';
 import 'runtime_client.dart';
 import 'storage_url.dart';
 
+/// Builder for an image that failed to load: receives the error and a
+/// callback that retries the load.
+typedef ConvexImageErrorBuilder =
+    Widget Function(BuildContext context, Object error, VoidCallback retry);
+
 /// Widget that displays an image stored in Convex file storage.
 ///
 /// Fetches the download URL by calling [getUrlAction] with the given
 /// [storageId], then downloads the image with optional progress tracking.
 /// The URL resolver is called as a query unless [useAction] is true.
+///
+/// A download still running when the widget is disposed (or its [storageId]
+/// changes) is aborted. Downloads share one HTTP client (one connection pool,
+/// one URLSession on iOS/macOS) unless [httpClient] is provided.
+///
+/// On failure, [errorBuilder] receives the error and a retry callback; with
+/// neither [errorBuilder] nor [errorWidget], the error is reported to
+/// [FlutterError.reportError] (like `Image.network`) and nothing is shown.
 ///
 /// Native-only in this release: progress downloads are implemented with
 /// `dart:io`. On Flutter web, resolve the signed storage URL and render it with
@@ -23,7 +39,9 @@ import 'storage_url.dart';
 ///   getUrlAction: 'files:getUrl',
 ///   useAction: true,
 ///   placeholder: const CircularProgressIndicator(),
-///   onProgress: (progress) => print('${(progress * 100).toInt()}%'),
+///   onProgress: (p) => print('${(p.progress * 100).toInt()}%'),
+///   errorBuilder: (context, error, retry) =>
+///       TextButton(onPressed: retry, child: const Text('Retry')),
 /// )
 /// ```
 class ConvexImage extends StatefulWidget {
@@ -35,6 +53,7 @@ class ConvexImage extends StatefulWidget {
     this.client,
     this.placeholder,
     this.errorWidget,
+    this.errorBuilder,
     this.builder,
     this.progressBuilder,
     this.onProgress,
@@ -42,6 +61,7 @@ class ConvexImage extends StatefulWidget {
     this.fit,
     this.width,
     this.height,
+    this.httpClient,
   });
 
   /// The Convex storage ID of the image.
@@ -60,8 +80,11 @@ class ConvexImage extends StatefulWidget {
   /// Widget shown while the URL is being resolved (before download starts).
   final Widget? placeholder;
 
-  /// Widget shown when an error occurs.
+  /// Widget shown when an error occurs. Ignored when [errorBuilder] is set.
   final Widget? errorWidget;
+
+  /// Builder shown when an error occurs, with the error and a retry callback.
+  final ConvexImageErrorBuilder? errorBuilder;
 
   /// Custom builder that receives the resolved [ImageProvider].
   /// When provided, [fit], [width], and [height] are ignored.
@@ -84,11 +107,20 @@ class ConvexImage extends StatefulWidget {
   /// Height constraint for the image.
   final double? height;
 
+  /// HTTP client used for downloads. The widget never closes it. Defaults to
+  /// one client shared by every [ConvexImage], created on first use from
+  /// `createDefaultHttpClient()`.
+  final http.Client? httpClient;
+
   @override
   State<ConvexImage> createState() => _ConvexImageState();
 }
 
 class _ConvexImageState extends State<ConvexImage> {
+  /// Shared by every ConvexImage without an explicit [ConvexImage.httpClient],
+  /// so downloads reuse connections instead of opening a client per image.
+  static http.Client? _sharedHttpClient;
+
   Uint8List? _bytes;
   Object? _error;
   bool _loading = true;
@@ -98,6 +130,7 @@ class _ConvexImageState extends State<ConvexImage> {
   bool? _loadedUseAction;
   ConvexRuntimeClient? _loadedClient;
   int _requestGeneration = 0;
+  Completer<void>? _abortDownload;
 
   @override
   void didChangeDependencies() {
@@ -116,12 +149,27 @@ class _ConvexImageState extends State<ConvexImage> {
     }
   }
 
+  @override
+  void dispose() {
+    _requestGeneration += 1;
+    _abortPendingDownload();
+    super.dispose();
+  }
+
+  void _abortPendingDownload() {
+    final abort = _abortDownload;
+    _abortDownload = null;
+    if (abort != null && !abort.isCompleted) {
+      abort.complete();
+    }
+  }
+
   void _loadIfNeeded() {
     final client = widget.client ?? ConvexProvider.of(context);
     if (_loadedStorageId == widget.storageId &&
         _loadedGetUrlAction == widget.getUrlAction &&
         _loadedUseAction == widget.useAction &&
-        identical(_loadedClient, client) &&
+        _loadedClient == client &&
         (_loading || _bytes != null || _error != null)) {
       return;
     }
@@ -132,6 +180,14 @@ class _ConvexImageState extends State<ConvexImage> {
     _fetchAndDownload(++_requestGeneration, client);
   }
 
+  void _retry() {
+    final client = _loadedClient;
+    if (!mounted || client == null) {
+      return;
+    }
+    _fetchAndDownload(++_requestGeneration, client);
+  }
+
   Future<void> _fetchAndDownload(
     int generation,
     ConvexRuntimeClient client,
@@ -139,6 +195,8 @@ class _ConvexImageState extends State<ConvexImage> {
     final storageId = widget.storageId;
     final getUrlAction = widget.getUrlAction;
     final useAction = widget.useAction;
+    _abortPendingDownload();
+    final abort = _abortDownload = Completer<void>();
     setState(() {
       _loading = true;
       _error = null;
@@ -167,6 +225,10 @@ class _ConvexImageState extends State<ConvexImage> {
       // Step 2: download with progress tracking
       final bytes = await ConvexFileDownloader.download(
         urlStr,
+        client:
+            widget.httpClient ??
+            (_sharedHttpClient ??= createDefaultHttpClient()),
+        abortTrigger: abort.future,
         onProgress: (p) {
           if (!_isCurrentRequest(
             generation,
@@ -195,7 +257,7 @@ class _ConvexImageState extends State<ConvexImage> {
         _bytes = bytes;
         _loading = false;
       });
-    } catch (error) {
+    } catch (error, stackTrace) {
       if (!_isCurrentRequest(
         generation,
         storageId,
@@ -209,6 +271,22 @@ class _ConvexImageState extends State<ConvexImage> {
         _error = error;
         _loading = false;
       });
+      if (widget.errorBuilder == null && widget.errorWidget == null) {
+        FlutterError.reportError(
+          FlutterErrorDetails(
+            exception: error,
+            stack: stackTrace,
+            library: 'dartvex_flutter',
+            context: ErrorDescription(
+              'while loading ConvexImage for storageId "$storageId"',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (identical(_abortDownload, abort)) {
+        _abortDownload = null;
+      }
     }
   }
 
@@ -224,7 +302,7 @@ class _ConvexImageState extends State<ConvexImage> {
         widget.storageId == storageId &&
         widget.getUrlAction == getUrlAction &&
         widget.useAction == useAction &&
-        identical(_loadedClient, client);
+        _loadedClient == client;
   }
 
   @override
@@ -235,7 +313,16 @@ class _ConvexImageState extends State<ConvexImage> {
       }
       return widget.placeholder ?? const SizedBox.shrink();
     }
-    if (_error != null || _bytes == null) {
+    final error = _error;
+    if (error != null || _bytes == null) {
+      final errorBuilder = widget.errorBuilder;
+      if (errorBuilder != null) {
+        return errorBuilder(
+          context,
+          error ?? StateError('No image data'),
+          _retry,
+        );
+      }
       return widget.errorWidget ?? const SizedBox.shrink();
     }
 

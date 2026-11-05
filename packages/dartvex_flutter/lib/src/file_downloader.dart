@@ -60,6 +60,16 @@ class ConvexFileDownloader {
   /// [ConvexDownloadProgress] containing received bytes, total bytes,
   /// and progress ratio.
   ///
+  /// [client] is used for the request when given and is left open (the
+  /// caller owns it); reusing one client across downloads reuses its
+  /// connections (and, on iOS/macOS, its URLSession). Without it, a client
+  /// from `createDefaultHttpClient()` is created for this download and closed
+  /// afterwards.
+  ///
+  /// Completing [abortTrigger] aborts the download: it fails with
+  /// `http.RequestAbortedException` and the transfer stops (for clients that
+  /// support aborting, which includes every default platform client).
+  ///
   /// [idleTimeout] bounds how long the download may stall without progress: it
   /// applies to establishing the connection, awaiting the response headers, and
   /// the gap between received body chunks. It is an idle (inter-event) bound,
@@ -70,15 +80,17 @@ class ConvexFileDownloader {
     String url, {
     ConvexDownloadProgressCallback? onProgress,
     Duration idleTimeout = const Duration(seconds: 30),
+    http.Client? client,
+    Future<void>? abortTrigger,
   }) async {
     final uri = Uri.parse(url);
-    final client = createDefaultHttpClient();
+    final httpClient = client ?? createDefaultHttpClient();
     try {
       // The send() timeout bounds connection establishment and response
       // headers together — the same stall window dart:io's connectionTimeout
       // plus close().timeout() used to cover.
-      final response = await client
-          .send(http.Request('GET', uri))
+      final response = await httpClient
+          .send(http.AbortableRequest('GET', uri, abortTrigger: abortTrigger))
           .timeout(idleTimeout);
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -114,7 +126,9 @@ class ConvexFileDownloader {
 
       return builder.toBytes();
     } finally {
-      client.close();
+      if (client == null) {
+        httpClient.close();
+      }
     }
   }
 }

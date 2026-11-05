@@ -222,11 +222,17 @@ ConvexCachedImage(
   width: 160,
   height: 160,
   fit: BoxFit.cover,
+  errorBuilder: (context, error, retry) =>
+      IconButton(icon: const Icon(Icons.refresh), onPressed: retry),
 )
 ```
 
 `ConvexImage` and `ConvexCachedImage` resolve storage URLs with a Convex query
 by default. Set `useAction: true` when the resolver is implemented as an action.
+On failure, `errorBuilder` receives the error and a `retry` callback; without
+`errorBuilder` or `errorWidget` the error is reported to
+`FlutterError.reportError`. `ConvexAssetCache()` instances with the same
+`cacheKey` share one store (`ConvexAssetCache.shared` uses the default key).
 Both widgets are native-only in this release; on web, use the same resolver and
 pass the returned URL to `Image.network`.
 

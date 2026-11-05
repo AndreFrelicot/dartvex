@@ -31,8 +31,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `FakeConvexPaginatedQuery.args` and `lastLoadMoreNumItems`;
   `FakeConvexSubscription.args`; and `functionCaller` support. The dartdoc
   lists where the fake intentionally differs from the real client.
+- `ConvexImage.errorBuilder` and `ConvexCachedImage.errorBuilder`
+  (`ConvexImageErrorBuilder`) receive the error and a `retry` callback.
+  Without `errorBuilder` or `errorWidget`, load failures are now reported to
+  `FlutterError.reportError` (like `Image.network`) instead of being
+  invisible.
+- `ConvexImage.httpClient` and `ConvexFileDownloader.download(client:,
+  abortTrigger:)`: downloads can use a caller-owned client, and an in-flight
+  download can be aborted.
 
 ### Changed
+
+- **Breaking (minor):** the unnamed `ConvexAssetCache` constructor is now a
+  factory: instances with the same `cacheKey` share one ref-counted
+  `CacheManager` (classes extending `ConvexAssetCache` must use
+  `ConvexAssetCache.custom`). `ConvexOfflineImage` now reports "no cached
+  asset and no URL" as a `ConvexStorageException` instead of a `String`.
 
 - `FakeConvexClient` now behaves like a disposed `ConvexClient` after
   `dispose()`: `subscribe`, `paginatedQuery` and `reconnectNow` throw and
@@ -127,6 +141,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ConvexRuntimeQueryError` event (an error snapshot) instead of an uncaught
   microtask error. The `mutate` dartdoc no longer suggests observing the
   optimistic update from a handler, which never received it.
+- `ConvexAssetCache(cacheKey: k)` instances (including
+  `ConvexAssetCache.shared`) each opened their own `CacheManager` over the
+  same database and file directory, and disposing one closed the store under
+  the others. They now share one store per key, closed (with its HTTP client)
+  when the last instance is disposed; `dispose()` is idempotent.
+- `ConvexAssetCache.prefetch(force: true)` (also used by `ConvexCachedImage`
+  after a client or resolver change) removed the cached file before
+  downloading, so a failed refresh lost the offline copy. The new file now
+  replaces the old one only after a successful download.
+- `ConvexOfflineImage` no longer flashes a loading frame (and re-reads the
+  cache) when only its `url` changes — rotating signed URLs, or `url`
+  becoming `null` offline — while the asset is already shown.
+- `ConvexImage` aborts the running download when it is disposed or starts a
+  new load, and reuses one HTTP client (one connection pool, one URLSession
+  on Apple platforms) for every image instead of creating one per download.
+- `ConvexCachedImage` compares clients with `==`, so an equal re-created
+  `ConvexClientRuntime` no longer bypasses the cache and re-downloads.
+- The `ConvexImage` dartdoc `onProgress` example printed `p * 100`; it now
+  uses `p.progress`.
 
 ## [0.2.0] - 2026-06-12
 

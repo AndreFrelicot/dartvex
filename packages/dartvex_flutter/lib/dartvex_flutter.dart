@@ -26,7 +26,7 @@ export 'src/transport/cupertino_web_socket_adapter_stub.dart'
     show installCupertinoTransport;
 export 'src/asset_cache.dart' show ConvexAssetCache, ConvexAssetCacheMetrics;
 export 'src/convex_cached_image.dart' show ConvexCachedImage;
-export 'src/convex_image.dart' show ConvexImage;
+export 'src/convex_image.dart' show ConvexImage, ConvexImageErrorBuilder;
 export 'src/file_downloader.dart'
     show
         ConvexFileDownloader,

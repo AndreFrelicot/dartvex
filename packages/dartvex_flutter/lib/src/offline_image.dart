@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:dartvex/dartvex.dart' show ConvexStorageException;
 import 'package:flutter/widgets.dart';
 
 import 'asset_cache.dart';
@@ -18,11 +19,15 @@ import 'asset_cache.dart';
 /// Works with any storage backend: Convex Storage, Cloudflare R2, S3, etc.
 /// Just provide a stable [cacheKey] that uniquely identifies the asset.
 ///
+/// Since [cacheKey] identifies the content, a change of [url] alone (rotating
+/// presigned URLs, or `url` flipping to `null` while offline) does not reload
+/// an image that is already shown.
+///
 /// ```dart
 /// ConvexOfflineImage(
 ///   cacheKey: task['imageId'], // e.g. Convex storageId, S3 key, etc.
 ///   url: imageUrl, // null when offline
-///   cache: assetCache,
+///   cache: ConvexAssetCache.shared,
 ///   builder: (context, snapshot) {
 ///     if (snapshot.isLoading) return CircularProgressIndicator();
 ///     if (snapshot.hasError) return Icon(Icons.broken_image);
@@ -71,9 +76,20 @@ class _ConvexOfflineImageState extends State<ConvexOfflineImage> {
   @override
   void didUpdateWidget(covariant ConvexOfflineImage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.cacheKey != widget.cacheKey ||
-        oldWidget.url != widget.url ||
-        oldWidget.cache != widget.cache) {
+    final assetChanged =
+        oldWidget.cacheKey != widget.cacheKey ||
+        oldWidget.cache != widget.cache;
+    if (assetChanged) {
+      _load(++_requestGeneration, widget.cache);
+      return;
+    }
+    if (oldWidget.url != widget.url) {
+      if (_snapshot.hasFile) {
+        // The cache key identifies the content and loading is cache-first,
+        // so a new (or absent) URL for an asset already on screen would only
+        // return the same file after a loading flash.
+        return;
+      }
       _load(++_requestGeneration, widget.cache);
     }
   }
@@ -81,17 +97,14 @@ class _ConvexOfflineImageState extends State<ConvexOfflineImage> {
   Future<void> _load(int generation, ConvexAssetCache cache) async {
     final cacheKey = widget.cacheKey;
     final url = widget.url;
-    if (mounted) {
-      setState(() {
-        _snapshot = const ConvexAssetSnapshot.loading();
-      });
-    }
+    // Only called from lifecycle callbacks, which are followed by a build.
+    _snapshot = const ConvexAssetSnapshot.loading();
 
     try {
       // Try cache first.
       final cached = await cache.get(cacheKey);
       if (cached != null) {
-        if (_isCurrentRequest(generation, cacheKey, url, cache)) {
+        if (_isCurrentRequest(generation, cacheKey, cache)) {
           setState(() {
             _snapshot = ConvexAssetSnapshot(
               file: cached,
@@ -105,10 +118,12 @@ class _ConvexOfflineImageState extends State<ConvexOfflineImage> {
 
       // No cache hit — download if URL available.
       if (url == null) {
-        if (_isCurrentRequest(generation, cacheKey, url, cache)) {
+        if (_isCurrentRequest(generation, cacheKey, cache)) {
           setState(() {
-            _snapshot = const ConvexAssetSnapshot(
-              error: 'No cached asset and no URL available',
+            _snapshot = ConvexAssetSnapshot(
+              error: ConvexStorageException(
+                'No cached asset and no URL available for "$cacheKey"',
+              ),
               isLoading: false,
               hasError: true,
             );
@@ -118,7 +133,7 @@ class _ConvexOfflineImageState extends State<ConvexOfflineImage> {
       }
 
       final file = await cache.prefetch(cacheKey, url);
-      if (_isCurrentRequest(generation, cacheKey, url, cache)) {
+      if (_isCurrentRequest(generation, cacheKey, cache)) {
         setState(() {
           _snapshot = ConvexAssetSnapshot(
             file: file,
@@ -128,7 +143,7 @@ class _ConvexOfflineImageState extends State<ConvexOfflineImage> {
         });
       }
     } catch (error) {
-      if (_isCurrentRequest(generation, cacheKey, url, cache)) {
+      if (_isCurrentRequest(generation, cacheKey, cache)) {
         setState(() {
           _snapshot = ConvexAssetSnapshot(
             error: error,
@@ -143,13 +158,11 @@ class _ConvexOfflineImageState extends State<ConvexOfflineImage> {
   bool _isCurrentRequest(
     int generation,
     String cacheKey,
-    String? url,
     ConvexAssetCache cache,
   ) {
     return mounted &&
         generation == _requestGeneration &&
         widget.cacheKey == cacheKey &&
-        widget.url == url &&
         identical(widget.cache, cache);
   }
 
@@ -181,7 +194,8 @@ class ConvexAssetSnapshot {
   /// The resolved file, or `null` if still loading or failed.
   final File? file;
 
-  /// The error, if any.
+  /// The error, if any: the download or cache failure, or a
+  /// `ConvexStorageException` when nothing is cached and no URL is available.
   final Object? error;
 
   /// Whether the asset is currently being loaded.
