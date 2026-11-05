@@ -172,6 +172,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ConvexClientRuntime` no longer bypasses the cache and re-downloads.
 - The `ConvexImage` dartdoc `onProgress` example printed `p * 100`; it now
   uses `p.progress`.
+- On iOS and macOS the default HTTP client installed by
+  `installCupertinoTransport()` now uses an ephemeral NSURLSession that never
+  stores or sends cookies. The previous default configuration replayed Better
+  Auth session cookies from the shared cookie jar, which made Better Auth
+  reject sign-out and later sign-in requests (403, missing `Origin`) and let a
+  stale cookie override the bearer token. Android and web already sent no
+  cookies.
+
 
 ## [0.2.0] - 2026-06-12
 
