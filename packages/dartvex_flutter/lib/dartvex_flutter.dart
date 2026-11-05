@@ -77,4 +77,8 @@ export 'src/snapshot.dart'
         ConvexRequestExecutor,
         ConvexRequestSnapshot;
 export 'src/testing/fake_convex_client.dart'
-    show FakeConvexClient, FakeConvexPaginatedQuery, FakeConvexSubscription;
+    show
+        FakeConvexCall,
+        FakeConvexClient,
+        FakeConvexPaginatedQuery,
+        FakeConvexSubscription;

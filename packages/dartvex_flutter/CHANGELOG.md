@@ -22,8 +22,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   can be built below a provider. `ConvexClientRuntime` returns its wrapped
   client (now also exposed as `ConvexClientRuntime.client`); custom runtime
   clients can opt in through `ConvexFunctionCallerSource`.
+- `FakeConvexClient`: optional `args:` filter on `emitSubscription`,
+  `emitSubscriptionError` and `emitPaginated` (emissions stay name-scoped by
+  default); `source` / `hasPendingWrites` on `emitSubscription`;
+  `emitSubscriptionLoading`; `error` on `emitPaginated`; recorded
+  `queryCalls` / `mutationCalls` / `actionCalls` (`FakeConvexCall`, including
+  the mutation's `optimisticUpdate`); `isDisposed`;
+  `FakeConvexPaginatedQuery.args` and `lastLoadMoreNumItems`;
+  `FakeConvexSubscription.args`; and `functionCaller` support. The dartdoc
+  lists where the fake intentionally differs from the real client.
 
 ### Changed
+
+- `FakeConvexClient` now behaves like a disposed `ConvexClient` after
+  `dispose()`: `subscribe`, `paginatedQuery` and `reconnectNow` throw and
+  `query` / `mutate` / `action` reject with
+  `ConvexException('ConvexClient has been disposed')`; emissions are
+  ignored. `FakeConvexPaginatedQuery.loadMore` returns `true` only while the
+  current status is `canLoadMore`, like the real engine (it always returned
+  `true`).
 
 - **Breaking:** Requires Dart `^3.10.0` and Flutter `>=3.38.0`, and on Apple
   platforms iOS 15 / macOS 12 or later. `cupertino_http` is now `^3.1.1`
@@ -106,6 +123,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   show an error state and retry on the next dependency or client change.
 - `PaginatedQueryBuilder` only decodes items whose raw value changed since the
   previous emission, and no longer copies the item list on every build.
+- A `FakeConvexClient` query handler that throws now delivers a
+  `ConvexRuntimeQueryError` event (an error snapshot) instead of an uncaught
+  microtask error. The `mutate` dartdoc no longer suggests observing the
+  optimistic update from a handler, which never received it.
 
 ## [0.2.0] - 2026-06-12
 
