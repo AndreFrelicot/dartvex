@@ -3,7 +3,9 @@
 
 import '../runtime.dart';
 import '../schema.dart';
+
 import 'dart:typed_data';
+
 import 'package:dartvex/dartvex.dart';
 
 class MessagesApi {
@@ -35,30 +37,18 @@ class MessagesApi {
       'messages:list',
       _encodeListArgs((limit: limit, author: author, filters: filters)),
     );
-    final typedStream$ = subscription$.stream.map((event) {
-      switch (event) {
-        case QuerySuccess(:final value):
-          return TypedQuerySuccess<List<ListResultItem>>(
-            expectList(
-              value,
-              label: 'ListResult',
-            ).map((item) => _decodeListResultItem(item)).toList(),
-          );
-        case QueryLoading(:final hasPendingWrites):
-          return TypedQueryLoading<List<ListResultItem>>(
-            hasPendingWrites: hasPendingWrites,
-          );
-        case QueryError(:final message, :final data, :final logLines):
-          return TypedQueryError<List<ListResultItem>>(
-            message,
-            data: data,
-            logLines: logLines,
-          );
-      }
-    });
     return TypedConvexSubscription<List<ListResultItem>>(
       subscription$,
-      typedStream$,
+      subscription$.stream.map(
+        (event$) => typedQueryResult<List<ListResultItem>>(
+          event$,
+          (raw$) => expectList(
+            raw$,
+            label: 'ListResult',
+          ).map((item) => _decodeListResultItem(item)).toList(),
+          'messages:list',
+        ),
+      ),
     );
   }
 
@@ -98,21 +88,13 @@ class MessagesApi {
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) {
     final subscription$ = _client.subscribe('messages:ping', args);
-    final typedStream$ = subscription$.stream.map((event) {
-      switch (event) {
-        case QuerySuccess(:final value):
-          return TypedQuerySuccess<dynamic>(value);
-        case QueryLoading(:final hasPendingWrites):
-          return TypedQueryLoading<dynamic>(hasPendingWrites: hasPendingWrites);
-        case QueryError(:final message, :final data, :final logLines):
-          return TypedQueryError<dynamic>(
-            message,
-            data: data,
-            logLines: logLines,
-          );
-      }
-    });
-    return TypedConvexSubscription<dynamic>(subscription$, typedStream$);
+    return TypedConvexSubscription<dynamic>(
+      subscription$,
+      subscription$.stream.map(
+        (event$) =>
+            typedQueryResult<dynamic>(event$, (raw$) => raw$, 'messages:ping'),
+      ),
+    );
   }
 
   TypedConvexPaginatedQuery<Map<String, dynamic>> searchPublic({
@@ -131,10 +113,12 @@ class MessagesApi {
     required String author,
     required String text,
     Optional<Uint8List> attachment = const Optional.absent(),
+    OptimisticUpdate? optimisticUpdate,
   }) async {
     final raw$ = await _client.mutate(
       'messages:send',
       _encodeSendArgs((author: author, text: text, attachment: attachment)),
+      optimisticUpdate,
     );
     return MessagesId(expectString(raw$, label: 'SendResult'));
   }
