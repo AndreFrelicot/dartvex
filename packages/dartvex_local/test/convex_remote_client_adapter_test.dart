@@ -132,8 +132,153 @@ void main() {
       subscription.cancel();
       adapter.dispose();
     });
+
+    test(
+      'tags the core after-unsubscribe seed and not server results',
+      () async {
+        final socket = _MockWebSocketAdapter();
+        final client = convex.ConvexClient(
+          'https://demo.convex.cloud',
+          config: convex.ConvexClientConfig(
+            adapterFactory: (_) => socket,
+            reconnectBackoff: const <Duration>[Duration.zero],
+          ),
+        );
+        final adapter = ConvexRemoteClientAdapter(client, disposeClient: true);
+        addTearDown(adapter.dispose);
+        await settle();
+
+        var version = 0;
+        void pushValue(int queryId, Object value) {
+          socket.pushServerMessage(
+            Transition(
+              startVersion: StateVersion(
+                querySet: version,
+                identity: 0,
+                ts: encodeTs(version),
+              ),
+              endVersion: StateVersion(
+                querySet: version + 1,
+                identity: 0,
+                ts: encodeTs(version + 1),
+              ),
+              modifications: <StateModification>[
+                QueryUpdated(
+                  queryId: queryId,
+                  value: value,
+                  logLines: const [],
+                ),
+              ],
+            ).toJson(),
+          );
+          version += 1;
+        }
+
+        int lastAddedQueryId() {
+          final querySet = socket.decodedSentMessages
+              .where((message) => message['type'] == 'ModifyQuerySet')
+              .last;
+          final add =
+              (querySet['modifications'] as List<dynamic>).last
+                  as Map<String, dynamic>;
+          return add['queryId'] as int;
+        }
+
+        final first = adapter.subscribe('messages:list');
+        final firstEvents = <LocalRemoteQueryEvent>[];
+        final firstListener = first.stream.listen(firstEvents.add);
+        await settle();
+        pushValue(lastAddedQueryId(), <dynamic>['old']);
+        await settle();
+        expect(
+          firstEvents.whereType<LocalRemoteQuerySuccess>().single.isSeed,
+          isFalse,
+        );
+        await firstListener.cancel();
+        first.cancel();
+        await settle();
+
+        // Resubscribing: the core seeds the listener from its after-unsubscribe
+        // cache before the server answers the new subscription.
+        final second = adapter.subscribe('messages:list');
+        final secondEvents = <LocalRemoteQuerySuccess>[];
+        final secondListener = second.stream
+            .where((event) => event is LocalRemoteQuerySuccess)
+            .cast<LocalRemoteQuerySuccess>()
+            .listen(secondEvents.add);
+        await settle();
+        expect(secondEvents, hasLength(1));
+        expect(secondEvents.single.value, <dynamic>['old']);
+        expect(secondEvents.single.isSeed, isTrue);
+
+        pushValue(lastAddedQueryId(), <dynamic>['new']);
+        await settle();
+        expect(secondEvents, hasLength(2));
+        expect(secondEvents.last.value, <dynamic>['new']);
+        expect(secondEvents.last.isSeed, isFalse);
+
+        await secondListener.cancel();
+        second.cancel();
+      },
+    );
+
+    test('reports disconnected once the wrapped client is closed', () async {
+      final socket = _MockWebSocketAdapter();
+      final client = convex.ConvexClient(
+        'https://demo.convex.cloud',
+        config: convex.ConvexClientConfig(
+          adapterFactory: (_) => socket,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+      final adapter = ConvexRemoteClientAdapter(client);
+      addTearDown(adapter.dispose);
+      await settle();
+      expect(
+        adapter.currentConnectionState,
+        LocalRemoteConnectionState.connected,
+      );
+
+      final states = <LocalRemoteConnectionState>[];
+      final listener = adapter.connectionState.listen(states.add);
+      addTearDown(listener.cancel);
+
+      final inFlight = adapter.mutate('messages:send');
+      await settle();
+      final close = client.close();
+
+      // The in-flight failure must already see the remote as disconnected,
+      // before the core finishes closing its streams.
+      Object? observedError;
+      LocalRemoteConnectionState? stateAtFailure;
+      try {
+        await inFlight;
+      } catch (error) {
+        observedError = error;
+        stateAtFailure = adapter.currentConnectionState;
+      }
+      expect(observedError, isA<convex.ConvexException>());
+      expect(isClosedClientError(observedError!), isTrue);
+      expect(stateAtFailure, LocalRemoteConnectionState.disconnected);
+      expect(states, contains(LocalRemoteConnectionState.disconnected));
+
+      await close;
+      await expectLater(
+        adapter.mutate('messages:send'),
+        throwsA(isA<convex.ConvexException>()),
+      );
+      expect(
+        adapter.currentConnectionState,
+        LocalRemoteConnectionState.disconnected,
+      );
+    });
   });
 }
+
+bool isClosedClientError(Object error) =>
+    error is convex.ConvexException &&
+    !error.retryable &&
+    error.message.contains('disposed');
 
 class _MockWebSocketAdapter implements WebSocketAdapter {
   final StreamController<String> _messagesController =

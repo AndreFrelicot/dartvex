@@ -20,10 +20,12 @@ void main() async {
     ),
   );
 
-  // 4. Query — returns cached data instantly, syncs in background
+  // 4. Query — fetched from the remote while connected (and cached); served
+  //    from the cache while offline or disconnected.
   final messages = await localClient.query('messages:list');
 
-  // 5. Mutation — applied optimistically, synced when online
+  // 5. Mutation — sent directly while online; queued (and patched by any
+  //    registered LocalMutationHandler) while offline, then replayed.
   await localClient.mutate('messages:send', {
     'body': 'Hello from offline!',
     'author': 'Alice',
