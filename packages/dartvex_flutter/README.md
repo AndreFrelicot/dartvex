@@ -9,9 +9,9 @@
 Flutter widgets and builders for [dartvex](https://pub.dev/packages/dartvex) — the pure Dart client for [Convex](https://convex.dev).
 
 `dartvex_flutter` removes the repetitive widget lifecycle code around realtime
-Convex subscriptions, mutations, actions, and connection state. The package is
-designed around a small runtime interface so a future local-first adapter can
-plug into the same widgets without breaking the public API.
+Convex subscriptions, mutations, actions, and connection state. The widgets
+talk to a small runtime interface (`ConvexRuntimeClient`), so other backends
+can plug into the same widgets without breaking the public API.
 
 <p align="center">
   <a href="https://github.com/AndreFrelicot/dartvex">
@@ -47,13 +47,21 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 - `FakeConvexClient` — test helper for unit and widget tests
 - App lifecycle reconnect when a Flutter app resumes while disconnected
 - NSURLSession network transports on iOS and macOS, installed automatically
-- Runtime-interface based — works with `ConvexClientRuntime` and local-first adapters
+- Runtime-interface based — works with `ConvexClientRuntime` or any custom
+  `ConvexRuntimeClient`. No adapter for `dartvex_local`'s `ConvexLocalClient`
+  ships yet; the example app contains a sample one
+  (`example/flutter_app/lib/src/core/local_runtime_client.dart`, without
+  pagination support) that you can copy.
 
 The core storage flow works on web: resolve a signed storage URL and render it
 with `Image.network`. The `ConvexImage`, `ConvexCachedImage`,
 `ConvexOfflineImage`, and `ConvexAssetCache` helpers are native-only because
 they use `dart:io` and `flutter_cache_manager` for streaming downloads and disk
-cache/offline fallback.
+cache/offline fallback. On web (JS and WASM) builds the package exports
+API-compatible stand-ins instead, so shared code still compiles: the widgets
+render their `errorBuilder` / `errorWidget` with an `UnsupportedError`, and
+`ConvexAssetCache` / `ConvexFileDownloader` calls fail with an
+`UnsupportedError`.
 
 ## Installation
 
@@ -63,7 +71,10 @@ dependencies:
   dartvex_flutter: ^0.2.0
 ```
 
-Requires Dart `^3.8.0` and Flutter `>=3.32.0`.
+Requires Dart `^3.10.0` and Flutter `>=3.38.0`. On Apple platforms the
+NSURLSession transport (`cupertino_http` 3) requires iOS 15 or later and
+macOS 12 or later; set `IPHONEOS_DEPLOYMENT_TARGET` / `MACOSX_DEPLOYMENT_TARGET`
+(and the `platform` line of your Podfile, if any) accordingly.
 
 ## Platform Transports
 
@@ -93,6 +104,13 @@ void main() {
 A per-client `ConvexClientConfig.adapterFactory` or an explicitly provided
 HTTP client always takes precedence over the installed defaults.
 
+The installed transports use an ephemeral, cookie-less NSURLSession
+configuration, like the `dart:io` and web transports: no cookie is stored or
+sent, so a session cookie returned by an auth endpoint (for example a Better
+Auth sign-in) never rides along on later bearer-authenticated requests. All
+sync WebSocket connections share one URLSession, so reconnects do not create
+new native sessions.
+
 ## Provider Setup
 
 ```dart
@@ -114,6 +132,12 @@ class AppRoot extends StatelessWidget {
   }
 }
 ```
+
+Create the client and its `ConvexClientRuntime` once (not inside `build`).
+Code below the provider can build generated `ConvexApi` bindings
+(`dartvex_codegen`) or a `ConvexStorage` from the provider's client with
+`ConvexProvider.of(context).functionCaller`; `FakeConvexClient` supports the
+same call in widget tests.
 
 To reconnect immediately when the device regains connectivity, pass a
 `ConnectivityPlusSignal` into the client configuration:
@@ -152,7 +176,7 @@ ConvexAuthProvider<MyUser>(
 ConvexQuery<List<Message>>(
   query: 'messages:list',
   args: const {'channel': 'general'},
-  decode: (value) => decodeMessages(value),
+  decode: decodeMessages, // a stable reference avoids re-decoding on rebuilds
   builder: (context, snapshot) {
     if (snapshot.isLoading) return const CircularProgressIndicator();
     if (snapshot.hasError) return Text(snapshot.error.toString());
@@ -165,6 +189,13 @@ ConvexQuery<List<Message>>(
 ```
 
 ## Mutation Widget
+
+`ConvexMutation` and `ConvexAction` are single-flight: while a call is in
+flight (`snapshot.isLoading`), a second call is not sent and its future
+rejects with a `StateError`. A mutation stays in flight until the server
+confirms it, including while the client is offline. Disable the trigger while
+loading, as below, or call `ConvexProvider.of(context).mutate(...)` directly
+when several mutations must be queued at once.
 
 ```dart
 ConvexMutation<String>(
@@ -195,11 +226,17 @@ ConvexCachedImage(
   width: 160,
   height: 160,
   fit: BoxFit.cover,
+  errorBuilder: (context, error, retry) =>
+      IconButton(icon: const Icon(Icons.refresh), onPressed: retry),
 )
 ```
 
 `ConvexImage` and `ConvexCachedImage` resolve storage URLs with a Convex query
 by default. Set `useAction: true` when the resolver is implemented as an action.
+On failure, `errorBuilder` receives the error and a `retry` callback; without
+`errorBuilder` or `errorWidget` the error is reported to
+`FlutterError.reportError`. `ConvexAssetCache()` instances with the same
+`cacheKey` share one store (`ConvexAssetCache.shared` uses the default key).
 Both widgets are native-only in this release; on web, use the same resolver and
 pass the returned URL to `Image.network`.
 
@@ -224,8 +261,15 @@ PaginatedQueryBuilder<Message>(
         : TextButton(onPressed: loadMore, child: const Text('Load more')),
     );
   },
+  // Optional: receives the error object (server error or a
+  // ConvexDecodeException) and a retry callback.
+  errorBuilder: (context, error, items, retry) =>
+      TextButton(onPressed: retry, child: Text('Failed: $error')),
 )
 ```
+
+`loadMore` can also be called from an `itemBuilder` (infinite scroll); the
+rebuild it triggers is deferred to after the current frame.
 
 ## Testing
 
@@ -256,7 +300,11 @@ ConvexMutation<String>(
   },
   builder: (context, mutate, snapshot) {
     return FilledButton(
-      onPressed: () => mutate({'channel': 'general', 'text': 'Hello'}),
+      // Single-flight: disable while the mutation is in flight (or offline
+      // and waiting for the reconnect), otherwise a second tap is dropped.
+      onPressed: snapshot.isLoading
+          ? null
+          : () => mutate({'channel': 'general', 'text': 'Hello'}),
       child: const Text('Send'),
     );
   },

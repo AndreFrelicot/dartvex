@@ -5,31 +5,7 @@ import 'dart:typed_data';
 import 'package:dartvex/dartvex.dart' show createDefaultHttpClient;
 import 'package:http/http.dart' as http;
 
-/// Snapshot of an in-progress file download.
-class ConvexDownloadProgress {
-  /// Creates a download progress snapshot.
-  const ConvexDownloadProgress({
-    required this.received,
-    required this.total,
-    required this.progress,
-  });
-
-  /// Bytes received so far.
-  final int received;
-
-  /// Total bytes expected, or -1 if the server didn't send Content-Length.
-  final int total;
-
-  /// Download progress between 0.0 and 1.0, or -1.0 if total is unknown.
-  final double progress;
-
-  /// Whether the total size is known.
-  bool get hasTotalSize => total > 0;
-}
-
-/// Callback that reports download progress.
-typedef ConvexDownloadProgressCallback =
-    void Function(ConvexDownloadProgress progress);
+import 'media_types.dart';
 
 /// Downloads files from URLs with byte-level progress tracking.
 ///
@@ -40,7 +16,7 @@ typedef ConvexDownloadProgressCallback =
 ///
 /// Native-only: this helper is not available on Flutter web. Use
 /// browser-native loading via `Image.network` or `fetch`-style APIs in
-/// web-specific UI.
+/// web-specific UI; on web, [download] fails with an `UnsupportedError`.
 ///
 /// ```dart
 /// final bytes = await ConvexFileDownloader.download(
@@ -60,6 +36,16 @@ class ConvexFileDownloader {
   /// [ConvexDownloadProgress] containing received bytes, total bytes,
   /// and progress ratio.
   ///
+  /// [client] is used for the request when given and is left open (the
+  /// caller owns it); reusing one client across downloads reuses its
+  /// connections (and, on iOS/macOS, its URLSession). Without it, a client
+  /// from `createDefaultHttpClient()` is created for this download and closed
+  /// afterwards.
+  ///
+  /// Completing [abortTrigger] aborts the download: it fails with
+  /// `http.RequestAbortedException` and the transfer stops (for clients that
+  /// support aborting, which includes every default platform client).
+  ///
   /// [idleTimeout] bounds how long the download may stall without progress: it
   /// applies to establishing the connection, awaiting the response headers, and
   /// the gap between received body chunks. It is an idle (inter-event) bound,
@@ -70,15 +56,17 @@ class ConvexFileDownloader {
     String url, {
     ConvexDownloadProgressCallback? onProgress,
     Duration idleTimeout = const Duration(seconds: 30),
+    http.Client? client,
+    Future<void>? abortTrigger,
   }) async {
     final uri = Uri.parse(url);
-    final client = createDefaultHttpClient();
+    final httpClient = client ?? createDefaultHttpClient();
     try {
       // The send() timeout bounds connection establishment and response
       // headers together — the same stall window dart:io's connectionTimeout
       // plus close().timeout() used to cover.
-      final response = await client
-          .send(http.Request('GET', uri))
+      final response = await httpClient
+          .send(http.AbortableRequest('GET', uri, abortTrigger: abortTrigger))
           .timeout(idleTimeout);
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -114,7 +102,9 @@ class ConvexFileDownloader {
 
       return builder.toBytes();
     } finally {
-      client.close();
+      if (client == null) {
+        httpClient.close();
+      }
     }
   }
 }

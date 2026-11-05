@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/widgets.dart';
 
 import 'asset_cache.dart';
+import 'media_types.dart';
 import 'provider.dart';
 import 'runtime_client.dart';
 import 'storage_url.dart';
@@ -13,9 +14,20 @@ import 'storage_url.dart';
 /// [ConvexAssetCache] using the stable [storageId] as cache key. The URL
 /// resolver is called as a query unless [useAction] is true.
 ///
+/// When the URL resolver ([getUrlAction], [useAction]) or the provider client
+/// changes after a load, the cached copy is deliberately bypassed and
+/// refreshed: a different resolver or deployment may serve different content
+/// for the same [storageId]. The refreshed download only replaces the cached
+/// file once it succeeded.
+///
+/// On failure, [errorBuilder] receives the error and a retry callback; with
+/// neither [errorBuilder] nor [errorWidget], the error is reported to
+/// [FlutterError.reportError] and nothing is shown.
+///
 /// Native-only: disk-backed image caching uses `dart:io` and is not supported
 /// on Flutter web. Web apps should resolve the signed storage URL and render it
-/// with `Image.network`.
+/// with `Image.network`; on web this widget is a stand-in that renders the
+/// error state.
 class ConvexCachedImage extends StatefulWidget {
   /// Creates a [ConvexCachedImage].
   const ConvexCachedImage({
@@ -26,6 +38,7 @@ class ConvexCachedImage extends StatefulWidget {
     this.client,
     this.placeholder,
     this.errorWidget,
+    this.errorBuilder,
     this.builder,
     this.useAction = false,
     this.fit,
@@ -51,8 +64,13 @@ class ConvexCachedImage extends StatefulWidget {
   /// Widget shown while the image is loading.
   final Widget? placeholder;
 
-  /// Widget shown when the image fails to load.
+  /// Widget shown when the image fails to load. Ignored when [errorBuilder]
+  /// is set.
   final Widget? errorWidget;
+
+  /// Builder shown when the image fails to load, with the error and a retry
+  /// callback.
+  final ConvexImageErrorBuilder? errorBuilder;
 
   /// Optional custom builder for the resolved [ImageProvider].
   final Widget Function(BuildContext context, ImageProvider image)? builder;
@@ -112,7 +130,7 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
         loadedGetUrlAction == widget.getUrlAction &&
         loadedUseAction == widget.useAction &&
         identical(loadedCache, cache) &&
-        identical(loadedClient, client) &&
+        loadedClient == client &&
         (_loading || _file != null || _error != null)) {
       return;
     }
@@ -120,7 +138,7 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
         loadedGetUrlAction != null &&
         (loadedGetUrlAction != widget.getUrlAction ||
             loadedUseAction != widget.useAction ||
-            !identical(loadedClient, client));
+            loadedClient != client);
     _loadedStorageId = widget.storageId;
     _loadedGetUrlAction = widget.getUrlAction;
     _loadedUseAction = widget.useAction;
@@ -132,6 +150,15 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
       cache: cache,
       bypassCache: shouldBypassCache,
     );
+  }
+
+  void _retry() {
+    final client = _loadedClient;
+    final cache = _loadedCache;
+    if (!mounted || client == null || cache == null) {
+      return;
+    }
+    _fetchAndCache(++_requestGeneration, client, cache: cache);
   }
 
   Future<void> _fetchAndCache(
@@ -203,7 +230,7 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
         _file = file;
         _loading = false;
       });
-    } catch (error) {
+    } catch (error, stackTrace) {
       if (!_isCurrentRequest(
         generation,
         storageId,
@@ -218,6 +245,18 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
         _error = error;
         _loading = false;
       });
+      if (widget.errorBuilder == null && widget.errorWidget == null) {
+        FlutterError.reportError(
+          FlutterErrorDetails(
+            exception: error,
+            stack: stackTrace,
+            library: 'dartvex_flutter',
+            context: ErrorDescription(
+              'while loading ConvexCachedImage for storageId "$storageId"',
+            ),
+          ),
+        );
+      }
     }
   }
 
@@ -234,7 +273,7 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
         widget.storageId == storageId &&
         widget.getUrlAction == getUrlAction &&
         widget.useAction == useAction &&
-        identical(_loadedClient, client) &&
+        _loadedClient == client &&
         identical(_loadedCache, cache);
   }
 
@@ -243,7 +282,16 @@ class _ConvexCachedImageState extends State<ConvexCachedImage> {
     if (_loading) {
       return widget.placeholder ?? const SizedBox.shrink();
     }
-    if (_error != null || _file == null) {
+    final error = _error;
+    if (error != null || _file == null) {
+      final errorBuilder = widget.errorBuilder;
+      if (errorBuilder != null) {
+        return errorBuilder(
+          context,
+          error ?? StateError('No cached file'),
+          _retry,
+        );
+      }
       return widget.errorWidget ?? const SizedBox.shrink();
     }
 

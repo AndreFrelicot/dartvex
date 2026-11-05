@@ -235,7 +235,7 @@ void main() {
     expect(capturedStatus, PaginationStatus.error);
   });
 
-  testWidgets('maps item decode failures to error status without throwing', (
+  testWidgets('maps item decode failures to error status and reports them', (
     tester,
   ) async {
     final client = connectedClient();
@@ -266,7 +266,8 @@ void main() {
     );
     await tester.pump();
 
-    expect(tester.takeException(), isNull);
+    // Contained (no ErrorWidget) but reported, so the failure is debuggable.
+    expect(tester.takeException(), isA<FormatException>());
     expect(capturedStatus, PaginationStatus.error);
   });
 

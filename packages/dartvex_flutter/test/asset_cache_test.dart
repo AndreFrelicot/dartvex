@@ -1,11 +1,15 @@
 import 'dart:async';
+import 'dart:io' as io;
 
 import 'package:dartvex_flutter/dartvex_flutter.dart';
 import 'package:file/file.dart'; // ignore: depend_on_referenced_packages
 import 'package:file/memory.dart'; // ignore: depend_on_referenced_packages
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 import 'test_helpers/fake_runtime_client.dart';
 
@@ -57,12 +61,33 @@ void main() {
       );
 
       expect(file, isNotNull);
-      expect(fakeCacheManager.removedKeys, contains('cache-789'));
-      expect(fakeCacheManager.getSingleFileCalls, hasLength(1));
+      // Replaced in place: no remove-then-download window.
+      expect(fakeCacheManager.removedKeys, isEmpty);
+      expect(fakeCacheManager.getSingleFileCalls, isEmpty);
+      expect(fakeCacheManager.downloadFileCalls, hasLength(1));
       expect(
-        fakeCacheManager.getSingleFileCalls.single.url,
+        fakeCacheManager.downloadFileCalls.single.url,
         'https://example.com/refreshed.png',
       );
+      expect(fakeCacheManager.downloadFileCalls.single.key, 'cache-789');
+    });
+
+    test('a failed forced refresh keeps the previously cached file', () async {
+      fakeCacheManager.putInCache('cache-keep');
+      final before = await cache.get('cache-keep');
+      fakeCacheManager.downloadError = Exception('offline');
+
+      await expectLater(
+        cache.prefetch(
+          'cache-keep',
+          'https://example.com/new.png',
+          force: true,
+        ),
+        throwsException,
+      );
+
+      expect(await cache.get('cache-keep'), isNotNull);
+      expect((await cache.get('cache-keep'))!.path, before!.path);
     });
 
     test('get returns cached file', () async {
@@ -476,9 +501,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(secondClient.queryCalls, hasLength(1));
-      expect(fakeCacheManager.getSingleFileCalls, hasLength(2));
+      // A client change bypasses the cache and force-refreshes in place.
+      expect(fakeCacheManager.getSingleFileCalls, hasLength(1));
       expect(
-        fakeCacheManager.getSingleFileCalls.last.url,
+        fakeCacheManager.downloadFileCalls.single.url,
         'https://example.com/b.png',
       );
       expect(find.text('loaded'), findsOneWidget);
@@ -527,6 +553,287 @@ void main() {
       );
     });
   });
+
+  group('image and cache fixes', () {
+    test('default-constructed caches with one cacheKey share a ref-counted '
+        'store', () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      final dir = io.Directory.systemTemp.createTempSync('dartvex_cache_');
+      const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(pathProvider, (_) async => dir.path);
+      addTearDown(() {
+        messenger.setMockMethodCallHandler(pathProvider, null);
+        dir.deleteSync(recursive: true);
+      });
+
+      const key = 'dartvexFlutterTestRefCount';
+      final a = ConvexAssetCache(cacheKey: key);
+      final b = ConvexAssetCache(cacheKey: key);
+      expect(ConvexAssetCache.debugReferenceCount(key), 2);
+      // Let flutter_cache_manager finish opening its store before closing it.
+      expect(await b.contains('missing'), isFalse);
+
+      await a.dispose();
+      expect(ConvexAssetCache.debugReferenceCount(key), 1);
+      // Disposing twice must not release the other instance's reference.
+      await a.dispose();
+      expect(ConvexAssetCache.debugReferenceCount(key), 1);
+
+      await b.dispose();
+      expect(ConvexAssetCache.debugReferenceCount(key), 0);
+      // A new instance after the last dispose opens a fresh store.
+      final c = ConvexAssetCache(cacheKey: key);
+      expect(ConvexAssetCache.debugReferenceCount(key), 1);
+      expect(await c.contains('missing'), isFalse);
+      await c.dispose();
+    });
+
+    testWidgets('ConvexOfflineImage does not flash loading when only the url '
+        'changes', (tester) async {
+      final manager = FakeCacheManager()..putInCache('img-1');
+      final cache = ConvexAssetCache.custom(manager);
+      final snapshots = <ConvexAssetSnapshot>[];
+
+      Widget build(String? url) => Directionality(
+        textDirection: TextDirection.ltr,
+        child: ConvexOfflineImage(
+          cacheKey: 'img-1',
+          url: url,
+          cache: cache,
+          builder: (context, snapshot) {
+            snapshots.add(snapshot);
+            return const SizedBox();
+          },
+        ),
+      );
+
+      await tester.pumpWidget(build('https://example.com/a?sig=1'));
+      await tester.pumpAndSettle();
+      expect(snapshots.last.hasFile, isTrue);
+      final loadedAt = snapshots.length;
+
+      await tester.pumpWidget(build('https://example.com/a?sig=2'));
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(build(null));
+      await tester.pumpAndSettle();
+
+      expect(
+        snapshots.skip(loadedAt).where((snapshot) => snapshot.isLoading),
+        isEmpty,
+      );
+      expect(snapshots.last.hasFile, isTrue);
+    });
+
+    testWidgets('ConvexOfflineImage reports a typed error without cache or '
+        'url', (tester) async {
+      final cache = ConvexAssetCache.custom(FakeCacheManager());
+      late ConvexAssetSnapshot latest;
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: ConvexOfflineImage(
+            cacheKey: 'missing',
+            cache: cache,
+            builder: (context, snapshot) {
+              latest = snapshot;
+              return const SizedBox();
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(latest.hasError, isTrue);
+      expect(latest.error, isA<ConvexStorageException>());
+    });
+
+    testWidgets('ConvexCachedImage errorBuilder retries the load', (
+      tester,
+    ) async {
+      final manager = FakeCacheManager();
+      final cache = ConvexAssetCache.custom(manager);
+      final client = FakeRuntimeClient(
+        initialConnectionState: ConvexConnectionState.connected,
+      );
+      var calls = 0;
+      client.onQuery = (name, args) async {
+        calls += 1;
+        if (calls == 1) {
+          throw const ConvexStorageException('offline');
+        }
+        return 'https://example.com/img.png';
+      };
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: ConvexCachedImage(
+            storageId: 'img-1',
+            getUrlAction: 'files:getUrl',
+            cache: cache,
+            client: client,
+            errorBuilder: (context, error, retry) =>
+                GestureDetector(onTap: retry, child: Text('retry: $error')),
+            builder: (context, image) => const Text('loaded'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('retry:'), findsOneWidget);
+
+      await tester.tap(find.textContaining('retry:'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('loaded'), findsOneWidget);
+      expect(calls, 2);
+    });
+
+    testWidgets('ConvexCachedImage reports errors without an error widget', (
+      tester,
+    ) async {
+      final client = FakeRuntimeClient(
+        initialConnectionState: ConvexConnectionState.connected,
+      );
+      client.onQuery = (name, args) async => '';
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: ConvexCachedImage(
+            storageId: 'img-1',
+            getUrlAction: 'files:getUrl',
+            cache: ConvexAssetCache.custom(FakeCacheManager()),
+            client: client,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isA<ConvexStorageException>());
+    });
+
+    testWidgets('ConvexImage downloads through the injected client and retries '
+        'from errorBuilder', (tester) async {
+      final requests = <http.BaseRequest>[];
+      final httpClient = MockClient.streaming((request, body) async {
+        requests.add(request);
+        return http.StreamedResponse(
+          Stream<List<int>>.value(<int>[1, 2, 3]),
+          200,
+          contentLength: 3,
+        );
+      });
+      final client = FakeRuntimeClient(
+        initialConnectionState: ConvexConnectionState.connected,
+      );
+      var calls = 0;
+      client.onQuery = (name, args) async {
+        calls += 1;
+        return calls == 1 ? '' : 'https://example.com/img.png';
+      };
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: ConvexImage(
+            storageId: 'img-1',
+            getUrlAction: 'files:getUrl',
+            client: client,
+            httpClient: httpClient,
+            errorBuilder: (context, error, retry) =>
+                GestureDetector(onTap: retry, child: Text('retry $error')),
+            builder: (context, image) => const Text('loaded'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('retry'), findsOneWidget);
+      expect(requests, isEmpty);
+
+      await tester.tap(find.textContaining('retry'));
+      await tester.pumpAndSettle();
+      // Let the mocked transfer finish outside the fake clock.
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await tester.pumpAndSettle();
+
+      expect(find.text('loaded'), findsOneWidget);
+      expect(requests.single.url, Uri.parse('https://example.com/img.png'));
+      expect(requests.single, isA<http.Abortable>());
+    });
+
+    testWidgets('ConvexImage aborts its download when disposed', (
+      tester,
+    ) async {
+      final requests = <http.BaseRequest>[];
+      final body = StreamController<List<int>>();
+      final httpClient = MockClient.streaming((request, _) async {
+        requests.add(request);
+        return http.StreamedResponse(body.stream, 200);
+      });
+      final client = FakeRuntimeClient(
+        initialConnectionState: ConvexConnectionState.connected,
+      );
+      client.onQuery = (name, args) async => 'https://example.com/big.png';
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: ConvexImage(
+            storageId: 'img-1',
+            getUrlAction: 'files:getUrl',
+            client: client,
+            httpClient: httpClient,
+            placeholder: const Text('loading'),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(requests, hasLength(1));
+      var aborted = false;
+      unawaited(
+        (requests.single as http.Abortable).abortTrigger!.then((_) {
+          aborted = true;
+          // Like a real client: an aborted transfer ends its body stream.
+          body.addError(http.RequestAbortedException());
+          body.close();
+        }),
+      );
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await tester.pump();
+
+      expect(aborted, isTrue);
+    });
+
+    testWidgets('ConvexImage reports errors without an error widget', (
+      tester,
+    ) async {
+      final client = FakeRuntimeClient(
+        initialConnectionState: ConvexConnectionState.connected,
+      );
+      client.onQuery = (name, args) async => '';
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: ConvexImage(
+            storageId: 'img-1',
+            getUrlAction: 'files:getUrl',
+            client: client,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isA<ConvexStorageException>());
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -544,8 +851,10 @@ class FakeCacheManager implements BaseCacheManager, ConvexAssetCacheMetrics {
   final Map<String, FileInfo> _cache = {};
   final Map<String, Completer<void>> _getDelays = {};
   final List<GetSingleFileCall> getSingleFileCalls = [];
+  final List<GetSingleFileCall> downloadFileCalls = [];
   final List<String> removedKeys = [];
   bool emptyCacheCalled = false;
+  Object? downloadError;
 
   File _createFile(String key) {
     final file = _fs.file('/cache/$key')
@@ -598,6 +907,31 @@ class FakeCacheManager implements BaseCacheManager, ConvexAssetCacheMetrics {
       url,
     );
     return file;
+  }
+
+  @override
+  Future<FileInfo> downloadFile(
+    String url, {
+    String? key,
+    Map<String, String>? authHeaders,
+    bool force = false,
+  }) async {
+    final cacheKey = key ?? url;
+    downloadFileCalls.add(GetSingleFileCall(url, cacheKey));
+    final error = downloadError;
+    if (error != null) {
+      throw error;
+    }
+    final info = FileInfo(
+      _fs.file('/cache/$cacheKey.${downloadFileCalls.length}')
+        ..createSync(recursive: true)
+        ..writeAsBytesSync(<int>[1]),
+      FileSource.Online,
+      DateTime.now().add(const Duration(days: 30)),
+      url,
+    );
+    _cache[cacheKey] = info;
+    return info;
   }
 
   @override

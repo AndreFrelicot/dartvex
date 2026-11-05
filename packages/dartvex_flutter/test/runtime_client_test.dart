@@ -3,6 +3,8 @@ import 'dart:convert';
 
 import 'package:dartvex/dartvex.dart' as convex;
 import 'package:dartvex_flutter/dartvex_flutter.dart';
+import 'package:dartvex_flutter/src/runtime_client.dart'
+    show ConvexSeededSubscription;
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -101,6 +103,89 @@ void main() {
         await expectLater(mutation, throwsA(isA<convex.ConvexException>()));
         await listener.cancel();
         subscription.cancel();
+        runtime.dispose();
+        client.dispose();
+      },
+    );
+
+    test('wrappers of the same client are equal and hold no listener', () {
+      final client = convex.ConvexClient(
+        'https://demo.convex.cloud',
+        config: const convex.ConvexClientConfig(connectImmediately: false),
+      );
+      final a = ConvexClientRuntime(client);
+      final b = ConvexClientRuntime(client);
+
+      expect(a, b);
+      expect(a.hashCode, b.hashCode);
+      expect(a, isNot(ConvexClientRuntime(client, disposeClient: true)));
+      expect(identical(a.client, client), isTrue);
+      expect(identical(a.functionCaller, client), isTrue);
+      // The connection state is read through, not cached by a listener.
+      expect(a.currentConnectionState, client.currentConnectionState);
+
+      a.dispose();
+      b.dispose();
+      client.dispose();
+    });
+
+    test(
+      'a new subscription knows the live result of the same query',
+      () async {
+        final adapter = _MockWebSocketAdapter();
+        final client = convex.ConvexClient(
+          'https://example.com',
+          config: convex.ConvexClientConfig(adapterFactory: (_) => adapter),
+        );
+        final runtime = ConvexClientRuntime(client);
+        await _settle();
+
+        final first = runtime.subscribe('messages:list', const {'c': 'a'});
+        final listener = first.stream.listen((_) {});
+        await _settle();
+        expect((first as ConvexSeededSubscription).currentEvent, isNull);
+
+        final querySet = adapter.decodedSentMessages
+            .where((message) => message['type'] == 'ModifyQuerySet')
+            .last;
+        final queryId =
+            (((querySet['modifications'] as List<dynamic>).single
+                    as Map<String, dynamic>)['queryId'])
+                as int;
+        adapter.pushServerMessage(<String, dynamic>{
+          'type': 'Transition',
+          'startVersion': _version(querySet: 0, ts: 'AAAAAAAAAAA='),
+          'endVersion': _version(querySet: 1, ts: 'AQAAAAAAAAA='),
+          'modifications': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'type': 'QueryUpdated',
+              'queryId': queryId,
+              'value': <String>['a'],
+            },
+          ],
+        });
+        await _settle();
+
+        // Another wrapper of the same client shares the live results.
+        final second = ConvexClientRuntime(
+          client,
+        ).subscribe('messages:list', const {'c': 'a'});
+        final seed = (second as ConvexSeededSubscription).currentEvent;
+        expect(seed, isA<ConvexRuntimeQuerySuccess>());
+        expect((seed! as ConvexRuntimeQuerySuccess).value, <String>['a']);
+
+        final otherArgs = runtime.subscribe('messages:list', const {'c': 'b'});
+        expect((otherArgs as ConvexSeededSubscription).currentEvent, isNull);
+
+        // Once every subscription is gone, nothing stale is kept.
+        await listener.cancel();
+        first.cancel();
+        second.cancel();
+        otherArgs.cancel();
+        final third = runtime.subscribe('messages:list', const {'c': 'a'});
+        expect((third as ConvexSeededSubscription).currentEvent, isNull);
+        third.cancel();
+
         runtime.dispose();
         client.dispose();
       },
