@@ -6,11 +6,20 @@ typedef ConvexRequestExecutor<T> =
     Future<T> Function([Map<String, dynamic> args]);
 
 /// Indicates where a query result originated.
+///
+/// With `ConvexClientRuntime`, the source only reflects optimistic writes:
+/// a result that includes pending optimistic updates is [cache], and every
+/// other result is [remote]. That includes the value a new subscription is
+/// seeded with from the core client's recently-unsubscribed cache, which can
+/// be stale until the server's next result arrives; the core does not mark
+/// those values, so do not use [remote] as a freshness signal.
 enum ConvexQuerySource {
-  /// The value came from the remote backend.
+  /// The value came from the remote backend (see the type documentation for
+  /// the cached seed caveat).
   remote,
 
-  /// The value came from local cache state.
+  /// The value came from local cache state (with `ConvexClientRuntime`: it
+  /// includes pending optimistic updates).
   cache,
 
   /// The source could not be determined.

@@ -100,6 +100,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ConvexMutation` and `ConvexAction` share one request state machine; their
   single-flight behavior (a call made while another is in flight rejects with
   a `StateError`) is unchanged and now documented.
+- The `ConvexQuerySource` dartdoc now states that, with `ConvexClientRuntime`,
+  `source` only reflects pending optimistic writes: a subscription seeded from
+  the core's recently-unsubscribed cache is reported as `remote` and may be
+  stale until the next server result.
 
 ### Fixed
 
