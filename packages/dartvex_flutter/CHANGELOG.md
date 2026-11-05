@@ -47,6 +47,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `CacheManager` (classes extending `ConvexAssetCache` must use
   `ConvexAssetCache.custom`). `ConvexOfflineImage` now reports "no cached
   asset and no URL" as a `ConvexStorageException` instead of a `String`.
+- The native-only media helpers (`ConvexImage`, `ConvexCachedImage`,
+  `ConvexOfflineImage`, `ConvexAssetCache`, `ConvexFileDownloader`) are now
+  exported through a conditional export: web (JS and WASM) builds get
+  API-compatible stand-ins that render the error state or fail with an
+  `UnsupportedError`, so the package's web import graph no longer reaches
+  `dart:io` or `flutter_cache_manager` (WASM-compatible on pub.dev). Native
+  behavior is unchanged. On web, `ConvexAssetCache.custom` takes an `Object`
+  and `ConvexAssetSnapshot.file` is always `null`.
 
 - `FakeConvexClient` now behaves like a disposed `ConvexClient` after
   `dispose()`: `subscribe`, `paginatedQuery` and `reconnectNow` throw and

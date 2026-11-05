@@ -5,31 +5,7 @@ import 'dart:typed_data';
 import 'package:dartvex/dartvex.dart' show createDefaultHttpClient;
 import 'package:http/http.dart' as http;
 
-/// Snapshot of an in-progress file download.
-class ConvexDownloadProgress {
-  /// Creates a download progress snapshot.
-  const ConvexDownloadProgress({
-    required this.received,
-    required this.total,
-    required this.progress,
-  });
-
-  /// Bytes received so far.
-  final int received;
-
-  /// Total bytes expected, or -1 if the server didn't send Content-Length.
-  final int total;
-
-  /// Download progress between 0.0 and 1.0, or -1.0 if total is unknown.
-  final double progress;
-
-  /// Whether the total size is known.
-  bool get hasTotalSize => total > 0;
-}
-
-/// Callback that reports download progress.
-typedef ConvexDownloadProgressCallback =
-    void Function(ConvexDownloadProgress progress);
+import 'media_types.dart';
 
 /// Downloads files from URLs with byte-level progress tracking.
 ///
@@ -40,7 +16,7 @@ typedef ConvexDownloadProgressCallback =
 ///
 /// Native-only: this helper is not available on Flutter web. Use
 /// browser-native loading via `Image.network` or `fetch`-style APIs in
-/// web-specific UI.
+/// web-specific UI; on web, [download] fails with an `UnsupportedError`.
 ///
 /// ```dart
 /// final bytes = await ConvexFileDownloader.download(

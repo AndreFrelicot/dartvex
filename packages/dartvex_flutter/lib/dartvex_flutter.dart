@@ -24,15 +24,25 @@ export 'src/plugin.dart' show DartvexFlutterPlugin;
 export 'src/transport/cupertino_web_socket_adapter_stub.dart'
     if (dart.library.io) 'src/transport/cupertino_web_socket_adapter.dart'
     show installCupertinoTransport;
-export 'src/asset_cache.dart' show ConvexAssetCache, ConvexAssetCacheMetrics;
-export 'src/convex_cached_image.dart' show ConvexCachedImage;
-export 'src/convex_image.dart' show ConvexImage, ConvexImageErrorBuilder;
-export 'src/file_downloader.dart'
+export 'src/media_types.dart'
     show
-        ConvexFileDownloader,
+        ConvexAssetCacheMetrics,
         ConvexDownloadProgress,
-        ConvexDownloadProgressCallback;
-export 'src/offline_image.dart' show ConvexAssetSnapshot, ConvexOfflineImage;
+        ConvexDownloadProgressCallback,
+        ConvexImageErrorBuilder;
+// Native-only media helpers (dart:io, flutter_cache_manager). Web builds (JS
+// and WASM) get API-compatible stand-ins, so the web import graph stays free
+// of dart:io. The native file is the default so static analysis (and IDEs)
+// always see the real types.
+export 'src/native_only_io.dart'
+    if (dart.library.js_interop) 'src/native_only_stub.dart'
+    show
+        ConvexAssetCache,
+        ConvexAssetSnapshot,
+        ConvexCachedImage,
+        ConvexFileDownloader,
+        ConvexImage,
+        ConvexOfflineImage;
 export 'src/auth_builder.dart' show ConvexAuthBuilder, ConvexAuthWidgetBuilder;
 export 'src/auth_provider.dart' show ConvexAuthProvider;
 export 'src/auth_refreshing_builder.dart'

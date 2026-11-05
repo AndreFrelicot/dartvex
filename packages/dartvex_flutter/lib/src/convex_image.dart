@@ -6,14 +6,10 @@ import 'package:flutter/widgets.dart';
 import 'package:http/http.dart' as http;
 
 import 'file_downloader.dart';
+import 'media_types.dart';
 import 'provider.dart';
 import 'runtime_client.dart';
 import 'storage_url.dart';
-
-/// Builder for an image that failed to load: receives the error and a
-/// callback that retries the load.
-typedef ConvexImageErrorBuilder =
-    Widget Function(BuildContext context, Object error, VoidCallback retry);
 
 /// Widget that displays an image stored in Convex file storage.
 ///
@@ -31,7 +27,8 @@ typedef ConvexImageErrorBuilder =
 ///
 /// Native-only in this release: progress downloads are implemented with
 /// `dart:io`. On Flutter web, resolve the signed storage URL and render it with
-/// `Image.network`.
+/// `Image.network`; on web this widget is a stand-in that renders the error
+/// state.
 ///
 /// ```dart
 /// ConvexImage(

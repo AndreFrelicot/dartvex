@@ -5,6 +5,8 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:http/http.dart' as http;
 import 'package:meta/meta.dart';
 
+import 'media_types.dart';
+
 /// Caches binary assets (images, files) from Convex storage to disk,
 /// keyed by stable storage ID rather than expiring signed URLs.
 ///
@@ -18,7 +20,8 @@ import 'package:meta/meta.dart';
 ///
 /// Native-only: this cache uses `dart:io` and `flutter_cache_manager`, so it is
 /// not available on Flutter web. Web apps should resolve signed storage URLs
-/// and render them directly, for example with `Image.network`.
+/// and render them directly, for example with `Image.network`. On web, every
+/// operation fails with an `UnsupportedError`.
 class ConvexAssetCache {
   /// Shared default asset cache instance.
   static final ConvexAssetCache shared = ConvexAssetCache();
@@ -197,10 +200,4 @@ class _SharedStore {
   final CacheManager cacheManager;
   final http.Client httpClient;
   int references = 0;
-}
-
-/// Optional interface custom cache managers can implement to expose metrics.
-abstract interface class ConvexAssetCacheMetrics {
-  /// Returns the total size of cached assets in bytes.
-  Future<int> getSizeBytes();
 }

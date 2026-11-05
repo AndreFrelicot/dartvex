@@ -14,7 +14,8 @@ import 'asset_cache.dart';
 ///
 /// Native-only: this widget reads cached files through `dart:io` and is not
 /// supported on Flutter web. Web apps should render signed storage URLs directly
-/// and avoid assuming a disk-backed offline image cache.
+/// and avoid assuming a disk-backed offline image cache; on web this widget
+/// builds an error snapshot (`UnsupportedError`).
 ///
 /// Works with any storage backend: Convex Storage, Cloudflare R2, S3, etc.
 /// Just provide a stable [cacheKey] that uniquely identifies the asset.

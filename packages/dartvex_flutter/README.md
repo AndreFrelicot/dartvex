@@ -57,7 +57,11 @@ The core storage flow works on web: resolve a signed storage URL and render it
 with `Image.network`. The `ConvexImage`, `ConvexCachedImage`,
 `ConvexOfflineImage`, and `ConvexAssetCache` helpers are native-only because
 they use `dart:io` and `flutter_cache_manager` for streaming downloads and disk
-cache/offline fallback.
+cache/offline fallback. On web (JS and WASM) builds the package exports
+API-compatible stand-ins instead, so shared code still compiles: the widgets
+render their `errorBuilder` / `errorWidget` with an `UnsupportedError`, and
+`ConvexAssetCache` / `ConvexFileDownloader` calls fail with an
+`UnsupportedError`.
 
 ## Installation
 

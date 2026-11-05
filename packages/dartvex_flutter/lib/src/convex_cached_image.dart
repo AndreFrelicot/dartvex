@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter/widgets.dart';
 
 import 'asset_cache.dart';
-import 'convex_image.dart' show ConvexImageErrorBuilder;
+import 'media_types.dart';
 import 'provider.dart';
 import 'runtime_client.dart';
 import 'storage_url.dart';
@@ -26,7 +26,8 @@ import 'storage_url.dart';
 ///
 /// Native-only: disk-backed image caching uses `dart:io` and is not supported
 /// on Flutter web. Web apps should resolve the signed storage URL and render it
-/// with `Image.network`.
+/// with `Image.network`; on web this widget is a stand-in that renders the
+/// error state.
 class ConvexCachedImage extends StatefulWidget {
   /// Creates a [ConvexCachedImage].
   const ConvexCachedImage({
