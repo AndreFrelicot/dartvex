@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:dartvex/dartvex.dart' show convexToJson;
+import 'package:dartvex/dartvex.dart' show convexToCanonicalJson;
 
 /// Normalizes a Convex query [name] into a stable `module:function` form.
 String canonicalizeQueryName(String name) {
@@ -25,7 +25,10 @@ String canonicalizeQueryName(String name) {
 String serializeQueryKey(String queryName, Map<String, dynamic> args) {
   final normalized = <String, dynamic>{
     'udfPath': canonicalizeQueryName(queryName),
-    'args': convexToJson(args),
+    // Canonical numbers: `10` and `10.0` are the same Convex float64 and the
+    // same query for the core client, so they share one cache entry (and the
+    // key is the same on the VM and the web).
+    'args': convexToCanonicalJson(args),
   };
   return jsonEncode(normalized);
 }

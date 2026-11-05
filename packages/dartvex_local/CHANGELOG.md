@@ -59,6 +59,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Stored maps that contain a `$commitTs` placeholder have their field names
+  validated on decode like any other map; a reserved name next to a
+  placeholder is rejected instead of passed through.
+- Query cache keys canonicalize numbers like the core client: `10` and
+  `10.0` (the same Convex float64) share one cache entry, on the VM and the
+  web. Entries cached on the VM for arguments holding integral doubles are
+  re-keyed, so they miss the cache once after upgrading.
 - Fixed a new Dart 3.13 analyzer warning (`unawaited_return_in_try_block`) in
   `query()`; a failing cache write after a remote read also skipped the
   method's error handling.

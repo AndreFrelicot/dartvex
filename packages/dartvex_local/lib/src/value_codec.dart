@@ -92,6 +92,12 @@ dynamic _decodeJson(Object? json) {
     return json.map(_decodeJson).toList(growable: false);
   }
   final map = json! as Map;
+  // Validate the field names through the core codec, as the placeholder-free
+  // path does: a reserved or malformed name next to a placeholder (including
+  // a `$commitTs` key with siblings) is rejected, not passed through.
+  jsonToConvex(<String, dynamic>{
+    for (final key in map.keys) key.toString(): null,
+  });
   return <String, dynamic>{
     for (final entry in map.entries)
       entry.key.toString(): _decodeJson(entry.value),

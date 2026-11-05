@@ -3785,6 +3785,26 @@ void main() {
       expect(codec.encode(codec.decodeMap(json)), json);
     });
 
+    test('rejects reserved field names next to a placeholder', () {
+      // The same names are rejected without a placeholder.
+      expect(() => codec.decode('{"\$bad":1,"other":2}'), throwsArgumentError);
+      expect(
+        () => codec.decode('{"\$bad":1,"ts":{"\$commitTs":null}}'),
+        throwsArgumentError,
+      );
+      expect(
+        () => codec.decode('{"doc":{"\$commitTs":null,"extra":1}}'),
+        throwsArgumentError,
+      );
+    });
+
+    test('query keys treat 10 and 10.0 as the same float64', () {
+      expect(
+        serializeQueryKey('tasks:list', const <String, dynamic>{'limit': 10}),
+        serializeQueryKey('tasks:list', const <String, dynamic>{'limit': 10.0}),
+      );
+    });
+
     test('still rejects other reserved field names', () {
       expect(() => codec.decode('{"\$other":1}'), throwsArgumentError);
       expect(
