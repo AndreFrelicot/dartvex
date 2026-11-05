@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dartvex/dartvex.dart'
     show AuthAuthenticated, AuthState, AuthUnauthenticated, ConvexException;
 import 'package:dartvex_flutter/dartvex_flutter.dart';
@@ -287,6 +289,43 @@ void main() {
       expect(result, 'id-1');
       expect(client.mutateCalls.single.name, 'files:attach');
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('accepts a new call once a request in flight across the '
+        'unmount completes', (tester) async {
+      final first = Completer<Object?>();
+      var calls = 0;
+      final client = _client()
+        ..onMutate = (name, args) {
+          calls += 1;
+          return calls == 1 ? first.future : Future<Object?>.value('id-2');
+        };
+      late ConvexRequestExecutor<String> mutate;
+
+      await tester.pumpWidget(
+        _app(
+          ConvexProvider(
+            client: client,
+            child: ConvexMutation<String>(
+              mutation: 'files:attach',
+              builder: (context, executor, snapshot) {
+                mutate = executor;
+                return const SizedBox();
+              },
+            ),
+          ),
+        ),
+      );
+      final pending = mutate(<String, dynamic>{'storageId': 's1'});
+      await tester.pumpWidget(_app(const SizedBox()));
+
+      first.complete('id-1');
+      expect(await pending, 'id-1');
+
+      // The executor stays usable after the unmount: the finished request
+      // must not keep it "in progress" forever.
+      expect(await mutate(<String, dynamic>{'storageId': 's2'}), 'id-2');
+      expect(client.mutateCalls, hasLength(2));
     });
 
     testWidgets('ConvexAction behaves the same', (tester) async {

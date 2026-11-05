@@ -114,6 +114,62 @@ void main() {
     expect(inner.closed, isTrue);
   });
 
+  test('an aborted request whose response is never read releases the '
+      'close', () async {
+    // A caller that timed out waiting for the headers aborts and moves on;
+    // the response still arrives (the inner client ignores the abort, or it
+    // raced with it) and nobody ever listens to its body.
+    final inner = StrictCloseClient()..holdHeaders = Completer<void>();
+    final client = DeferredCloseClient(inner);
+    final abort = Completer<void>();
+    final pending = client.send(
+      http.AbortableRequest(
+        'GET',
+        Uri.parse('https://example.com'),
+        abortTrigger: abort.future,
+      ),
+    );
+
+    abort.complete();
+    client.close();
+    inner.holdHeaders!.complete();
+    final response = await pending;
+    await pumpEventQueue();
+
+    expect(client.inFlightCount, 0);
+    expect(inner.closed, isTrue);
+    // A late reader sees the abort instead of hanging.
+    await expectLater(
+      response.stream.toList(),
+      throwsA(isA<http.RequestAbortedException>()),
+    );
+  });
+
+  test('aborting while the body streams cancels it and releases the '
+      'close', () async {
+    final inner = StrictCloseClient();
+    final client = DeferredCloseClient(inner);
+    final abort = Completer<void>();
+    final response = await client.send(
+      http.AbortableRequest(
+        'GET',
+        Uri.parse('https://example.com'),
+        abortTrigger: abort.future,
+      ),
+    );
+    final errors = <Object>[];
+    final done = Completer<void>();
+    response.stream.listen((_) {}, onError: errors.add, onDone: done.complete);
+    client.close();
+
+    abort.complete();
+    await done.future;
+
+    expect(errors.single, isA<http.RequestAbortedException>());
+    expect(client.inFlightCount, 0);
+    expect(inner.closed, isTrue);
+  });
+
   test('requests after close are rejected', () async {
     final client = DeferredCloseClient(StrictCloseClient())..close();
     await expectLater(

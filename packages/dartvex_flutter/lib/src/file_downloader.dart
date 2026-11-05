@@ -61,12 +61,23 @@ class ConvexFileDownloader {
   }) async {
     final uri = Uri.parse(url);
     final httpClient = client ?? createDefaultHttpClient();
+    // Fired by the caller's [abortTrigger] or by a failure (a timeout of
+    // send() or of the error-body drain only stops *waiting*), so a stalled
+    // request is never left running on the client.
+    final abort = Completer<void>();
+    void fireAbort() {
+      if (!abort.isCompleted) {
+        abort.complete();
+      }
+    }
+
+    abortTrigger?.then((_) => fireAbort(), onError: (Object _) => fireAbort());
     try {
       // The send() timeout bounds connection establishment and response
       // headers together — the same stall window dart:io's connectionTimeout
       // plus close().timeout() used to cover.
       final response = await httpClient
-          .send(http.AbortableRequest('GET', uri, abortTrigger: abortTrigger))
+          .send(http.AbortableRequest('GET', uri, abortTrigger: abort.future))
           .timeout(idleTimeout);
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -101,6 +112,9 @@ class ConvexFileDownloader {
       }
 
       return builder.toBytes();
+    } catch (_) {
+      fireAbort();
+      rethrow;
     } finally {
       if (client == null) {
         httpClient.close();

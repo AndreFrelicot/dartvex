@@ -160,7 +160,10 @@ mixin ConvexRequestState<W extends StatefulWidget, T> on ConvexSafeRebuild<W> {
         }
         completer.completeError(error, stackTrace);
       } finally {
-        if (generation == _requestGeneration) {
+        // Compared by identity, not generation: dispose() bumps the
+        // generation too, and the executor must stay usable after unmount.
+        // An invalidation already cleared (or replaced) the slot.
+        if (identical(_inFlight, future)) {
           _inFlight = null;
         }
       }

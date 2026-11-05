@@ -109,6 +109,37 @@ void main() {
 
       await expectLater(download, throwsA(isA<http.RequestAbortedException>()));
     });
+
+    test('aborts the request when the response headers time out', () async {
+      final client = _StallingClient();
+
+      await expectLater(
+        ConvexFileDownloader.download(
+          'https://example.com/file',
+          client: client,
+          idleTimeout: const Duration(milliseconds: 50),
+        ),
+        throwsA(isA<TimeoutException>()),
+      );
+
+      // A stalled request must not be left running on a shared client.
+      expect(await client.aborted, isTrue);
+    });
+
+    test('aborts the request when draining an error body times out', () async {
+      final client = _StallingClient(errorStatus: 500);
+
+      await expectLater(
+        ConvexFileDownloader.download(
+          'https://example.com/file',
+          client: client,
+          idleTimeout: const Duration(milliseconds: 50),
+        ),
+        throwsA(isA<HttpException>()),
+      );
+
+      expect(await client.aborted, isTrue);
+    });
   });
 }
 
@@ -127,4 +158,45 @@ class _CountingClient extends http.BaseClient {
 
   @override
   void close() => closed = true;
+}
+
+/// Never finishes on its own: either the response headers ([errorStatus]
+/// null) or the error body stall until the request's abort trigger fires.
+class _StallingClient extends http.BaseClient {
+  _StallingClient({this.errorStatus});
+
+  final int? errorStatus;
+  final Completer<bool> _aborted = Completer<bool>();
+
+  /// Whether the abort trigger fired (false after a grace period).
+  Future<bool> get aborted => _aborted.future.timeout(
+    const Duration(milliseconds: 500),
+    onTimeout: () => false,
+  );
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) {
+    final trigger = request is http.Abortable ? request.abortTrigger : null;
+    final headers = Completer<http.StreamedResponse>();
+    final body = StreamController<List<int>>();
+    trigger?.then((_) {
+      if (!_aborted.isCompleted) {
+        _aborted.complete(true);
+      }
+      final error = http.RequestAbortedException(request.url);
+      if (!headers.isCompleted) {
+        headers.completeError(error);
+      } else {
+        body
+          ..addError(error)
+          ..close();
+      }
+    });
+    final status = errorStatus;
+    if (status != null) {
+      body.add(<int>[1, 2, 3]);
+      headers.complete(http.StreamedResponse(body.stream, status));
+    }
+    return headers.future;
+  }
 }

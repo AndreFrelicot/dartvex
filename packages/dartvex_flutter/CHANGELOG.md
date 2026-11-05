@@ -186,6 +186,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ConvexClientRuntime` no longer bypasses the cache and re-downloads.
 - The `ConvexImage` dartdoc `onProgress` example printed `p * 100`; it now
   uses `p.progress`.
+- Disposing a `ConvexAssetCache()` right after creating it, or after its
+  metadata store failed to open (for example the SQLite backend used on
+  Android, iOS and macOS when its plugin is unavailable), threw a null-check
+  error from `flutter_cache_manager`'s repository `close()`, which
+  `CacheManager.dispose()` calls without waiting for the open. `dispose()` now
+  waits for a pending open and skips closing a store that never opened; a
+  failed open surfaces as an error of each cache operation instead of an
+  uncaught async error. A store re-created for the same `cacheKey` while the
+  previous one is still closing opens only after that close.
+- A `ConvexMutation` / `ConvexAction` request still in flight when the widget
+  was unmounted left the executor "in progress" forever, so every later call
+  through it (allowed after unmount) failed with a `StateError`.
+- `ConvexFileDownloader.download` (and `ConvexImage`) now aborts the request
+  when waiting for the response headers or draining an error body times out;
+  it previously stopped waiting but left the request running on the client.
+- The Apple default HTTP client no longer keeps its native session open
+  forever when an aborted request's response is never read (a caller that
+  timed out and moved on): an abort releases the request, and a late reader
+  gets a `RequestAbortedException`.
 
 ## [0.2.0] - 2026-06-12
 

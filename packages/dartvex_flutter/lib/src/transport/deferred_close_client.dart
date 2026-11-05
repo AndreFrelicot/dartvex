@@ -36,14 +36,6 @@ class DeferredCloseClient extends http.BaseClient {
       );
     }
     _inFlight += 1;
-    final http.StreamedResponse response;
-    try {
-      response = await _inner.send(request);
-    } catch (_) {
-      _release();
-      rethrow;
-    }
-
     var released = false;
     void releaseOnce() {
       if (released) {
@@ -53,11 +45,49 @@ class DeferredCloseClient extends http.BaseClient {
       _release();
     }
 
+    // An aborted request no longer holds the close back, whether or not the
+    // inner client honors the abort and whether or not anyone reads the
+    // response: a caller that timed out and aborted never listens to a body
+    // that arrives afterwards.
+    var aborted = false;
+    void Function()? onAbort;
+    if (request case http.Abortable(:final abortTrigger?)) {
+      unawaited(
+        abortTrigger
+            .whenComplete(() {
+              aborted = true;
+              onAbort?.call();
+            })
+            .then((_) {}, onError: (Object _) {}),
+      );
+    }
+
+    final http.StreamedResponse response;
+    try {
+      response = await _inner.send(request);
+    } catch (_) {
+      releaseOnce();
+      rethrow;
+    }
+
+    var listened = false;
     StreamSubscription<List<int>>? subscription;
     late final StreamController<List<int>> controller;
+    void failAborted() {
+      if (!controller.isClosed) {
+        controller.addError(http.RequestAbortedException(request.url));
+        unawaited(controller.close());
+      }
+    }
+
     controller = StreamController<List<int>>(
       sync: true,
       onListen: () {
+        listened = true;
+        if (aborted) {
+          failAborted();
+          return;
+        }
         subscription = response.stream.listen(
           controller.add,
           onError: controller.addError,
@@ -77,6 +107,29 @@ class DeferredCloseClient extends http.BaseClient {
         }
       },
     );
+
+    onAbort = () {
+      if (released) {
+        return;
+      }
+      final active = subscription;
+      if (active != null) {
+        unawaited(active.cancel().then((_) {}, onError: (Object _) {}));
+        failAborted();
+      } else if (!listened) {
+        // Nobody will read the body: release the inner response now.
+        unawaited(
+          response.stream
+              .listen(null, onError: (Object _) {}, cancelOnError: true)
+              .cancel()
+              .then((_) {}, onError: (Object _) {}),
+        );
+      }
+      releaseOnce();
+    };
+    if (aborted) {
+      onAbort();
+    }
 
     final stream = http.ByteStream(controller.stream);
     if (response case http.BaseResponseWithUrl(:final url)) {

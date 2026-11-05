@@ -555,39 +555,145 @@ void main() {
   });
 
   group('image and cache fixes', () {
-    test('default-constructed caches with one cacheKey share a ref-counted '
-        'store', () async {
-      TestWidgetsFlutterBinding.ensureInitialized();
-      final dir = io.Directory.systemTemp.createTempSync('dartvex_cache_');
-      const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
-      final messenger =
-          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-      messenger.setMockMethodCallHandler(pathProvider, (_) async => dir.path);
-      addTearDown(() {
-        messenger.setMockMethodCallHandler(pathProvider, null);
-        dir.deleteSync(recursive: true);
+    group('shared store', () {
+      late io.Directory dir;
+      late List<FakeCacheInfoRepository> repositories;
+
+      setUp(() {
+        TestWidgetsFlutterBinding.ensureInitialized();
+        dir = io.Directory.systemTemp.createTempSync('dartvex_cache_');
+        // IOFileSystem resolves its directory through path_provider.
+        const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+        final messenger =
+            TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+        messenger.setMockMethodCallHandler(pathProvider, (_) async => dir.path);
+        repositories = <FakeCacheInfoRepository>[];
+        ConvexAssetCache.debugRepositoryFactory = (_) {
+          final repository = FakeCacheInfoRepository();
+          repositories.add(repository);
+          return repository;
+        };
+        addTearDown(() {
+          ConvexAssetCache.debugRepositoryFactory = null;
+          messenger.setMockMethodCallHandler(pathProvider, null);
+          dir.deleteSync(recursive: true);
+        });
       });
 
-      const key = 'dartvexFlutterTestRefCount';
-      final a = ConvexAssetCache(cacheKey: key);
-      final b = ConvexAssetCache(cacheKey: key);
-      expect(ConvexAssetCache.debugReferenceCount(key), 2);
-      // Let flutter_cache_manager finish opening its store before closing it.
-      expect(await b.contains('missing'), isFalse);
+      test('default-constructed caches with one cacheKey share a '
+          'ref-counted store', () async {
+        const key = 'dartvexFlutterTestRefCount';
+        final a = ConvexAssetCache(cacheKey: key);
+        final b = ConvexAssetCache(cacheKey: key);
+        expect(ConvexAssetCache.debugReferenceCount(key), 2);
+        expect(repositories, hasLength(1));
+        expect(await b.contains('missing'), isFalse);
 
-      await a.dispose();
-      expect(ConvexAssetCache.debugReferenceCount(key), 1);
-      // Disposing twice must not release the other instance's reference.
-      await a.dispose();
-      expect(ConvexAssetCache.debugReferenceCount(key), 1);
+        await a.dispose();
+        expect(ConvexAssetCache.debugReferenceCount(key), 1);
+        // Disposing twice must not release the other instance's reference.
+        await a.dispose();
+        expect(ConvexAssetCache.debugReferenceCount(key), 1);
+        expect(repositories.single.closeCalls, 0);
 
-      await b.dispose();
-      expect(ConvexAssetCache.debugReferenceCount(key), 0);
-      // A new instance after the last dispose opens a fresh store.
-      final c = ConvexAssetCache(cacheKey: key);
-      expect(ConvexAssetCache.debugReferenceCount(key), 1);
-      expect(await c.contains('missing'), isFalse);
-      await c.dispose();
+        await b.dispose();
+        expect(ConvexAssetCache.debugReferenceCount(key), 0);
+        expect(repositories.single.closeCalls, 1);
+
+        // A new instance after the last dispose opens a fresh store.
+        final c = ConvexAssetCache(cacheKey: key);
+        expect(ConvexAssetCache.debugReferenceCount(key), 1);
+        expect(repositories, hasLength(2));
+        expect(await c.contains('missing'), isFalse);
+        await c.dispose();
+        expect(repositories.last.closeCalls, 1);
+      });
+
+      test('dispose while the store is still opening waits for the open, '
+          'then closes', () async {
+        final opening = Completer<void>();
+        ConvexAssetCache.debugRepositoryFactory = (_) {
+          final repository = FakeCacheInfoRepository(opening.future);
+          repositories.add(repository);
+          return repository;
+        };
+        final cache = ConvexAssetCache(cacheKey: 'dartvexFlutterTestOpening');
+
+        var disposed = false;
+        final dispose = cache.dispose().then((_) => disposed = true);
+        await pumpEventQueue();
+        expect(disposed, isFalse);
+        expect(repositories.single.closeCalls, 0);
+
+        opening.complete();
+        await dispose;
+        expect(repositories.single.closeCalls, 1);
+      });
+
+      test(
+        'dispose after a failed open does not close the repository',
+        () async {
+          ConvexAssetCache.debugRepositoryFactory = (_) {
+            final repository = FakeCacheInfoRepository(
+              Future<void>.error(StateError('no SQLite plugin')),
+            );
+            repositories.add(repository);
+            return repository;
+          };
+          final cache = ConvexAssetCache(cacheKey: 'dartvexFlutterTestFailed');
+          await pumpEventQueue();
+
+          await cache.dispose();
+          expect(repositories.single.openCalls, 1);
+          expect(repositories.single.closeCalls, 0);
+        },
+      );
+
+      test('a store recreated while the previous one closes opens after the '
+          'close', () async {
+        const key = 'dartvexFlutterTestReopen';
+        final first = ConvexAssetCache(cacheKey: key);
+        await pumpEventQueue();
+        final closing = Completer<void>();
+        repositories.single.closeGate = closing.future;
+        final firstDisposed = first.dispose();
+
+        final second = ConvexAssetCache(cacheKey: key);
+        await pumpEventQueue();
+        expect(repositories, hasLength(2));
+        expect(repositories.last.openCalls, 0);
+
+        closing.complete();
+        await firstDisposed;
+        await pumpEventQueue();
+        expect(repositories.last.openCalls, 1);
+        await second.dispose();
+      });
+
+      test('disposing right after construction works with the built-in '
+          'repositories', () async {
+        // The JSON file backend (Linux, Windows) and the SQLite backend
+        // (Android, iOS, macOS; its open fails here without the plugin)
+        // both used to throw a null-check error from close().
+        for (final create in <CacheInfoRepository Function()>[
+          () => JsonCacheInfoRepository(
+            path: '${dir.path}/dartvexFlutterTestJson.json',
+          ),
+          () => CacheObjectProvider(
+            path: '${dir.path}/dartvexFlutterTestSqlite.db',
+          ),
+        ]) {
+          ConvexAssetCache.debugRepositoryFactory = (_) => create();
+          await ConvexAssetCache(
+            cacheKey: 'dartvexFlutterTestBuiltIn',
+          ).dispose();
+          final reopened = ConvexAssetCache(
+            cacheKey: 'dartvexFlutterTestBuiltIn',
+          );
+          await pumpEventQueue();
+          await reopened.dispose();
+        }
+      });
     });
 
     testWidgets('ConvexOfflineImage does not flash loading when only the url '
@@ -962,4 +1068,78 @@ class FakeCacheManager implements BaseCacheManager, ConvexAssetCacheMetrics {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// In-memory [CacheInfoRepository] whose open and close can be held open.
+class FakeCacheInfoRepository implements CacheInfoRepository {
+  FakeCacheInfoRepository([this.openGate]);
+
+  /// Completes (or fails) the open; `null` opens immediately.
+  final Future<void>? openGate;
+
+  /// Holds [close] until it completes.
+  Future<void>? closeGate;
+
+  int openCalls = 0;
+  int closeCalls = 0;
+  final Map<String, CacheObject> _objects = <String, CacheObject>{};
+
+  @override
+  Future<bool> open() async {
+    openCalls += 1;
+    await openGate;
+    return true;
+  }
+
+  @override
+  Future<bool> close() async {
+    closeCalls += 1;
+    await closeGate;
+    return true;
+  }
+
+  @override
+  Future<bool> exists() async => true;
+
+  @override
+  Future<CacheObject?> get(String key) async => _objects[key];
+
+  @override
+  Future<dynamic> updateOrInsert(CacheObject cacheObject) async =>
+      _objects[cacheObject.key] = cacheObject;
+
+  @override
+  Future<CacheObject> insert(
+    CacheObject cacheObject, {
+    bool setTouchedToNow = true,
+  }) async => _objects[cacheObject.key] = cacheObject;
+
+  @override
+  Future<int> update(
+    CacheObject cacheObject, {
+    bool setTouchedToNow = true,
+  }) async {
+    _objects[cacheObject.key] = cacheObject;
+    return 1;
+  }
+
+  @override
+  Future<int> delete(int id) async => 0;
+
+  @override
+  Future<int> deleteAll(Iterable<int> ids) async => 0;
+
+  @override
+  Future<List<CacheObject>> getAllObjects() async => _objects.values.toList();
+
+  @override
+  Future<List<CacheObject>> getObjectsOverCapacity(int capacity) async =>
+      const <CacheObject>[];
+
+  @override
+  Future<List<CacheObject>> getOldObjects(Duration maxAge) async =>
+      const <CacheObject>[];
+
+  @override
+  Future<void> deleteDataFile() async {}
 }

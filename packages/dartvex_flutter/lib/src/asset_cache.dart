@@ -29,6 +29,19 @@ class ConvexAssetCache {
   /// Store per cache key, shared by every default-constructed instance.
   static final Map<String, _SharedStore> _stores = <String, _SharedStore>{};
 
+  /// Pending close of the last store per cache key; a new store for the key
+  /// opens its metadata repository only after it, so the two never touch the
+  /// same database or JSON file at once.
+  static final Map<String, Future<void>> _closing = <String, Future<void>>{};
+
+  /// Creates the metadata repository of a shared store.
+  ///
+  /// Defaults to the repository `flutter_cache_manager` picks for the
+  /// platform (SQLite on Android, iOS and macOS; a JSON file elsewhere).
+  /// Tests replace it to avoid depending on a platform backend.
+  @visibleForTesting
+  static CacheInfoRepository Function(String cacheKey)? debugRepositoryFactory;
+
   /// Creates an asset cache backed by the [CacheManager] for [cacheKey].
   ///
   /// See the class documentation for how instances with the same key share
@@ -42,6 +55,10 @@ class ConvexAssetCache {
       cacheKey,
       stalePeriod: stalePeriod,
       maxNrOfCacheObjects: maxNrOfCacheObjects,
+      repository: _OpenTrackingRepository(
+        (debugRepositoryFactory ?? _defaultRepository)(cacheKey),
+        openAfter: _closing[cacheKey],
+      ),
     );
     store.references += 1;
     return ConvexAssetCache._(store.cacheManager, store: store);
@@ -51,6 +68,14 @@ class ConvexAssetCache {
   @visibleForTesting
   static int debugReferenceCount(String cacheKey) =>
       _stores[cacheKey]?.references ?? 0;
+
+  static CacheInfoRepository _defaultRepository(String cacheKey) {
+    // Mirrors flutter_cache_manager's own default (its `Config`).
+    if (Platform.isAndroid || Platform.isIOS || Platform.isMacOS) {
+      return CacheObjectProvider(databaseName: cacheKey);
+    }
+    return JsonCacheInfoRepository(databaseName: cacheKey);
+  }
 
   ConvexAssetCache._(this._cacheManager, {_SharedStore? store})
     : _store = store;
@@ -158,14 +183,19 @@ class ConvexAssetCache {
     if (store.references > 0) {
       return;
     }
-    if (identical(_stores[store.cacheKey], store)) {
-      _stores.remove(store.cacheKey);
+    final cacheKey = store.cacheKey;
+    if (identical(_stores[cacheKey], store)) {
+      _stores.remove(cacheKey);
     }
-    await store.cacheManager.dispose();
-    // CacheManager.dispose() only closes its repository, never the file
-    // service's HTTP client; close the one the store created so its
-    // platform resources (an NSURLSession on iOS/macOS) are released.
-    store.httpClient.close();
+    final closed = store.close();
+    _closing[cacheKey] = closed;
+    try {
+      await closed;
+    } finally {
+      if (identical(_closing[cacheKey], closed)) {
+        _closing.remove(cacheKey);
+      }
+    }
   }
 }
 
@@ -177,6 +207,7 @@ class _SharedStore {
     String cacheKey, {
     required Duration stalePeriod,
     required int maxNrOfCacheObjects,
+    required CacheInfoRepository repository,
   }) {
     final httpClient = createDefaultHttpClient();
     return _SharedStore(
@@ -186,6 +217,7 @@ class _SharedStore {
           cacheKey,
           stalePeriod: stalePeriod,
           maxNrOfCacheObjects: maxNrOfCacheObjects,
+          repo: repository,
           // Route downloads through the SDK's default HTTP client so they
           // share the platform transport (NSURLSession on iOS/macOS)
           // instead of cache_manager's raw dart:io default.
@@ -200,4 +232,142 @@ class _SharedStore {
   final CacheManager cacheManager;
   final http.Client httpClient;
   int references = 0;
+
+  /// Closes the cache manager's repository and the HTTP client.
+  Future<void> close() async {
+    try {
+      await cacheManager.dispose();
+    } finally {
+      // CacheManager.dispose() only closes its repository, never the file
+      // service's HTTP client; close the one the store created so its
+      // platform resources (an NSURLSession on iOS/macOS) are released.
+      httpClient.close();
+    }
+  }
+}
+
+/// Delegating [CacheInfoRepository] that only closes what was opened.
+///
+/// `CacheManager.dispose()` calls `close()` on its repository without
+/// waiting for the `open()` its store started, and both built-in
+/// repositories dereference state that only a completed open sets
+/// (`CacheObjectProvider.db!`, the JSON repository's file). Disposing a cache
+/// right after creating it, or after its open failed (no SQLite plugin, an
+/// unreadable support directory), therefore threw a null-check error. Here
+/// `close()` waits for the pending open and skips the inner close when it
+/// failed.
+///
+/// A failed open is not rethrown from [open]: the store keeps that future
+/// without a listener, so the error would surface as an uncaught async
+/// error. Every later operation fails with it instead.
+///
+/// [openAfter] delays opening until a previous store for the same key has
+/// closed.
+class _OpenTrackingRepository implements CacheInfoRepository {
+  _OpenTrackingRepository(this._inner, {Future<void>? openAfter})
+    : _openAfter = openAfter;
+
+  final CacheInfoRepository _inner;
+  final Future<void>? _openAfter;
+  Future<bool>? _opening;
+  Object? _openError;
+  StackTrace? _openStackTrace;
+
+  @override
+  Future<bool> open() {
+    final previous = _opening;
+    final opening = _open(previous);
+    _opening = opening;
+    return opening;
+  }
+
+  Future<bool> _open(Future<bool>? previous) async {
+    final openAfter = _openAfter;
+    if (openAfter != null) {
+      // A failed close of the previous store must not block this one.
+      await openAfter.then((_) {}, onError: (Object _) {});
+    }
+    if (previous != null) {
+      // Keep the inner open calls in order.
+      await previous;
+    }
+    if (_openError != null) {
+      return false;
+    }
+    try {
+      return await _inner.open();
+    } on Object catch (error, stackTrace) {
+      _openError = error;
+      _openStackTrace = stackTrace;
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> close() async {
+    final opening = _opening;
+    if (opening == null) {
+      // Never opened: nothing to close.
+      return true;
+    }
+    await opening;
+    if (_openError != null) {
+      // The open failed, so there is no connection to close.
+      return true;
+    }
+    return _inner.close();
+  }
+
+  Future<T> _whenOpen<T>(Future<T> Function() operation) {
+    final error = _openError;
+    if (error != null) {
+      return Future<T>.error(error, _openStackTrace);
+    }
+    return operation();
+  }
+
+  @override
+  Future<bool> exists() => _inner.exists();
+
+  @override
+  Future<dynamic> updateOrInsert(CacheObject cacheObject) =>
+      _whenOpen(() => _inner.updateOrInsert(cacheObject));
+
+  @override
+  Future<CacheObject> insert(
+    CacheObject cacheObject, {
+    bool setTouchedToNow = true,
+  }) => _whenOpen(
+    () => _inner.insert(cacheObject, setTouchedToNow: setTouchedToNow),
+  );
+
+  @override
+  Future<CacheObject?> get(String key) => _whenOpen(() => _inner.get(key));
+
+  @override
+  Future<int> delete(int id) => _whenOpen(() => _inner.delete(id));
+
+  @override
+  Future<int> deleteAll(Iterable<int> ids) =>
+      _whenOpen(() => _inner.deleteAll(ids));
+
+  @override
+  Future<int> update(CacheObject cacheObject, {bool setTouchedToNow = true}) =>
+      _whenOpen(
+        () => _inner.update(cacheObject, setTouchedToNow: setTouchedToNow),
+      );
+
+  @override
+  Future<List<CacheObject>> getAllObjects() => _whenOpen(_inner.getAllObjects);
+
+  @override
+  Future<List<CacheObject>> getObjectsOverCapacity(int capacity) =>
+      _whenOpen(() => _inner.getObjectsOverCapacity(capacity));
+
+  @override
+  Future<List<CacheObject>> getOldObjects(Duration maxAge) =>
+      _whenOpen(() => _inner.getOldObjects(maxAge));
+
+  @override
+  Future<void> deleteDataFile() => _inner.deleteDataFile();
 }
