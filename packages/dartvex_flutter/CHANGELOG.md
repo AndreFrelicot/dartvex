@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** Requires Dart `^3.10.0` and Flutter `>=3.38.0`, and on Apple
+  platforms iOS 15 / macOS 12 or later. `cupertino_http` is now `^3.1.1`
+  (up from `^2.4.0`, which excluded the current major and conflicted with
+  apps already on it); apps must raise `IPHONEOS_DEPLOYMENT_TARGET` /
+  `MACOSX_DEPLOYMENT_TARGET` (and their Podfile `platform`, if any).
+  `objective_c` is now `^9.6.0` and `http` `^1.5.0`.
+- `connectivity_plus` now accepts `>=6.1.0 <8.0.0`, so apps on
+  `connectivity_plus` 7.x can depend on `dartvex_flutter`. (7.x itself raises
+  the Android build requirements to AGP 8.12.1, Gradle 8.13 and Kotlin 2.2.)
+- The NSURLSession WebSocket transport now runs every connection on one
+  shared, process-wide `URLSession` and sends the `Convex-Client` header on
+  the handshake request. Foundation never fully releases a session that has
+  run a WebSocket task, even after invalidation, so the previous
+  session-per-connection design still leaked a native session on every
+  reconnect.
+
+### Fixed
+
+- On iOS and macOS the default HTTP client (used by storage uploads, asset
+  downloads and auth adapters such as `dartvex_auth_better`) kept cookies in
+  the shared, persistent `HTTPCookieStorage` and attached them to later
+  requests. A Better Auth session cookie stored by sign-in then made sign-out
+  and the next sign-in fail with 403 (missing Origin) and could override the
+  explicit bearer token. Both NSURLSession transports now use an ephemeral,
+  cookie-less configuration, matching the `dart:io` and web transports.
+- HTTP clients created by the default factory on Apple platforms can be
+  closed while a request is still running (for example from a `finally`
+  after a timeout); `cupertino_http` 3 would otherwise throw a `StateError`
+  that masks the original failure. The native session is released once the
+  last request finishes.
+- The NSURLSession WebSocket close/error state machine is now covered by unit
+  tests through a native-task seam.
+
 ## [0.2.0] - 2026-06-12
 
 ### Added

@@ -63,7 +63,10 @@ dependencies:
   dartvex_flutter: ^0.2.0
 ```
 
-Requires Dart `^3.8.0` and Flutter `>=3.32.0`.
+Requires Dart `^3.10.0` and Flutter `>=3.38.0`. On Apple platforms the
+NSURLSession transport (`cupertino_http` 3) requires iOS 15 or later and
+macOS 12 or later; set `IPHONEOS_DEPLOYMENT_TARGET` / `MACOSX_DEPLOYMENT_TARGET`
+(and the `platform` line of your Podfile, if any) accordingly.
 
 ## Platform Transports
 
@@ -92,6 +95,13 @@ void main() {
 
 A per-client `ConvexClientConfig.adapterFactory` or an explicitly provided
 HTTP client always takes precedence over the installed defaults.
+
+The installed transports use an ephemeral, cookie-less NSURLSession
+configuration, like the `dart:io` and web transports: no cookie is stored or
+sent, so a session cookie returned by an auth endpoint (for example a Better
+Auth sign-in) never rides along on later bearer-authenticated requests. All
+sync WebSocket connections share one URLSession, so reconnects do not create
+new native sessions.
 
 ## Provider Setup
 

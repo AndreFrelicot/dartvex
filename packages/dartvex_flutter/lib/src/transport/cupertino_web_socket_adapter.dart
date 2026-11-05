@@ -4,10 +4,12 @@ import 'dart:io';
 
 import 'package:cupertino_http/cupertino_http.dart';
 import 'package:dartvex/dartvex.dart';
+import 'package:http/http.dart' as http;
 import 'package:meta/meta.dart';
 import 'package:web_socket/web_socket.dart';
 
 import 'cupertino_session_web_socket.dart';
+import 'deferred_close_client.dart';
 
 /// Installs the NSURLSession-backed WebSocket and HTTP transports as the
 /// process-wide defaults on iOS and macOS. No-op elsewhere.
@@ -20,13 +22,30 @@ import 'cupertino_session_web_socket.dart';
 /// [defaultHttpClientFactory] to `null`, or per client via
 /// `ConvexClientConfig.adapterFactory` / explicit `httpClient` parameters,
 /// which always take precedence over the defaults.
+///
+/// Both transports use an ephemeral, cookie-less NSURLSession configuration:
+/// like the `dart:io` and web transports they never store or send cookies, so
+/// a session cookie set by an auth endpoint (for example Better Auth's
+/// sign-in) cannot leak into later bearer-authenticated requests. HTTP clients
+/// created by the factory may be closed while a request is still running
+/// (cupertino_http 3 would otherwise throw); the native session is released
+/// once the last request finishes.
 void installCupertinoTransport() {
   if (!Platform.isIOS && !Platform.isMacOS) {
     return;
   }
   defaultWebSocketAdapterOverride = (String clientId) =>
       CupertinoWebSocketAdapter(clientId: clientId);
-  defaultHttpClientFactory = CupertinoClient.defaultSessionConfiguration;
+  defaultHttpClientFactory = createCupertinoHttpClient;
+}
+
+/// Creates the cookie-less NSURLSession-backed HTTP client installed as the
+/// SDK default on Apple platforms.
+@visibleForTesting
+http.Client createCupertinoHttpClient() {
+  return DeferredCloseClient(
+    CupertinoClient.fromSessionConfiguration(cookielessSessionConfiguration()),
+  );
 }
 
 /// Signature of the function that opens the underlying platform socket.
@@ -37,12 +56,14 @@ typedef CupertinoWebSocketConnector =
     Future<WebSocket> Function(Uri url, String clientId);
 
 Future<WebSocket> _defaultConnector(Uri url, String clientId) {
-  final config = URLSessionConfiguration.defaultSessionConfiguration()
-    ..httpAdditionalHeaders = <String, String>{'Convex-Client': clientId};
-  // Session-owning variant rather than CupertinoWebSocket.connect: upstream
-  // never invalidates the URLSession it creates per connect, which leaks a
-  // native session on every reconnect attempt.
-  return OwnedSessionCupertinoWebSocket.connect(url, config: config);
+  // All connections share one cookie-less URLSession and carry the client id
+  // on the handshake request: Foundation never fully releases a session that
+  // has run a WebSocket task, so a session per connection would leak a native
+  // session on every reconnect.
+  return CupertinoTaskWebSocket.connect(
+    url,
+    headers: <String, String>{'Convex-Client': clientId},
+  );
 }
 
 /// A [WebSocketAdapter] that transports Convex sync messages over an
