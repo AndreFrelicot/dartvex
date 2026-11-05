@@ -1,11 +1,28 @@
 #!/usr/bin/env bash
 # protocol-watch.sh — Detect Convex sync protocol changes
-# Compares our protocol implementation against convex-js canonical source.
-# Run in CI or manually: ./scripts/protocol-watch.sh
+#
+# Compares Dartvex against the official Convex JavaScript client (the `convex`
+# npm package):
+#
+#   1. Structure: the message types and fields of the latest released
+#      `src/browser/sync/protocol.ts` against our Dart protocol messages.
+#   2. Version: the client sources Dartvex mirrors — `src/browser/sync/*.ts`,
+#      `src/values/*.ts` and `src/browser/http_client.ts` — diffed between the
+#      pinned release (`convexSyncApiVersion` in
+#      packages/dartvex/lib/src/config.dart) and the latest release. A new
+#      Convex release is reported as drift until the pin is bumped (see
+#      RELEASING.md, "Track the official Convex client").
+#   3. The Rust SDK's latest tag, against the value cached by the previous run
+#      (only meaningful when .protocol-cache persists between runs).
+#
+# Usage: ./scripts/protocol-watch.sh [--structure-only]
+#   --structure-only  report version drift but fail only on structural drift
+#                     (used by the CI job, so a new Convex release does not
+#                     turn every pull request red)
 #
 # Exit codes:
 #   0 = no drift detected
-#   1 = drift detected (new message types, fields, or structural changes)
+#   1 = drift detected
 #   2 = error (network, missing deps)
 
 set -euo pipefail
@@ -15,13 +32,27 @@ ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 CACHE_DIR="$ROOT_DIR/.protocol-cache"
 REPORT_FILE="$ROOT_DIR/.protocol-cache/drift-report.md"
 
+STRUCTURE_ONLY=0
+for arg in "$@"; do
+  case "$arg" in
+    --structure-only) STRUCTURE_ONLY=1 ;;
+    -h | --help)
+      sed -n '2,27p' "$0"
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $arg" >&2
+      exit 2
+      ;;
+  esac
+done
+
 # --- Config ---
-CONVEX_JS_REPO="get-convex/convex-js"
-CONVEX_RS_REPO="get-convex/convex-rs"
+CONVEX_NPM_PACKAGE="convex"
+CONVEX_RS_REPO="convex/convex-rs"
 PROTOCOL_FILE="src/browser/sync/protocol.ts"
-CLIENT_FILE="src/browser/sync/client.ts"
+OUR_CONFIG="$ROOT_DIR/packages/dartvex/lib/src/config.dart"
 OUR_MESSAGES="$ROOT_DIR/packages/dartvex/lib/src/protocol/messages.dart"
-OUR_STATE_VERSION="$ROOT_DIR/packages/dartvex/lib/src/protocol/state_version.dart"
 
 # Colors
 RED='\033[0;31m'
@@ -35,20 +66,60 @@ echo "🔍 Convex Protocol Drift Detector"
 echo "=================================="
 echo ""
 
-# --- 1. Fetch latest convex-js protocol.ts ---
-echo "📥 Fetching latest protocol.ts from $CONVEX_JS_REPO..."
-LATEST_PROTOCOL=$(curl -sL "https://raw.githubusercontent.com/$CONVEX_JS_REPO/main/$PROTOCOL_FILE" 2>/dev/null) || {
-  echo -e "${RED}❌ Failed to fetch protocol.ts${NC}"
-  exit 2
-}
-
-if [ -z "$LATEST_PROTOCOL" ]; then
-  echo -e "${RED}❌ Empty response for protocol.ts${NC}"
+# --- 1. Resolve the pinned and the latest convex release ---
+PINNED_VERSION=$(sed -nE "s/^const String convexSyncApiVersion = '([^']+)';/\1/p" "$OUR_CONFIG")
+if [ -z "$PINNED_VERSION" ]; then
+  echo -e "${RED}❌ Could not read convexSyncApiVersion from $OUR_CONFIG${NC}"
   exit 2
 fi
 
-# Save for diffing
-echo "$LATEST_PROTOCOL" > "$CACHE_DIR/protocol-latest.ts"
+if ! command -v npm >/dev/null 2>&1; then
+  echo -e "${RED}❌ npm is required (npm view $CONVEX_NPM_PACKAGE version)${NC}"
+  exit 2
+fi
+JS_LATEST=$(npm view "$CONVEX_NPM_PACKAGE" version 2>/dev/null || true)
+if [ -z "$JS_LATEST" ]; then
+  echo -e "${RED}❌ Failed to resolve the latest $CONVEX_NPM_PACKAGE version${NC}"
+  exit 2
+fi
+echo "📌 Pinned convex (convexSyncApiVersion): $PINNED_VERSION"
+echo "📦 Latest convex on npm:                 $JS_LATEST"
+echo ""
+
+# Downloads a convex release from npm and extracts its package/src into the
+# cache (reused across runs once complete).
+fetch_convex_src() {
+  local version="$1"
+  local target="$CACHE_DIR/convex-$version"
+  if [ -f "$target/.complete" ]; then
+    return 0
+  fi
+  mkdir -p "$target"
+  local tarball="$CACHE_DIR/convex-$version.tgz"
+  curl -sSfL -o "$tarball" \
+    "https://registry.npmjs.org/$CONVEX_NPM_PACKAGE/-/$CONVEX_NPM_PACKAGE-$version.tgz" || return 1
+  tar -xzf "$tarball" -C "$target" package/src || return 1
+  rm -f "$tarball"
+  touch "$target/.complete"
+}
+
+echo "📥 Fetching convex@$PINNED_VERSION and convex@$JS_LATEST sources from npm..."
+fetch_convex_src "$PINNED_VERSION" || {
+  echo -e "${RED}❌ Failed to fetch convex@$PINNED_VERSION${NC}"
+  exit 2
+}
+fetch_convex_src "$JS_LATEST" || {
+  echo -e "${RED}❌ Failed to fetch convex@$JS_LATEST${NC}"
+  exit 2
+}
+PINNED_SRC="$CACHE_DIR/convex-$PINNED_VERSION/package"
+LATEST_SRC="$CACHE_DIR/convex-$JS_LATEST/package"
+
+LATEST_PROTOCOL=$(cat "$LATEST_SRC/$PROTOCOL_FILE" 2>/dev/null || true)
+if [ -z "$LATEST_PROTOCOL" ]; then
+  echo -e "${RED}❌ $PROTOCOL_FILE missing from convex@$JS_LATEST${NC}"
+  exit 2
+fi
 
 # --- 2. Extract message types from JS ---
 echo "🔎 Extracting JS message types..."
@@ -269,58 +340,82 @@ for MESSAGE_NAME in Connect Add Mutation Action Authenticate Transition Transiti
   compare_message_fields "$MESSAGE_NAME" "$JS_FIELDS" "$DART_FIELDS"
 done
 
-# --- 6. Check Rust SDK version ---
+# --- 6. Diff the tracked client sources: pinned vs latest release ---
+echo ""
+echo "📝 Tracked client sources: convex@$PINNED_VERSION → convex@$JS_LATEST"
+
+# The files Dartvex mirrors (tests and test helpers excluded).
+list_tracked_files() {
+  local root="$1"
+  (
+    cd "$root" 2>/dev/null || exit 0
+    {
+      find src/browser/sync src/values -maxdepth 1 -name '*.ts' 2>/dev/null
+      if [ -f src/browser/http_client.ts ]; then
+        echo src/browser/http_client.ts
+      fi
+    } | grep -vE '(\.test\.ts|test_helpers?\.ts)$' | sort -u
+  )
+}
+
+VERSION_DRIFT=0
+CHANGED_FILES=""
+SOURCE_DIFF_FILE="$CACHE_DIR/source-diff.patch"
+: >"$SOURCE_DIFF_FILE"
+if [ "$PINNED_VERSION" != "$JS_LATEST" ]; then
+  VERSION_DRIFT=1
+  echo -e "${YELLOW}⚠️  New Convex release: $PINNED_VERSION → $JS_LATEST (review, then bump convexSyncApiVersion)${NC}"
+fi
+TRACKED_FILES=$({
+  list_tracked_files "$PINNED_SRC"
+  list_tracked_files "$LATEST_SRC"
+} | sort -u)
+for file in $TRACKED_FILES; do
+  if ! diff -q "$PINNED_SRC/$file" "$LATEST_SRC/$file" >/dev/null 2>&1; then
+    CHANGED_FILES+="$file"$'\n'
+    diff -u --label "convex@$PINNED_VERSION/$file" --label "convex@$JS_LATEST/$file" \
+      "$PINNED_SRC/$file" "$LATEST_SRC/$file" >>"$SOURCE_DIFF_FILE" 2>/dev/null || true
+  fi
+done
+if [ -n "$CHANGED_FILES" ]; then
+  VERSION_DRIFT=1
+  echo -e "${YELLOW}⚠️  Changed since convex@$PINNED_VERSION:${NC}"
+  printf '%s' "$CHANGED_FILES" | while read -r file; do
+    if [ -n "$file" ]; then echo "   - $file"; fi
+  done
+  echo "  Full diff: $SOURCE_DIFF_FILE"
+else
+  echo -e "${GREEN}  ✅ No changes in tracked client sources${NC}"
+fi
+if [ "$VERSION_DRIFT" -eq 1 ] && [ "$STRUCTURE_ONLY" -eq 0 ]; then
+  DRIFT=1
+fi
+
+# --- 7. Check Rust SDK version ---
 echo ""
 echo "📦 Checking Rust SDK latest version..."
-RS_LATEST=$(curl -s "https://api.github.com/repos/$CONVEX_RS_REPO/tags?per_page=1" | perl -ne "if (/\"name\": \"convex-rs\\/([^\"]+)\"/) { print \"\$1\\n\"; exit }")
+RS_LATEST=$(curl -sL "https://api.github.com/repos/$CONVEX_RS_REPO/tags?per_page=1" |
+  perl -ne 'if (/"name": "convex-rs\/([^"]+)"/) { print "$1\n"; exit }' || true)
+RS_LATEST=${RS_LATEST:-unknown}
 echo "  Latest Rust SDK: $RS_LATEST"
 
-# Check our tracked version
 OUR_RS_VERSION="unknown"
 if [ -f "$CACHE_DIR/tracked-rs-version.txt" ]; then
   OUR_RS_VERSION=$(cat "$CACHE_DIR/tracked-rs-version.txt")
 fi
-echo "  Our tracked:     $OUR_RS_VERSION"
+echo "  Previous run:    $OUR_RS_VERSION"
 
-if [ "$RS_LATEST" != "$OUR_RS_VERSION" ] && [ "$OUR_RS_VERSION" != "unknown" ]; then
+if [ "$RS_LATEST" != "$OUR_RS_VERSION" ] && [ "$OUR_RS_VERSION" != "unknown" ] && [ "$RS_LATEST" != "unknown" ]; then
   echo -e "${YELLOW}⚠️  Rust SDK updated: $OUR_RS_VERSION → $RS_LATEST${NC}"
-  DRIFT=1
-else
-  echo -e "${GREEN}✅ Rust SDK version matches${NC}"
-fi
-
-# Save current version
-echo "$RS_LATEST" > "$CACHE_DIR/tracked-rs-version.txt"
-
-# --- 7. Check JS SDK version ---
-echo ""
-echo "📦 Checking JS SDK latest version..."
-JS_LATEST=$(npm view convex version 2>/dev/null || echo "unknown")
-echo "  Latest JS SDK: $JS_LATEST"
-
-if [ -f "$CACHE_DIR/tracked-js-version.txt" ]; then
-  OUR_JS_VERSION=$(cat "$CACHE_DIR/tracked-js-version.txt")
-  if [ "$JS_LATEST" != "$OUR_JS_VERSION" ]; then
-    echo -e "${YELLOW}⚠️  JS SDK updated: $OUR_JS_VERSION → $JS_LATEST${NC}"
-  fi
-fi
-echo "$JS_LATEST" > "$CACHE_DIR/tracked-js-version.txt"
-
-# --- 8. Generate diff if previous protocol cached ---
-if [ -f "$CACHE_DIR/protocol-previous.ts" ]; then
-  echo ""
-  echo "📝 Diff since last check:"
-  DIFF=$(diff "$CACHE_DIR/protocol-previous.ts" "$CACHE_DIR/protocol-latest.ts" || true)
-  if [ -n "$DIFF" ]; then
-    echo "$DIFF" | head -50
+  if [ "$STRUCTURE_ONLY" -eq 0 ]; then
     DRIFT=1
-  else
-    echo -e "${GREEN}  No changes in protocol.ts${NC}"
   fi
+else
+  echo -e "${GREEN}✅ Rust SDK version unchanged${NC}"
 fi
-
-# Rotate cache
-cp "$CACHE_DIR/protocol-latest.ts" "$CACHE_DIR/protocol-previous.ts"
+if [ "$RS_LATEST" != "unknown" ]; then
+  echo "$RS_LATEST" >"$CACHE_DIR/tracked-rs-version.txt"
+fi
 
 # --- 9. Generate report ---
 echo ""
@@ -329,9 +424,20 @@ echo ""
   echo "Generated: $(date -u +"%Y-%m-%d %H:%M UTC")"
   echo ""
   echo "## Versions"
+  echo "- Pinned convex (convexSyncApiVersion): $PINNED_VERSION"
+  echo "- Latest convex: $JS_LATEST"
   echo "- Rust SDK: $RS_LATEST"
-  echo "- JS SDK: $JS_LATEST"
   echo ""
+  if [ -n "$CHANGED_FILES" ]; then
+    echo "## Client sources changed since convex@$PINNED_VERSION"
+    printf '%s' "$CHANGED_FILES" | while read -r file; do
+      if [ -n "$file" ]; then echo "- \`$file\`"; fi
+    done
+    echo ""
+    echo "Review them against the Dart implementation (RELEASING.md, \"Track the"
+    echo "official Convex client\"), then bump \`convexSyncApiVersion\`."
+    echo ""
+  fi
   echo "## Message Types"
   echo "- JS types: $(echo "$JS_SERVER_TYPES" | wc -w)"
   echo "- Dart types: $(echo "$DART_SERVER_TYPES" | wc -w)"

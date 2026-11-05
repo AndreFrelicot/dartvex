@@ -4,6 +4,11 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    # Weekly run on the latest stable SDKs, so SDK/dependency drift on main
+    # shows up even when nothing is pushed. Mondays 06:00 UTC.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -13,7 +18,7 @@ jobs:
     name: Format
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dart-lang/setup-dart@v1
         with: { sdk: stable }
       - uses: subosito/flutter-action@v2
@@ -21,7 +26,6 @@ jobs:
       - name: Resolve packages
         run: |
           for dir in packages/*/; do
-            package="$(basename "$dir")"
             bash scripts/ci-local-dependency-overrides.sh "$dir"
             if grep -q 'sdk: flutter' "$dir/pubspec.yaml"; then
               (cd "$dir" && flutter pub get)
@@ -56,7 +60,7 @@ jobs:
       matrix:
         package: [dartvex, dartvex_codegen, dartvex_local, dartvex_auth_better]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dart-lang/setup-dart@v1
         with: { sdk: stable }
       - name: Use local dartvex dependency
@@ -71,7 +75,7 @@ jobs:
       matrix:
         package: [dartvex_flutter]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with: { flutter-version: '3.x', channel: stable }
       - name: Use local dartvex dependency
@@ -85,7 +89,7 @@ jobs:
       matrix:
         package: [dartvex, dartvex_codegen, dartvex_local, dartvex_auth_better]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dart-lang/setup-dart@v1
         with: { sdk: stable }
       - name: Use local dartvex dependency
@@ -117,7 +121,7 @@ jobs:
       matrix:
         package: [dartvex_flutter]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with: { flutter-version: '3.x', channel: stable }
       - name: Use local dartvex dependency
@@ -128,7 +132,7 @@ jobs:
     name: Package Flutter Example
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with: { flutter-version: '3.x', channel: stable }
       - name: Use local dartvex dependency
@@ -136,35 +140,89 @@ jobs:
       - run: cd packages/dartvex_flutter/example && flutter pub get
       - run: cd packages/dartvex_flutter/example && flutter analyze --fatal-infos
       - run: cd packages/dartvex_flutter/example && flutter test
-      - run: cd packages/dartvex_flutter/example && flutter build web --no-wasm-dry-run
+      - run: cd packages/dartvex_flutter/example && flutter build web
 
   example-flutter:
     name: Example Flutter App
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with: { flutter-version: '3.x', channel: stable }
       - run: cd example/flutter_app && flutter pub get
       - run: cd example/flutter_app && flutter analyze --fatal-infos
       - run: cd example/flutter_app && flutter test
-      - run: cd example/flutter_app && flutter build web --no-wasm-dry-run
+      - run: cd example/flutter_app && flutter build web
+
+  # Declared SDK floors: the lowest Dart/Flutter each package's pubspec
+  # accepts. `pub downgrade` + analyze checks the lower bounds of every
+  # dependency constraint; the tests then run on the floor SDK with a normal
+  # resolution (the lowest versions of some transitive dev dependencies, such
+  # as pub_semver or watcher, do not compile on these SDKs).
+  min-sdk:
+    name: Minimum SDK (${{ matrix.package }}, ${{ matrix.sdk }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package: dartvex
+            sdk: '3.6.0'
+          - package: dartvex_auth_better
+            sdk: '3.6.0'
+          - package: dartvex_codegen
+            sdk: '3.7.0'
+          - package: dartvex_local
+            sdk: '3.10.0'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dart-lang/setup-dart@v1
+        with: { sdk: '${{ matrix.sdk }}' }
+      - name: Use local dartvex dependency
+        if: matrix.package != 'dartvex'
+        run: bash scripts/ci-local-dependency-overrides.sh packages/${{ matrix.package }}
+      - name: Analyze with the lowest allowed dependencies
+        run: cd packages/${{ matrix.package }} && dart pub downgrade && dart analyze
+      - name: Test on the floor SDK
+        run: cd packages/${{ matrix.package }} && dart pub upgrade && dart test
+
+  min-sdk-flutter:
+    name: Minimum SDK (dartvex_flutter, Flutter 3.38.1)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Flutter 3.38's native-assets step looks for clang++ even when no
+      # package builds native code on Linux.
+      - name: Install clang
+        run: sudo apt-get update && sudo apt-get install -y clang
+      # 3.38.0 shipped a prerelease Dart (3.10.0-290.4.beta) that `sdk: ^3.10.0`
+      # rejects, so 3.38.1 is the first usable 3.38 release.
+      - uses: subosito/flutter-action@v2
+        with: { flutter-version: '3.38.1', channel: stable }
+      - name: Use local dartvex dependency
+        run: bash scripts/ci-local-dependency-overrides.sh packages/dartvex_flutter
+      - name: Analyze with the lowest allowed dependencies
+        run: cd packages/dartvex_flutter && flutter pub downgrade && flutter analyze
+      - name: Test on the floor SDK
+        run: cd packages/dartvex_flutter && flutter pub upgrade && flutter test
 
   protocol-watch:
     name: Protocol Watch
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
-      - run: ./scripts/protocol-watch.sh
+      # Structural check only; new Convex releases are reported by the weekly
+      # protocol-watch workflow instead of failing pull requests.
+      - run: ./scripts/protocol-watch.sh --structure-only
 
   web-compile:
     name: Web Compile
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dart-lang/setup-dart@v1
         with: { sdk: stable }
       - run: cd packages/dartvex && dart pub get
@@ -191,7 +249,7 @@ jobs:
           - package: dartvex_auth_better
             tool: dart
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dart-lang/setup-dart@v1
         if: matrix.tool == 'dart'
         with: { sdk: stable }
