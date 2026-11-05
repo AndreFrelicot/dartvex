@@ -379,6 +379,7 @@ class FakeDemoAuthClient implements convex.ConvexAuthClient<DemoUserSession> {
   Future<dynamic> mutate(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
+    convex.OptimisticUpdate? optimisticUpdate,
   ]) async => throw UnimplementedError();
 
   @override

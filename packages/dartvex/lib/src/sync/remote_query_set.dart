@@ -4,8 +4,12 @@ import '../protocol/state_version.dart';
 /// The locally stored outcome of a remote query subscription.
 ///
 /// Either a [StoredQuerySuccess] carrying the query value, a
-/// [StoredQueryLoading] marking an optimistically-cleared result, or a
+/// [StoredQueryLoading] marking a page result that is (again) loading, or a
 /// [StoredQueryError] describing why the query function failed on the server.
+///
+/// Exported so custom `PageSubscription`/`PageSubscriber` implementations (for
+/// example fakes backing a `ConvexPaginatedQuery` in tests) can be written
+/// without importing Dartvex internals.
 sealed class StoredQueryResult {
   /// Creates a [StoredQueryResult].
   const StoredQueryResult();
@@ -14,19 +18,31 @@ sealed class StoredQueryResult {
 /// A successfully evaluated remote query result.
 class StoredQuerySuccess extends StoredQueryResult {
   /// Creates a [StoredQuerySuccess] from a query [value] and its [logLines].
-  const StoredQuerySuccess({required this.value, required this.logLines});
+  const StoredQuerySuccess({
+    required this.value,
+    required this.logLines,
+    this.hasPendingWrites = false,
+  });
 
   /// The deserialized value returned by the query function.
   final Object? value;
 
   /// Log lines emitted by the query function during evaluation.
   final List<String> logLines;
+
+  /// Whether optimistic writes are affecting this value. Only set on results
+  /// delivered to a page subscription; authoritative server results are always
+  /// `false`.
+  final bool hasPendingWrites;
 }
 
-/// A remote query result that is currently loading locally.
+/// A query result that is currently loading locally.
 ///
-/// The server does not send this value directly. It is produced by optimistic
-/// updates that clear a query result while a mutation is pending.
+/// The server never sends this value, and the sync layer's own overlay
+/// represents a loading (optimistically cleared) query as a missing result
+/// rather than with this class. It is produced only for page subscriptions,
+/// where `ConvexClient` maps a public `QueryLoading` event (for example from
+/// `OptimisticLocalStore.clearQuery`) to it.
 class StoredQueryLoading extends StoredQueryResult {
   /// Creates a loading stored query result.
   const StoredQueryLoading();
@@ -86,9 +102,9 @@ class RemoteQuerySet {
 
   /// The set of query ids that currently hold a remote result.
   ///
-  /// Captured before [reset] during a reconnect so the sync layer can tell
-  /// which re-issued queries already have data and which are still outstanding
-  /// (see `LocalSyncState.prepareReconnect`).
+  /// Used to build the server base of the optimistic overlay. It does not
+  /// drive reconnect bookkeeping: `LocalSyncState.prepareReconnect` marks every
+  /// re-issued query outstanding regardless of whether it had a result.
   Set<int> get resultQueryIds => _results.keys.toSet();
 
   /// Clears all stored results and resets the version to its initial value,

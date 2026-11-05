@@ -253,7 +253,7 @@ void main() {
 
       expect(
         adapter.connectedUrls.single,
-        'wss://demo.convex.cloud/api/1.41.0/sync',
+        'wss://demo.convex.cloud/api/$convexSyncApiVersion/sync',
       );
 
       subscription.cancel();

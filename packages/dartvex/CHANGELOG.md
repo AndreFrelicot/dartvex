@@ -7,6 +7,99 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `ConvexFunctionCaller.mutate` takes an optional `OptimisticUpdate`, so code
+  written against the interface (and `ConvexClientWithAuth`) can apply
+  optimistic updates. **Breaking for implementors:** classes that
+  `implement ConvexFunctionCaller` must add the optional
+  `OptimisticUpdate? optimisticUpdate` parameter to `mutate`.
+- `ConvexClientConfig.expectAuth`: when `true`, the client holds the socket
+  until the first `setAuth` / `setAuthWithRefresh` / `clearAuth`, so no query
+  ever runs unauthenticated. Mirrors the official client's `expectAuth`.
+- `ConvexCommitTsPlaceholder.instance`: the server's `$commitTs` placeholder
+  (an unresolved commit timestamp) now decodes to this exported singleton and
+  encodes back to `{"$commitTs": null}` instead of failing the whole message.
+- `convexToCanonicalJson`, which encodes a value the way query tokens are
+  keyed (integral doubles such as `1.0` match `1`).
+- `ConvexPaginatedQuery.reset()` restarts pagination from the first page with
+  a fresh pagination id. The query also resets itself when the server reports
+  `InvalidCursor` for an already-loaded page.
+- `ConvexPaginatedResult.hasPendingWrites`, aggregated from the loaded pages.
+- `StoredQueryResult`, `StoredQuerySuccess`, `StoredQueryLoading`, and
+  `StoredQueryError` are exported. They were already referenced by the public
+  `PageSubscription` / `PageInitialResultReader` types.
+- `dartvexVersion` and `convexSyncApiVersion` constants.
+- `ConvexStorage.uploadFile` accepts `useAction` (generate the upload URL from
+  an action) and a `timeout` for the upload request.
+
+### Changed
+
+- The default `ConvexClientConfig.apiVersion` is now the tracked
+  `convexSyncApiVersion` constant, which follows the official client's sync
+  protocol version. The default `clientId` is now `dartvex-<package version>`
+  (it was `dart-dartvex`).
+- `ConvexStorage.uploadFile`'s `filename` is optional. It was never sent to
+  Convex; it is only used in debug logs.
+- A pending mutation or action sent under one auth identity now fails with a
+  `ConvexException` when auth changes before it completes. It is no longer
+  replayed under the new identity.
+- `ConvexPaginatedQuery` rejects a `pageSize` or `loadMore` count below 1 with
+  an `ArgumentError`.
+- Encoding an `int` beyond ±2^53 that a float64 cannot represent exactly
+  throws an `ArgumentError` instead of silently changing the value. Use
+  `convexInt64` / `BigInt` for 64-bit integers.
+- Auth methods (`setAuth`, `setAuthWithRefresh`, `clearAuth`,
+  `updateAuthToken`) and `reconnectNow` on a closed client return a failed
+  future instead of throwing synchronously.
+- `ConvexClient` rejects `.convex.site` deployment URLs (HTTP actions host)
+  with a descriptive `ArgumentError`.
+- Documented that `ConvexException.retryable` means transient, not
+  idempotent. An action that fails with `retryable: true` after a disconnect
+  may already have run on the server.
+
+### Fixed
+
+- `query()` / `queryOnce()` no longer resolve from the after-unsubscribe
+  cache, which could return a stale value or re-throw an old error. Live
+  `subscribe()` still seeds from the warm cache.
+- The after-unsubscribe cache is no longer refilled with results from a
+  previous auth identity. Results kept across a reconnect still seed new
+  subscribers.
+- Calling `mutate`, `loadMore`, `cancel`, or auth methods from inside a
+  query, connection-status, or auth-state listener no longer throws
+  `StateError: Cannot fire new event...`. Nested events are queued and
+  delivered in order.
+- A listener that applies an optimistic update to another query in the same
+  transition is no longer overwritten by the transition's precomputed result.
+- A second listener on a `ConvexSubscription.stream` now receives the current
+  value, not only future changes.
+- `close()` no longer hangs when a subscription stream listener is paused.
+- `resume()` sends the auth and query-set messages before replayed requests.
+- A request queued during a reauth pause is no longer sent twice when the
+  socket restarts.
+- A `FatalError` rolls back optimistic updates. Later `mutate`, `action`,
+  `query`, and `subscribe` calls fail at once with the fatal error.
+- A server value that cannot be decoded fails only that query, mutation, or
+  action. It no longer tears down the socket and loops reconnecting.
+- A mutation whose success response arrived before its timeout no longer
+  fails with a timeout while waiting for the transition.
+- `queryOnce<T>` reports a type mismatch as a `ConvexException` naming the
+  function and expected type.
+- Before the first successful connection, retries report `connecting`
+  rather than `reconnecting`.
+- A logger that throws no longer breaks message processing. Optimistic update
+  callbacks that throw during replay are logged at warn level.
+- Query tokens treat `1` and `1.0` arguments as the same query.
+- `ConvexPaginatedQuery`:
+  - `loadMore` no longer chains from a stale continue cursor seeded from the
+    cache. It waits for the first live page.
+  - Ongoing page splits survive a same-range update.
+  - No-op page updates no longer emit duplicate snapshots.
+  - When the client closes, the query emits an error and completes instead of
+    hanging.
+- `applyOptimisticUpdate` no longer reports duplicate changed query tokens.
+
 ## [0.2.0] - 2026-06-12
 
 ### Added

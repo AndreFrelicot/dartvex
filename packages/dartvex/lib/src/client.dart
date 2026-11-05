@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 
 import 'auth/auth_manager.dart';
 import 'auth/auth_provider.dart';
@@ -222,6 +223,13 @@ class QueryError extends QueryResult {
 }
 
 /// Handle for a live Convex query subscription.
+///
+/// The handle owns the server-side subscription: the query stays subscribed
+/// (and keeps being re-run by the server) until [cancel] is called, even when
+/// nobody listens to [stream]. Cancelling a stream listener — including the
+/// implicit cancel of `stream.first` or a `break` out of an `await for` loop —
+/// does **not** unsubscribe; always call [cancel] when done, or use
+/// `ConvexClient.query`/`queryOnce` for one-shot reads.
 class ConvexSubscription {
   /// Creates a query subscription wrapper.
   ConvexSubscription({
@@ -234,9 +242,15 @@ class ConvexSubscription {
   final Future<void> Function() _onCancel;
 
   /// Stream of live query results.
+  ///
+  /// A broadcast stream: every listener — not only the first — receives the
+  /// current local result (if one is known) shortly after it starts listening,
+  /// followed by every later change. Listening again after cancelling a
+  /// listener works the same way.
   Stream<QueryResult> get stream => _stream;
 
-  /// Cancels the subscription asynchronously.
+  /// Cancels the subscription asynchronously, unsubscribing from the server
+  /// once no other subscription shares the same query.
   void cancel() {
     unawaited(_onCancel());
   }
@@ -254,6 +268,11 @@ abstract interface class ConvexFunctionCaller {
   ///
   /// Subscribes, waits for the first result, then unsubscribes.
   /// Useful for splash screen data, prefetching, or non-reactive reads.
+  ///
+  /// [T] must match the decoded runtime shape: Convex arrays decode to
+  /// `List<dynamic>` and objects to `Map<String, dynamic>`, so request those
+  /// (not `List<String>`) and convert the elements yourself. A mismatch is
+  /// reported as a [ConvexException].
   Future<T> queryOnce<T>(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
@@ -272,9 +291,14 @@ abstract interface class ConvexFunctionCaller {
   /// matching or later transition is observed. It is not persisted across
   /// process restarts or client disposal, and uses the auth state active when
   /// it is eventually sent.
+  ///
+  /// Pass [optimisticUpdate] to overlay query results locally while the
+  /// mutation is in flight; see [ConvexClient.mutate]. Implementations that
+  /// cannot apply optimistic updates may ignore it.
   Future<dynamic> mutate(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
+    OptimisticUpdate? optimisticUpdate,
   ]);
 
   /// Executes an action.
@@ -346,9 +370,11 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       config: _config,
       sendAuth: _sendAuth,
       emitAuthState: (isAuthenticated) {
-        if (!_authStateController.isClosed) {
-          _authStateController.add(isAuthenticated);
-        }
+        _dispatch(() {
+          if (!_authStateController.isClosed) {
+            _authStateController.add(isAuthenticated);
+          }
+        });
       },
       pauseSocket: () async {
         _wsManager.pause();
@@ -359,11 +385,23 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       restartSocket: () => _wsManager.restart(),
       onRefreshingChange: (isRefreshing) {
         _currentAuthRefreshing = isRefreshing;
-        if (!_authRefreshingController.isClosed) {
-          _authRefreshingController.add(isRefreshing);
-        }
+        _dispatch(() {
+          if (!_authRefreshingController.isClosed) {
+            _authRefreshingController.add(isRefreshing);
+          }
+        });
       },
     );
+    _baseClient.onOptimisticReplayError = (requestId, error, stackTrace) {
+      _log(
+        DartvexLogLevel.warn,
+        'Optimistic update threw while being replayed on fresh server data; '
+        'dropping its layer',
+        error: error,
+        stackTrace: stackTrace,
+        data: <String, Object?>{'requestId': requestId},
+      );
+    };
     _connectivitySubscription = _config.connectivitySignal?.onRestored.listen(
       (_) => _wsManager.reconnectImmediatelyIfWaiting(),
       onError: (Object error, StackTrace stackTrace) {
@@ -380,6 +418,14 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
         );
       },
     );
+    if (_config.expectAuth) {
+      // Hold every query-set change and request until the first auth call
+      // decides the identity; each auth entry point releases the pause through
+      // the auth manager's resume path. Mirrors the official client, which
+      // pauses its socket in the constructor when `expectAuth` is set.
+      _wsManager.pause();
+      _baseClient.pause();
+    }
     if (_config.connectImmediately) {
       _currentConnectionState = ConnectionState.connecting;
     }
@@ -409,6 +455,19 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   Future<void>? _closeFuture;
   bool _disposed = false;
 
+  /// The server's FatalError message once the connection was terminated for
+  /// good; new requests fail fast instead of hanging. See [_fatalException].
+  String? _fatalError;
+
+  /// Re-entrancy guard for the synchronous broadcast controllers: an event
+  /// emitted while another emission is being delivered (for example a
+  /// `mutate()` with an optimistic update called from a query listener, or a
+  /// request issued from a `connectionStatus` listener) is queued and
+  /// delivered, in order, right after the outer delivery returns, instead of
+  /// throwing `StateError('Cannot fire new event...')`.
+  bool _dispatching = false;
+  final Queue<void Function()> _pendingDispatches = Queue<void Function()>();
+
   static String _normalizeDeploymentUrl(String deploymentUrl) {
     final uri = Uri.tryParse(deploymentUrl);
     if (uri == null ||
@@ -428,6 +487,17 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
         deploymentUrl,
         'deploymentUrl',
         'must be a Convex deployment origin without path, query, or fragment',
+      );
+    }
+    if (uri.host.toLowerCase().endsWith('.convex.site')) {
+      // `.convex.site` serves HTTP Actions, not the sync API: every WebSocket
+      // upgrade would fail and the client would retry silently forever.
+      // Mirrors the official client's validateDeploymentUrl.
+      throw ArgumentError.value(
+        deploymentUrl,
+        'deploymentUrl',
+        'is a .convex.site (HTTP Actions) URL; use the deployment\'s '
+            '.convex.cloud URL for ConvexClient',
       );
     }
     return uri.replace(path: '', query: null, fragment: null).toString();
@@ -504,6 +574,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       maxBackoff: config.maxBackoff,
       backoffJitter: config.backoffJitter,
       connectImmediately: config.connectImmediately,
+      expectAuth: config.expectAuth,
       adapterFactory: config.adapterFactory,
       connectivitySignal: config.connectivitySignal,
       logLevel: config.logLevel,
@@ -604,12 +675,17 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) async {
+    _assertNotFatal();
     _log(
       DartvexLogLevel.debug,
       'Starting query',
       data: _requestData(name, args),
     );
-    final subscription = subscribe(name, args);
+    // One-shot reads never resolve from the after-unsubscribe cache: only an
+    // optimistic value or the result of a query that is currently subscribed
+    // (server-maintained) short-circuits; otherwise this waits for the server,
+    // matching the official client's localQueryResult semantics.
+    final subscription = _subscribe(name, args, seedFromCache: false);
     final completer = Completer<dynamic>();
     late final StreamSubscription<QueryResult> streamSubscription;
     Object? closeError;
@@ -704,16 +780,38 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) async {
     final result = await query(name, args);
-    return result as T;
+    if (result is T) {
+      return result;
+    }
+    throw ConvexException(
+      'queryOnce<$T>("$name") received a ${result.runtimeType}, which is not '
+      'a $T. Convex values decode to List<dynamic> and Map<String, dynamic>; '
+      'request a matching type and convert the result yourself.',
+    );
   }
 
   @override
 
   /// Subscribes to a live query.
+  ///
+  /// Every listener of the returned [ConvexSubscription.stream] first receives
+  /// the best local result already known — an optimistic value, the live
+  /// result of an identical active subscription, or the last result cached
+  /// after an earlier subscription to the same query was cancelled (a warm
+  /// seed that the server then refreshes) — followed by live updates. Call
+  /// [ConvexSubscription.cancel] to unsubscribe.
   ConvexSubscription subscribe(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) {
+    return _subscribe(name, args, seedFromCache: true);
+  }
+
+  ConvexSubscription _subscribe(
+    String name,
+    Map<String, dynamic> args, {
+    required bool seedFromCache,
+  }) {
     _assertNotDisposed();
     // Deep-snapshot the args before anything else: the onListen microtask
     // below recomputes the query token from this map, and a caller mutating
@@ -729,51 +827,49 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       data: _requestData(name, snapshotArgs),
     );
     final registration = _baseClient.subscribe(name, snapshotArgs);
-    late final StreamController<QueryResult> controller;
-    controller = StreamController<QueryResult>.broadcast(
-      sync: true,
-      onListen: () {
-        scheduleMicrotask(() {
-          if (_baseClient.optimisticQueryIsLoading(name, snapshotArgs)) {
-            if (!controller.isClosed) {
-              controller.add(
-                QueryLoading(
-                  hasPendingWrites: _baseClient.hasOptimisticUpdateForQuery(
-                    name,
-                    snapshotArgs,
-                  ),
-                ),
-              );
-            }
-            return;
-          }
-          final initial =
-              _baseClient.optimisticResultForQuery(name, snapshotArgs) ??
-                  _baseClient.currentResultForQuery(registration.queryId) ??
-                  _baseClient.cachedResultForQuery(name, snapshotArgs);
-          if (initial == null) {
-            return;
-          }
-          if (!controller.isClosed) {
-            controller.add(
-              _toPublicQueryResult(
-                initial,
-                hasPendingWrites: _baseClient.hasOptimisticUpdateForQuery(
-                  name,
-                  snapshotArgs,
-                ),
-              ),
-            );
-          }
-        });
-      },
-    );
+    final controller = StreamController<QueryResult>.broadcast(sync: true);
     _subscriptionControllers[registration.subscriberId] = controller;
 
     unawaited(_flushOutgoing());
 
+    // Each listener gets its own forwarding subscription plus its own seed of
+    // the current local value, so a second listener (or `stream.first` after
+    // another listener) does not wait for the next server change. The
+    // forwarding listener on the sync broadcast controller is never paused, so
+    // a paused consumer buffers in its own subscription and cannot block
+    // close().
+    final stream = Stream<QueryResult>.multi((listener) {
+      final forwarding = controller.stream.listen(
+        listener.addSync,
+        onError: listener.addErrorSync,
+        onDone: listener.closeSync,
+      );
+      listener.onCancel = forwarding.cancel;
+      scheduleMicrotask(() {
+        if (controller.isClosed || listener.isClosed || !listener.hasListener) {
+          return;
+        }
+        final initial = _initialQueryResult(
+          name,
+          snapshotArgs,
+          registration.queryId,
+          seedFromCache: seedFromCache,
+        );
+        if (initial == null) {
+          return;
+        }
+        _dispatch(() {
+          if (!controller.isClosed &&
+              !listener.isClosed &&
+              listener.hasListener) {
+            listener.addSync(initial);
+          }
+        });
+      });
+    }, isBroadcast: true);
+
     return ConvexSubscription(
-      stream: controller.stream,
+      stream: stream,
       onCancel: () async {
         _log(
           DartvexLogLevel.debug,
@@ -792,6 +888,46 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
         await removed?.close();
       },
     );
+  }
+
+  /// The local result a new listener of `name`/`args` starts with, if any.
+  ///
+  /// With [seedFromCache] (live subscriptions) this includes the warm
+  /// after-unsubscribe cache; without it (one-shot reads and page
+  /// subscriptions) only an optimistic value or the result of a currently
+  /// subscribed query counts.
+  QueryResult? _initialQueryResult(
+    String name,
+    Map<String, dynamic> args,
+    int queryId, {
+    required bool seedFromCache,
+  }) {
+    final fatalError = _fatalError;
+    if (fatalError != null) {
+      return QueryError(_fatalException(fatalError).message);
+    }
+    final hasPendingWrites = _baseClient.hasOptimisticUpdateForQuery(
+      name,
+      args,
+    );
+    if (_baseClient.optimisticQueryIsLoading(name, args)) {
+      return QueryLoading(hasPendingWrites: hasPendingWrites);
+    }
+    final StoredQueryResult? initial;
+    if (seedFromCache) {
+      initial = _baseClient.optimisticResultForQuery(name, args) ??
+          _baseClient.currentResultForQuery(queryId) ??
+          _baseClient.cachedResultForQuery(name, args);
+    } else {
+      initial = (hasPendingWrites
+              ? _baseClient.optimisticResultForQuery(name, args)
+              : null) ??
+          _baseClient.currentResultForQuery(queryId);
+    }
+    if (initial == null) {
+      return null;
+    }
+    return _toPublicQueryResult(initial, hasPendingWrites: hasPendingWrites);
   }
 
   @override
@@ -821,8 +957,13 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       data: _requestData(name, args),
     );
     return ConvexPaginatedQuery(
-      subscribe: (pageName, pageArgs) =>
-          _PageSubscriptionAdapter(subscribe(pageName, pageArgs)),
+      // Pages display a warm seed through [readInitialResult], but their live
+      // streams only carry server-maintained (or optimistic) results, so the
+      // paginated query can tell a provisional seed from live data before it
+      // chains the next page from a cursor.
+      subscribe: (pageName, pageArgs) => _PageSubscriptionAdapter(
+        _subscribe(pageName, pageArgs, seedFromCache: false),
+      ),
       readInitialResult: _baseClient.localResultForQuery,
       name: name,
       args: args,
@@ -839,12 +980,17 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   /// arrives while the mutation is pending and is rolled back automatically
   /// when the mutation completes (or fails). The update runs synchronously and
   /// must be pure — it can be replayed multiple times.
+  ///
+  /// It is safe to call from inside a query, connection-status, or auth-state
+  /// listener: emissions triggered while another emission is being delivered
+  /// are queued and delivered right after it.
   Future<dynamic> mutate(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
     OptimisticUpdate? optimisticUpdate,
   ]) async {
     _assertNotDisposed();
+    _assertNotFatal();
     _log(
       DartvexLogLevel.debug,
       'Starting mutation',
@@ -853,12 +999,15 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     try {
       final request = _baseClient.trackMutation(name, args);
       if (optimisticUpdate != null) {
+        final List<BaseClientEvent> optimisticEvents;
         try {
-          _dispatchOptimisticEvents(
-            _baseClient.applyOptimisticUpdate(
-                optimisticUpdate, request.requestId),
+          optimisticEvents = _baseClient.applyOptimisticUpdate(
+            optimisticUpdate,
+            request.requestId,
           );
         } catch (error, stackTrace) {
+          // Only a throwing update cancels the mutation; delivering its events
+          // below cannot fail (re-entrant emissions are queued).
           unawaited(request.future.catchError((_) {}));
           _dispatchOptimisticEvents(
             _baseClient.cancelMutation(request.requestId, error),
@@ -866,6 +1015,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
           _publishConnectionStatus();
           Error.throwWithStackTrace(error, stackTrace);
         }
+        _dispatchOptimisticEvents(optimisticEvents);
       }
       _publishConnectionStatus();
       final future = _withOptionalTimeout(
@@ -873,10 +1023,17 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
         _config.mutationTimeout,
         'Mutation "$name"',
         onTimeout: (error) {
+          // A success response that already arrived (parked until its
+          // read-your-writes transition) is not a timeout: hand the caller
+          // the server-confirmed result instead of failing a committed write.
+          if (_baseClient.completeConfirmedMutation(request.requestId)) {
+            return false;
+          }
           _dispatchOptimisticEvents(
             _baseClient.cancelMutation(request.requestId, error),
           );
           _publishConnectionStatus();
+          return true;
         },
       );
       // The await below only attaches to [future] after the flush; a dispose
@@ -919,11 +1076,16 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   /// flight when the connection is lost, the future fails because actions are
   /// not idempotent. It is not persisted across process restarts or client
   /// disposal, and uses the auth state active when it is eventually sent.
+  ///
+  /// A lost in-flight action fails with a [ConvexException] whose
+  /// [ConvexException.retryable] is `true` (it may succeed if sent again), but
+  /// the server may already have run it: only retry idempotent actions.
   Future<dynamic> action(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) async {
     _assertNotDisposed();
+    _assertNotFatal();
     _log(
       DartvexLogLevel.debug,
       'Starting action',
@@ -939,6 +1101,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
         onTimeout: (error) {
           _baseClient.cancelAction(request.requestId, error);
           _publishConnectionStatus();
+          return true;
         },
       );
       // See mutate(): suppress the spurious unhandled-error report when a
@@ -972,7 +1135,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     Future<dynamic> future,
     Duration? timeout,
     String operation, {
-    void Function(TimeoutException error)? onTimeout,
+    bool Function(TimeoutException error)? onTimeout,
   }) {
     if (timeout == null) {
       return future;
@@ -987,8 +1150,11 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
         '$operation timed out after ${timeout.inMilliseconds}ms',
         timeout,
       );
-      onTimeout?.call(error);
-      completer.completeError(error);
+      // [onTimeout] returns false when the request turned out to be resolved
+      // already; [future] then completes the caller normally.
+      if (onTimeout?.call(error) ?? true) {
+        completer.completeError(error);
+      }
     });
     future.then(
       (value) {
@@ -1010,8 +1176,18 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   }
 
   /// Applies a fixed auth token to the client.
+  ///
+  /// This is an identity change: mutations and actions issued before it that
+  /// have not completed by the next reconnect fail with
+  /// `Authentication changed before the request completed` instead of being
+  /// replayed as the new user. Use [updateAuthToken] to push a refreshed
+  /// token for the same user. On a disposed client the returned future fails
+  /// with a [ConvexException].
   Future<void> setAuth(String? token) {
-    _assertNotDisposed();
+    if (_disposed) {
+      return _disposedFuture();
+    }
+    _baseClient.markIdentityChange();
     _log(
       DartvexLogLevel.info,
       token == null ? 'Clearing auth token' : 'Setting auth token',
@@ -1020,11 +1196,18 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   }
 
   /// Configures automatic auth refresh driven by [fetchToken].
+  ///
+  /// Like [setAuth], this is an identity change for requests still pending at
+  /// the next reconnect; token refreshes driven by [fetchToken] are not. On a
+  /// disposed client the returned future fails with a [ConvexException].
   Future<AuthHandle> setAuthWithRefresh({
     required AuthTokenFetcher fetchToken,
     void Function(bool)? onAuthChange,
   }) {
-    _assertNotDisposed();
+    if (_disposed) {
+      return _disposedFuture<AuthHandle>();
+    }
+    _baseClient.markIdentityChange();
     return _authManager.setAuthWithRefresh(
       fetchToken: fetchToken,
       onAuthChange: onAuthChange,
@@ -1032,15 +1215,28 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   }
 
   /// Clears auth state and token refresh handling.
+  ///
+  /// Like [setAuth], this is an identity change for requests still pending at
+  /// the next reconnect. On a disposed client the returned future fails with a
+  /// [ConvexException].
   Future<void> clearAuth() {
-    _assertNotDisposed();
+    if (_disposed) {
+      return _disposedFuture();
+    }
+    _baseClient.markIdentityChange();
     _log(DartvexLogLevel.info, 'Clearing auth state');
     return _authManager.clearAuth();
   }
 
   /// Updates the current auth token without recreating the refresh flow.
+  ///
+  /// Intended for a refreshed token of the *same* user, so it does not count
+  /// as an identity change. On a disposed client the returned future fails
+  /// with a [ConvexException].
   Future<void> updateAuthToken(String token) {
-    _assertNotDisposed();
+    if (_disposed) {
+      return _disposedFuture();
+    }
     _log(DartvexLogLevel.info, 'Updating auth token');
     return _authManager.updateToken(token);
   }
@@ -1064,9 +1260,13 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   /// client-initiated backoff (a 100ms base, mirroring the official client)
   /// rather than the longer server-disconnect backoff, so it does not wait out a
   /// full server/network retry delay. If already connected, this closes and
-  /// re-establishes the connection.
+  /// re-establishes the connection. After a fatal server error the connection
+  /// is terminated for good and this does nothing. On a disposed client the
+  /// returned future fails with a [ConvexException].
   Future<void> reconnectNow(String reason) {
-    _assertNotDisposed();
+    if (_disposed) {
+      return _disposedFuture();
+    }
     if (_startFuture == null) {
       return _ensureStarted();
     }
@@ -1093,18 +1293,59 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     final subscriptionControllers = _subscriptionControllers.values.toList();
     _subscriptionControllers.clear();
     _closeFuture = Future<void>(() async {
+      // Close every stream without awaiting its done future: a broadcast
+      // controller's close() only completes once each listener has received
+      // its done event, and a paused listener (an `await for` body awaiting
+      // another request, a StreamQueue nobody reads) would otherwise block
+      // the auth and transport teardown below forever.
       for (final controller in subscriptionControllers) {
-        await controller.close();
+        _closeWithoutWaiting(controller);
       }
-      await _connectionStateController.close();
-      await _authStateController.close();
-      await _authRefreshingController.close();
-      await _connectionStatusController.close();
-      await _authManager.stopRefreshing();
-      await _connectivitySubscription?.cancel();
+      _closeWithoutWaiting(_connectionStateController);
+      _closeWithoutWaiting(_authStateController);
+      _closeWithoutWaiting(_authRefreshingController);
+      _closeWithoutWaiting(_connectionStatusController);
+      // Keep stopRefreshing() before the transport dispose; guard each step
+      // so one failure cannot skip the rest.
+      try {
+        await _authManager.stopRefreshing();
+      } catch (error, stackTrace) {
+        _log(
+          DartvexLogLevel.warn,
+          'Stopping auth refresh failed during close',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+      try {
+        await _connectivitySubscription?.cancel();
+      } catch (error, stackTrace) {
+        _log(
+          DartvexLogLevel.warn,
+          'Cancelling the connectivity signal failed during close',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
       await _wsManager.dispose();
     });
     return _closeFuture!;
+  }
+
+  void _closeWithoutWaiting(StreamController<Object?> controller) {
+    if (controller.isClosed) {
+      return;
+    }
+    try {
+      controller.close().ignore();
+    } catch (error, stackTrace) {
+      _log(
+        DartvexLogLevel.warn,
+        'Closing a stream failed during close',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
   }
 
   Future<void> _sendAuth(String? token) async {
@@ -1133,7 +1374,15 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   // is driven by the scheduled refresh timer and by server AuthErrors, so a
   // transient auth-provider failure during a reconnect cannot log the user out.
   List<ClientMessage> _handleConnected() {
-    return _baseClient.prepareReconnect();
+    final messages = _baseClient.prepareReconnect();
+    // Requests failed because they predate an identity change roll back
+    // their optimistic layers.
+    final events = _baseClient.takeReconnectEvents();
+    if (events.isNotEmpty) {
+      _dispatchOptimisticEvents(events);
+      _publishConnectionStatus();
+    }
+    return messages;
   }
 
   Future<void> _resumeSocketForAuth() async {
@@ -1159,26 +1408,27 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     ServerMessage message,
   ) async {
     final result = _baseClient.receive(message);
+    // Put whatever receive() drained back into the queue right away, before
+    // any event is awaited: a reauth restart below runs prepareReconnect,
+    // which clears the queue and replays every unsent request itself.
+    // Requeueing the stale drained list only afterwards would send those
+    // requests (including non-idempotent actions) a second time.
+    if (result.outgoing.isNotEmpty) {
+      _baseClient.requeueOutgoing(result.outgoing);
+    }
     for (final event in result.events) {
       switch (event) {
         case QueryUpdateEvent():
-          _emitToSubscribers(
-            event.queryId,
-            _toPublicQueryResult(
-              event.result,
-              hasPendingWrites: event.hasPendingWrites,
-            ),
-          );
+          // Resolved at delivery time: a listener of an earlier event may
+          // already have applied an optimistic update to this query.
+          _emitCurrentQueryState(event.queryId);
         case QueryRemovedEvent():
           _emitToSubscribers(
             event.queryId,
             const QueryError('Query removed'),
           );
         case QueryLoadingEvent():
-          _emitToSubscribers(
-            event.queryId,
-            QueryLoading(hasPendingWrites: event.hasPendingWrites),
-          );
+          _emitCurrentQueryState(event.queryId);
         case AuthConfirmedEvent():
           _authManager.handleAuthConfirmed();
         case AuthErrorEvent():
@@ -1189,13 +1439,18 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
         case ReconnectRequiredEvent():
           await _wsManager.reconnectNow(event.reason);
         case FatalErrorEvent():
+          _fatalError = event.error;
           _log(
             DartvexLogLevel.error,
             'Fatal server error; terminating connection',
             data: <String, Object?>{'error': event.error},
           );
           await _wsManager.terminate();
-          _baseClient.failPendingRequests(event.error);
+          // Failing the pending mutations also rolls back their optimistic
+          // layers, as the mutate() contract promises on failure.
+          _dispatchOptimisticEvents(
+            _baseClient.failPendingRequests(event.error),
+          );
           _emitConnectionState(ConnectionState.fatalError);
         case FunctionLogEvent():
           _logFunctionOutput(event);
@@ -1204,14 +1459,13 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       }
     }
     _publishConnectionStatus();
-    // Route the messages receive() drained back through the re-queueing flush
-    // instead of handing them to the transport directly: the transport drops
-    // (returns a short prefix for) messages while the socket is paused for
-    // auth or already disconnected, and this return path has no re-queue. A
-    // tracked mutation drained here while paused would otherwise be lost
-    // until the next reconnect replay and hang its caller in the meantime.
-    if (!_disposed && result.outgoing.isNotEmpty) {
-      _baseClient.requeueOutgoing(result.outgoing);
+    // Send queued messages through the re-queueing flush instead of handing
+    // them to the transport directly: the transport drops (returns a short
+    // prefix for) messages while the socket is paused for auth or already
+    // disconnected, and this return path has no re-queue. A tracked mutation
+    // queued while paused would otherwise be lost until the next reconnect
+    // replay and hang its caller in the meantime.
+    if (!_disposed && _baseClient.hasOutgoing) {
       await _flushOutgoing();
     }
     return const <ClientMessage>[];
@@ -1239,10 +1493,63 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     }
   }
 
-  void _emitToSubscribers(int queryId, QueryResult result) {
-    for (final subscriberId in _baseClient.subscriberIdsForQuery(queryId)) {
-      _subscriptionControllers[subscriberId]?.add(result);
+  /// Runs [deliver] — which adds to one or more synchronous broadcast
+  /// controllers — now, or right after the delivery currently in progress
+  /// when called re-entrantly from a listener. Deliveries keep their FIFO
+  /// order, and the synchronous delivery of the common, non-re-entrant case is
+  /// unchanged.
+  void _dispatch(void Function() deliver) {
+    if (_dispatching) {
+      _pendingDispatches.add(deliver);
+      return;
     }
+    _dispatching = true;
+    try {
+      deliver();
+      while (_pendingDispatches.isNotEmpty) {
+        _pendingDispatches.removeFirst()();
+      }
+    } finally {
+      _dispatching = false;
+    }
+  }
+
+  void _emitToSubscribers(int queryId, QueryResult result) {
+    _dispatch(() => _deliverToSubscribers(queryId, result));
+  }
+
+  void _deliverToSubscribers(int queryId, QueryResult result) {
+    for (final subscriberId in _baseClient.subscriberIdsForQuery(queryId)) {
+      final controller = _subscriptionControllers[subscriberId];
+      if (controller != null && !controller.isClosed) {
+        controller.add(result);
+      }
+    }
+  }
+
+  /// Delivers the current overlaid state of [queryId], read when the delivery
+  /// actually runs.
+  void _emitCurrentQueryState(int queryId) {
+    _dispatch(() {
+      final current = _baseClient.currentQueryEvent(queryId);
+      switch (current) {
+        case QueryUpdateEvent():
+          _deliverToSubscribers(
+            queryId,
+            _toPublicQueryResult(
+              current.result,
+              hasPendingWrites: current.hasPendingWrites,
+            ),
+          );
+        case QueryLoadingEvent():
+          _deliverToSubscribers(
+            queryId,
+            QueryLoading(hasPendingWrites: current.hasPendingWrites),
+          );
+        default:
+          return;
+      }
+    });
   }
 
   /// Delivers the query-update events produced by applying an optimistic update
@@ -1277,7 +1584,11 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       return;
     }
     if (reconnecting) {
-      final nextState = _currentConnectionState == ConnectionState.connecting
+      // `reconnecting` implies an earlier successful connection (see
+      // ConnectionStatus.fromState); retries before the first connect keep
+      // reporting `connecting`.
+      final nextState = _currentConnectionState == ConnectionState.connecting ||
+              !_wsManager.hasEverConnected
           ? ConnectionState.connecting
           : ConnectionState.reconnecting;
       _emitConnectionState(
@@ -1298,7 +1609,11 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       'Connection state changed',
       data: <String, Object?>{'state': state.name},
     );
-    _connectionStateController.add(state);
+    _dispatch(() {
+      if (!_connectionStateController.isClosed) {
+        _connectionStateController.add(state);
+      }
+    });
     _publishConnectionStatus();
   }
 
@@ -1317,7 +1632,11 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       return;
     }
     _lastPublishedStatus = status;
-    _connectionStatusController.add(status);
+    _dispatch(() {
+      if (!_connectionStatusController.isClosed) {
+        _connectionStatusController.add(status);
+      }
+    });
   }
 
   Future<void> _flushOutgoing() async {
@@ -1340,6 +1659,23 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       throw const ConvexException('ConvexClient has been disposed');
     }
   }
+
+  Future<T> _disposedFuture<T>() =>
+      Future<T>.error(const ConvexException('ConvexClient has been disposed'));
+
+  /// Fails new requests fast once a FatalError terminated the connection for
+  /// good, instead of queueing them on a transport that will never reconnect.
+  void _assertNotFatal() {
+    final fatalError = _fatalError;
+    if (fatalError != null) {
+      throw _fatalException(fatalError);
+    }
+  }
+
+  static ConvexException _fatalException(String error) => ConvexException(
+        'ConvexClient connection was terminated by a fatal server error: '
+        '$error',
+      );
 
   Object _safeLogError(Object error) {
     if (error is ConvexException) {
@@ -1428,9 +1764,13 @@ class _PageSubscriptionAdapter implements PageSubscription {
 
   static Stream<StoredQueryResult> _toStoredEvents(QueryResult result) {
     switch (result) {
-      case QuerySuccess(:final value):
+      case QuerySuccess(:final value, :final hasPendingWrites):
         return Stream<StoredQueryResult>.value(
-          StoredQuerySuccess(value: value, logLines: const <String>[]),
+          StoredQuerySuccess(
+            value: value,
+            logLines: const <String>[],
+            hasPendingWrites: hasPendingWrites,
+          ),
         );
       case QueryLoading():
         return Stream<StoredQueryResult>.value(const StoredQueryLoading());

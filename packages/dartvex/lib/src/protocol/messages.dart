@@ -420,12 +420,55 @@ sealed class StateModification extends JsonMessage {
   int get queryId;
 
   /// Deserializes a [StateModification] from JSON based on its `type` field.
+  ///
+  /// Value decoding is isolated per query: when a `QueryUpdated` value cannot
+  /// be decoded into a Dart value (for example an unknown `$`-tagged wire shape
+  /// from a newer server), the modification is surfaced as a [QueryFailed] for
+  /// that query alone, so the transition still applies, its versions still
+  /// advance, and the socket is not torn down. An undecodable `errorData` on a
+  /// `QueryFailed` is dropped (`null`) rather than failing the message.
+  /// Envelope-level problems (missing or mistyped fields) still throw.
   factory StateModification.fromJson(Map<String, dynamic> json) {
     switch (json['type']) {
       case 'QueryUpdated':
-        return QueryUpdated.fromJson(json);
+        final queryId = json['queryId'] as int;
+        final logLines =
+            (json['logLines'] as List<dynamic>? ?? const <dynamic>[])
+                .cast<String>();
+        final journal = json['journal'] as String?;
+        final hasJournal = json.containsKey('journal');
+        final decoded = _tryDecodeConvexValue(json['value']);
+        if (decoded.error != null) {
+          return QueryFailed(
+            queryId: queryId,
+            errorMessage: _valueDecodeFailureMessage(
+              'query result',
+              decoded.error!,
+            ),
+            logLines: logLines,
+            journal: journal,
+            hasJournal: hasJournal,
+          );
+        }
+        return QueryUpdated(
+          queryId: queryId,
+          value: decoded.value,
+          logLines: logLines,
+          journal: journal,
+          hasJournal: hasJournal,
+        );
       case 'QueryFailed':
-        return QueryFailed.fromJson(json);
+        return QueryFailed(
+          queryId: json['queryId'] as int,
+          errorMessage: json['errorMessage'] as String,
+          errorData: json.containsKey('errorData')
+              ? _tryDecodeConvexValue(json['errorData']).value
+              : null,
+          logLines: (json['logLines'] as List<dynamic>? ?? const <dynamic>[])
+              .cast<String>(),
+          journal: json['journal'] as String?,
+          hasJournal: json.containsKey('journal'),
+        );
       case 'QueryRemoved':
         return QueryRemoved.fromJson(json);
     }
@@ -686,6 +729,7 @@ sealed class ResponseMessage extends ServerMessage {
     this.errorMessage,
     this.errorData,
     this.logLines = const <String>[],
+    this.resultDecodeError,
   });
 
   /// Identifier correlating this response with its originating request.
@@ -705,6 +749,13 @@ sealed class ResponseMessage extends ServerMessage {
 
   /// Log lines emitted while handling the request.
   final List<String> logLines;
+
+  /// Set when the request succeeded on the server but its [result] could not
+  /// be decoded into a Dart value (for example an unknown `$`-tagged wire shape
+  /// from a newer server). [result] is then `null`, and the sync layer fails
+  /// only this request's future with a descriptive error instead of tearing
+  /// down the connection and replaying the request forever.
+  final String? resultDecodeError;
 }
 
 /// Server response to a [Mutation] request.
@@ -717,6 +768,7 @@ class MutationResponse extends ResponseMessage {
     super.errorMessage,
     super.errorData,
     super.logLines,
+    super.resultDecodeError,
     this.ts,
   });
 
@@ -736,19 +788,25 @@ class MutationResponse extends ResponseMessage {
         'MutationResponse success is missing required string field "ts".',
       );
     }
+    final requestId = json['requestId'] as int;
+    final logLines = (json['logLines'] as List<dynamic>? ?? const <dynamic>[])
+        .cast<String>();
+    final decodedResult = success && json.containsKey('result')
+        ? _tryDecodeConvexValue(json['result'])
+        : (value: null, error: null);
     return MutationResponse(
-      requestId: json['requestId'] as int,
+      requestId: requestId,
       success: success,
-      result: success && json.containsKey('result')
-          ? jsonToConvex(json['result'])
-          : null,
+      result: decodedResult.value,
       errorMessage: success ? null : _readErrorMessage(json),
       errorData: json.containsKey('errorData')
-          ? jsonToConvex(json['errorData'])
+          ? _tryDecodeConvexValue(json['errorData']).value
           : null,
-      logLines: (json['logLines'] as List<dynamic>? ?? const <dynamic>[])
-          .cast<String>(),
+      logLines: logLines,
       ts: success ? ts as String : null,
+      resultDecodeError: decodedResult.error == null
+          ? null
+          : _valueDecodeFailureMessage('mutation result', decodedResult.error!),
     );
   }
 
@@ -792,23 +850,30 @@ class ActionResponse extends ResponseMessage {
     super.errorMessage,
     super.errorData,
     super.logLines,
+    super.resultDecodeError,
   });
 
   /// Deserializes an [ActionResponse] from JSON.
   factory ActionResponse.fromJson(Map<String, dynamic> json) {
     final success = json['success'] as bool;
+    final requestId = json['requestId'] as int;
+    final logLines = (json['logLines'] as List<dynamic>? ?? const <dynamic>[])
+        .cast<String>();
+    final decodedResult = success && json.containsKey('result')
+        ? _tryDecodeConvexValue(json['result'])
+        : (value: null, error: null);
     return ActionResponse(
-      requestId: json['requestId'] as int,
+      requestId: requestId,
       success: success,
-      result: success && json.containsKey('result')
-          ? jsonToConvex(json['result'])
-          : null,
+      result: decodedResult.value,
       errorMessage: success ? null : _readErrorMessage(json),
       errorData: json.containsKey('errorData')
-          ? jsonToConvex(json['errorData'])
+          ? _tryDecodeConvexValue(json['errorData']).value
           : null,
-      logLines: (json['logLines'] as List<dynamic>? ?? const <dynamic>[])
-          .cast<String>(),
+      logLines: logLines,
+      resultDecodeError: decodedResult.error == null
+          ? null
+          : _valueDecodeFailureMessage('action result', decodedResult.error!),
     );
   }
 
@@ -823,6 +888,30 @@ class ActionResponse extends ResponseMessage {
       'logLines': logLines,
     };
   }
+}
+
+/// Decodes a Convex wire value, capturing a decode failure instead of throwing.
+///
+/// Used for the value payloads of server messages (query values, request
+/// results, error data) so one undecodable value fails only the query or
+/// request it belongs to, never the whole message and connection.
+({Object? value, Object? error}) _tryDecodeConvexValue(Object? raw) {
+  try {
+    return (value: jsonToConvex(raw), error: null);
+  } catch (error) {
+    return (value: null, error: error);
+  }
+}
+
+String _valueDecodeFailureMessage(String what, Object error) {
+  final detail = switch (error) {
+    FormatException(:final message) => message,
+    ArgumentError(:final message) => '$message',
+    _ => '$error',
+  };
+  return 'Dartvex could not decode the $what sent by the server: $detail. '
+      'The server may be using a value encoding this Dartvex version does not '
+      'support yet.';
 }
 
 String? _readErrorMessage(Map<String, dynamic> json) {
