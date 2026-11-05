@@ -38,6 +38,12 @@ export 'src/sync/paginated_query.dart'
         PageInitialResultReader,
         PageSubscriber,
         PageSubscription;
+export 'src/sync/remote_query_set.dart'
+    show
+        StoredQueryError,
+        StoredQueryLoading,
+        StoredQueryResult,
+        StoredQuerySuccess;
 export 'src/transport/connectivity.dart' show ConnectivitySignal;
 export 'src/transport/http_factory.dart'
     show createDefaultHttpClient, defaultHttpClientFactory;

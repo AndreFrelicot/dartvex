@@ -85,6 +85,7 @@ class FakeAuthClient<TUser> implements ConvexAuthClient<TUser> {
   Future<dynamic> mutate(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
+    OptimisticUpdate? optimisticUpdate,
   ]) async {
     throw UnimplementedError();
   }

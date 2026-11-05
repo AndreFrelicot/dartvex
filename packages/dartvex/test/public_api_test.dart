@@ -65,4 +65,27 @@ void main() {
     expect(initialResultReader, isNull);
     expect(subscription, isNull);
   });
+
+  test('exports stored query results and the commit-timestamp placeholder', () {
+    const StoredQueryResult success = StoredQuerySuccess(
+      value: 1,
+      logLines: <String>[],
+    );
+    const StoredQueryResult loading = StoredQueryLoading();
+    const StoredQueryResult error = StoredQueryError(
+      message: 'boom',
+      logLines: <String>[],
+    );
+
+    expect(success, isA<StoredQuerySuccess>());
+    expect(loading, isA<StoredQueryLoading>());
+    expect(error, isA<StoredQueryError>());
+    expect(
+      jsonToConvex(convexToJson(ConvexCommitTsPlaceholder.instance)),
+      same(ConvexCommitTsPlaceholder.instance),
+    );
+    expect(convexToCanonicalJson(2.0), 2);
+    expect(convexSyncApiVersion, isNotEmpty);
+    expect(dartvexVersion, isNotEmpty);
+  });
 }
