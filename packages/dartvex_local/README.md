@@ -190,10 +190,15 @@ The cache and the queue are not scoped to a user: queued mutations replay with
 whatever auth the `ConvexClient` has when they are sent. Apply auth (for
 example `login` or `loginFromCache`) before, or right after,
 `ConvexLocalClient.open`, and call `reset()` on an explicit sign-out or user
-switch. `reset()` clears the queue (rolling back its optimistic patches), the
-recorded ID remaps, and the cache. The client never clears anything on its
-own when the auth state changes, so a transient token-refresh failure does
-not discard offline work.
+switch. `reset()` clears the queue, the recorded ID remaps, and the cache.
+Work of the previous user still in flight when it is called (a query or
+replayed mutation awaiting the server, a live query result being written) is
+not cached, emitted or reported afterwards, and a `mutate()` issued before
+`reset()` that was not queued yet resolves with `LocalMutationFailed`. Results
+the remote delivers after `reset()` is called count as the next user's, so
+sign out (or apply the next user's auth) on the `ConvexClient` first. The
+client never clears anything on its own when the auth state changes, so a
+transient token-refresh failure does not discard offline work.
 
 ## Codegen and Flutter widgets
 

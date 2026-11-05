@@ -11,11 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `ConvexLocalClient.reset()` clears the queue (rolling back its optimistic
-  patches), the recorded ID remaps, and the cache, in that order. Call it on
-  an explicit sign-out or user switch; the client never clears anything on
-  its own when the auth state changes. The identity caveats are documented on
-  `ConvexLocalClient` and in the README.
+- `ConvexLocalClient.reset()` clears the queue, the recorded ID remaps, and
+  the cache. Call it on an explicit sign-out or user switch; the client never
+  clears anything on its own when the auth state changes. Work of the
+  previous identity still in flight when it is called is not persisted,
+  emitted or reported afterwards (see Fixed), and a `mutate()` issued before
+  it that was not queued yet resolves with `LocalMutationFailed`. The identity
+  caveats are documented on `ConvexLocalClient` and in the README.
 - `LocalClientConfig.onConflict`, so conflicts from a replay that starts while
   the client opens are not missed.
 - `LocalMutationConflict.pendingMutationId` and `operationId`, to correlate a
@@ -109,6 +111,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   including rebases from remote snapshots received during the round trip.
 - A mutation left marked `replaying` by a crash or a dispose mid-replay is
   reset to `pending` when the client opens.
+- `reset()` no longer lets the previous user's in-flight work land after it:
+  a `query()` result, live query event or post-replay refresh whose cache
+  write was under way, or whose server response arrived later, could be
+  persisted after `reset()` returned and then served to the next user
+  offline; a replayed mutation completing later recorded its ID remap, and
+  one rejected later restored its rollback baseline and was reported to
+  `onConflict`; a `mutate()` issued just before `reset()` could still be
+  queued and replayed with the next user's auth. Async work now carries an
+  identity generation and drops its writes and emissions once `reset()` has
+  run; `reset()` purges only after writes already under way have landed,
+  replay waits for the purge, and the next user's writes and cache seeds
+  wait for it too.
+- When a remote snapshot rebased the rollback baseline of a queued mutation
+  that patches several queries, a concurrent rebase for another of its
+  queries could overwrite it with a stale copy, so rejecting the mutation
+  restored an outdated server value.
+- A replayed mutation that `clearQueue()` discarded while it was in flight no
+  longer restores its stale rollback baseline over newer server data, nor is
+  reported to `onConflict`, when the server then rejects it.
+- A new subscriber whose cache read was still resolving when it received a
+  newer value from the shared remote subscription is no longer handed the
+  older cached value afterwards.
 
 ## [0.2.0] - 2026-06-12
 

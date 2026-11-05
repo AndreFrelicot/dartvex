@@ -2740,6 +2740,253 @@ void main() {
       },
     );
 
+    group('reset() isolates the previous identity', () {
+      const previousUser = <String, dynamic>{'secret': 'previous-user'};
+
+      Future<void> expectCacheMiss(ConvexLocalClient local, String name) async {
+        await local.setNetworkMode(LocalNetworkMode.offline);
+        await expectLater(local.query(name), throwsStateError);
+      }
+
+      test('a query result whose cache write is in flight when reset() '
+          'starts is purged', () async {
+        final cache = GatedWriteCacheStorage(store);
+        final local = await open(cacheStorage: cache);
+        remoteClient.queryResults['profile:me'] = previousUser;
+
+        cache.blockUpsertWhere((_) => true);
+        final pending = local.query('profile:me');
+        await cache.upsertBlocked;
+        final resetting = local.reset();
+        await pumpEventQueue();
+        cache.releaseBlockedUpsert();
+        await resetting;
+        await pending;
+
+        await expectCacheMiss(local, 'profile:me');
+      });
+
+      test('a query result still pending remotely when reset() runs is '
+          'not cached', () async {
+        final local = await open();
+        final reply = Completer<Object?>();
+        remoteClient.queryResults['profile:me'] = reply.future;
+
+        final pending = local.query('profile:me');
+        await pumpEventQueue();
+        await local.reset();
+        reply.complete(previousUser);
+        expect(await pending, previousUser);
+
+        await expectCacheMiss(local, 'profile:me');
+      });
+
+      test('a subscription event being written when reset() starts is '
+          'purged and not replayed to new subscribers', () async {
+        final cache = GatedWriteCacheStorage(store);
+        final local = await open(cacheStorage: cache);
+        final feed = feedFor('profile:me');
+        local.subscribe('profile:me').stream.listen((_) {});
+        await pumpEventQueue();
+
+        cache.blockUpsertWhere((_) => true);
+        feed.add(const LocalRemoteQuerySuccess(previousUser));
+        await cache.upsertBlocked;
+        final resetting = local.reset();
+        await pumpEventQueue();
+        cache.releaseBlockedUpsert();
+        await resetting;
+        await pumpEventQueue();
+
+        final events = <LocalQueryEvent>[];
+        local.subscribe('profile:me').stream.listen(events.add);
+        await pumpEventQueue();
+        expect(
+          events.whereType<LocalQuerySuccess>().map((event) => event.value),
+          isNot(contains(previousUser)),
+        );
+        await expectCacheMiss(local, 'profile:me');
+      });
+
+      test('a replay result landing after reset() records no ID remap, '
+          'removes nothing and refreshes nothing', () async {
+        final conflicts = <LocalMutationConflict>[];
+        final local = await open(
+          initialNetworkMode: LocalNetworkMode.offline,
+          onConflict: conflicts.add,
+        );
+        await local.mutate('tasks:create', <String, dynamic>{'title': 'a'});
+        final reply = Completer<Object?>();
+        remoteClient
+          ..mutationResults['tasks:create'] = <Object?>[reply.future]
+          ..queryResults['tasks:list'] = <dynamic>[
+            <String, dynamic>{'_id': 'server-a', 'title': 'previous-user'},
+          ];
+        await local.setNetworkMode(LocalNetworkMode.auto);
+        await pumpEventQueue();
+        expect(remoteClient.mutationCalls, hasLength(1));
+
+        await local.reset();
+        reply.complete('server-a');
+        await pumpEventQueue();
+
+        expect(conflicts, isEmpty);
+        expect(local.currentPendingMutations, isEmpty);
+        expect(await store.loadAll(), isEmpty);
+        expect(await store.loadIdRemaps(), isEmpty);
+        expect(local.currentConnectionState, LocalConnectionState.online);
+        await expectCacheMiss(local, 'tasks:list');
+      });
+
+      test('a replay rejection landing after reset() neither reports a '
+          'conflict nor restores the previous rollback baseline', () async {
+        final conflicts = <LocalMutationConflict>[];
+        final local = await open(onConflict: conflicts.add);
+        remoteClient.queryResults['tasks:list'] = <dynamic>[
+          <String, dynamic>{'_id': 't1', 'title': 'previous-user'},
+        ];
+        await local.query('tasks:list');
+        await local.setNetworkMode(LocalNetworkMode.offline);
+        await local.mutate('tasks:create', <String, dynamic>{'title': 'a'});
+        final reply = Completer<Object?>();
+        remoteClient.mutationResults['tasks:create'] = <Object?>[reply.future];
+        await local.setNetworkMode(LocalNetworkMode.auto);
+        await pumpEventQueue();
+        expect(remoteClient.mutationCalls, hasLength(1));
+
+        await local.reset();
+        reply.completeError(const ConvexException('rejected'));
+        await pumpEventQueue();
+
+        expect(conflicts, isEmpty);
+        expect(await store.loadAll(), isEmpty);
+        await expectCacheMiss(local, 'tasks:list');
+      });
+
+      test('the next identity replays its own queue after reset() while a '
+          'previous replay is still in flight', () async {
+        final local = await open(initialNetworkMode: LocalNetworkMode.offline);
+        await local.mutate('tasks:create', <String, dynamic>{'title': 'old'});
+        final reply = Completer<Object?>();
+        remoteClient.mutationResults['tasks:create'] = <Object?>[
+          reply.future,
+          'server-new',
+        ];
+        await local.setNetworkMode(LocalNetworkMode.auto);
+        await pumpEventQueue();
+        expect(remoteClient.mutationCalls, hasLength(1));
+
+        await local.reset();
+        await local.setNetworkMode(LocalNetworkMode.offline);
+        final queued =
+            await local.mutate('tasks:create', <String, dynamic>{
+                  'title': 'new',
+                })
+                as LocalMutationQueued;
+        final newLocalId =
+            queued.pendingMutation.optimisticData!['operationId'] as String;
+        await local.setNetworkMode(LocalNetworkMode.auto);
+        await waitForEmptyQueue(local);
+        expect(
+          remoteClient.mutationCalls.map((call) => call.args['title']),
+          <String>['old', 'new'],
+        );
+
+        reply.complete('server-old');
+        await pumpEventQueue();
+        expect(await store.loadIdRemaps(), <String, String>{
+          newLocalId: 'server-new',
+        });
+      });
+
+      test('work of the next identity issued while reset() waits for an '
+          'in-flight write survives the purge', () async {
+        final cache = GatedWriteCacheStorage(store);
+        final local = await open(cacheStorage: cache);
+        remoteClient.queryResults['profile:me'] = previousUser;
+        cache.blockUpsertWhere((_) => true);
+        final pending = local.query('profile:me');
+        await cache.upsertBlocked;
+
+        final resetting = local.reset();
+        // Applied right away; its cached re-emission waits for the purge.
+        final goingOffline = local.setNetworkMode(LocalNetworkMode.offline);
+        await pumpEventQueue();
+        expect(local.currentNetworkMode, LocalNetworkMode.offline);
+        final queued = local.mutate('tasks:create', <String, dynamic>{
+          'title': 'next-user',
+        });
+        final events = <LocalQueryEvent>[];
+        local.subscribe('tasks:list').stream.listen(events.add);
+        await pumpEventQueue();
+        cache.releaseBlockedUpsert();
+        await resetting;
+        await goingOffline;
+        await pending;
+
+        expect(await queued, isA<LocalMutationQueued>());
+        expect(
+          local.currentPendingMutations.map((m) => m.args['title']),
+          <String>['next-user'],
+        );
+        expect(await store.loadAll(), hasLength(1));
+        expect(await local.query('tasks:list'), hasLength(1));
+        await pumpEventQueue();
+        expect(events.whereType<LocalQuerySuccess>(), isNotEmpty);
+        await expectLater(local.query('profile:me'), throwsStateError);
+      });
+
+      test('reset() called from a subscriber listener completes', () async {
+        final local = await open();
+        final feed = feedFor('profile:me');
+        Future<void>? resetting;
+        local.subscribe('profile:me').stream.listen((event) {
+          if (event is LocalQueryError) {
+            resetting ??= local.reset();
+          }
+        });
+        await pumpEventQueue();
+        feed.add(const LocalRemoteQueryError(ConvexException('Unauthorized')));
+        await pumpEventQueue();
+
+        expect(resetting, isNotNull);
+        await resetting!.timeout(const Duration(seconds: 1));
+      });
+
+      test('a mutate() issued before reset() is not queued after it', () async {
+        final local = await open(initialNetworkMode: LocalNetworkMode.offline);
+
+        final result = local.mutate('tasks:create', <String, dynamic>{
+          'title': 'previous-user',
+        });
+        await local.reset();
+
+        expect(await result, isA<LocalMutationFailed>());
+        expect(local.currentPendingMutations, isEmpty);
+        expect(await store.loadAll(), isEmpty);
+        await expectCacheMiss(local, 'tasks:list');
+      });
+
+      test('a direct send failing retryably after reset() is not queued for '
+          'the next identity', () async {
+        final local = await open();
+        final reply = Completer<Object?>();
+        remoteClient.mutationResults['tasks:create'] = <Object?>[reply.future];
+
+        final result = local.mutate('tasks:create', <String, dynamic>{
+          'title': 'previous-user',
+        });
+        await pumpEventQueue();
+        expect(remoteClient.mutationCalls, hasLength(1));
+        await local.reset();
+        reply.completeError(const ConvexException('timeout', retryable: true));
+
+        expect(await result, isA<LocalMutationFailed>());
+        expect(local.currentPendingMutations, isEmpty);
+        expect(await store.loadAll(), isEmpty);
+      });
+    });
+
     test('F95: a mutation queued after a retryable direct failure while '
         'connected is replayed', () async {
       final local = await open();
@@ -2929,6 +3176,34 @@ void main() {
       },
     );
 
+    test('F101: a new subscriber is not seeded with a cache value older than '
+        'a remote value it already received', () async {
+      final readDelay = Completer<void>();
+      final cache = GatedWriteCacheStorage(
+        DelayedReadCacheStorage(store, delayAfterRead: readDelay.future),
+      );
+      final local = await open(cacheStorage: cache);
+      final feed = feedFor('tasks:list');
+      local.subscribe('tasks:list').stream.listen((_) {});
+      await pumpEventQueue();
+      feed.add(const LocalRemoteQuerySuccess(<dynamic>['v1']));
+      await pumpEventQueue();
+
+      cache.blockUpsertWhere((_) => true);
+      feed.add(const LocalRemoteQuerySuccess(<dynamic>['v2']));
+      await cache.upsertBlocked;
+      // Its cache read sees v1 but resolves only after v2 is delivered.
+      final events = <LocalQueryEvent>[];
+      local.subscribe('tasks:list').stream.listen(events.add);
+      await pumpEventQueue();
+      cache.releaseBlockedUpsert();
+      await pumpEventQueue();
+      readDelay.complete();
+      await pumpEventQueue();
+
+      expect((events.last as LocalQuerySuccess).value, <dynamic>['v2']);
+    });
+
     test('F102: a storage failure after a committed replay neither rolls back '
         'nor re-sends', () async {
       final conflicts = <LocalMutationConflict>[];
@@ -2996,6 +3271,45 @@ void main() {
       expect(events, hasLength(2));
       expect(events.first, isA<LocalQuerySuccess>());
       expect(events.last, isA<LocalQueryError>());
+    });
+
+    test('F104: remote snapshots for two targets of one queued mutation both '
+        'rebase its rollback baselines', () async {
+      final local = await open(
+        handlers: const <LocalMutationHandler>[
+          CreateTaskHandler(),
+          TaskCountHandler(),
+        ],
+        refreshQueryTimeout: const Duration(milliseconds: 50),
+      );
+      final listFeed = feedFor('tasks:list');
+      final countFeed = feedFor('tasks:count');
+      local.subscribe('tasks:list').stream.listen((_) {});
+      local.subscribe('tasks:count').stream.listen((_) {});
+      await pumpEventQueue();
+      listFeed.add(const LocalRemoteQuerySuccess(<dynamic>['v1']));
+      countFeed.add(const LocalRemoteQuerySuccess(1));
+      await pumpEventQueue();
+
+      await local.setNetworkMode(LocalNetworkMode.offline);
+      await local.mutate('tasks:create', <String, dynamic>{'title': 'x'});
+      final reply = Completer<Object?>();
+      remoteClient.mutationResults['tasks:create'] = <Object?>[reply.future];
+      await local.setNetworkMode(LocalNetworkMode.auto);
+      await pumpEventQueue();
+      expect(remoteClient.mutationCalls, hasLength(1));
+
+      // Both server values change while the mutation is in flight.
+      listFeed.add(const LocalRemoteQuerySuccess(<dynamic>['v2']));
+      countFeed.add(const LocalRemoteQuerySuccess(2));
+      await pumpEventQueue();
+
+      reply.completeError(const ConvexException('rejected'));
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      await local.setNetworkMode(LocalNetworkMode.offline);
+
+      expect(await local.query('tasks:list'), <dynamic>['v2']);
+      expect(await local.query('tasks:count'), 2);
     });
 
     test(
@@ -3113,6 +3427,38 @@ void main() {
       expect(await local.query('tasks:list'), <dynamic>[
         <String, dynamic>{'_id': 't1', 'title': 'v2'},
       ]);
+    });
+
+    test('F215: a replayed mutation rejected after clearQueue() neither rolls '
+        'back over newer server data nor reports a conflict', () async {
+      final conflicts = <LocalMutationConflict>[];
+      final local = await open(
+        refreshQueryTimeout: const Duration(milliseconds: 50),
+        onConflict: conflicts.add,
+      );
+      final feed = feedFor('tasks:list');
+      local.subscribe('tasks:list').stream.listen((_) {});
+      await pumpEventQueue();
+      feed.add(const LocalRemoteQuerySuccess(<dynamic>['v1']));
+      await pumpEventQueue();
+
+      await local.setNetworkMode(LocalNetworkMode.offline);
+      await local.mutate('tasks:create', <String, dynamic>{'title': 'x'});
+      final reply = Completer<Object?>();
+      remoteClient.mutationResults['tasks:create'] = <Object?>[reply.future];
+      await local.setNetworkMode(LocalNetworkMode.auto);
+      await pumpEventQueue();
+      expect(remoteClient.mutationCalls, hasLength(1));
+
+      await local.clearQueue();
+      feed.add(const LocalRemoteQuerySuccess(<dynamic>['v2']));
+      await pumpEventQueue();
+      reply.completeError(const ConvexException('rejected'));
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+
+      expect(conflicts, isEmpty);
+      await local.setNetworkMode(LocalNetworkMode.offline);
+      expect(await local.query('tasks:list'), <dynamic>['v2']);
     });
 
     test('F216/F221: onConflict from the config gets conflicts from replay '
