@@ -743,4 +743,386 @@ void main() {
       expect(query.loadMore(), isFalse);
     });
   });
+
+  group('ConvexPaginatedQuery post-release fixes', () {
+    test('loadMore from a stream listener does not throw (sync controller)',
+        () {
+      final source = _FakeSource();
+      final query = ConvexPaginatedQuery(
+        subscribe: source.subscribe,
+        name: 'messages:list',
+        args: const <String, dynamic>{},
+        pageSize: 2,
+      );
+      final statuses = <ConvexPaginationStatus>[];
+      final errors = <Object>[];
+      runZonedGuarded(() {
+        query.stream.listen((result) {
+          statuses.add(result.status);
+          if (result.status == ConvexPaginationStatus.canLoadMore) {
+            query.loadMore();
+          }
+        });
+      }, (error, _) => errors.add(error));
+
+      source.pages[0]
+          .emitPage(<dynamic>['a', 'b'], continueCursor: 'X', isDone: false);
+
+      expect(errors, isEmpty);
+      expect(source.pages, hasLength(2));
+      expect(source.pages[1].cursor, 'X');
+      // The re-entrant loadingMore snapshot is delivered right after the
+      // canLoadMore one instead of being dropped.
+      expect(
+        statuses,
+        <ConvexPaginationStatus>[
+          ConvexPaginationStatus.canLoadMore,
+          ConvexPaginationStatus.loadingMore,
+        ],
+      );
+
+      query.cancel();
+    });
+
+    test('cancel from a stream listener closes the stream', () async {
+      final source = _FakeSource();
+      final query = ConvexPaginatedQuery(
+        subscribe: source.subscribe,
+        name: 'messages:list',
+        args: const <String, dynamic>{},
+        pageSize: 2,
+      );
+      final errors = <Object>[];
+      final done = Completer<void>();
+      runZonedGuarded(() {
+        query.stream.listen(
+          (result) {
+            if (result.isDone) {
+              query.cancel();
+            }
+          },
+          onDone: done.complete,
+        );
+      }, (error, _) => errors.add(error));
+
+      source.pages[0]
+          .emitPage(<dynamic>['a'], continueCursor: 'X', isDone: true);
+
+      await done.future.timeout(const Duration(seconds: 1));
+      expect(errors, isEmpty);
+      expect(source.pages.single.canceled, isTrue);
+    });
+
+    test('a seeded page is provisional: loadMore waits for the live result',
+        () {
+      final source = _FakeSource();
+      final query = ConvexPaginatedQuery(
+        subscribe: source.subscribe,
+        readInitialResult: (_, __) => _pageSuccess(
+          <dynamic>['old1', 'old2'],
+          continueCursor: 'STALE',
+          isDone: false,
+        ),
+        name: 'messages:list',
+        args: const <String, dynamic>{},
+        pageSize: 2,
+      );
+
+      // Displayed immediately, but the stale cursor is not chained from.
+      expect(query.current.results, <dynamic>['old1', 'old2']);
+      expect(query.status, ConvexPaginationStatus.canLoadMore);
+      expect(query.loadMore(), isFalse);
+      expect(source.pages, hasLength(1));
+
+      source.pages[0].emitPage(
+        <dynamic>['new1', 'old1'],
+        continueCursor: 'LIVE',
+        isDone: false,
+      );
+      expect(query.current.results, <dynamic>['new1', 'old1']);
+      expect(query.loadMore(), isTrue);
+      expect(source.pages[1].cursor, 'LIVE');
+
+      query.cancel();
+    });
+
+    test('an identical live re-delivery of the seed confirms it silently',
+        () async {
+      final source = _FakeSource();
+      final seed = _pageSuccess(
+        <dynamic>['a'],
+        continueCursor: 'C',
+        isDone: false,
+      );
+      final query = ConvexPaginatedQuery(
+        subscribe: source.subscribe,
+        readInitialResult: (_, __) => seed,
+        name: 'messages:list',
+        args: const <String, dynamic>{},
+        pageSize: 2,
+      );
+      final emissions = <ConvexPaginatedResult>[];
+      query.stream.listen(emissions.add);
+
+      source.pages[0]._controller.add(
+        StoredQuerySuccess(value: seed.value, logLines: const <String>[]),
+      );
+
+      expect(emissions, isEmpty);
+      expect(query.loadMore(), isTrue);
+
+      query.cancel();
+    });
+
+    test('no-op page events do not emit a new snapshot', () {
+      final source = _FakeSource();
+      final query = ConvexPaginatedQuery(
+        subscribe: source.subscribe,
+        name: 'messages:list',
+        args: const <String, dynamic>{},
+        pageSize: 3,
+      );
+      final emissions = <ConvexPaginatedResult>[];
+      query.stream.listen(emissions.add);
+
+      source.pages[0].emitPage(
+        <dynamic>['a', 'b', 'ba', 'bb', 'c'],
+        continueCursor: 'C',
+        isDone: false,
+        splitCursor: 'S',
+        pageStatus: 'SplitRecommended',
+      );
+      expect(emissions, hasLength(1));
+      final items = query.current.results;
+
+      // One half loads while its sibling is still loading: nothing visible
+      // changes.
+      source.pages[1].emitPage(
+        <dynamic>[items[0], items[1]],
+        continueCursor: 'S',
+        isDone: false,
+      );
+      expect(emissions, hasLength(1));
+
+      query.cancel();
+    });
+
+    test('an ongoing split survives a same-range update of the original', () {
+      final source = _FakeSource();
+      final query = ConvexPaginatedQuery(
+        subscribe: source.subscribe,
+        name: 'messages:list',
+        args: const <String, dynamic>{},
+        pageSize: 3,
+      );
+
+      source.pages[0].emitPage(
+        <dynamic>['a', 'b', 'ba', 'bb', 'c'],
+        continueCursor: 'C',
+        isDone: false,
+        splitCursor: 'S',
+        pageStatus: 'SplitRecommended',
+      );
+      expect(source.pages, hasLength(3));
+      final firstHalf = source.pages[1];
+      final secondHalf = source.pages[2];
+
+      // A reactive update inside the same range (same continueCursor).
+      source.pages[0].emitPage(
+        <dynamic>['a', 'b', 'ba', 'bb', 'bc', 'c'],
+        continueCursor: 'C',
+        isDone: false,
+        splitCursor: 'S',
+        pageStatus: 'SplitRecommended',
+      );
+      expect(firstHalf.canceled, isFalse);
+      expect(secondHalf.canceled, isFalse);
+      expect(source.pages, hasLength(3));
+
+      firstHalf
+          .emitPage(<dynamic>['a', 'b'], continueCursor: 'S', isDone: false);
+      secondHalf.emitPage(
+        <dynamic>['ba', 'bb', 'bc', 'c'],
+        continueCursor: 'C',
+        isDone: false,
+      );
+      expect(source.pages[0].canceled, isTrue);
+      expect(query.current.results, <dynamic>['a', 'b', 'ba', 'bb', 'bc', 'c']);
+
+      query.cancel();
+    });
+
+    test('InvalidCursor on a loaded page restarts pagination with a fresh id',
+        () {
+      final source = _FakeSource();
+      final query = ConvexPaginatedQuery(
+        subscribe: source.subscribe,
+        name: 'messages:list',
+        args: const <String, dynamic>{},
+        pageSize: 2,
+      );
+      source.pages[0]
+          .emitPage(<dynamic>['a', 'b'], continueCursor: 'X', isDone: false);
+      query.loadMore();
+      source.pages[1]
+          .emitPage(<dynamic>['c', 'd'], continueCursor: 'Y', isDone: false);
+
+      source.pages[1].emitError('InvalidCursor: the cursor is no longer valid');
+
+      expect(source.pages[0].canceled, isTrue);
+      expect(source.pages[1].canceled, isTrue);
+      expect(source.pages, hasLength(3));
+      final restarted = source.pages[2];
+      expect(restarted.cursor, isNull);
+      expect(restarted.paginationOpts['id'], isA<int>());
+      expect(query.status, ConvexPaginationStatus.loadingFirstPage);
+      expect(query.current.results, isEmpty);
+
+      restarted
+          .emitPage(<dynamic>['a2', 'b2'], continueCursor: 'Z', isDone: false);
+      expect(query.current.results, <dynamic>['a2', 'b2']);
+      expect(query.status, ConvexPaginationStatus.canLoadMore);
+
+      query.cancel();
+    });
+
+    test('InvalidCursor via paginationError data also restarts', () {
+      final source = _FakeSource();
+      final query = ConvexPaginatedQuery(
+        subscribe: source.subscribe,
+        name: 'messages:list',
+        args: const <String, dynamic>{},
+        pageSize: 2,
+      );
+      source.pages[0]
+          .emitPage(<dynamic>['a'], continueCursor: 'X', isDone: false);
+      source.pages[0]._controller.add(
+        const StoredQueryError(
+          message: 'Server error',
+          logLines: <String>[],
+          data: <String, dynamic>{
+            'isConvexSystemError': true,
+            'paginationError': 'InvalidCursor',
+          },
+        ),
+      );
+      expect(source.pages, hasLength(2));
+      expect(source.pages[1].paginationOpts['id'], isA<int>());
+
+      query.cancel();
+    });
+
+    test('a brand-new first page failing with InvalidCursor stays an error',
+        () {
+      final source = _FakeSource();
+      final query = ConvexPaginatedQuery(
+        subscribe: source.subscribe,
+        name: 'messages:list',
+        args: const <String, dynamic>{},
+        pageSize: 2,
+      );
+      source.pages[0].emitError('InvalidCursor: nope');
+      expect(source.pages, hasLength(1));
+      expect(query.status, ConvexPaginationStatus.error);
+
+      query.reset();
+      expect(source.pages, hasLength(2));
+      expect(source.pages[1].paginationOpts['id'], isA<int>());
+      expect(query.status, ConvexPaginationStatus.loadingFirstPage);
+
+      query.cancel();
+    });
+
+    test('a page stream completing (client closed) makes the query terminal',
+        () async {
+      final source = _FakeSource();
+      final query = ConvexPaginatedQuery(
+        subscribe: source.subscribe,
+        name: 'messages:list',
+        args: const <String, dynamic>{},
+        pageSize: 2,
+      );
+      final done = Completer<void>();
+      ConvexPaginatedResult? last;
+      query.stream.listen((result) => last = result, onDone: done.complete);
+
+      await source.pages[0]._controller.close();
+
+      await done.future.timeout(const Duration(seconds: 1));
+      expect(last?.status, ConvexPaginationStatus.error);
+      expect(query.status, ConvexPaginationStatus.error);
+      expect(query.loadMore(), isFalse);
+    });
+
+    test('loadMore returns false when the page subscriber throws', () {
+      var closed = false;
+      final source = _FakeSource();
+      final query = ConvexPaginatedQuery(
+        subscribe: (name, args) {
+          if (closed) {
+            throw const ConvexException('ConvexClient has been disposed');
+          }
+          return source.subscribe(name, args);
+        },
+        name: 'messages:list',
+        args: const <String, dynamic>{},
+        pageSize: 2,
+      );
+      source.pages[0]
+          .emitPage(<dynamic>['a'], continueCursor: 'X', isDone: false);
+      closed = true;
+      expect(query.loadMore(), isFalse);
+      query.cancel();
+    });
+
+    test('rejects a page size or numItems below 1', () {
+      final source = _FakeSource();
+      expect(
+        () => ConvexPaginatedQuery(
+          subscribe: source.subscribe,
+          name: 'messages:list',
+          args: const <String, dynamic>{},
+          pageSize: 0,
+        ),
+        throwsArgumentError,
+      );
+      expect(source.pages, isEmpty);
+      final query = ConvexPaginatedQuery(
+        subscribe: source.subscribe,
+        name: 'messages:list',
+        args: const <String, dynamic>{},
+        pageSize: 2,
+      );
+      source.pages[0]
+          .emitPage(<dynamic>['a'], continueCursor: 'X', isDone: false);
+      expect(() => query.loadMore(-1), throwsArgumentError);
+      query.cancel();
+    });
+
+    test('aggregates hasPendingWrites from loaded pages', () {
+      final source = _FakeSource();
+      final query = ConvexPaginatedQuery(
+        subscribe: source.subscribe,
+        name: 'messages:list',
+        args: const <String, dynamic>{},
+        pageSize: 2,
+      );
+      source.pages[0]._controller.add(
+        const StoredQuerySuccess(
+          value: <String, dynamic>{
+            'page': <dynamic>['draft'],
+            'continueCursor': 'X',
+            'isDone': true,
+          },
+          logLines: <String>[],
+          hasPendingWrites: true,
+        ),
+      );
+      expect(query.current.hasPendingWrites, isTrue);
+      source.pages[0]
+          .emitPage(<dynamic>['saved'], continueCursor: 'X', isDone: true);
+      expect(query.current.hasPendingWrites, isFalse);
+      query.cancel();
+    });
+  });
 }

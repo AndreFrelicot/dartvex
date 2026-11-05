@@ -41,6 +41,7 @@ class ConvexPaginatedResult {
     required this.status,
     required this.isDone,
     this.error,
+    this.hasPendingWrites = false,
   });
 
   /// The concatenated items of every loaded page, in order.
@@ -56,11 +57,18 @@ class ConvexPaginatedResult {
   /// The error from the first failed page when [status] is
   /// [ConvexPaginationStatus.error]; otherwise `null`.
   final Object? error;
+
+  /// Whether optimistic writes currently affect any loaded page in [results]
+  /// (for example an optimistically inserted item that the server has not
+  /// confirmed yet). Mirrors `QuerySuccess.hasPendingWrites`.
+  final bool hasPendingWrites;
 }
 
 /// Opens a live subscription to a single page query.
 ///
-/// Internal plumbing: [ConvexPaginatedQuery] calls this once per page (and once
+/// Plumbing for [ConvexPaginatedQuery] (exported, together with
+/// [StoredQueryResult] and its subclasses, so fakes and custom sources can back
+/// a paginated query without importing Dartvex internals): it calls this once per page (and once
 /// per split half) with the same udf path and the page's args (including
 /// `paginationOpts`). `ConvexClient` supplies an implementation backed by a
 /// normal query subscription, so every page flows through the same sync,
@@ -113,8 +121,19 @@ class ConvexPaginatedQuery {
   /// Creates a paginated query that loads its first page immediately.
   ///
   /// [subscribe] opens a live subscription per page, [name] is the paginated
-  /// query function, [args] are the query arguments (without `paginationOpts`),
-  /// and [pageSize] is the number of items requested per page.
+  /// query function, [args] are the query arguments (without `paginationOpts`;
+  /// a `paginationOpts` entry in [args] is replaced by the one each page
+  /// sends), and [pageSize] is the number of items requested per page.
+  ///
+  /// [readInitialResult], when given, seeds a page synchronously with an
+  /// already known local result (for example the warm cache of an earlier
+  /// subscription), so a remounted list does not flash a loading state. A
+  /// seeded page is *provisional* until its live subscription delivers a
+  /// result: [loadMore] does not chain the next page from a provisional
+  /// page's cursor, because a stale cursor could leave a permanent gap or
+  /// duplicate items.
+  ///
+  /// Throws an [ArgumentError] when [pageSize] is less than 1.
   ConvexPaginatedQuery({
     required PageSubscriber subscribe,
     PageInitialResultReader? readInitialResult,
@@ -125,7 +144,7 @@ class ConvexPaginatedQuery {
         _readInitialResult = readInitialResult,
         _name = name,
         _args = canonicalizeConvexArgs(args),
-        _pageSize = pageSize {
+        _pageSize = _checkNumItems(pageSize, 'pageSize') {
     _current = const ConvexPaginatedResult(
       results: <dynamic>[],
       status: ConvexPaginationStatus.loadingFirstPage,
@@ -151,6 +170,27 @@ class ConvexPaginatedQuery {
   late ConvexPaginatedResult _current;
   bool _disposed = false;
 
+  // Re-entrancy guard for the synchronous broadcast controller: a snapshot
+  // produced while a snapshot is being delivered (loadMore()/reset() called
+  // from a stream listener) is delivered right after the outer delivery
+  // returns, and a cancel() from a listener closes the stream once it unwinds.
+  bool _delivering = false;
+  bool _pendingDelivery = false;
+  bool _closeAfterDelivery = false;
+
+  /// `paginationOpts.id` of the current generation, set after a [reset] so the
+  /// restarted pages get fresh query tokens (and journals) instead of
+  /// re-attaching to a subscription that still holds an invalid cursor.
+  int? _paginationId;
+  static int _nextPaginationId = 1;
+
+  static int _checkNumItems(int value, String name) {
+    if (value < 1) {
+      throw ArgumentError.value(value, name, 'must be at least 1');
+    }
+    return value;
+  }
+
   /// The reactive stream of aggregated results, one per change.
   ///
   /// A broadcast stream that does not replay; read [current] for the latest
@@ -168,36 +208,100 @@ class ConvexPaginatedQuery {
 
   /// Loads the next page, returning whether loading was actually started.
   ///
-  /// Returns `false` (a no-op) when the query is disposed, the aggregate is in
-  /// an error state, the last page is still loading (concurrent loads are not
-  /// allowed), or the query is already exhausted. [numItems] overrides the page
-  /// size for the new page.
+  /// Returns `false` (a no-op) when the query is disposed (or its client was
+  /// closed), the aggregate is in an error state, the last page is still
+  /// loading (concurrent loads are not allowed), the last page only holds a
+  /// provisional seed that its live subscription has not confirmed yet, or the
+  /// query is already exhausted. [numItems] overrides the page size for the
+  /// new page and must be at least 1.
+  ///
+  /// Safe to call from a [stream] listener.
   bool loadMore([int? numItems]) {
+    if (numItems != null) {
+      _checkNumItems(numItems, 'numItems');
+    }
     if (_disposed || _pages.isEmpty) {
       return false;
     }
     if (_current.status == ConvexPaginationStatus.error) {
       return false;
     }
-    final data = _pages.last.data;
+    final last = _pages.last;
+    final data = last.data;
     if (data == null) {
       // The last page is still loading (or errored); don't stack page loads.
+      return false;
+    }
+    if (last.provisional) {
+      // Seeded from a possibly stale local result: wait for the live result
+      // before chaining from its continueCursor.
       return false;
     }
     if (data.isDone) {
       return false;
     }
-    _addPage(cursor: data.continueCursor, numItems: numItems ?? _pageSize);
+    try {
+      _addPage(cursor: data.continueCursor, numItems: numItems ?? _pageSize);
+    } on ConvexException {
+      // The client was closed: the page subscription cannot be opened.
+      return false;
+    }
     _emit();
     return true;
   }
 
+  /// Restarts pagination from the first page.
+  ///
+  /// Disposes every page and in-progress split, then reloads the first page
+  /// with fresh query subscriptions (tagged with a new `paginationOpts.id`, as
+  /// the official client does, so they cannot re-attach to stale cursors or
+  /// journals). Called automatically when a loaded page fails with an
+  /// `InvalidCursor` error — typically after a deploy changed the paginated
+  /// query's index or filter. A no-op once cancelled. Safe to call from a
+  /// [stream] listener.
+  void reset() {
+    if (_disposed) {
+      return;
+    }
+    _paginationId = _nextPaginationId++;
+    _disposePagesAndSplits();
+    _current = const ConvexPaginatedResult(
+      results: <dynamic>[],
+      status: ConvexPaginationStatus.loadingFirstPage,
+      isDone: false,
+    );
+    _deliver();
+    try {
+      _addPage(cursor: null, numItems: _pageSize);
+    } on ConvexException catch (error) {
+      _current = ConvexPaginatedResult(
+        results: const <dynamic>[],
+        status: ConvexPaginationStatus.error,
+        isDone: false,
+        error: error,
+      );
+      _deliver();
+    }
+  }
+
   /// Cancels every page subscription and closes the result stream.
+  ///
+  /// Safe to call from a [stream] listener: the stream then closes as soon as
+  /// the current delivery returns.
   void cancel() {
     if (_disposed) {
       return;
     }
     _disposed = true;
+    _disposePagesAndSplits();
+    if (_delivering) {
+      _closeAfterDelivery = true;
+    } else {
+      unawaited(_controller.close());
+    }
+  }
+
+  void _disposePagesAndSplits() {
     for (final page in _pages) {
       page.dispose();
     }
@@ -207,7 +311,6 @@ class ConvexPaginatedQuery {
     }
     _pages.clear();
     _splits.clear();
-    unawaited(_controller.close());
   }
 
   void _addPage({required String? cursor, required int numItems}) {
@@ -220,7 +323,9 @@ class ConvexPaginatedQuery {
     final initial = page.initialResult;
     if (initial != null) {
       page.initialResult = null;
-      _onPageResult(page, initial);
+      page.provisional = true;
+      page.seed = initial;
+      _onPageResult(page, initial, fromSeed: true);
     }
   }
 
@@ -236,6 +341,7 @@ class ConvexPaginatedQuery {
       // A split half is bounded by an explicit endCursor (which may be null,
       // meaning "to the end"); a normal page omits it entirely.
       if (bounded) 'endCursor': endCursor,
+      if (_paginationId != null) 'id': _paginationId,
     };
     final pageArgs = <String, dynamic>{
       ..._args,
@@ -252,8 +358,29 @@ class ConvexPaginatedQuery {
       onError: (Object error, StackTrace stackTrace) {
         _onPageStreamError(page, error);
       },
+      onDone: () => _onPageStreamDone(page),
     );
     return page;
+  }
+
+  /// A page stream only completes on its own when the client closed it (our
+  /// own teardown cancels the listener first): the query is terminal, so
+  /// report the error, then close the stream instead of freezing.
+  void _onPageStreamDone(_Page page) {
+    if (_disposed) {
+      return;
+    }
+    page.data = null;
+    page.error = const ConvexException('ConvexClient has been disposed');
+    if (!_pages.contains(page)) {
+      // A split half: surface the terminal error on the aggregate anyway.
+      for (final active in _pages) {
+        active.data = null;
+        active.error = page.error;
+      }
+    }
+    _emit();
+    cancel();
   }
 
   void _onPageStreamError(_Page page, Object error) {
@@ -267,14 +394,45 @@ class ConvexPaginatedQuery {
     _emit();
   }
 
-  void _onPageResult(_Page page, StoredQueryResult result) {
+  void _onPageResult(
+    _Page page,
+    StoredQueryResult result, {
+    bool fromSeed = false,
+  }) {
     if (_disposed) {
       return;
     }
-    _cancelSplitsForOriginal(page);
+    if (!fromSeed) {
+      final seed = page.seed;
+      page.seed = null;
+      page.provisional = false;
+      if (seed != null && _isSameResult(seed, result)) {
+        // The live subscription confirmed the seeded value (for example the
+        // result of an identical active subscription): nothing changed, only
+        // cursor chaining is now allowed.
+        return;
+      }
+    }
+    if (result is StoredQueryError &&
+        _isInvalidCursor(result) &&
+        _pages.contains(page) &&
+        (page.startCursor != null || page.hadSuccess)) {
+      // The page's cursor or journal no longer matches the database query
+      // (typically after a deploy changed its index or filter): restart
+      // pagination instead of pinning the list to an error. Mirrors the
+      // official usePaginatedQuery. A brand-new first page that fails this
+      // way is surfaced as an error instead, so a reset cannot loop.
+      reset();
+      return;
+    }
+    final parsedSuccess =
+        result is StoredQuerySuccess ? _parsePage(result.value) : null;
+    if (!_splitsStillValid(page, parsedSuccess)) {
+      _cancelSplitsForOriginal(page);
+    }
     switch (result) {
-      case StoredQuerySuccess(:final value):
-        final parsed = _parsePage(value);
+      case StoredQuerySuccess(:final hasPendingWrites):
+        final parsed = parsedSuccess;
         if (parsed == null) {
           page.data = null;
           page.error = const ConvexException(
@@ -282,8 +440,9 @@ class ConvexPaginatedQuery {
             'object with page, isDone, and continueCursor fields',
           );
         } else {
-          page.data = parsed;
+          page.data = parsed..hasPendingWrites = hasPendingWrites;
           page.error = null;
+          page.hadSuccess = true;
           // A fresh successful result clears any prior split failure so an
           // oversized page can be re-split once its data settles again.
           page.splitFailed = false;
@@ -297,6 +456,43 @@ class ConvexPaginatedQuery {
     }
     _reconcileSplits();
     _emit();
+  }
+
+  /// An in-progress split of [page] stays valid while the page keeps the range
+  /// it had when the split started: the halves are bounded by the page's start
+  /// cursor, the split cursor, and that end cursor, so they still cover the
+  /// page gaplessly. Cancelling it on every reactive update would let a busy
+  /// page churn subscriptions and never finish splitting. Mirrors the official
+  /// client, which keeps an ongoing split until both halves load.
+  bool _splitsStillValid(_Page page, _PageData? parsed) {
+    for (final split in _splits) {
+      if (split.original != page) {
+        continue;
+      }
+      if (parsed == null || parsed.continueCursor != split.endCursor) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  static bool _isSameResult(StoredQueryResult a, StoredQueryResult b) {
+    if (a is StoredQuerySuccess && b is StoredQuerySuccess) {
+      return identical(a.value, b.value) &&
+          a.hasPendingWrites == b.hasPendingWrites;
+    }
+    if (a is StoredQueryError && b is StoredQueryError) {
+      return a.message == b.message && identical(a.data, b.data);
+    }
+    return a is StoredQueryLoading && b is StoredQueryLoading;
+  }
+
+  static bool _isInvalidCursor(StoredQueryError error) {
+    if (error.message.contains('InvalidCursor')) {
+      return true;
+    }
+    final data = error.data;
+    return data is Map && data['paginationError'] == 'InvalidCursor';
   }
 
   void _cancelSplitsForOriginal(_Page page) {
@@ -386,7 +582,12 @@ class ConvexPaginatedQuery {
         bounded: true,
         endCursor: data.continueCursor,
       );
-      final split = _Split(original: page, first: first, second: second);
+      final split = _Split(
+        original: page,
+        first: first,
+        second: second,
+        endCursor: data.continueCursor,
+      );
       _splits.add(split);
       _consumeInitialResult(first);
       if (_splits.contains(split)) {
@@ -402,6 +603,7 @@ class ConvexPaginatedQuery {
     final results = <dynamic>[];
     var hasLoading = false;
     var lastPageIsDone = false;
+    var hasPendingWrites = false;
     Object? firstError;
     for (final page in _pages) {
       if (page.error != null) {
@@ -418,6 +620,7 @@ class ConvexPaginatedQuery {
       }
       results.addAll(data.page);
       lastPageIsDone = data.isDone;
+      hasPendingWrites = hasPendingWrites || data.hasPendingWrites;
     }
 
     final ConvexPaginationStatus status;
@@ -433,14 +636,59 @@ class ConvexPaginatedQuery {
       status = ConvexPaginationStatus.canLoadMore;
     }
 
+    final previous = _current;
+    if (previous.status == status &&
+        identical(previous.error, firstError) &&
+        previous.hasPendingWrites == hasPendingWrites &&
+        _sameItems(previous.results, results)) {
+      // Nothing visible changed (a split half loaded while its sibling is
+      // still loading, a split swapped in the same items, a duplicate seed):
+      // skip the emission so listeners do not rebuild every item.
+      return;
+    }
     _current = ConvexPaginatedResult(
       results: List<dynamic>.unmodifiable(results),
       status: status,
       isDone: status == ConvexPaginationStatus.exhausted,
       error: firstError,
+      hasPendingWrites: hasPendingWrites,
     );
-    if (!_controller.isClosed) {
-      _controller.add(_current);
+    _deliver();
+  }
+
+  static bool _sameItems(List<dynamic> a, List<dynamic> b) {
+    if (a.length != b.length) {
+      return false;
+    }
+    for (var index = 0; index < a.length; index += 1) {
+      if (!identical(a[index], b[index])) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// Delivers [_current] on the synchronous broadcast controller, deferring a
+  /// re-entrant delivery until the outer one returns (see [_delivering]).
+  void _deliver() {
+    if (_delivering) {
+      _pendingDelivery = true;
+      return;
+    }
+    _delivering = true;
+    try {
+      do {
+        _pendingDelivery = false;
+        if (!_controller.isClosed) {
+          _controller.add(_current);
+        }
+      } while (_pendingDelivery && !_disposed);
+    } finally {
+      _delivering = false;
+    }
+    if (_closeAfterDelivery) {
+      _closeAfterDelivery = false;
+      unawaited(_controller.close());
     }
   }
 
@@ -491,6 +739,18 @@ class _Page {
   /// The latest error, or `null` while loading or successful.
   Object? error;
 
+  /// Whether [data] came from a local seed that the page's live subscription
+  /// has not confirmed yet; [ConvexPaginatedQuery.loadMore] does not chain
+  /// from a provisional page's cursor.
+  bool provisional = false;
+
+  /// The consumed seed, kept until the first live result so an identical
+  /// re-delivery of it can be recognized and skipped.
+  StoredQueryResult? seed;
+
+  /// Whether this page ever produced a successful result.
+  bool hadSuccess = false;
+
   /// Set when an attempt to split this page failed. Suppresses immediate
   /// re-splitting until the page produces a fresh successful result, so a
   /// transient split-half failure falls back to this (un-split) page instead
@@ -518,13 +778,23 @@ class _PageData {
   final bool isDone;
   final String? splitCursor;
   final String? pageStatus;
+  bool hasPendingWrites = false;
 }
 
 /// An in-progress split of [original] into [first] and [second] halves.
 class _Split {
-  _Split({required this.original, required this.first, required this.second});
+  _Split({
+    required this.original,
+    required this.first,
+    required this.second,
+    required this.endCursor,
+  });
 
   final _Page original;
   final _Page first;
   final _Page second;
+
+  /// The original page's continueCursor when the split started; the second
+  /// half is bounded by it.
+  final String endCursor;
 }
