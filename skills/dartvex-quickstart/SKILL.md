@@ -4,7 +4,7 @@ description: Connect a Dart or Flutter app to a Convex backend with the dartvex 
 license: MIT
 metadata:
   author: AndreFrelicot
-  ecosystem-version: "0.2.0"
+  ecosystem-version: "0.3.0"
 ---
 
 # Dartvex Quickstart
@@ -22,27 +22,36 @@ Flutter app (pulls in `dartvex` automatically):
 
 ```yaml
 dependencies:
-  dartvex: ^0.2.0
-  dartvex_flutter: ^0.2.0
+  dartvex: ^0.3.0
+  dartvex_flutter: ^0.3.0
 ```
 
 Pure Dart (CLI, server):
 
 ```yaml
 dependencies:
-  dartvex: ^0.2.0
+  dartvex: ^0.3.0
 ```
 
-`dartvex_flutter` requires Dart `^3.8.0` and Flutter `>=3.32.0`.
+`dartvex` requires Dart `^3.6.0`. `dartvex_flutter` requires Dart `^3.10.0`
+and Flutter `>=3.38.1`, and on Apple platforms iOS 15 / macOS 12 (raise
+`IPHONEOS_DEPLOYMENT_TARGET` / `MACOSX_DEPLOYMENT_TARGET` and the Podfile
+`platform` line if needed).
 
 ## Step 2 — Get a deployment URL (never commit it)
 
 The client needs the deployment URL (`https://<name>.convex.cloud`), shown by
-`npx convex dashboard` or in `.env.local` of the Convex project. Pass it at
-run time — never hardcode a real URL in committed code:
+`npx convex dashboard` or as `CONVEX_URL` in `.env.local` of the Convex
+project. Not the `.convex.site` URL: that host serves HTTP actions only, and
+`ConvexClient` rejects it. Pass the URL at run time — never hardcode a real
+URL in committed code:
 
 ```bash
+# Flutter
 flutter run --dart-define=CONVEX_URL=https://your-deployment.convex.cloud
+
+# Pure Dart (dart run takes -D / --define, not --dart-define)
+dart run -DCONVEX_URL=https://your-deployment.convex.cloud bin/main.dart
 ```
 
 ```dart
@@ -51,7 +60,7 @@ const deploymentUrl = String.fromEnvironment('CONVEX_URL');
 
 If there is no backend yet, a minimal one is enough to verify the wiring
 (anything more belongs to the official Convex skills —
-`npx skills add get-convex/agent-skills`):
+`npx skills add convex/agent-skills`):
 
 ```typescript
 // convex/messages.ts
@@ -69,8 +78,9 @@ export const list = query({
 
 export const send = mutation({
   args: { channel: v.string(), body: v.string() },
+  // Returns the new document ID (a string in Dart).
   handler: async (ctx, args) => {
-    await ctx.db.insert("messages", args);
+    return await ctx.db.insert("messages", args);
   },
 });
 ```
@@ -91,14 +101,17 @@ connection until first use.
 ## Step 4 — Query, mutate, subscribe
 
 ```dart
-// One-shot read (throws ConvexException on failure):
+// One-shot read (throws ConvexException on failure). It waits for a fresh
+// server result — while offline it waits for the reconnect, unless
+// ConvexClientConfig(queryTimeout: ...) bounds the wait:
 final messages = await client.query('messages:list', {'channel': 'general'});
 
 // Typed one-shot read for non-reactive screens:
 final name = await client.queryOnce<String>('users:getName', {'id': userId});
 
-// Write:
-await client.mutate('messages:send', {'channel': 'general', 'body': 'Hello'});
+// Write (resolves with the mutation's return value, here the new ID):
+final id =
+    await client.mutate('messages:send', {'channel': 'general', 'body': 'Hello'});
 
 // Live subscription — re-emits on every server change:
 final subscription = client.subscribe('messages:list', {'channel': 'general'});
@@ -151,7 +164,8 @@ transports (same network path as Safari); no setup needed.
 
 ## Verify
 
-1. `flutter run` (or `dart run`) with the `--dart-define` URL.
+1. `flutter run --dart-define=CONVEX_URL=...` (Flutter) or
+   `dart run -DCONVEX_URL=... bin/main.dart` (pure Dart).
 2. Trigger the mutation; the subscription/widget updates without a refresh.
 3. Kill the network briefly; the client reconnects and the data re-syncs.
 

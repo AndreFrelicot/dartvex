@@ -95,8 +95,9 @@ provider implementation differs.
 Uses `DemoAuthProvider`, a deterministic in-memory provider with no external
 service. Public screens and Better Auth work without this provider, but Demo
 mode requires a JWT generated locally from the example backend key material.
-The backend example requires Node.js 20.19.0 or newer and uses npm with the
-committed `package-lock.json`.
+The backend example requires Node.js 22 or newer and uses npm with the
+committed `package-lock.json` (run `npm install` in `../convex-backend`
+first).
 
 1. Configure the demo JWT provider in Convex:
 
@@ -129,12 +130,17 @@ Suggested manual flow:
 2. Tap `Login`.
 3. Confirm the auth state changes to authenticated and the private feed/viewer
    become available.
-4. Tap `Force Reconnect`.
-5. Confirm the connection chip cycles through reconnecting and the auth
-   diagnostics show another `loginFromCache()` call.
-6. Tap `Logout`.
-7. Tap `Login From Cache`.
-8. Confirm the cached session restores without a visible login UI.
+4. Tap `Reconnect`.
+5. Confirm the connection chip cycles through reconnecting and back while the
+   session stays authenticated. The client replays its cached token on the new
+   socket, so the auth diagnostics show no new `login()` or
+   `loginFromCache()` call.
+6. To see a token re-fetch, open the `Sync` tab and tap
+   `Force a token refresh`: the server rejects a deliberately expired token
+   and the client fetches a fresh one from the provider.
+7. Back on `Auth`, tap `Logout`, then `Restore Session`.
+8. Confirm the cached session restores without a visible login UI (one
+   `loginFromCache()` call).
 
 ### Better Auth mode
 
@@ -146,12 +152,13 @@ needed — credentials are stored in the Convex database.
 
 1. Install the Better Auth component in the Convex backend:
 
-   The backend example requires Node.js 20.19.0 or newer and uses npm with the
-   committed `package-lock.json`.
+   The backend example requires Node.js 22 or newer and uses npm with the
+   committed `package-lock.json`, which already pins `better-auth` 1.7.17 and
+   `@convex-dev/better-auth` ^0.13.0:
 
    ```bash
    cd example/convex-backend
-   npm install better-auth@1.6.17 @convex-dev/better-auth@0.12.3
+   npm install
    ```
 
 2. Set the secret:

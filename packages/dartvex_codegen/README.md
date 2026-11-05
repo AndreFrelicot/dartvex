@@ -30,20 +30,20 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 
 ```yaml
 dev_dependencies:
-  dartvex_codegen: ^0.2.0
+  dartvex_codegen: ^0.3.0
 ```
 
 Requires Dart `^3.7.0`.
 
-The generated bindings call APIs introduced in `dartvex` 0.2.0 (such as
-`ConvexFunctionCaller.paginatedQuery` and `QueryLoading`), and generated
-mutations forward an optional optimistic update to
-`ConvexFunctionCaller.mutate`, so use the `dartvex` release that matches this
-generator. The application consuming the generated code needs:
+The generated bindings call `dartvex` APIs such as
+`ConvexFunctionCaller.paginatedQuery` and `QueryLoading` (0.2.0), and
+generated mutations forward an optional optimistic update to
+`ConvexFunctionCaller.mutate` (0.3.0), so use the `dartvex` release that
+matches this generator. The application consuming the generated code needs:
 
 ```yaml
 dependencies:
-  dartvex: ^0.2.0
+  dartvex: ^0.3.0
 ```
 
 ## Usage
@@ -97,6 +97,9 @@ Run `dart run dartvex_codegen --help` to list the commands (`generate`,
 Failed regenerations are reported on stderr and watching continues. If the
 watch itself fails (for example, the watched directory is removed), the
 command exits with a non-zero code.
+
+### Scrubbing an exported spec
+
 Before committing an exported spec file, scrub the real deployment URL it
 bakes in:
 
@@ -134,11 +137,32 @@ await api.messages.send(author: 'Andre', text: 'Hello');
 final subscription = api.messages.listSubscribe();
 ```
 
-Typed subscriptions emit `TypedQuerySuccess` (with `hasPendingWrites` and
-`logLines`), `TypedQueryLoading`, and `TypedQueryError`. A server value the
-bindings cannot decode (for example an enum value added after generation)
-arrives as a `TypedQueryError` rather than a stream error. Typed paginated
-queries report undecodable items as `ConvexPaginationStatus.error`.
+One-shot calls return the decoded Dart type (`Future<List<ListResultItem>>`,
+`Future<MessagesId>`, ...). `...Subscribe()` methods return a
+`TypedConvexSubscription<T>` (`stream`, `cancel()`), whose stream emits the
+sealed `TypedQueryResult<T>`:
+
+```dart
+final subscription = api.messages.listSubscribe();
+subscription.stream.listen((result) {
+  switch (result) {
+    case TypedQuerySuccess(:final value, :final hasPendingWrites):
+      print('${value.length} messages (pending writes: $hasPendingWrites)');
+    case TypedQueryLoading():
+      break; // transient, for example an optimistic clear
+    case TypedQueryError(:final message):
+      print(message);
+  }
+});
+```
+
+A server value the bindings cannot decode (for example an enum value added
+after generation) arrives as a `TypedQueryError` rather than a stream error.
+Paginated queries return a `TypedConvexPaginatedQuery<T>` (`stream`,
+`current`, `items`, `loadMore()`, `cancel()`), which reports undecodable
+items as `ConvexPaginationStatus.error`. Optional arguments use
+`Optional<T>` from `runtime.dart`, so an omitted argument and an explicit
+`null` stay distinct.
 
 Generated mutation methods take an optional `optimisticUpdate`, forwarded to
 the client's `mutate`:
@@ -180,13 +204,21 @@ await api.messages.send(
 
 ### Using other clients
 
-The generated API classes wrap a `ConvexFunctionCaller`, which `ConvexClient`
-implements. To call the bindings through another client (a test fake, or an
-adapter over a Flutter runtime or offline client), implement
-`ConvexFunctionCaller` and pass it to `ConvexApi`. `--client-import` lets the
-generated files import that interface (plus `QueryResult`,
-`ConvexSubscription`, `ConvexPaginatedQuery`, and `OptimisticUpdate`) from a
-library of your own that re-exports them.
+The generated API classes wrap a core `ConvexFunctionCaller`, which
+`ConvexClient` and `ConvexClientWithAuth` implement.
+
+- In Flutter, `ConvexProvider.of(context).functionCaller` (dartvex_flutter)
+  returns one for the provider's client: the wrapped `ConvexClient` for
+  `ConvexClientRuntime`, and a stub-backed caller for `FakeConvexClient` in
+  widget tests (its `paginatedQuery` is unsupported).
+- `dartvex_local`'s `ConvexLocalClient` is not a `ConvexFunctionCaller` (its
+  `mutate` returns a `LocalMutationResult`); typed calls made through the
+  underlying `ConvexClient` bypass its cache and offline queue.
+- For anything else, implement `ConvexFunctionCaller` and pass it to
+  `ConvexApi`. `--client-import` lets the generated files import that
+  interface (plus `QueryResult`, `ConvexSubscription`,
+  `ConvexPaginatedQuery`, and `OptimisticUpdate`) from a library of your own
+  that re-exports them.
 
 ## How It Works
 
@@ -205,10 +237,12 @@ while the package is pre-1.0 they may change in minor releases.
 
 ## Workflow
 
-1. Keep your Convex backend in TypeScript.
-2. Run `dartvex_codegen generate`.
-3. Import the generated `api.dart` in your Dart or Flutter app.
-4. Call typed wrappers instead of raw function names and raw maps.
+1. Keep your Convex backend in TypeScript, with `args`/`returns` validators.
+2. Push it (`npx convex dev` / `npx convex deploy`).
+3. Run `dartvex_codegen generate`.
+4. Import the generated `api.dart` in your Dart or Flutter app and call typed
+   wrappers instead of raw function names and raw maps. Regenerate after
+   every backend change and after upgrading `dartvex_codegen`.
 
 ## Full Documentation
 

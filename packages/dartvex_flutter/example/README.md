@@ -16,5 +16,5 @@ flutter run
 
 ```bash
 flutter test
-flutter build web --no-wasm-dry-run
+flutter build web
 ```

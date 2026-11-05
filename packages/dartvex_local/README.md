@@ -20,7 +20,7 @@ Offline-capable extension for [dartvex](https://pub.dev/packages/dartvex) — th
 |---------|-------------|
 | [`dartvex`](https://pub.dev/packages/dartvex) | Core client — WebSocket sync, subscriptions, auth |
 | [`dartvex_flutter`](https://pub.dev/packages/dartvex_flutter) | Flutter widgets — Provider, Query, Mutation |
-| [`dartvex_codegen`](https://pub.dev/packages/dartvex_codegen) | CLI code generator — type-safe Dart bindings from schema |
+| [`dartvex_codegen`](https://pub.dev/packages/dartvex_codegen) | CLI code generator — type-safe Dart bindings from function validators |
 | **[`dartvex_local`](https://pub.dev/packages/dartvex_local)** | Offline support — SQLite cache, mutation queue |
 | [`dartvex_auth_better`](https://pub.dev/packages/dartvex_auth_better) | Better Auth adapter |
 
@@ -82,16 +82,21 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 
 ```yaml
 dependencies:
-  dartvex: ^0.2.0
-  dartvex_local: ^0.2.0
+  dartvex: ^0.3.0
+  dartvex_local: ^0.3.0
 ```
 
 ## Quick Start
 
 ```dart
 import 'package:dartvex_local/dartvex_local.dart';
+import 'package:path_provider/path_provider.dart';
 
-final store = await SqliteLocalStore.open('/tmp/dartvex_demo.sqlite');
+// Open the database in a persistent, app-private directory. A relative path
+// fails on iOS/Android (the working directory is `/`), and a temp directory
+// loses the offline queue on reboot.
+final dir = await getApplicationSupportDirectory();
+final store = await SqliteLocalStore.open('${dir.path}/dartvex.sqlite');
 
 final localClient = await ConvexLocalClient.open(
   client: remoteConvexClient,
@@ -99,9 +104,23 @@ final localClient = await ConvexLocalClient.open(
     cacheStorage: store,
     queueStorage: store,
     mutationHandlers: <LocalMutationHandler>[],
+    onConflict: (conflict) => print('Dropped ${conflict.mutationName}'),
   ),
 );
+
+final result = await localClient.mutate('messages:send', {'body': 'Hi'});
+switch (result) {
+  case LocalMutationSuccess(:final value):
+    print('Sent: $value');
+  case LocalMutationQueued(:final queuePosition):
+    print('Queued at #$queuePosition');
+  case LocalMutationFailed(:final error):
+    print('Rejected: $error'); // mutate() does not throw for server errors
+}
 ```
+
+In a pure Dart program, pick a persistent path the same way (for example
+under the user's data directory).
 
 ## Mutation Handlers
 
@@ -180,9 +199,15 @@ not discard offline work.
 
 `ConvexLocalClient` does not implement `ConvexFunctionCaller` (used by
 generated APIs) or the `dartvex_flutter` runtime client interface: its
-`mutate` returns a `LocalMutationResult` rather than the mutation's value. Use
-it directly, or write an adapter that decides how queued and failed results
-map onto your typed calls.
+`mutate` returns a `LocalMutationResult` rather than the mutation's value.
+Use it directly (`subscribe` emits `LocalQuerySuccess` / `LocalQueryError`
+with their `source` and `hasPendingWrites`), or write an adapter that decides
+how queued and failed results map onto your calls. The Dartvex example app
+ships one for the Flutter widgets,
+[`LocalConvexRuntimeClient`](https://github.com/AndreFrelicot/dartvex/blob/main/example/flutter_app/lib/src/core/local_runtime_client.dart)
+(no pagination support; its `mutate` resolves with the
+`LocalMutationResult`). Typed calls made through the wrapped `ConvexClient`
+bypass the cache and the queue.
 
 ## Full Documentation
 

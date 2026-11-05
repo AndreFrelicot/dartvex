@@ -26,7 +26,7 @@ This keeps Better Auth isolated from the core SDK packages:
 |---------|-------------|
 | [`dartvex`](https://pub.dev/packages/dartvex) | Core client — WebSocket sync, subscriptions, auth |
 | [`dartvex_flutter`](https://pub.dev/packages/dartvex_flutter) | Flutter widgets — Provider, Query, Mutation |
-| [`dartvex_codegen`](https://pub.dev/packages/dartvex_codegen) | CLI code generator — type-safe Dart bindings from schema |
+| [`dartvex_codegen`](https://pub.dev/packages/dartvex_codegen) | CLI code generator — type-safe Dart bindings from function validators |
 | [`dartvex_local`](https://pub.dev/packages/dartvex_local) | Offline support — SQLite cache, mutation queue |
 | **[`dartvex_auth_better`](https://pub.dev/packages/dartvex_auth_better)** | Better Auth adapter |
 
@@ -36,8 +36,8 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 
 ```yaml
 dependencies:
-  dartvex: ^0.2.0
-  dartvex_auth_better: ^0.2.0
+  dartvex: ^0.3.0
+  dartvex_auth_better: ^0.3.0
 ```
 
 ## Supported versions
@@ -148,12 +148,15 @@ provider.email = 'user@example.com';
 provider.password = 'securePassword';
 final session = await authedClient.login();
 
-// session.token         — Convex JWT (for WebSocket auth)
 // session.sessionToken  — Better Auth token (for session persistence)
+// session.token         — the Convex JWT at login time (a snapshot)
 ```
 
 The wrapper keeps the Convex JWT fresh by calling the provider again before
-it expires.
+it expires. `session.token` (like `AuthAuthenticated.userInfo.token`) is not
+updated by those refreshes: read `authedClient.currentAuthToken` when you
+need the JWT currently in use, for example for
+`Authorization: Bearer ...` on a Convex HTTP action.
 
 ### 3. Sign up
 
@@ -337,7 +340,7 @@ Implements `AuthProvider<BetterAuthSession>` from `dartvex`:
 
 ```dart
 class BetterAuthSession {
-  final String token;         // JWT for Convex WebSocket auth
+  final String token;         // Convex JWT when the session was obtained
   final String sessionToken;  // Better Auth token (for persistence & sign-out)
   final String userId;        // Better Auth user ID
   final String email;         // User email

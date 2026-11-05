@@ -6,12 +6,13 @@ Better Auth runs as a self-hosted Convex component — no external auth service 
 
 1. **Install dependencies** in `example/convex-backend/`:
 
-   Requires Node.js 20.19.0 or newer. Use npm; the backend commits an npm
-   `package-lock.json`.
+   Requires Node.js 22 or newer (Convex 1.49 dropped Node.js 20). Use npm;
+   the backend commits an npm `package-lock.json` that pins `better-auth`
+   1.7.17 with `@convex-dev/better-auth` ^0.13.0 and `convex` ^1.49.0.
 
    ```bash
    cd example/convex-backend
-   npm install better-auth@1.6.17 @convex-dev/better-auth@0.12.3
+   npm install
    ```
 
 2. **Set the secret** in your Convex deployment:
@@ -52,6 +53,12 @@ flutter run --dart-define=CONVEX_DEMO_URL=https://your-deployment.convex.cloud
 ```
 
 Select **Better Auth** in the Auth tab's mode selector to use the self-hosted auth flow.
+
+The demo creates `BetterAuthClient(baseUrl: url)`, which derives the HTTP
+actions host by swapping `.convex.cloud` for `.convex.site`. A local or
+self-hosted deployment has no such mapping: in your own app pass
+`BetterAuthClient(baseUrl: ..., siteUrl: ...)` with the deployment's
+`CONVEX_SITE_URL` (for a local backend usually `http://127.0.0.1:3211`).
 
 ## How It Works
 

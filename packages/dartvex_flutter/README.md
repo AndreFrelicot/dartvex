@@ -10,8 +10,10 @@ Flutter widgets and builders for [dartvex](https://pub.dev/packages/dartvex) —
 
 `dartvex_flutter` removes the repetitive widget lifecycle code around realtime
 Convex subscriptions, mutations, actions, and connection state. The widgets
-talk to a small runtime interface (`ConvexRuntimeClient`), so other backends
-can plug into the same widgets without breaking the public API.
+talk to a small runtime interface (`ConvexRuntimeClient`), so other clients —
+a test fake, or an adapter over an offline client — can drive the same
+widgets. Custom implementations of that interface may need updates when a
+release adds members to it (0.2.0 did; see the CHANGELOG).
 
 <p align="center">
   <a href="https://github.com/AndreFrelicot/dartvex">
@@ -25,7 +27,7 @@ can plug into the same widgets without breaking the public API.
 |---------|-------------|
 | [`dartvex`](https://pub.dev/packages/dartvex) | Core client — WebSocket sync, subscriptions, auth |
 | **[`dartvex_flutter`](https://pub.dev/packages/dartvex_flutter)** | Flutter widgets — Provider, Query, Mutation |
-| [`dartvex_codegen`](https://pub.dev/packages/dartvex_codegen) | CLI code generator — type-safe Dart bindings from schema |
+| [`dartvex_codegen`](https://pub.dev/packages/dartvex_codegen) | CLI code generator — type-safe Dart bindings from function validators |
 | [`dartvex_local`](https://pub.dev/packages/dartvex_local) | Offline support — SQLite cache, mutation queue |
 | [`dartvex_auth_better`](https://pub.dev/packages/dartvex_auth_better) | Better Auth adapter |
 
@@ -67,11 +69,11 @@ render their `errorBuilder` / `errorWidget` with an `UnsupportedError`, and
 
 ```yaml
 dependencies:
-  dartvex: ^0.2.0
-  dartvex_flutter: ^0.2.0
+  dartvex: ^0.3.0
+  dartvex_flutter: ^0.3.0
 ```
 
-Requires Dart `^3.10.0` and Flutter `>=3.38.0`. On Apple platforms the
+Requires Dart `^3.10.0` and Flutter `>=3.38.1`. On Apple platforms the
 NSURLSession transport (`cupertino_http` 3) requires iOS 15 or later and
 macOS 12 or later; set `IPHONEOS_DEPLOYMENT_TARGET` / `MACOSX_DEPLOYMENT_TARGET`
 (and the `platform` line of your Podfile, if any) accordingly.
@@ -198,6 +200,8 @@ loading, as below, or call `ConvexProvider.of(context).mutate(...)` directly
 when several mutations must be queued at once.
 
 ```dart
+// T is the mutation's return type: here `messages:send` returns the new
+// document ID. Use ConvexMutation<void> for a mutation that returns nothing.
 ConvexMutation<String>(
   mutation: 'messages:send',
   builder: (context, mutate, snapshot) {
@@ -210,6 +214,9 @@ ConvexMutation<String>(
   },
 )
 ```
+
+A result that cannot be decoded into `T` (or by `decode:`) fails the call
+with a `ConvexDecodeException`, even though the write was committed.
 
 ## Cached Images
 
@@ -276,12 +283,24 @@ rebuild it triggers is deferred to after the current frame.
 ```dart
 final client = FakeConvexClient()
   ..whenQuery('messages:list', returns: [mockMessage1, mockMessage2])
-  ..whenMutation('messages:send', returns: {'id': 'xxx'});
+  // Stub a value that fits the widget's type (ConvexMutation<String> above).
+  ..whenMutation('messages:send', returns: 'msg_1');
 
 await tester.pumpWidget(
   ConvexProvider(client: client, child: MyApp()),
 );
+
+client.emitSubscription('messages:list', updatedMessages); // server push
+await tester.pump();
+expect(client.mutationCalls, isEmpty);
 ```
+
+`emitSubscription`, `emitSubscriptionError`, `emitSubscriptionLoading` and
+`emitPaginated` reach every live subscription with that name unless you pass
+`args:`. Calls are recorded in `queryCalls`, `mutationCalls` and
+`actionCalls`; optimistic updates are recorded but not applied. The
+`FakeConvexClient` dartdoc lists the other differences from the real
+client.
 
 ## Optimistic Mutations
 
@@ -320,14 +339,20 @@ and `ConvexConnectionIndicator` are unchanged.
 ```dart
 ConvexConnectionStatusBuilder(
   builder: (context, status) {
-    if (status.isLoading) return const Text('Syncing…');
     if (!status.isWebSocketConnected) {
-      return Text('Reconnecting (attempt ${status.connectionRetries})');
+      return Text(status.hasEverConnected
+          ? 'Reconnecting (attempt ${status.connectionRetries})'
+          : 'Connecting…');
     }
+    if (status.isLoading) return const Text('Syncing…');
     return Text('Online — ${status.inflightMutations} pending');
   },
 )
 ```
+
+`isLoading` means "catching up after a reconnect"; it stays `false` while the
+socket is down, so use `isWebSocketConnected` (or `isConnected`, which also
+requires the re-sync to finish) for offline indicators.
 
 ## Auth Refreshing
 

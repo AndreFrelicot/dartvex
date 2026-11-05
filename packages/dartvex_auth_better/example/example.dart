@@ -14,7 +14,9 @@ Future<void> main() async {
   final convex = ConvexClient(
     'https://your-deployment.convex.cloud',
   );
-  final authedConvex = convex.withAuth(authProvider);
+  // disposeClient: true lets the wrapper close the ConvexClient (its socket
+  // and reconnect timers) on dispose, so the program can exit.
+  final authedConvex = convex.withAuth(authProvider, disposeClient: true);
 
   // 3. Sign in — the provider calls Better Auth's HTTP endpoints and the
   //    wrapper forwards the Convex JWT to the WebSocket client.
@@ -44,7 +46,8 @@ Future<void> main() async {
     print('Check your inbox to verify your email, then sign in.');
   }
 
-  // 6. Clean up
+  // 6. Clean up: sign out, then release the HTTP client and the Convex
+  //    client (closed by the wrapper because of disposeClient: true).
   await authedConvex.logout();
   authClient.close();
   authedConvex.dispose();
