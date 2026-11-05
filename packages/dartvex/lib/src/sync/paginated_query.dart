@@ -178,6 +178,10 @@ class ConvexPaginatedQuery {
   bool _pendingDelivery = false;
   bool _closeAfterDelivery = false;
 
+  // Incremented by every [reset]; lets a reset notice that a listener started
+  // a newer one during its synchronous delivery.
+  int _resetGeneration = 0;
+
   /// `paginationOpts.id` of the current generation, set after a [reset] so the
   /// restarted pages get fresh query tokens (and journals) instead of
   /// re-attaching to a subscription that still holds an invalid cursor.
@@ -263,6 +267,7 @@ class ConvexPaginatedQuery {
     if (_disposed) {
       return;
     }
+    final generation = ++_resetGeneration;
     _paginationId = _nextPaginationId++;
     _disposePagesAndSplits();
     _current = const ConvexPaginatedResult(
@@ -271,6 +276,13 @@ class ConvexPaginatedQuery {
       isDone: false,
     );
     _deliver();
+    // Delivery is synchronous: a listener may have cancelled the query, or
+    // started a newer reset, while the loading state was being delivered.
+    // Opening a page now would leak a live subscription (or duplicate the
+    // newer reset's first page).
+    if (_disposed || generation != _resetGeneration) {
+      return;
+    }
     try {
       _addPage(cursor: null, numItems: _pageSize);
     } on ConvexException catch (error) {

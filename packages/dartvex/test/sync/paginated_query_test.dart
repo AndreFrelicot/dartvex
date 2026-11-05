@@ -1033,6 +1033,50 @@ void main() {
       query.cancel();
     });
 
+    test(
+        'reset() does not open a page when a listener cancels during its '
+        'loading delivery', () {
+      final source = _FakeSource();
+      final query = ConvexPaginatedQuery(
+        subscribe: source.subscribe,
+        name: 'messages:list',
+        args: const <String, dynamic>{},
+        pageSize: 2,
+      );
+      query.stream.listen((result) {
+        if (result.status == ConvexPaginationStatus.loadingFirstPage) {
+          query.cancel();
+        }
+      });
+
+      query.reset();
+
+      expect(source.pages.where((page) => !page.canceled), isEmpty);
+    });
+
+    test('a reset started from a listener during reset() opens one page', () {
+      final source = _FakeSource();
+      final query = ConvexPaginatedQuery(
+        subscribe: source.subscribe,
+        name: 'messages:list',
+        args: const <String, dynamic>{},
+        pageSize: 2,
+      );
+      var nested = false;
+      query.stream.listen((result) {
+        if (!nested &&
+            result.status == ConvexPaginationStatus.loadingFirstPage) {
+          nested = true;
+          query.reset();
+        }
+      });
+
+      query.reset();
+
+      expect(source.pages.where((page) => !page.canceled), hasLength(1));
+      query.cancel();
+    });
+
     test('a page stream completing (client closed) makes the query terminal',
         () async {
       final source = _FakeSource();
