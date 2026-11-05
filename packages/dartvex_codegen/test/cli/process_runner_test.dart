@@ -76,6 +76,68 @@ void main() {
       );
     });
 
+    test('treats only shell or runner "not found" as a missing CLI', () {
+      expect(looksLikeMissingExecutable(127, 'sh: 1: convex: not found'), true);
+      expect(looksLikeMissingExecutable(9009, ''), isTrue);
+      expect(
+        looksLikeMissingExecutable(
+          1,
+          "'convex' is not recognized as an internal or external command",
+        ),
+        isTrue,
+      );
+      expect(
+        looksLikeMissingExecutable(1, 'error Command "convex" not found.'),
+        isTrue,
+      );
+      expect(
+        looksLikeMissingExecutable(
+          1,
+          'npm ERR! could not determine executable to run',
+        ),
+        isTrue,
+      );
+      // Real Convex CLI errors are reported, not retried with another runner.
+      expect(
+        looksLikeMissingExecutable(1, 'Error: Deployment “old-cat” not found'),
+        isFalse,
+      );
+      expect(
+        looksLikeMissingExecutable(1, 'Project my-app not found'),
+        isFalse,
+      );
+    });
+
+    test('toString includes the tail of the captured CLI output', () {
+      final error = ProcessRunnerException(
+        'convex function-spec failed in /backend',
+        stderr: 'No CONVEX_DEPLOYMENT set, run `npx convex dev` to configure',
+        exitCode: 1,
+      );
+      expect(
+        error.toString(),
+        'convex function-spec failed in /backend\n'
+        '  No CONVEX_DEPLOYMENT set, run `npx convex dev` to configure',
+      );
+
+      final long = ProcessRunnerException(
+        'failed',
+        stderr: List<String>.generate(30, (index) => 'line $index').join('\n'),
+      );
+      final rendered = long.toString();
+      expect(rendered, contains('line 29'));
+      expect(rendered, contains('line 20'));
+      expect(rendered, isNot(contains('line 19\n')));
+      expect(rendered, contains('--verbose'));
+
+      // Falls back to stdout, and to the bare message without output.
+      expect(
+        ProcessRunnerException('failed', stdout: 'from stdout').toString(),
+        'failed\n  from stdout',
+      );
+      expect(ProcessRunnerException('failed').toString(), 'failed');
+    });
+
     test('throws clear error when extracted substring is not valid JSON', () {
       // The { and } exist but don't form valid JSON
       const input = 'prefix {not: valid json} suffix {extra}';
