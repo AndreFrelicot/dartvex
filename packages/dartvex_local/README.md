@@ -28,15 +28,22 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 
 ## What it does
 
-- **Query cache** — remote query results are persisted in SQLite and served
-  as fallback when the remote is unreachable or slow.
-- **Offline mutation queue** — mutations issued while offline are queued and
-  replayed in order when connectivity resumes.
+- **Query cache** — remote query results are persisted in SQLite. While the
+  remote is not connected, `query()` returns the cached value right away (and
+  without one waits at most `refreshQueryTimeout` for the remote); a
+  retryable remote failure also falls back to the cache.
+- **Offline mutation queue** — mutations issued while offline (forced, or
+  while the remote is not connected) are queued and replayed in order when
+  connectivity resumes.
 - **At-least-once replay** — queued mutations can be retried after ambiguous
   network failures, so server mutations should be idempotent when they trigger
   external side effects.
-- **Optimistic updates** — app-defined `LocalMutationHandler` patches are
-  applied to the cache immediately, before the mutation reaches the server.
+- **Optimistic updates for queued mutations** — app-defined
+  `LocalMutationHandler` patches are applied to the cache as soon as a
+  mutation is queued (offline, behind other queued mutations, or after a
+  retryable failure), before it reaches the server. A mutation sent directly
+  while online is not patched locally; for instant feedback on that path use
+  the core client's optimistic updates (`ConvexClient.mutate`).
 - **Deterministic network mode** — `setNetworkMode(offline)` forces the
   client offline regardless of actual connectivity.
 
@@ -98,6 +105,9 @@ final localClient = await ConvexLocalClient.open(
 
 ## Mutation Handlers
 
+Handlers are matched by canonical mutation name, and several handlers can be
+registered for the same mutation (for example one per affected query).
+
 ```dart
 class SendMessageHandler extends LocalMutationHandler {
   @override
@@ -139,10 +149,40 @@ class SendMessageHandler extends LocalMutationHandler {
 | Scenario | Behavior |
 |----------|----------|
 | Remote query fails (retryable) | Falls back to cache if available |
-| Query while offline, no cache | Throws `StateError` |
-| Mutation while offline | Queued as `LocalMutationQueued` |
-| Mutation replay fails (non-retryable) | Dropped, `onConflict` called |
-| Action while offline | Throws `ConvexException` |
+| Query while the remote is not connected | Returns the cached value; without one, waits up to `refreshQueryTimeout`, then throws `TimeoutException` |
+| Query while forced offline, no cache | Throws `StateError` |
+| Mutation while offline or not connected | Queued as `LocalMutationQueued` |
+| Direct mutation rejected by the server | `LocalMutationFailed` |
+| Handler, patch, or storage error while queueing | `mutate()` throws; nothing is queued |
+| Mutation replay rejected by the server | Dropped, rolled back, `onConflict` called |
+| Remote client closed or disconnected during replay | Mutation kept in the queue and retried later |
+| Action while forced offline | Throws `ConvexException` |
+
+`currentConnectionState` is `online` only while the remote connection is
+established; a connecting or reconnecting remote reports `offline`.
+
+Pass `onConflict` in `LocalClientConfig` so conflicts from a replay that
+starts while the client opens are not missed. Each `LocalMutationConflict`
+carries the `pendingMutationId` of the queued entry.
+
+## Sign-out and switching users
+
+The cache and the queue are not scoped to a user: queued mutations replay with
+whatever auth the `ConvexClient` has when they are sent. Apply auth (for
+example `login` or `loginFromCache`) before, or right after,
+`ConvexLocalClient.open`, and call `reset()` on an explicit sign-out or user
+switch. `reset()` clears the queue (rolling back its optimistic patches), the
+recorded ID remaps, and the cache. The client never clears anything on its
+own when the auth state changes, so a transient token-refresh failure does
+not discard offline work.
+
+## Codegen and Flutter widgets
+
+`ConvexLocalClient` does not implement `ConvexFunctionCaller` (used by
+generated APIs) or the `dartvex_flutter` runtime client interface: its
+`mutate` returns a `LocalMutationResult` rather than the mutation's value. Use
+it directly, or write an adapter that decides how queued and failed results
+map onto your typed calls.
 
 ## Full Documentation
 
