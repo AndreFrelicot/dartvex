@@ -13,14 +13,120 @@ const Set<String> ignoredWatchDirectoryNames = <String>{
 };
 
 /// Returns whether a filesystem event should be ignored by watch mode.
-bool shouldIgnoreWatchEvent(String eventPath, GenerateConfig config) {
-  final normalized = path.normalize(path.absolute(eventPath));
-  if (path.split(normalized).any(ignoredWatchDirectoryNames.contains)) {
-    return true;
+///
+/// Builds a [WatchPathFilter] for [config]; watchers build one up front and
+/// reuse it instead.
+bool shouldIgnoreWatchEvent(String eventPath, GenerateConfig config) =>
+    WatchPathFilter.forConfig(config).ignores(eventPath);
+
+/// Decides which paths under a watched project are ignored by watch mode:
+/// anything inside [ignoredWatchDirectoryNames] below the project directory,
+/// and the output directory with everything in it.
+///
+/// Event paths are built by dart:io from the path that was watched, which may
+/// name the project through a symlink (macOS `/var` vs `/private/var`, or the
+/// current directory, which `getcwd` reports resolved), while the output
+/// directory may be spelled the other way. Both directories are therefore
+/// canonicalized once, and the output directory is matched under every
+/// spelling (as given, canonical, and relative to the project as watched), so
+/// per-event checks are pure string comparisons.
+class WatchPathFilter {
+  WatchPathFilter._(this._root, this._canonicalRoot, this._outputAliases);
+
+  /// Creates a filter for events under [projectDirectory] (or under any path
+  /// when it is `null`), ignoring [outputDirectory].
+  factory WatchPathFilter({
+    required String? projectDirectory,
+    required String outputDirectory,
+  }) {
+    final output = _absolute(outputDirectory);
+    final canonicalOutput = canonicalizeWatchPath(output);
+    final aliases = <String>{output, canonicalOutput};
+    String? root;
+    String? canonicalRoot;
+    if (projectDirectory != null) {
+      root = _absolute(projectDirectory);
+      canonicalRoot = canonicalizeWatchPath(root);
+      if (path.equals(canonicalOutput, canonicalRoot)) {
+        aliases.add(root);
+      } else if (path.isWithin(canonicalRoot, canonicalOutput)) {
+        aliases.add(
+          path.join(root, path.relative(canonicalOutput, from: canonicalRoot)),
+        );
+      }
+    }
+    return WatchPathFilter._(root, canonicalRoot, aliases.toList());
   }
-  final outputDirectory = path.normalize(path.absolute(config.outputDirectory));
-  return path.equals(normalized, outputDirectory) ||
-      path.isWithin(outputDirectory, normalized);
+
+  /// Creates the filter for the project and output directories of [config].
+  factory WatchPathFilter.forConfig(GenerateConfig config) => WatchPathFilter(
+    projectDirectory: config.projectDirectory,
+    outputDirectory: config.outputDirectory,
+  );
+
+  final String? _root;
+  final String? _canonicalRoot;
+  final List<String> _outputAliases;
+
+  /// Whether a change at [eventPath] should not trigger regeneration (and a
+  /// directory at [eventPath] should not be watched).
+  bool ignores(String eventPath) {
+    final normalized = _absolute(eventPath);
+    for (final output in _outputAliases) {
+      if (path.equals(normalized, output) ||
+          path.isWithin(output, normalized)) {
+        return true;
+      }
+    }
+    final relative = _relativeToProject(normalized);
+    return relative != null &&
+        path.split(relative).any(ignoredWatchDirectoryNames.contains);
+  }
+
+  /// [eventPath] relative to the project directory, or `null` when it is not
+  /// inside it. Only components below the project count as ignored names, so
+  /// a project that itself lives under, say, `node_modules` still works.
+  String? _relativeToProject(String eventPath) {
+    final root = _root;
+    if (root == null) {
+      return eventPath;
+    }
+    for (final base in <String>[root, _canonicalRoot!]) {
+      if (path.isWithin(base, eventPath)) {
+        return path.relative(eventPath, from: base);
+      }
+    }
+    return null;
+  }
+
+  static String _absolute(String value) => path.normalize(path.absolute(value));
+}
+
+/// Returns [value] as an absolute path with symlinks resolved.
+///
+/// The longest existing prefix is resolved and the remaining components are
+/// appended, so a directory that does not exist yet (an output directory
+/// before the first generation) still canonicalizes consistently.
+String canonicalizeWatchPath(String value) {
+  var existing = path.normalize(path.absolute(value));
+  final missing = <String>[];
+  while (true) {
+    try {
+      if (FileSystemEntity.typeSync(existing) !=
+          FileSystemEntityType.notFound) {
+        final resolved = Directory(existing).resolveSymbolicLinksSync();
+        return path.normalize(path.joinAll(<String>[resolved, ...missing]));
+      }
+    } on FileSystemException {
+      // Unreadable or racing with a delete: fall back to the next ancestor.
+    }
+    final parent = path.dirname(existing);
+    if (parent == existing) {
+      return path.normalize(path.absolute(value));
+    }
+    missing.insert(0, path.basename(existing));
+    existing = parent;
+  }
 }
 
 /// Produces regeneration triggers for `generate --watch`.
@@ -42,15 +148,21 @@ bool shouldIgnoreWatchEvent(String eventPath, GenerateConfig config) {
 ///   change also schedules follow-up triggers at [pollDelays], catching a
 ///   `convex dev` push that finishes after the first regeneration.
 ///
+/// Events inside ignored directories and the output directory are dropped
+/// (see [WatchPathFilter]). On macOS, FSEvents may still report changes made
+/// shortly *before* the watch started, so one extra trigger right after
+/// startup is possible; regeneration skips a spec that did not change.
+///
 /// A watch error, or the root watch closing, is delivered as an error on
 /// [triggers].
 class SourceWatcher {
   SourceWatcher._(
-    this._config, {
+    GenerateConfig config, {
     required Duration debounce,
     required List<Duration> pollDelays,
   }) : _debounceDuration = debounce,
-       _pollDelays = pollDelays;
+       _pollDelays = pollDelays,
+       _filter = WatchPathFilter.forConfig(config);
 
   /// Starts watching the spec source described by [config].
   ///
@@ -79,7 +191,7 @@ class SourceWatcher {
     return watcher;
   }
 
-  final GenerateConfig _config;
+  final WatchPathFilter _filter;
   final Duration _debounceDuration;
   final List<Duration> _pollDelays;
   final StreamController<void> _controller = StreamController<void>();
@@ -155,7 +267,7 @@ class SourceWatcher {
     final normalized = path.normalize(directory);
     if (_closed ||
         _subscriptions.containsKey(normalized) ||
-        (!isRoot && shouldIgnoreWatchEvent(normalized, _config))) {
+        (!isRoot && _filter.ignores(normalized))) {
       return;
     }
     // Arm the watch before listing children, so a subdirectory created in
@@ -204,11 +316,11 @@ class SourceWatcher {
   }
 
   bool _isIgnored(FileSystemEvent event) {
-    if (!shouldIgnoreWatchEvent(event.path, _config)) {
+    if (!_filter.ignores(event.path)) {
       return false;
     }
     final destination = event is FileSystemMoveEvent ? event.destination : null;
-    return destination == null || shouldIgnoreWatchEvent(destination, _config);
+    return destination == null || _filter.ignores(destination);
   }
 
   void _onChange() {

@@ -98,6 +98,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   longer produce warnings.
 - Warnings and watch-mode errors go to stderr, so `--dry-run` output stays
   clean. Unknown commands print usage to stderr.
+- `--watch --project` matches the output directory however a symlink spells
+  it (macOS `/var` vs `/private/var`, or a relative `--output` resolved
+  against the real current directory while `--project` names a symlink), so
+  writing the bindings no longer triggers another regeneration or, on Linux,
+  a watch of the output directory. Ignored directory names (`node_modules`,
+  `.git`, `.dart_tool`) only count below the project directory, so a project
+  that itself lives under such a directory is still watched.
 
 ### Changed
 
