@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:dartvex/dartvex.dart';
 import 'package:dartvex_local/dartvex_local.dart';
+import 'package:dartvex_local/src/query_key.dart' show serializeQueryKey;
 import 'package:dartvex_local/src/storage/sqlite_local_store_native.dart'
     as native;
 import 'package:sqlite3/sqlite3.dart' as sqlite;
@@ -2430,6 +2431,747 @@ void main() {
     );
   });
 
+  group('ConvexLocalClient post-release review fixes', () {
+    late SqliteLocalStore store;
+    late FakeRemoteClient remoteClient;
+    ConvexLocalClient? client;
+
+    setUp(() async {
+      store = await SqliteLocalStore.openInMemory();
+      remoteClient = FakeRemoteClient();
+    });
+
+    tearDown(() async {
+      await client?.dispose();
+      client = null;
+      remoteClient.dispose();
+    });
+
+    Future<ConvexLocalClient> open({
+      CacheStorage? cacheStorage,
+      QueueStorage? queueStorage,
+      List<LocalMutationHandler> handlers = const <LocalMutationHandler>[
+        CreateTaskHandler(),
+        AdvanceTaskHandler(),
+      ],
+      QueryCachePolicy policy = QueryCachePolicy.unbounded,
+      Duration refreshQueryTimeout = const Duration(seconds: 5),
+      LocalNetworkMode initialNetworkMode = LocalNetworkMode.auto,
+      void Function(LocalMutationConflict conflict)? onConflict,
+    }) async {
+      return client = await ConvexLocalClient.openWithRemote(
+        remoteClient: remoteClient,
+        config: LocalClientConfig(
+          cacheStorage: cacheStorage ?? store,
+          queueStorage: queueStorage ?? store,
+          mutationHandlers: handlers,
+          queryCachePolicy: policy,
+          refreshQueryTimeout: refreshQueryTimeout,
+          initialNetworkMode: initialNetworkMode,
+          onConflict: onConflict,
+        ),
+      );
+    }
+
+    Future<void> waitForEmptyQueue(
+      ConvexLocalClient local, {
+      Duration timeout = const Duration(seconds: 4),
+    }) async {
+      if (local.currentPendingMutations.isEmpty) {
+        return;
+      }
+      await local.pendingMutations
+          .firstWhere((list) => list.isEmpty)
+          .timeout(timeout);
+    }
+
+    StreamController<LocalRemoteQueryEvent> feedFor(String name) {
+      final feed = StreamController<LocalRemoteQueryEvent>.broadcast();
+      addTearDown(feed.close);
+      remoteClient.subscriptionStreams[name] = feed.stream;
+      return feed;
+    }
+
+    test('F16: a direct mutation stuck across a disconnect does not block '
+        'later mutations, and replay keeps call order', () async {
+      final local = await open();
+      final firstRemote = Completer<Object?>();
+      remoteClient.mutationResults['tasks:create'] = <Object?>[
+        firstRemote.future,
+        'server-2',
+      ];
+
+      final first = local.mutate('tasks:create', <String, dynamic>{
+        'title': 'first',
+      });
+      await pumpEventQueue();
+      expect(remoteClient.mutationCalls, hasLength(1));
+
+      remoteClient.setConnectionState(LocalRemoteConnectionState.disconnected);
+      final second = await local
+          .mutate('tasks:create', <String, dynamic>{'title': 'second'})
+          .timeout(const Duration(seconds: 1));
+      expect(second, isA<LocalMutationQueued>());
+      expect(local.currentPendingMutations, hasLength(1));
+
+      // Reconnected before the direct mutation settled: replay waits for it.
+      remoteClient.setConnectionState(LocalRemoteConnectionState.connected);
+      await pumpEventQueue();
+      expect(remoteClient.mutationCalls, hasLength(1));
+
+      firstRemote.complete('server-1');
+      expect(await first, isA<LocalMutationSuccess>());
+      await waitForEmptyQueue(local);
+      expect(
+        remoteClient.mutationCalls.map((call) => call.args['title']).toList(),
+        <String>['first', 'second'],
+      );
+    });
+
+    test('F16: forcing offline detaches a stuck direct mutation', () async {
+      final local = await open();
+      final firstRemote = Completer<Object?>();
+      remoteClient.mutationResults['tasks:create'] = <Object?>[
+        firstRemote.future,
+      ];
+
+      final first = local.mutate('tasks:create', <String, dynamic>{
+        'title': 'first',
+      });
+      await pumpEventQueue();
+      await local.setNetworkMode(LocalNetworkMode.offline);
+
+      final second = await local
+          .mutate('tasks:create', <String, dynamic>{'title': 'second'})
+          .timeout(const Duration(seconds: 1));
+      expect(second, isA<LocalMutationQueued>());
+
+      // A retryable failure of the detached send is not queued behind it.
+      firstRemote.completeError(
+        const ConvexException('timed out', retryable: true),
+      );
+      expect(await first, isA<LocalMutationFailed>());
+      expect(
+        local.currentPendingMutations.map((m) => m.args['title']).toList(),
+        <String>['second'],
+      );
+    });
+
+    test(
+      'F17: replay keeps the queue when the remote client is closed',
+      () async {
+        final conflicts = <LocalMutationConflict>[];
+        final local = await open(
+          initialNetworkMode: LocalNetworkMode.offline,
+          onConflict: conflicts.add,
+        );
+        await local.mutate('tasks:create', <String, dynamic>{'title': 'a'});
+        await local.mutate('tasks:create', <String, dynamic>{'title': 'b'});
+        remoteClient.mutationResults['tasks:create'] = <Object?>[
+          const ConvexException('ConvexClient has been disposed'),
+          const ConvexException('ConvexClient has been disposed'),
+        ];
+
+        await local.setNetworkMode(LocalNetworkMode.auto);
+        await pumpEventQueue();
+
+        expect(conflicts, isEmpty);
+        expect(remoteClient.mutationCalls, hasLength(1));
+        expect(local.currentPendingMutations, hasLength(2));
+        expect(
+          local.currentPendingMutations.map((m) => m.status).toSet(),
+          <PendingMutationStatus>{PendingMutationStatus.pending},
+        );
+        expect(local.currentConnectionState, LocalConnectionState.offline);
+      },
+    );
+
+    test('F17: replay keeps a mutation that fails after the remote dropped '
+        '(fatal error)', () async {
+      final conflicts = <LocalMutationConflict>[];
+      final local = await open(
+        initialNetworkMode: LocalNetworkMode.offline,
+        onConflict: conflicts.add,
+      );
+      await local.mutate('tasks:create', <String, dynamic>{'title': 'a'});
+      await local.mutate('tasks:create', <String, dynamic>{'title': 'b'});
+      final reply = Completer<Object?>();
+      remoteClient.mutationResults['tasks:create'] = <Object?>[reply.future];
+
+      await local.setNetworkMode(LocalNetworkMode.auto);
+      await pumpEventQueue();
+      expect(remoteClient.mutationCalls, hasLength(1));
+
+      remoteClient.setConnectionState(LocalRemoteConnectionState.disconnected);
+      reply.completeError(const ConvexException('fatal server error'));
+      await pumpEventQueue();
+
+      expect(conflicts, isEmpty);
+      expect(remoteClient.mutationCalls, hasLength(1));
+      expect(local.currentPendingMutations, hasLength(2));
+    });
+
+    test(
+      'F18: cancel then immediately resubscribe keeps live updates',
+      () async {
+        final local = await open();
+        final feed = feedFor('tasks:list');
+
+        var subscription = local.subscribe('tasks:list');
+        await pumpEventQueue();
+        subscription.cancel();
+        subscription = local.subscribe('tasks:list');
+        final events = <LocalQueryEvent>[];
+        subscription.stream.listen(events.add);
+        await pumpEventQueue();
+
+        feed.add(const LocalRemoteQuerySuccess(<dynamic>['live']));
+        await pumpEventQueue();
+        expect(
+          events.whereType<LocalQuerySuccess>().map((event) => event.value),
+          anyElement(equals(<dynamic>['live'])),
+        );
+
+        await local.dispose();
+        // Both remote subscriptions were released: the cancelled one and the
+        // resubscribed one (on dispose).
+        expect(remoteClient.subscriptionCancelCounts['tasks:list'], 2);
+      },
+    );
+
+    test(
+      'F19: query serves the cache while the remote is not connected',
+      () async {
+        final local = await open();
+        remoteClient.queryResults['tasks:list'] = <dynamic>['cached'];
+        await local.query('tasks:list');
+
+        remoteClient
+          ..setConnectionState(LocalRemoteConnectionState.connecting)
+          ..queryResults['tasks:list'] = <dynamic>['remote'];
+        expect(await local.query('tasks:list'), <dynamic>['cached']);
+      },
+    );
+
+    test(
+      'F19: query without cache waits a bounded time while disconnected',
+      () async {
+        final local = await open(
+          refreshQueryTimeout: const Duration(milliseconds: 50),
+        );
+        feedFor('tasks:list');
+        remoteClient.setConnectionState(
+          LocalRemoteConnectionState.disconnected,
+        );
+
+        await expectLater(
+          local.query('tasks:list'),
+          throwsA(isA<TimeoutException>()),
+        );
+        expect(remoteClient.subscriptionCancelCounts['tasks:list'], 1);
+      },
+    );
+
+    test('F19: query without cache returns a value delivered while '
+        'disconnected', () async {
+      final local = await open();
+      final feed = feedFor('tasks:list');
+      remoteClient.setConnectionState(LocalRemoteConnectionState.disconnected);
+
+      final result = local.query('tasks:list');
+      await pumpEventQueue();
+      feed.add(const LocalRemoteQuerySuccess(<dynamic>['late']));
+      expect(await result, <dynamic>['late']);
+    });
+
+    test(
+      'F20: setNetworkMode(offline) is not blocked by a stuck replay',
+      () async {
+        final local = await open(initialNetworkMode: LocalNetworkMode.offline);
+        await local.mutate('tasks:create', <String, dynamic>{'title': 'a'});
+        await local.mutate('tasks:create', <String, dynamic>{'title': 'b'});
+        final stuck = Completer<Object?>();
+        remoteClient.mutationResults['tasks:create'] = <Object?>[
+          stuck.future,
+          'server-b',
+        ];
+
+        await local
+            .setNetworkMode(LocalNetworkMode.auto)
+            .timeout(const Duration(seconds: 1));
+        await pumpEventQueue();
+        expect(remoteClient.mutationCalls, hasLength(1));
+
+        await local
+            .setNetworkMode(LocalNetworkMode.offline)
+            .timeout(const Duration(seconds: 1));
+        expect(local.currentNetworkMode, LocalNetworkMode.offline);
+
+        stuck.complete('server-a');
+        await pumpEventQueue();
+        expect(remoteClient.mutationCalls, hasLength(1));
+        expect(
+          local.currentPendingMutations.map((m) => m.args['title']).toList(),
+          <String>['b'],
+        );
+      },
+    );
+
+    test(
+      'F21/F53: reset discards the queue, ID remaps and the cache',
+      () async {
+        final local = await open();
+        remoteClient.queryResults['tasks:list'] = <dynamic>[
+          <String, dynamic>{'_id': 't1', 'title': 'server'},
+        ];
+        await local.query('tasks:list');
+        await local.setNetworkMode(LocalNetworkMode.offline);
+        await local.mutate('tasks:create', <String, dynamic>{
+          'title': 'queued',
+        });
+        await store.saveIdRemap('local-1-1', 'server-1');
+
+        await local.reset();
+
+        expect(local.currentPendingMutations, isEmpty);
+        expect(await store.loadAll(), isEmpty);
+        expect(await store.loadIdRemaps(), isEmpty);
+        await expectLater(local.query('tasks:list'), throwsStateError);
+      },
+    );
+
+    test('F95: a mutation queued after a retryable direct failure while '
+        'connected is replayed', () async {
+      final local = await open();
+      remoteClient.mutationResults['tasks:create'] = <Object?>[
+        TimeoutException('slow'),
+        'server-1',
+      ];
+
+      final result = await local.mutate('tasks:create', <String, dynamic>{
+        'title': 'a',
+      });
+      expect(result, isA<LocalMutationQueued>());
+
+      await waitForEmptyQueue(local);
+      expect(remoteClient.mutationCalls, hasLength(2));
+    });
+
+    test('F96: the post-replay refresh ignores a stale remote seed', () async {
+      final local = await open(initialNetworkMode: LocalNetworkMode.offline);
+      await local.mutate('tasks:create', <String, dynamic>{'title': 'a'});
+      remoteClient
+        ..mutationResults['tasks:create'] = <Object?>['server-a']
+        ..subscriptionStreams['tasks:list'] =
+            Stream<LocalRemoteQueryEvent>.fromIterable(<LocalRemoteQueryEvent>[
+              const LocalRemoteQuerySuccess(<dynamic>[], isSeed: true),
+              const LocalRemoteQuerySuccess(<dynamic>[
+                <String, dynamic>{'_id': 'server-a', 'title': 'a'},
+              ]),
+            ]);
+
+      await local.setNetworkMode(LocalNetworkMode.auto);
+      await waitForEmptyQueue(local);
+      await pumpEventQueue();
+      await local.setNetworkMode(LocalNetworkMode.offline);
+
+      expect(await local.query('tasks:list'), <dynamic>[
+        <String, dynamic>{'_id': 'server-a', 'title': 'a'},
+      ]);
+    });
+
+    test('F97: replay keeps bytes args intact behind an ID-producing '
+        'mutation', () async {
+      final local = await open(initialNetworkMode: LocalNetworkMode.offline);
+      await local.mutate('tasks:create', <String, dynamic>{'title': 'a'});
+      await local.mutate('files:attach', <String, dynamic>{
+        'data': Uint8List.fromList(<int>[1, 2, 3]),
+      });
+      remoteClient
+        ..mutationResults['tasks:create'] = <Object?>['server-a']
+        ..mutationResults['files:attach'] = <Object?>['ok'];
+
+      await local.setNetworkMode(LocalNetworkMode.auto);
+      await waitForEmptyQueue(local);
+
+      final attach = remoteClient.mutationCalls.singleWhere(
+        (call) => call.name == 'files:attach',
+      );
+      expect(attach.args['data'], isA<Uint8List>());
+      expect(attach.args['data'], orderedEquals(<int>[1, 2, 3]));
+    });
+
+    test(
+      'F218: handler targets with bytes args keep their query key',
+      () async {
+        final local = await open(
+          handlers: const <LocalMutationHandler>[BytesTargetHandler()],
+          initialNetworkMode: LocalNetworkMode.offline,
+        );
+        final events = <LocalQueryEvent>[];
+        local
+            .subscribe('files:byHash', <String, dynamic>{
+              'hash': Uint8List.fromList(<int>[1, 2, 3]),
+            })
+            .stream
+            .listen(events.add);
+        await pumpEventQueue();
+
+        await local.mutate('files:tag');
+        await pumpEventQueue();
+
+        final last = events.whereType<LocalQuerySuccess>().last;
+        expect(last.value, <dynamic>['tagged']);
+        expect(last.hasPendingWrites, isTrue);
+      },
+    );
+
+    test('F98: a connecting remote is reported as offline', () async {
+      final local = await open();
+      expect(local.currentConnectionState, LocalConnectionState.online);
+
+      remoteClient.setConnectionState(LocalRemoteConnectionState.connecting);
+      expect(local.currentConnectionState, LocalConnectionState.offline);
+
+      remoteClient.setConnectionState(LocalRemoteConnectionState.connected);
+      expect(local.currentConnectionState, LocalConnectionState.online);
+    });
+
+    test('F99: a connection established while the queue loads is not '
+        'missed', () async {
+      await store.enqueue(
+        mutationName: 'tasks:create',
+        argsJson: '{"title":"a"}',
+        optimisticJson: null,
+        createdAtMillis: 0,
+      );
+      remoteClient
+        ..setConnectionState(LocalRemoteConnectionState.connecting)
+        ..mutationResults['tasks:create'] = <Object?>['server-a'];
+      final gate = Completer<void>();
+      final queue = HookedQueueStorage(store)..loadAllGate = gate.future;
+
+      final opening = open(queueStorage: queue);
+      await pumpEventQueue();
+      remoteClient.setConnectionState(LocalRemoteConnectionState.connected);
+      gate.complete();
+      final local = await opening;
+
+      await waitForEmptyQueue(local);
+      await pumpEventQueue();
+      expect(remoteClient.mutationCalls, hasLength(1));
+      expect(local.currentConnectionState, LocalConnectionState.online);
+    });
+
+    test('F100: patching a live query whose cache entry expired keeps the '
+        'shown value as the base', () async {
+      final local = await open(
+        policy: const QueryCachePolicy(maxEntryAge: Duration(milliseconds: 50)),
+      );
+      final feed = feedFor('tasks:list');
+      final events = <LocalQueryEvent>[];
+      local.subscribe('tasks:list').stream.listen(events.add);
+      await pumpEventQueue();
+      feed.add(
+        const LocalRemoteQuerySuccess(<dynamic>[
+          <String, dynamic>{'_id': 't1', 'title': 'one'},
+          <String, dynamic>{'_id': 't2', 'title': 'two'},
+        ]),
+      );
+      await pumpEventQueue();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+
+      await local.setNetworkMode(LocalNetworkMode.offline);
+      await local.mutate('tasks:create', <String, dynamic>{'title': 'three'});
+      await pumpEventQueue();
+
+      final last = events.whereType<LocalQuerySuccess>().last;
+      expect(
+        (last.value as List<dynamic>).map((task) => task['title']).toList(),
+        <String>['one', 'two', 'three'],
+      );
+    });
+
+    test('F101: a second subscriber receives the remote error the first '
+        'one got', () async {
+      final local = await open();
+      final feed = feedFor('tasks:get');
+      local.subscribe('tasks:get').stream.listen((_) {});
+      await pumpEventQueue();
+      feed.add(const LocalRemoteQueryError(ConvexException('denied')));
+      await pumpEventQueue();
+
+      final second = <LocalQueryEvent>[];
+      local.subscribe('tasks:get').stream.listen(second.add);
+      await pumpEventQueue();
+
+      expect(second, hasLength(1));
+      expect(second.single, isA<LocalQueryError>());
+    });
+
+    test(
+      'F101: a new subscriber gets the live value after clearCache',
+      () async {
+        final local = await open();
+        final feed = feedFor('tasks:list');
+        local.subscribe('tasks:list').stream.listen((_) {});
+        await pumpEventQueue();
+        feed.add(const LocalRemoteQuerySuccess(<dynamic>['x']));
+        await pumpEventQueue();
+        await local.clearCache();
+
+        final second = <LocalQueryEvent>[];
+        local.subscribe('tasks:list').stream.listen(second.add);
+        await pumpEventQueue();
+
+        expect(second, hasLength(1));
+        expect((second.single as LocalQuerySuccess).value, <dynamic>['x']);
+      },
+    );
+
+    test('F102: a storage failure after a committed replay neither rolls back '
+        'nor re-sends', () async {
+      final conflicts = <LocalMutationConflict>[];
+      final queue = HookedQueueStorage(store);
+      final local = await open(
+        queueStorage: queue,
+        initialNetworkMode: LocalNetworkMode.offline,
+        onConflict: conflicts.add,
+      );
+      await local.mutate('tasks:create', <String, dynamic>{'title': 'a'});
+      remoteClient.mutationResults['tasks:create'] = <Object?>['server-a'];
+      queue.failNextRemove = true;
+
+      await local.setNetworkMode(LocalNetworkMode.auto);
+      await pumpEventQueue();
+      expect(conflicts, isEmpty);
+      expect(local.currentPendingMutations, hasLength(1));
+      final optimistic = await store.read(
+        serializeQueryKey('tasks:list', const <String, dynamic>{}),
+      );
+      expect(optimistic?.valueJson, contains('"title":"a"'));
+
+      await waitForEmptyQueue(local);
+      expect(remoteClient.mutationCalls, hasLength(1));
+      expect(conflicts, isEmpty);
+    });
+
+    test('F103: replay retries after a storage error outside a mutation '
+        'send', () async {
+      final queue = HookedQueueStorage(store);
+      final local = await open(
+        queueStorage: queue,
+        initialNetworkMode: LocalNetworkMode.offline,
+      );
+      await local.mutate('tasks:create', <String, dynamic>{'title': 'a'});
+      remoteClient.mutationResults['tasks:create'] = <Object?>['server-a'];
+      queue.failNextMarkStatus = true;
+
+      await local.setNetworkMode(LocalNetworkMode.auto);
+      await pumpEventQueue();
+      expect(remoteClient.mutationCalls, isEmpty);
+      expect(local.currentPendingMutations, hasLength(1));
+
+      await waitForEmptyQueue(local);
+      expect(remoteClient.mutationCalls, hasLength(1));
+    });
+
+    test('F104: a remote error is not overtaken by an older success still '
+        'being written', () async {
+      final cache = GatedWriteCacheStorage(store);
+      final local = await open(cacheStorage: cache);
+      final feed = feedFor('tasks:list');
+      final events = <LocalQueryEvent>[];
+      local.subscribe('tasks:list').stream.listen(events.add);
+      await pumpEventQueue();
+
+      cache.blockUpsertWhere((_) => true);
+      feed.add(const LocalRemoteQuerySuccess(<dynamic>['a']));
+      await cache.upsertBlocked;
+      feed.add(const LocalRemoteQueryError(ConvexException('Unauthorized')));
+      await pumpEventQueue();
+      cache.releaseBlockedUpsert();
+      await pumpEventQueue();
+
+      expect(events, hasLength(2));
+      expect(events.first, isA<LocalQuerySuccess>());
+      expect(events.last, isA<LocalQueryError>());
+    });
+
+    test(
+      'F105: the post-replay refresh runs once per distinct target',
+      () async {
+        final local = await open(initialNetworkMode: LocalNetworkMode.offline);
+        await local.mutate('tasks:create', <String, dynamic>{'title': 'a'});
+        await local.mutate('tasks:create', <String, dynamic>{'title': 'b'});
+        remoteClient
+          ..mutationResults['tasks:create'] = <Object?>['server-a', 'server-b']
+          ..queryResults['tasks:list'] = <dynamic>[];
+
+        await local.setNetworkMode(LocalNetworkMode.auto);
+        await waitForEmptyQueue(local);
+        await pumpEventQueue();
+
+        expect(remoteClient.subscriptionCancelCounts['tasks:list'], 1);
+      },
+    );
+
+    test('F106: a local ID whose producer already synced is remapped on the '
+        'direct path', () async {
+      final local = await open(initialNetworkMode: LocalNetworkMode.offline);
+      final queued =
+          await local.mutate('tasks:create', <String, dynamic>{'title': 'a'})
+              as LocalMutationQueued;
+      final localId =
+          queued.pendingMutation.optimisticData!['operationId'] as String;
+      remoteClient
+        ..mutationResults['tasks:create'] = <Object?>['server-a']
+        ..mutationResults['tasks:advance'] = <Object?>['ok'];
+
+      await local.setNetworkMode(LocalNetworkMode.auto);
+      await waitForEmptyQueue(local);
+      await pumpEventQueue();
+      expect(await store.loadIdRemaps(), <String, String>{localId: 'server-a'});
+
+      final result = await local.mutate('tasks:advance', <String, dynamic>{
+        'taskId': localId,
+      });
+      expect(result, isA<LocalMutationSuccess>());
+      expect(remoteClient.mutationCalls.last.args['taskId'], 'server-a');
+    });
+
+    test('F108: a cache write failure still delivers remote values', () async {
+      final local = await open(cacheStorage: ThrowingWriteCacheStorage(store));
+      remoteClient.queryResults['tasks:list'] = <dynamic>['remote'];
+      expect(await local.query('tasks:list'), <dynamic>['remote']);
+
+      final feed = feedFor('tasks:live');
+      final events = <LocalQueryEvent>[];
+      local.subscribe('tasks:live').stream.listen(events.add);
+      await pumpEventQueue();
+      feed.add(const LocalRemoteQuerySuccess(<dynamic>['live']));
+      await pumpEventQueue();
+
+      final last = events.last as LocalQuerySuccess;
+      expect(last.value, <dynamic>['live']);
+      expect(last.source, LocalQuerySource.remote);
+    });
+
+    test(
+      'F109: clearCache then clearQueue does not restore cleared values',
+      () async {
+        final local = await open();
+        remoteClient.queryResults['tasks:list'] = <dynamic>[
+          <String, dynamic>{'_id': 't1', 'title': 'server'},
+        ];
+        await local.query('tasks:list');
+        await local.setNetworkMode(LocalNetworkMode.offline);
+        await local.mutate('tasks:create', <String, dynamic>{
+          'title': 'queued',
+        });
+
+        await local.clearCache();
+        await local.clearQueue();
+
+        await expectLater(local.query('tasks:list'), throwsStateError);
+      },
+    );
+
+    test('F215: dropping a replayed mutation restores the rollback rebased '
+        'during its round trip', () async {
+      final local = await open(
+        refreshQueryTimeout: const Duration(milliseconds: 50),
+      );
+      final feed = feedFor('tasks:list');
+      local.subscribe('tasks:list').stream.listen((_) {});
+      await pumpEventQueue();
+      feed.add(
+        const LocalRemoteQuerySuccess(<dynamic>[
+          <String, dynamic>{'_id': 't1', 'title': 'v1'},
+        ]),
+      );
+      await pumpEventQueue();
+
+      await local.setNetworkMode(LocalNetworkMode.offline);
+      await local.mutate('tasks:create', <String, dynamic>{'title': 'x'});
+      final reply = Completer<Object?>();
+      remoteClient.mutationResults['tasks:create'] = <Object?>[reply.future];
+      await local.setNetworkMode(LocalNetworkMode.auto);
+      await pumpEventQueue();
+      expect(remoteClient.mutationCalls, hasLength(1));
+
+      feed.add(
+        const LocalRemoteQuerySuccess(<dynamic>[
+          <String, dynamic>{'_id': 't1', 'title': 'v2'},
+        ]),
+      );
+      await pumpEventQueue();
+      reply.completeError(const ConvexException('rejected'));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+
+      await local.setNetworkMode(LocalNetworkMode.offline);
+      expect(await local.query('tasks:list'), <dynamic>[
+        <String, dynamic>{'_id': 't1', 'title': 'v2'},
+      ]);
+    });
+
+    test('F216/F221: onConflict from the config gets conflicts from replay '
+        'started by open, with queue and operation ids', () async {
+      final stored = await store.enqueue(
+        mutationName: 'tasks:create',
+        argsJson: '{"title":"a"}',
+        optimisticJson: '{"operationId":"local-1-1"}',
+        createdAtMillis: 0,
+      );
+      remoteClient.mutationResults['tasks:create'] = <Object?>[
+        const ConvexException('rejected'),
+      ];
+      final conflicts = <LocalMutationConflict>[];
+
+      await open(onConflict: conflicts.add);
+      await pumpEventQueue();
+
+      expect(conflicts, hasLength(1));
+      expect(conflicts.single.pendingMutationId, stored.id);
+      expect(conflicts.single.operationId, 'local-1-1');
+    });
+
+    test('F220: several handlers for one mutation all apply, matched by '
+        'canonical name', () async {
+      final local = await open(
+        handlers: const <LocalMutationHandler>[
+          CreateTaskHandler(),
+          TaskCountHandler(),
+        ],
+        initialNetworkMode: LocalNetworkMode.offline,
+      );
+
+      await local.mutate('tasks:create', <String, dynamic>{'title': 'a'});
+
+      expect(await local.query('tasks:list'), hasLength(1));
+      expect(await local.query('tasks:count'), 1);
+    });
+
+    test('F222: a row left replaying by a crash is reset to pending on '
+        'open', () async {
+      final stored = await store.enqueue(
+        mutationName: 'tasks:create',
+        argsJson: '{"title":"a"}',
+        optimisticJson: null,
+        createdAtMillis: 0,
+      );
+      await store.markStatus(stored.id, 'replaying');
+
+      final local = await open(initialNetworkMode: LocalNetworkMode.offline);
+
+      expect(
+        local.currentPendingMutations.single.status,
+        PendingMutationStatus.pending,
+      );
+      expect((await store.loadAll()).single.status, 'pending');
+    });
+  });
+
   group('SqliteLocalStore', () {
     test('openInMemory creates a working store', () async {
       final store = await SqliteLocalStore.openInMemory();
@@ -2685,6 +3427,24 @@ void main() {
       expect(decoded['count'], BigInt.from(42));
       expect(decoded['bytes'], orderedEquals(<int>[1, 2, 3]));
       expect(decoded['special'], double.infinity);
+    });
+
+    test('round-trips the commit timestamp placeholder', () {
+      const json =
+          '{"doc":{"_id":"x","ts":{"\$commitTs":null}},'
+          '"list":[{"\$commitTs":null}]}';
+
+      final decoded = codec.decode(json);
+      expect(codec.encode(decoded), json);
+      expect(codec.encode(codec.decodeMap(json)), json);
+    });
+
+    test('still rejects other reserved field names', () {
+      expect(() => codec.decode('{"\$other":1}'), throwsArgumentError);
+      expect(
+        () => codec.encode(<String, dynamic>{r'$commitTs': 1}),
+        throwsArgumentError,
+      );
     });
   });
 }
@@ -3146,4 +3906,161 @@ class PublicMessageMutationHandler extends LocalMutationHandler {
       ),
     ];
   }
+}
+
+/// Second handler for `tasks:create`, registered under a non-canonical name.
+class TaskCountHandler extends LocalMutationHandler {
+  const TaskCountHandler();
+
+  @override
+  String get mutationName => 'tasks.js:create';
+
+  @override
+  List<LocalMutationPatch> buildPatches(
+    Map<String, dynamic> args,
+    LocalMutationContext context,
+  ) {
+    return <LocalMutationPatch>[
+      LocalMutationPatch(
+        target: const LocalQueryDescriptor('tasks:count'),
+        apply: (currentValue) => ((currentValue as int?) ?? 0) + 1,
+      ),
+    ];
+  }
+}
+
+/// Handler whose target query takes a bytes argument.
+class BytesTargetHandler extends LocalMutationHandler {
+  const BytesTargetHandler();
+
+  @override
+  String get mutationName => 'files:tag';
+
+  @override
+  List<LocalMutationPatch> buildPatches(
+    Map<String, dynamic> args,
+    LocalMutationContext context,
+  ) {
+    return <LocalMutationPatch>[
+      LocalMutationPatch(
+        target: LocalQueryDescriptor('files:byHash', <String, dynamic>{
+          'hash': Uint8List.fromList(<int>[1, 2, 3]),
+        }),
+        apply: (_) => <dynamic>['tagged'],
+      ),
+    ];
+  }
+}
+
+/// Cache storage whose writes always fail.
+class ThrowingWriteCacheStorage implements CacheStorage {
+  ThrowingWriteCacheStorage(this._inner);
+
+  final CacheStorage _inner;
+
+  @override
+  Future<void> upsert(StoredCacheEntry entry) async {
+    throw StateError('cache write failed');
+  }
+
+  @override
+  Future<StoredCacheEntry?> read(String key) => _inner.read(key);
+
+  @override
+  Future<void> deleteCacheEntry(String key, {int? updatedAtMillis}) =>
+      _inner.deleteCacheEntry(key, updatedAtMillis: updatedAtMillis);
+
+  @override
+  Future<void> clearCache() => _inner.clearCache();
+
+  @override
+  Future<void> close() => _inner.close();
+}
+
+/// Delegating queue storage with hooks to delay the first load or make one
+/// write fail.
+class HookedQueueStorage implements QueueStorage {
+  HookedQueueStorage(this._inner);
+
+  final QueueStorage _inner;
+
+  /// When set, the next [loadAll] waits for this future first.
+  Future<void>? loadAllGate;
+  bool failNextRemove = false;
+  bool failNextMarkStatus = false;
+
+  @override
+  Future<List<StoredPendingMutation>> loadAll() async {
+    final gate = loadAllGate;
+    if (gate != null) {
+      loadAllGate = null;
+      await gate;
+    }
+    return _inner.loadAll();
+  }
+
+  @override
+  Future<void> remove(int id) async {
+    if (failNextRemove) {
+      failNextRemove = false;
+      throw StateError('SQLITE_BUSY (remove)');
+    }
+    return _inner.remove(id);
+  }
+
+  @override
+  Future<void> markStatus(int id, String status, {String? errorMessage}) async {
+    if (failNextMarkStatus) {
+      failNextMarkStatus = false;
+      throw StateError('SQLITE_BUSY (markStatus)');
+    }
+    return _inner.markStatus(id, status, errorMessage: errorMessage);
+  }
+
+  @override
+  Future<StoredPendingMutation> enqueue({
+    required String mutationName,
+    required String argsJson,
+    required String? optimisticJson,
+    required int createdAtMillis,
+  }) => _inner.enqueue(
+    mutationName: mutationName,
+    argsJson: argsJson,
+    optimisticJson: optimisticJson,
+    createdAtMillis: createdAtMillis,
+  );
+
+  @override
+  Future<void> clearQueue() => _inner.clearQueue();
+
+  @override
+  Future<void> updateArgs(int id, String argsJson) =>
+      _inner.updateArgs(id, argsJson);
+
+  @override
+  Future<void> updateOptimisticData(int id, String? optimisticJson) =>
+      _inner.updateOptimisticData(id, optimisticJson);
+
+  @override
+  Future<void> saveIdRemap(String localId, String serverId) =>
+      _inner.saveIdRemap(localId, serverId);
+
+  @override
+  Future<Map<String, String>> loadIdRemaps() => _inner.loadIdRemaps();
+
+  @override
+  Future<void> clearIdRemaps() => _inner.clearIdRemaps();
+
+  @override
+  Future<void> saveFailedLocalId(String localId) =>
+      _inner.saveFailedLocalId(localId);
+
+  @override
+  Future<Set<String>> loadFailedLocalIds() => _inner.loadFailedLocalIds();
+
+  @override
+  Future<void> clearFailedLocalIds() => _inner.clearFailedLocalIds();
+
+  @override
+  Future<void> close() => _inner.close();
 }
