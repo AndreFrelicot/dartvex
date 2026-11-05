@@ -91,14 +91,20 @@ void emitDartvexLog({
   if (sink == null) {
     return;
   }
-  sink(
-    DartvexLogEvent(
-      level: eventLevel,
-      message: message,
-      tag: tag,
-      error: error,
-      stackTrace: stackTrace,
-      data: data,
-    ),
-  );
+  try {
+    sink(
+      DartvexLogEvent(
+        level: eventLevel,
+        message: message,
+        tag: tag,
+        error: error,
+        stackTrace: stackTrace,
+        data: data,
+      ),
+    );
+  } catch (_) {
+    // The sink is user code and logging runs on critical paths (connect,
+    // message handling, auth) that must not be derailed by it. A failing
+    // logger has nowhere to report its own failure, so it is dropped.
+  }
 }

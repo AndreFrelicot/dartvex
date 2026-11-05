@@ -22,11 +22,13 @@ class WebPlatformWebSocketAdapter implements WebSocketAdapter {
 
   web.WebSocket? _socket;
   int _connectGeneration = 0;
-  int? _suppressedCloseGeneration;
 
   @override
   Future<void> connect(String url) async {
-    _closeCurrent(suppressCloseEvent: true);
+    // Advancing the generation right after closing the previous socket is what
+    // silences that socket: its late onclose fails the currentGeneration check
+    // below, so it neither fails this connect nor emits a close event.
+    _closeCurrent();
     final generation = ++_connectGeneration;
     final socket = web.WebSocket(url);
     final completer = Completer<void>();
@@ -63,19 +65,15 @@ class WebPlatformWebSocketAdapter implements WebSocketAdapter {
       }
     }).toJS;
     socket.onclose = ((web.CloseEvent event) {
-      final suppressed = _suppressedCloseGeneration == generation;
-      if (suppressed) {
-        _suppressedCloseGeneration = null;
-      }
       final currentGeneration = generation == _connectGeneration;
       final currentSocket = identical(_socket, socket);
       if (currentSocket) {
         _socket = null;
       }
-      if (!suppressed && currentGeneration && !completer.isCompleted) {
+      if (currentGeneration && !completer.isCompleted) {
         completer.completeError(StateError('WebSocket closed during connect'));
       }
-      if (suppressed || !currentGeneration) {
+      if (!currentGeneration) {
         return;
       }
       if (!_closeController.isClosed) {
@@ -107,17 +105,21 @@ class WebPlatformWebSocketAdapter implements WebSocketAdapter {
     socket.send(message.jsify()!);
   }
 
+  /// Closes the current socket.
+  ///
+  /// Deliberately does not advance the connect generation: a close() that
+  /// races an in-flight connect must let that socket's onclose fail the
+  /// pending connect future (so the caller is not left waiting for its
+  /// connect timeout), and the close event of an open socket is still emitted
+  /// so the sync layer can observe it (it ignores events it already handled).
   @override
   Future<void> close() async {
-    _closeCurrent(suppressCloseEvent: false);
+    _closeCurrent();
   }
 
-  void _closeCurrent({required bool suppressCloseEvent}) {
+  void _closeCurrent() {
     final socket = _socket;
     _socket = null;
-    if (socket != null && suppressCloseEvent) {
-      _suppressedCloseGeneration = _connectGeneration;
-    }
     socket?.close();
   }
 

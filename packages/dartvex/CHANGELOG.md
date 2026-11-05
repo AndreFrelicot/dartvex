@@ -7,6 +7,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+<!-- Transport and auth (review 2026-11, area A): entries prefixed "Transport:" / "Auth:". -->
+
+### Added
+
+- Transport: `ConvexClient(onServerDisconnectError: ...)`, an experimental
+  telemetry hook that receives a description of each abnormal server
+  disconnect (a server close with a reason and a code other than 1000, 1001,
+  1005, or 4040). Mirrors the official client's unstable option.
+- Transport: a reconnect triggered by `ConnectivitySignal` now reports the
+  backoff time it skipped to the server as a `NetworkRecoveryReconnect` event,
+  as the official client does.
+
+### Changed
+
+- Transport: `Connect.lastCloseReason` now follows the official client: it is
+  cleared once a `Connect` has been sent (a reauth stop/restart reports none),
+  failed reconnect attempts no longer overwrite the original disconnect reason
+  with raw exception text, and an inactivity timeout reports `InactiveServer`
+  (was `ServerInactivity`).
+- Transport: with a fixed `reconnectBackoff` schedule, client-initiated
+  reconnects (`reconnectNow`, a detected protocol error, an inactivity timeout)
+  now use the 100ms client base, never waiting longer than the schedule's
+  entry. Server/network closes still use the schedule verbatim.
+- Transport: a reauth's socket stop now publishes `ConnectionState.disconnected`
+  (it used to keep reporting `connected` while the socket was closed), so the
+  coarse state agrees with `ConnectionStatus.isWebSocketConnected`. The
+  `ConnectionState` docs now spell out that a reconnect backoff wait is
+  reported as `disconnected`.
+- Transport (internal): the `ServerMessageHandler` callback no longer returns
+  messages to send; that return path silently dropped messages while the socket
+  was paused or disconnected.
+
+### Fixed
+
+- Transport: `ConvexClient.reconnectNow` (and so the app-resume reconnect)
+  now cuts short a pending reconnect backoff instead of doing nothing until the
+  wait elapsed. It uses the 100ms client delay without advancing the backoff
+  progression and without reporting the disconnect a second time.
+- Transport: client-initiated reconnects (reconnectNow, protocol errors, failed
+  sends, inactivity timeouts) no longer wait for the platform's close event,
+  which on a dead connection can take up to a minute on web.
+- Transport: a connect that returns without an open socket (for example after
+  a stale inactivity timer closed it mid-handshake) is now retried instead of
+  stalling the client in `connecting` forever; the inactivity timer only acts
+  on, and is only re-armed by, a live connection.
+- Transport: an exception thrown by `onTransitionMetrics` is logged instead of
+  dropping the Transition and forcing a reconnect on every subsequent one.
+- Transport: `initialBackoff: Duration.zero` no longer turns the backoff into
+  NaN after 1024 retries, which permanently stopped reconnecting.
+- Transport: frames received before a close are now handled before the
+  disconnect, so an action whose response arrived in the same read as the
+  server's close is no longer failed as "Connection lost while action was in
+  flight".
+- Transport: `ConnectionStatus.connectionRetries` keeps counting with a fixed
+  `reconnectBackoff` schedule (it stopped at the schedule length minus one),
+  and changes to it are now republished on `connectionStatus`.
+- Transport: frames still queued from a socket that a reauth stopped (or that
+  was otherwise torn down) are dropped instead of being applied to the new
+  session, where they forced a spurious reconnect.
+- Transport: a throwing `DartvexLogger` can no longer leave the transport stuck
+  (`_connecting` never cleared) or break the message queue; logger exceptions
+  are swallowed.
+- Transport: a failing `Connect` send now triggers the usual
+  `FailedToSendMessage` reconnect instead of escaping to the caller (for
+  example out of `setAuthWithRefresh`'s socket resume), and an asynchronous
+  handshake whose socket was replaced meanwhile is abandoned instead of being
+  replayed onto the new socket.
+- Transport: Transition size metrics are measured without allocating a UTF-8
+  copy of every frame, and only when a metrics callback or warning log consumes
+  them.
+- Transport: removed dead close-suppression bookkeeping from the web adapter;
+  added loopback contract tests for the native adapter.
+
 ## [0.2.0] - 2026-06-12
 
 ### Added

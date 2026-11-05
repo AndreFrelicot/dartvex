@@ -23,10 +23,15 @@ enum ConnectionState {
   /// The WebSocket connection is established.
   connected,
 
-  /// The client is reconnecting after a disconnect.
+  /// A reconnect attempt is in flight after a disconnect.
+  ///
+  /// Covers the connect attempt itself; while the client waits out a
+  /// reconnect backoff between attempts the state is [disconnected].
   reconnecting,
 
-  /// The client is disconnected.
+  /// The client is disconnected: not yet started, waiting out a reconnect
+  /// backoff, or stopped while a server-rejected auth token is refreshed
+  /// (see [ConvexClient.authRefreshing]).
   disconnected,
 
   /// The connection ended on an unrecoverable server error and will not
@@ -299,10 +304,19 @@ abstract interface class ConvexFunctionCaller {
 /// Main Dartvex client for communicating with a Convex deployment.
 class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   /// Creates a [ConvexClient] for [deploymentUrl].
+  ///
+  /// [onTransitionMetrics] receives transit-time and size metrics for each
+  /// Transition. [onServerDisconnectError] is an experimental telemetry hook
+  /// that receives a description of each abnormal server disconnect (a server
+  /// close carrying a reason, with a close code other than 1000, 1001, 1005,
+  /// or 4040); mirrors the official client's unstable option of the same name,
+  /// and which reasons are reported may change. Exceptions thrown by either
+  /// callback are logged and otherwise ignored.
   ConvexClient(
     String deploymentUrl, {
     ConvexClientConfig? config,
     TransitionMetricsCallback? onTransitionMetrics,
+    void Function(String message)? onServerDisconnectError,
   })  : _deploymentUrl = _normalizeDeploymentUrl(deploymentUrl),
         _config = _normalizeConfig(config ?? const ConvexClientConfig()),
         _baseClient = BaseClient(),
@@ -339,6 +353,8 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       maxBackoff: _config.maxBackoff,
       backoffJitter: _config.backoffJitter,
       onTransitionMetrics: onTransitionMetrics,
+      onStatusChanged: () => _publishConnectionStatus(),
+      onServerDisconnectError: onServerDisconnectError,
       logLevel: _config.logLevel,
       logger: _config.logger,
     );
