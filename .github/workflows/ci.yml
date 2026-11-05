@@ -96,6 +96,18 @@ jobs:
       - name: Regenerate golden files
         if: matrix.package == 'dartvex_codegen'
         run: cd packages/dartvex_codegen && dart run tool/update_goldens.dart
+      # The regen step keeps goldens independent of the unpinned formatter, so
+      # the golden comparison alone cannot catch broken output. Generate the
+      # fixture through the real CLI and analyze it against the local dartvex
+      # package (test/goldens is excluded from the package analysis).
+      - name: Analyze generated bindings
+        if: matrix.package == 'dartvex_codegen'
+        run: |
+          cd packages/dartvex_codegen
+          dart run dartvex_codegen generate \
+            --spec-file test/fixtures/function_spec.json \
+            --output build/generated_check
+          dart analyze --fatal-warnings build/generated_check
       - run: cd packages/${{ matrix.package }} && dart test
 
   test-flutter:
