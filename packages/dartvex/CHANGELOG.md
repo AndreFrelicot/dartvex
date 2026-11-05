@@ -93,9 +93,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Transport (internal): the `ServerMessageHandler` callback no longer returns
   messages to send; that return path silently dropped messages while the socket
   was paused or disconnected.
-- Auth: **Breaking:** `ConvexClientConfig.authTokenType` must be `'User'`;
-  `ConvexClient` now throws `ArgumentError` for any other value. `'None'` made
-  the client report authenticated while the server treated it as anonymous.
+- Auth: **Breaking:** `ConvexClientConfig.authTokenType` must be `'User'` or
+  `'Admin'`; `ConvexClient` now throws `ArgumentError` for any other value.
+  `'None'` made the client report authenticated while the server treated it as
+  anonymous.
 - Auth: `setAuthWithRefresh`'s `onAuthChange(true)` now fires once per auth
   flow, when the server first confirms it, instead of on every token refresh.
 - Auth: the refresh of a freshly fetched token is scheduled from its lifetime

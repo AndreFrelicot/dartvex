@@ -68,8 +68,9 @@ class ConvexClientConfig {
 
   /// Token type used when authenticating with Convex.
   ///
-  /// Must be `'User'` (the default), the only token type a client-side app
-  /// can send; validated by `ConvexClient`.
+  /// Must be `'User'` (the default, for end-user JWTs) or `'Admin'` (a
+  /// deployment admin key, only for trusted server-side processes); validated
+  /// by `ConvexClient`.
   final String authTokenType;
 
   /// How many seconds before a token's expiration the client proactively

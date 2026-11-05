@@ -662,7 +662,8 @@ class _FakeFunctionCaller implements ConvexFunctionCaller {
   Future<dynamic> mutate(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
-  ]) => _client.mutate(name, args);
+    OptimisticUpdate? optimisticUpdate,
+  ]) => _client.mutate(name, args, optimisticUpdate);
 
   @override
   Future<dynamic> action(

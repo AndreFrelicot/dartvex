@@ -526,13 +526,14 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   }
 
   static ConvexClientConfig _normalizeConfig(ConvexClientConfig config) {
-    if (config.authTokenType != 'User') {
+    if (config.authTokenType != 'User' && config.authTokenType != 'Admin') {
       // 'None' would make the client report authenticated while the server
-      // treats it as anonymous, and 'Admin' is deliberately not a client API.
+      // treats it as anonymous. 'Admin' stays allowed for trusted server-side
+      // Dart processes authenticating with a deployment admin key.
       throw ArgumentError.value(
         config.authTokenType,
         'config.authTokenType',
-        "must be 'User'",
+        "must be 'User' or 'Admin'",
       );
     }
     _requireNonNegativeInt(

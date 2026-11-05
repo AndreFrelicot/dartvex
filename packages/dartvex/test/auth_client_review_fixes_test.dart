@@ -300,8 +300,8 @@ void main() {
     expect(h.auth.currentAuthToken, 'login-token-1');
   });
 
-  test('authTokenType other than User is rejected (F227)', () {
-    for (final type in <String>['None', 'Admin', 'user']) {
+  test('authTokenType other than User or Admin is rejected (F227)', () {
+    for (final type in <String>['None', 'user', 'admin']) {
       expect(
         () => ConvexClient(
           'https://demo.convex.cloud',
@@ -314,6 +314,17 @@ void main() {
         reason: type,
       );
     }
+  });
+
+  test('authTokenType Admin is still accepted for server-side use', () async {
+    final client = ConvexClient(
+      'https://demo.convex.cloud',
+      config: const ConvexClientConfig(
+        authTokenType: 'Admin',
+        connectImmediately: false,
+      ),
+    );
+    await client.close();
   });
 
   group('jwt claim parsing (F145)', () {
