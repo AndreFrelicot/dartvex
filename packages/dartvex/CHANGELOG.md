@@ -18,6 +18,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Transport: a reconnect triggered by `ConnectivitySignal` now reports the
   backoff time it skipped to the server as a `NetworkRecoveryReconnect` event,
   as the official client does.
+- Auth: `ConvexClientConfig.initialAuthTokenReuse` (experimental, default
+  `false`). When enabled, a cached token from `setAuthWithRefresh` that the
+  server confirms is kept, and its refresh is scheduled from the token's
+  remaining lifetime on the server's clock (from the confirming transition's
+  clock skew), instead of being immediately replaced by a fresh fetch. Mirrors
+  the official client's option.
+- Auth: `ConvexClient.isAuthenticated` (the current value of `authState`, which
+  does not replay) and `ConvexClient.currentAuthToken` /
+  `ConvexClientWithAuth.currentAuthToken` (the token currently in use,
+  reflecting every refresh; the counterpart of the official `getAuth()`).
+- Auth: the `AuthTokenFetcher` typedef used by `setAuthWithRefresh` is now
+  exported.
 
 ### Changed
 
@@ -38,6 +50,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Transport (internal): the `ServerMessageHandler` callback no longer returns
   messages to send; that return path silently dropped messages while the socket
   was paused or disconnected.
+- Auth: **Breaking:** `ConvexClientConfig.authTokenType` must be `'User'`;
+  `ConvexClient` now throws `ArgumentError` for any other value. `'None'` made
+  the client report authenticated while the server treated it as anonymous.
+- Auth: `setAuthWithRefresh`'s `onAuthChange(true)` now fires once per auth
+  flow, when the server first confirms it, instead of on every token refresh.
+- Auth: the refresh of a freshly fetched token is scheduled from its lifetime
+  alone, so a device clock that runs ahead no longer causes a zero-delay
+  refresh loop. A token pushed with `updateAuthToken` is judged against the
+  server's clock when the server reports its skew, and otherwise waits at
+  least 5 seconds.
+- Auth: a token fetch that throws while recovering from a server rejection is
+  retried twice (after 500ms and 2s) before the user is signed out.
+- Auth: a server auth rejection is now logged at error level with the server's
+  reason ("Failed to authenticate: ..., check your server auth config"), as
+  the official client does.
+- Auth: the `AuthProvider` docs now spell out the contract
+  `ConvexClientWithAuth` relies on: `loginFromCache` is the token refresh hook,
+  must return a freshly issued token, and reports "no session" by throwing.
+  `AuthAuthenticated.userInfo` is documented as a login-time snapshot.
 
 ### Fixed
 
@@ -79,6 +110,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   them.
 - Transport: removed dead close-suppression bookkeeping from the web adapter;
   added loopback contract tests for the native adapter.
+- Auth: a server `AuthError` no longer signs the user out when a concurrent
+  refresh had already applied the very token the reauth fetched; the session is
+  kept and only a definitively rejected token logs out.
+- Auth: a socket stopped by a reauth is restarted as soon as a newer
+  `setAuth`, `clearAuth`, or `setAuthWithRefresh` supersedes it, instead of
+  staying down until the stale token fetch returns. The reauth no longer blocks
+  the handling of other server messages.
+- Auth: `setAuthWithRefresh` no longer inherits the previous flow's pending
+  confirmation (the old token's confirmation could count for the new flow), and
+  an `updateAuthToken` during its initial fetch no longer leaves the caller with
+  a no-op handle while the flow keeps running.
+- Auth: `setAuth`, `clearAuth`, and the auth failure paths now clear the
+  transport token before reporting signed-out and do not report a stale result
+  over a newer auth call, so a re-entrant `setAuth` from an `authState`
+  listener is no longer overwritten.
+- Auth: a listener that clears auth from `onAuthChange(true)` no longer crashes
+  the confirmation handling; throwing `onAuthChange` / `authState` listeners
+  are logged instead of breaking the auth flow.
+- Auth: `ConvexClientWithAuth.logout()` supersedes the current flow before the
+  provider's sign-out, so a `login()` started meanwhile is no longer torn down
+  when the sign-out completes. Local state is cleared even if the provider
+  throws.
+- Auth: `ConvexClientWithAuth.login()` / `loginFromCache()` can be called from
+  an `authState` listener (it threw `StateError` on the synchronous
+  controller); states are delivered in order.
+- Auth: a failure of a superseded flow no longer cancels an in-progress
+  `login()`, and a failed `login()` / `loginFromCache()` while signed in keeps
+  the existing session instead of signing the user out.
+- Auth: a token pushed by the provider after the `ConvexClient` was closed is
+  logged instead of becoming an uncaught zone error.
 
 ## [0.2.0] - 2026-06-12
 

@@ -26,5 +26,10 @@ final class AuthAuthenticated<TUser> extends AuthState<TUser> {
   const AuthAuthenticated(this.userInfo);
 
   /// Auth-provider-specific user information.
+  ///
+  /// A snapshot taken when the login completed: background token refreshes do
+  /// not emit a new [AuthAuthenticated], so any Convex token inside it is the
+  /// login-time token and expires. Read `ConvexClientWithAuth.currentAuthToken`
+  /// (or `ConvexClient.currentAuthToken`) for the token currently in use.
   final TUser userInfo;
 }

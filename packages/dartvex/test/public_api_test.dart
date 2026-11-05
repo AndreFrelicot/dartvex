@@ -19,6 +19,15 @@ void main() {
     expect(authCaller, isNull);
   });
 
+  test('exports AuthTokenFetcher, the setAuthWithRefresh parameter type',
+      () async {
+    Future<String?> fetchImpl({required bool forceRefresh}) async =>
+        forceRefresh ? 'fresh' : null;
+    final AuthTokenFetcher fetcher = fetchImpl;
+
+    expect(await fetcher(forceRefresh: true), 'fresh');
+  });
+
   test('exports TransitionMetrics from the public barrel', () {
     final metrics = TransitionMetrics(
       transitTimeMs: 150,

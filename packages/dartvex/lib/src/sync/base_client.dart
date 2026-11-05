@@ -61,10 +61,17 @@ class QueryRemovedEvent extends BaseClientEvent {
 /// Emitted when the server confirms an authentication state transition.
 class AuthConfirmedEvent extends BaseClientEvent {
   /// Creates an [AuthConfirmedEvent] reporting the confirmed auth state.
-  const AuthConfirmedEvent({required this.isAuthenticated});
+  const AuthConfirmedEvent({
+    required this.isAuthenticated,
+    this.clientClockSkew,
+  });
 
   /// Whether the client is authenticated after the confirmed transition.
   final bool isAuthenticated;
+
+  /// The confirming Transition's server-computed clock skew in milliseconds
+  /// (`Connect.clientTs` minus the server's receive time), when reported.
+  final double? clientClockSkew;
 }
 
 /// Emitted when the server rejects the client's authentication token.
@@ -701,7 +708,10 @@ class BaseClient {
                   .isCurrentOrNewerAuthVersion(message.endVersion.identity)) {
             _localState.markAuthCompletion();
             events.add(
-              AuthConfirmedEvent(isAuthenticated: _localState.hasAuth),
+              AuthConfirmedEvent(
+                isAuthenticated: _localState.hasAuth,
+                clientClockSkew: message.clientClockSkew,
+              ),
             );
           }
         } on StateError catch (error) {
