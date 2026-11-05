@@ -10,7 +10,7 @@ class EventsApi {
 
   final ConvexFunctionCaller _client;
 
-  Future<BigInt> dispatch([
+  Future<Object> dispatch([
     Map<String, dynamic> args = const <String, dynamic>{},
     OptimisticUpdate? optimisticUpdate,
   ]) async {
@@ -19,7 +19,7 @@ class EventsApi {
       args,
       optimisticUpdate,
     );
-    return expectBigInt(raw$, label: 'DispatchResult');
+    return expectCommitTs(raw$, label: 'DispatchResult');
   }
 
   Future<FieldResult> field() async {
@@ -102,7 +102,7 @@ class EventsApi {
 
   Future<Null> resize({
     required ResizeArgsWidth width,
-    Optional<BigInt> at = const Optional.absent(),
+    Optional<Object> at = const Optional.absent(),
     OptimisticUpdate? optimisticUpdate,
   }) async {
     await _client.mutate(
@@ -290,7 +290,7 @@ typedef LatestResult = ({
   double systemCreationTime,
   String id,
   double creationTime,
-  BigInt ts,
+  Object ts,
   String callback,
   dynamic payload,
   SystemStorageId fileId,
@@ -374,7 +374,7 @@ LatestResult _decodeLatestResult(dynamic raw) {
       map['creationTime'],
       label: 'LatestResultCreationTime',
     ),
-    ts: expectBigInt(map['ts'], label: 'LatestResultTs'),
+    ts: expectCommitTs(map['ts'], label: 'LatestResultTs'),
     callback: expectString(map['callback'], label: 'LatestResultCallback'),
     payload: map['payload'],
     fileId: SystemStorageId(
@@ -481,7 +481,7 @@ ResizeArgsWidth _decodeResizeArgsWidth(dynamic raw) {
   );
 }
 
-typedef ResizeArgs = ({ResizeArgsWidth width, Optional<BigInt> at});
+typedef ResizeArgs = ({ResizeArgsWidth width, Optional<Object> at});
 
 Map<String, dynamic> _encodeResizeArgs(ResizeArgs value$) {
   final (width: width, at: at) = value$;
@@ -499,7 +499,7 @@ ResizeArgs _decodeResizeArgs(dynamic raw) {
   return (
     width: _decodeResizeArgsWidth(map['width']),
     at: map.containsKey('at')
-        ? Optional.of(expectBigInt(map['at'], label: 'ResizeArgsAt'))
+        ? Optional.of(expectCommitTs(map['at'], label: 'ResizeArgsAt'))
         : const Optional.absent(),
   );
 }

@@ -1003,6 +1003,19 @@ BigInt expectBigInt(dynamic value, {String? label}) {
   throw FormatException('Expected \${label ?? 'bigint'}, got \${describeType(value)}');
 }
 
+/// Decodes a `v.commitTs()` value: a [BigInt] commit timestamp, or
+/// [ConvexCommitTsPlaceholder.instance] when the mutation that wrote the field
+/// reads it back before committing.
+Object expectCommitTs(dynamic value, {String? label}) {
+  if (value is BigInt) {
+    return value;
+  }
+  if (value is ConvexCommitTsPlaceholder) {
+    return value;
+  }
+  throw FormatException('Expected \${label ?? 'commitTs'}, got \${describeType(value)}');
+}
+
 Uint8List expectBytes(dynamic value, {String? label}) {
   if (value is Uint8List) {
     return value;

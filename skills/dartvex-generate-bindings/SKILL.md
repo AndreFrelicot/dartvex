@@ -148,8 +148,10 @@ Regenerate whenever backend functions or validators change:
 
 ## Type mapping notes
 
-- `v.number()` → `double` (always); `v.int64()` and `v.commitTs()` →
-  `BigInt`; `v.bytes()` → `Uint8List`; `v.any()` → `dynamic`.
+- `v.number()` → `double` (always); `v.int64()` → `BigInt`;
+  `v.commitTs()` → `Object` (a `BigInt`, or `ConvexCommitTsPlaceholder.instance`
+  when a mutation returns a field it just wrote with `db.vars.commitTs`);
+  `v.bytes()` → `Uint8List`; `v.any()` → `dynamic`.
 - `v.id("table")` → the typed `<Table>Id` from `schema.dart`;
   `v.function()` handles → `String`.
 - Unions of literals → Dart enums. Other unions → a sealed class with one

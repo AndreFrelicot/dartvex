@@ -34,7 +34,7 @@ function declared with no args takes `{}`.
 | `v.string()` | `String` | `String` |
 | `v.number()` (float64) | `num` — `int` for integral values, else `double` (generated bindings always use `double`) | `int` or `double` (an `int` beyond ±2^53 that a float64 cannot hold throws) |
 | `v.int64()` | `BigInt` | `convexInt64(n)` or `BigInt` |
-| `v.commitTs()` (convex 1.43+) | `BigInt`; an unresolved `{"$commitTs": null}` placeholder decodes to `ConvexCommitTsPlaceholder.instance` | — |
+| `v.commitTs()` (convex 1.43+) | `BigInt`; an unresolved `{"$commitTs": null}` placeholder (a mutation returning a field it just wrote) decodes to `ConvexCommitTsPlaceholder.instance` — generated bindings type it `Object` | — |
 | `v.boolean()` | `bool` | `bool` |
 | `v.null()` | `null` | `null` |
 | `v.bytes()` | `Uint8List` | `Uint8List` |

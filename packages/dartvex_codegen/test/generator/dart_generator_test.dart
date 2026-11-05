@@ -103,6 +103,8 @@ void main() {
       final users = output.files['modules/admin/users.dart']!;
 
       expect(runtime, contains('BigInt expectBigInt'));
+      expect(runtime, contains('Object expectCommitTs'));
+      expect(runtime, contains('value is ConvexCommitTsPlaceholder'));
       expect(runtime, contains("Expected \${label ?? 'bigint'}"));
       expect(runtime, contains('class TypedQueryLoading<T>'));
       expect(runtime, contains('final Object? data;'));
@@ -422,7 +424,9 @@ void main() {
       expect(events, contains('double systemCreationTime,'));
       expect(events, contains('String id,'));
       expect(events, contains('String toStringValue,'));
-      expect(events, contains('BigInt ts,'));
+      // v.commitTs(): BigInt, or the placeholder a writing mutation reads back.
+      expect(events, contains('Object ts,'));
+      expect(events, contains("ts: expectCommitTs(map['ts']"));
       expect(events, contains('String callback,'));
       expect(events, contains('dynamic payload,'));
       expect(events, contains('required Map<String, double> scores'));

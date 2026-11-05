@@ -12,10 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Supports the convex 1.43+/1.49 validator kinds: `v.commitTs()` maps to
-  `BigInt` (`expectBigInt`) and `v.function()` handles map to `String`,
-  instead of degrading to `dynamic` with an "Unknown Convex type" warning.
-  **Breaking (regenerated bindings):** fields of these kinds change from
-  `dynamic` to `BigInt` / `String`.
+  `Object` (`expectCommitTs`: a `BigInt` commit timestamp, or
+  `ConvexCommitTsPlaceholder.instance` when a mutation returns a field it
+  wrote with `db.vars.commitTs` before committing; Convex types it
+  `bigint | CommitTsPlaceholder`) and `v.function()` handles map to
+  `String`, instead of degrading to `dynamic` with an "Unknown Convex type"
+  warning. **Breaking (regenerated bindings):** fields of these kinds change
+  from `dynamic` to `Object` / `String`.
   **Breaking (library API):** the exported sealed `ConvexType` gains the
   `ConvexCommitTsType` and `ConvexFunctionHandleType` subclasses, so
   exhaustive switches over `ConvexType` need new cases.

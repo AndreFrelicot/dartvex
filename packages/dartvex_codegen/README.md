@@ -179,8 +179,12 @@ await api.messages.send(
 
 ### Type mapping notes
 
-- `v.number()` maps to `double`; `v.int64()` and `v.commitTs()` map to
-  `BigInt`; `v.id("table")` maps to the generated `<Table>Id` class;
+- `v.number()` maps to `double`; `v.int64()` maps to `BigInt`;
+  `v.commitTs()` maps to `Object`, holding a `BigInt` commit timestamp or
+  `ConvexCommitTsPlaceholder.instance` (what a mutation gets when it reads
+  back a field it wrote with `db.vars.commitTs`, as Convex types it
+  `bigint | CommitTsPlaceholder`); `v.id("table")` maps to the generated
+  `<Table>Id` class;
   `v.function()` handles map to `String`; `v.any()` maps to `dynamic`.
 - Unions of literals become enums. Other unions become a sealed class with
   one `<Union><n>Value` case per member, as long as Dart can tell the members

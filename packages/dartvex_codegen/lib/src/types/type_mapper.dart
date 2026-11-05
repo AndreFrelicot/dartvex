@@ -244,15 +244,27 @@ class TypeMapper {
         decode: (_) => 'null',
       );
     }
-    if (type is ConvexBigIntType || type is ConvexCommitTsType) {
-      // `v.commitTs()` is an int64 commit timestamp on the wire, decoded by
-      // dartvex as a BigInt exactly like `v.int64()`.
+    if (type is ConvexBigIntType) {
       return MappedType(
         dartType: const DartPrimitiveType('BigInt'),
         encode: (expression) => expression,
         decode:
             (expression) =>
                 "expectBigInt($expression, label: '$suggestedName')",
+      );
+    }
+    if (type is ConvexCommitTsType) {
+      // `v.commitTs()` is `bigint | CommitTsPlaceholder` in Convex: an int64
+      // commit timestamp once committed, but `{"$commitTs": null}` (decoded
+      // as ConvexCommitTsPlaceholder) when the writing mutation reads the
+      // field back and returns it. Dart has no union type, so the field is an
+      // Object holding one of the two.
+      return MappedType(
+        dartType: const DartPrimitiveType('Object'),
+        encode: (expression) => expression,
+        decode:
+            (expression) =>
+                "expectCommitTs($expression, label: '$suggestedName')",
       );
     }
     if (type is ConvexBytesType) {

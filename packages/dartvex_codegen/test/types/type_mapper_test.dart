@@ -396,7 +396,7 @@ void main() {
       );
     });
 
-    test('maps commitTs to BigInt and function handles to String', () {
+    test('maps commitTs to Object and function handles to String', () {
       final context = TypeRenderContext();
       final mapper = TypeMapper();
 
@@ -414,8 +414,9 @@ void main() {
         context: context,
       );
 
-      expect(commitTs.annotation, 'BigInt');
-      expect(commitTs.decode('raw'), "expectBigInt(raw, label: 'EventTs')");
+      // BigInt, or ConvexCommitTsPlaceholder when read back by its writer.
+      expect(commitTs.annotation, 'Object');
+      expect(commitTs.decode('raw'), "expectCommitTs(raw, label: 'EventTs')");
       expect(commitTs.encode('ts'), 'ts');
       expect(handle.annotation, 'String');
       expect(handle.decode('raw'), "expectString(raw, label: 'EventCallback')");
