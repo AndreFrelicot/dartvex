@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:cupertino_http/cupertino_http.dart';
 import 'package:dartvex/dartvex.dart';
+import 'package:http/http.dart' as http;
 import 'package:meta/meta.dart';
 import 'package:web_socket/web_socket.dart';
 
@@ -26,7 +27,25 @@ void installCupertinoTransport() {
   }
   defaultWebSocketAdapterOverride = (String clientId) =>
       CupertinoWebSocketAdapter(clientId: clientId);
-  defaultHttpClientFactory = CupertinoClient.defaultSessionConfiguration;
+  defaultHttpClientFactory = _createCookielessCupertinoClient;
+}
+
+/// Creates an NSURLSession-backed HTTP client that never stores or sends
+/// cookies.
+///
+/// The SDK's HTTP calls (storage uploads, Better Auth endpoints) are
+/// bearer-token based, matching the cookie-free `dart:io` client on Android
+/// and the browser client on web. The default NSURLSession configuration
+/// keeps a persistent shared cookie jar; replaying a stored Better Auth
+/// session cookie makes Better Auth's origin/CSRF check reject cookie-bearing
+/// requests without an `Origin` header (403) and lets the stale cookie
+/// override the explicit bearer token.
+http.Client _createCookielessCupertinoClient() {
+  final config = URLSessionConfiguration.ephemeralSessionConfiguration()
+    ..httpShouldSetCookies = false
+    ..httpCookieAcceptPolicy =
+        NSHTTPCookieAcceptPolicy.NSHTTPCookieAcceptPolicyNever;
+  return CupertinoClient.fromSessionConfiguration(config);
 }
 
 /// Signature of the function that opens the underlying platform socket.
