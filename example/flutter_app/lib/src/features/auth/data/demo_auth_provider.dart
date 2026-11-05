@@ -43,11 +43,10 @@ class DemoUserSession {
 class DemoAuthProvider extends ChangeNotifier
     implements AuthProvider<DemoUserSession> {
   DemoAuthProvider({
-    required String? preferredToken,
+    required this._preferredToken,
     required this.tokenLabel,
     DateTime Function()? now,
-  }) : _preferredToken = preferredToken,
-       _now = now ?? DateTime.now {
+  }) : _now = now ?? DateTime.now {
     _appendEvent(
       hasConfiguredToken
           ? 'Demo auth ready. Login uses $tokenLabel.'

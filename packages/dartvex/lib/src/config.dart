@@ -7,7 +7,7 @@ import 'transport/ws_interface.dart';
 /// Sent as part of the default [ConvexClientConfig.clientId]
 /// (`dartvex-<version>`) so Convex can tell Dartvex releases apart. A test
 /// asserts it matches the pubspec version, so bump both together.
-const String dartvexVersion = '0.2.0';
+const String dartvexVersion = '0.3.0';
 
 /// The Convex sync protocol version Dartvex reports by default.
 ///

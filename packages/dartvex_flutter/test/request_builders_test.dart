@@ -22,7 +22,7 @@ void main() {
   ) async {
     final client = FakeRuntimeClient();
     final completer = Completer<dynamic>();
-    client.onMutate = (_, __) => completer.future;
+    client.onMutate = (_, _) => completer.future;
 
     late ConvexRequestExecutor<String> mutate;
     late ConvexRequestSnapshot<String> snapshot;
@@ -62,7 +62,7 @@ void main() {
   testWidgets('ConvexMutation exposes errors', (tester) async {
     final client = FakeRuntimeClient();
     final completer = Completer<dynamic>();
-    client.onMutate = (_, __) => completer.future;
+    client.onMutate = (_, _) => completer.future;
 
     late ConvexRequestExecutor<String> mutate;
     late ConvexRequestSnapshot<String> snapshot;
@@ -96,7 +96,7 @@ void main() {
   testWidgets('ConvexMutation prevents overlapping requests', (tester) async {
     final client = FakeRuntimeClient();
     final completer = Completer<dynamic>();
-    client.onMutate = (_, __) => completer.future;
+    client.onMutate = (_, _) => completer.future;
 
     late ConvexRequestExecutor<String> mutate;
 
@@ -127,7 +127,7 @@ void main() {
     final client = FakeRuntimeClient();
     final firstCompleter = Completer<dynamic>();
     final secondCompleter = Completer<dynamic>();
-    client.onMutate = (name, __) {
+    client.onMutate = (name, _) {
       if (name == 'messages:first') {
         return firstCompleter.future;
       }
@@ -183,7 +183,7 @@ void main() {
 
   testWidgets('ConvexMutation forwards its optimisticUpdate', (tester) async {
     final client = FakeRuntimeClient();
-    client.onMutate = (_, __) async => 'ok';
+    client.onMutate = (_, _) async => 'ok';
 
     void optimistic(OptimisticLocalStore store) {
       store.setQuery('messages:list', const <String, dynamic>{}, const <String>[
@@ -215,7 +215,7 @@ void main() {
   testWidgets('ConvexAction exposes loading and success state', (tester) async {
     final client = FakeRuntimeClient();
     final completer = Completer<dynamic>();
-    client.onAction = (_, __) => completer.future;
+    client.onAction = (_, _) => completer.future;
 
     late ConvexRequestExecutor<String> runAction;
     late ConvexRequestSnapshot<String> snapshot;
@@ -251,7 +251,7 @@ void main() {
   testWidgets('ConvexAction exposes errors', (tester) async {
     final client = FakeRuntimeClient();
     final completer = Completer<dynamic>();
-    client.onAction = (_, __) => completer.future;
+    client.onAction = (_, _) => completer.future;
 
     late ConvexRequestExecutor<String> runAction;
     late ConvexRequestSnapshot<String> snapshot;
@@ -288,7 +288,7 @@ void main() {
     final client = FakeRuntimeClient();
     final firstCompleter = Completer<dynamic>();
     final secondCompleter = Completer<dynamic>();
-    client.onAction = (name, __) {
+    client.onAction = (name, _) {
       if (name == 'messages:first') {
         return firstCompleter.future;
       }

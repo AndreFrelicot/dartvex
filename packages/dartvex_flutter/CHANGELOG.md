@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-05
+
 ### Added
 
 - `PaginatedQueryBuilder.errorBuilder` (`PaginatedQueryErrorWidgetBuilder`)
@@ -33,16 +35,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lists where the fake intentionally differs from the real client.
 - `ConvexImage.errorBuilder` and `ConvexCachedImage.errorBuilder`
   (`ConvexImageErrorBuilder`) receive the error and a `retry` callback.
-  Without `errorBuilder` or `errorWidget`, load failures are now reported to
-  `FlutterError.reportError` (like `Image.network`) instead of being
-  invisible.
+  **Breaking (behavior):** without `errorBuilder` or `errorWidget`, load
+  failures are now reported to `FlutterError.reportError` (like
+  `Image.network`) instead of being invisible.
 - `ConvexImage.httpClient` and `ConvexFileDownloader.download(client:,
   abortTrigger:)`: downloads can use a caller-owned client, and an in-flight
   download can be aborted.
 
 ### Changed
 
-- **Breaking (minor):** the unnamed `ConvexAssetCache` constructor is now a
+- **Breaking:** the unnamed `ConvexAssetCache` constructor is now a
   factory: instances with the same `cacheKey` share one ref-counted
   `CacheManager` (classes extending `ConvexAssetCache` must use
   `ConvexAssetCache.custom`). `ConvexOfflineImage` now reports "no cached
@@ -56,20 +58,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   behavior is unchanged. On web, `ConvexAssetCache.custom` takes an `Object`
   and `ConvexAssetSnapshot.file` is always `null`.
 
-- `FakeConvexClient` now behaves like a disposed `ConvexClient` after
-  `dispose()`: `subscribe`, `paginatedQuery` and `reconnectNow` throw and
+- **Breaking (tests):** `FakeConvexClient` now behaves like a disposed
+  `ConvexClient` after `dispose()`: `subscribe`, `paginatedQuery` and `reconnectNow` throw and
   `query` / `mutate` / `action` reject with
   `ConvexException('ConvexClient has been disposed')`; emissions are
   ignored. `FakeConvexPaginatedQuery.loadMore` returns `true` only while the
   current status is `canLoadMore`, like the real engine (it always returned
   `true`).
 
-- **Breaking:** Requires Dart `^3.10.0` and Flutter `>=3.38.0`, and on Apple
-  platforms iOS 15 / macOS 12 or later. `cupertino_http` is now `^3.1.1`
-  (up from `^2.4.0`, which excluded the current major and conflicted with
-  apps already on it); apps must raise `IPHONEOS_DEPLOYMENT_TARGET` /
-  `MACOSX_DEPLOYMENT_TARGET` (and their Podfile `platform`, if any).
-  `objective_c` is now `^9.6.0` and `http` `^1.5.0`.
+- **Breaking:** Requires Dart `^3.10.0` and Flutter `>=3.38.1`, and on Apple
+  platforms iOS 15 / macOS 12 or later; apps must raise
+  `IPHONEOS_DEPLOYMENT_TARGET` / `MACOSX_DEPLOYMENT_TARGET` (and their Podfile
+  `platform`, if any). `cupertino_http` is now `>=3.1.0 <4.0.0` (up from
+  `^2.4.0`, which excluded the current major and conflicted with apps already
+  on it), `objective_c` `>=9.5.0 <10.0.0` and `http` `^1.5.0`. On Flutter
+  3.47 and later pub resolves `cupertino_http` 3.1.1 / `objective_c` 9.6,
+  which carry upstream native memory-leak fixes; earlier Flutter releases pin
+  `meta` below what those versions need and get 3.1.0 / 9.5. (Flutter 3.38.0
+  itself shipped a prerelease Dart 3.10 build that `^3.10.0` does not accept.)
 - `connectivity_plus` now accepts `>=6.1.0 <8.0.0`, so apps on
   `connectivity_plus` 7.x can depend on `dartvex_flutter`. (7.x itself raises
   the Android build requirements to AGP 8.12.1, Gradle 8.13 and Kotlin 2.2.)
@@ -79,15 +85,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   run a WebSocket task, even after invalidation, so the previous
   session-per-connection design still leaked a native session on every
   reconnect.
-- Decode failures are now a public `ConvexDecodeException` everywhere:
+- **Breaking:** decode failures are now a public `ConvexDecodeException`
+  everywhere:
   `ConvexQuery` used a private wrapper type, and `ConvexMutation` /
   `ConvexAction` surfaced the raw decoder error, indistinguishable from a
   rejected request even though the server had already committed the write.
   Code catching the raw decoder error (for example `on TypeError`) from a
   mutation or action future must catch `ConvexDecodeException` instead.
-- `PaginatedQueryBuilder` reports item decode failures to
-  `FlutterError.reportError` (still contained: no `ErrorWidget`), instead of
-  silently switching to the error status.
+- **Breaking (behavior):** `PaginatedQueryBuilder` reports item decode
+  failures to `FlutterError.reportError` (still contained: no `ErrorWidget`),
+  instead of silently switching to the error status. Widget tests that pump
+  undecodable items now see the reported error.
 - `ConvexClientRuntime` no longer keeps a `connectionState` listener (it reads
   the wrapped client's state directly), and two wrappers around the same
   client with the same `disposeClient` are now equal. A wrapper re-created
@@ -100,6 +108,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ConvexMutation` and `ConvexAction` share one request state machine; their
   single-flight behavior (a call made while another is in flight rejects with
   a `StateError`) is unchanged and now documented.
+- `dev_dependencies`: `flutter_lints` `^6.0.0`.
+- README: no longer promises that additions to `ConvexRuntimeClient` are
+  non-breaking for custom implementations, and documents the sample
+  `ConvexLocalClient` adapter in the example app.
 - The `ConvexQuerySource` dartdoc now states that, with `ConvexClientRuntime`,
   `source` only reflects pending optimistic writes: a subscription seeded from
   the core's recently-unsubscribed cache is reported as `remote` and may be
@@ -112,8 +124,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the shared, persistent `HTTPCookieStorage` and attached them to later
   requests. A Better Auth session cookie stored by sign-in then made sign-out
   and the next sign-in fail with 403 (missing Origin) and could override the
-  explicit bearer token. Both NSURLSession transports now use an ephemeral,
-  cookie-less configuration, matching the `dart:io` and web transports.
+  explicit bearer token. Both NSURLSession transports (the default HTTP
+  client installed by `installCupertinoTransport()` and the WebSocket) now
+  use an ephemeral, cookie-less configuration, matching the `dart:io` and web
+  transports, which never sent cookies.
 - HTTP clients created by the default factory on Apple platforms can be
   closed while a request is still running (for example from a `finally`
   after a timeout); `cupertino_http` 3 would otherwise throw a `StateError`
@@ -172,16 +186,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ConvexClientRuntime` no longer bypasses the cache and re-downloads.
 - The `ConvexImage` dartdoc `onProgress` example printed `p * 100`; it now
   uses `p.progress`.
-- On iOS and macOS the default HTTP client installed by
-  `installCupertinoTransport()` now uses an ephemeral NSURLSession that never
-  stores or sends cookies. The previous default configuration replayed Better
-  Auth session cookies from the shared cookie jar, which made Better Auth
-  reject sign-out and later sign-in requests (403, missing `Origin`) and let a
-  stale cookie override the bearer token. Android and web already sent no
-  cookies.
-
 
 ## [0.2.0] - 2026-06-12
+
+### Changed
+
+- **Breaking for implementors** (noted after release): classes that
+  `implement ConvexRuntimeClient` must add the members introduced in this
+  release — `paginatedQuery`, `connectionStatus`, `currentConnectionStatus`,
+  `authRefreshing`, `currentAuthRefreshing` — and the optional
+  `OptimisticUpdate? optimisticUpdate` parameter on `mutate`. Code that only
+  uses `ConvexClientRuntime` or `FakeConvexClient` is unaffected.
 
 ### Added
 

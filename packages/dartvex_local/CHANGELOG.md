@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-05
+
 ### Added
 
 - `ConvexLocalClient.reset()` clears the queue (rolling back its optimistic
@@ -28,15 +30,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- `currentConnectionState` is `online` only while the remote connection is
-  established. A connecting or reconnecting remote now reports `offline`
+- **Breaking (behavior):** `currentConnectionState` is `online` only while
+  the remote connection is established. A connecting or reconnecting remote now reports `offline`
   instead of `online`, matching when mutations are actually sent directly.
 - In auto mode, `query()` no longer waits without bound while the remote is
   not connected: it returns the cached value right away, and without one
   waits at most `refreshQueryTimeout` before throwing a `TimeoutException`.
   While connected, behavior is unchanged.
-- Several `LocalMutationHandler`s can now be registered for the same
-  mutation; their patches are applied in registration order. Handlers are
+- **Breaking (behavior):** several `LocalMutationHandler`s can now be
+  registered for the same mutation; their patches are applied in registration
+  order. Handlers are
   matched by canonical mutation name (`tasks.js:create` matches
   `tasks:create`). Previously only the last handler per raw name was used.
 - Local-to-server ID remaps are kept after the queue drains and are applied to
@@ -45,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Post-replay cache refreshes run once per distinct target after the replay
   loop, and replay updates the in-memory queue instead of reloading the whole
   persisted queue after every step.
+- `dev_dependencies`: `lints` `^6.1.0`.
 - Docs: `mutate` and `LocalMutationFailed` now state that handler, patch and
   storage failures while queueing are thrown, and that handler patches only
   apply to queued mutations (not to direct sends while online). `dispose`

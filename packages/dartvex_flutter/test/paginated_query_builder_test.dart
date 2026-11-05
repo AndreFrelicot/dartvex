@@ -316,7 +316,7 @@ void main() {
       buildPaginated(
         client: client,
         args: const <String, dynamic>{'channel': 'a'},
-        onBuild: (_, __) {},
+        onBuild: (_, _) {},
       ),
     );
     expect(client.paginatedQueryCalls, hasLength(1));
@@ -326,7 +326,7 @@ void main() {
       buildPaginated(
         client: client,
         args: const <String, dynamic>{'channel': 'b'},
-        onBuild: (_, __) {},
+        onBuild: (_, _) {},
       ),
     );
 
@@ -344,14 +344,14 @@ void main() {
     final args = <String, dynamic>{'channel': 'a'};
 
     await tester.pumpWidget(
-      buildPaginated(client: client, args: args, onBuild: (_, __) {}),
+      buildPaginated(client: client, args: args, onBuild: (_, _) {}),
     );
     expect(client.paginatedQueryCalls, hasLength(1));
     final firstQuery = client.paginatedQueryCalls.first.query;
 
     args['channel'] = 'b';
     await tester.pumpWidget(
-      buildPaginated(client: client, args: args, onBuild: (_, __) {}),
+      buildPaginated(client: client, args: args, onBuild: (_, _) {}),
     );
 
     expect(client.paginatedQueryCalls, hasLength(2));

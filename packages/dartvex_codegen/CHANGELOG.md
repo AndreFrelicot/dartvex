@@ -7,18 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-05
+
 ### Added
 
 - Supports the convex 1.43+/1.49 validator kinds: `v.commitTs()` maps to
   `BigInt` (`expectBigInt`) and `v.function()` handles map to `String`,
   instead of degrading to `dynamic` with an "Unknown Convex type" warning.
+  **Breaking (regenerated bindings):** fields of these kinds change from
+  `dynamic` to `BigInt` / `String`.
   **Breaking (library API):** the exported sealed `ConvexType` gains the
   `ConvexCommitTsType` and `ConvexFunctionHandleType` subclasses, so
   exhaustive switches over `ConvexType` need new cases.
 - Generated mutation methods take an optional `OptimisticUpdate?
   optimisticUpdate` and forward it to `ConvexFunctionCaller.mutate`
-  (positionally, matching `ConvexClient.mutate`). Requires the matching
-  `dartvex` release, whose `ConvexFunctionCaller.mutate` accepts it.
+  (positionally, matching `ConvexClient.mutate`). **Breaking:** regenerated
+  bindings require `dartvex` `^0.3.0`, whose `ConvexFunctionCaller.mutate`
+  accepts it; custom `ConvexFunctionCaller` implementations must add the
+  parameter.
 - `TypedQuerySuccess` now carries `hasPendingWrites` and `logLines` from the
   underlying `QuerySuccess`.
 - Top-level `dartvex_codegen --help` (or `-h`, `help`) lists the `generate`
@@ -69,13 +75,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Records keyed by `v.id(...)`, string literals, or unions of those keep
   their value type (`Map<String, V>`) instead of degrading to
   `Map<String, dynamic>` with a misleading "keys are not strings" warning.
-- Decode failures in generated subscriptions become `TypedQueryError`
-  events instead of stream errors. `TypedConvexPaginatedQuery` reports
+  **Breaking (regenerated bindings):** such fields change type.
+- **Breaking (behavior):** decode failures in generated subscriptions
+  become `TypedQueryError` events instead of stream errors. `TypedConvexPaginatedQuery` reports
   undecodable items as `ConvexPaginationStatus.error` instead of throwing
   from `current`/`items` or erroring the stream.
 - `TypedConvexPaginatedQuery.stream` returns the same stream on every access
   (a `StreamBuilder` no longer resubscribes on rebuild), and `current`/`items`
-  decode each snapshot once. `items` is now an unmodifiable list.
+  decode each snapshot once. **Breaking:** `items` is now an unmodifiable
+  list.
 - Failing `convex function-spec` runs show the CLI's own error output (for
   example `No CONVEX_DEPLOYMENT set`) instead of only "failed in <dir>".
   Errors that merely contain "not found" (such as `Deployment "x" not found`)
@@ -102,6 +110,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pipeline stages are not yet a stable API.
 - Removed the duplicate `test/update_goldens.dart`; use
   `dart run tool/update_goldens.dart`.
+- README and example: the bindings come from the functions deployed to the
+  project's deployment (`convex function-spec`), not from local sources;
+  documents the generated result types and which clients `ConvexApi`
+  accepts, and the example shows the real generated shape.
 
 ## [0.2.0] - 2026-06-12
 
@@ -171,7 +183,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Widen the `dartvex` dev-dependency to `^0.2.0` for golden fixture validation.
-  Generated output is unchanged.
+- **Breaking (noted after release):** regenerated bindings changed in this
+  release: the sealed `TypedQueryResult` gained a `TypedQueryLoading` case
+  (exhaustive `switch`es need a new branch), paginated queries generate
+  typed wrappers, and the output requires `dartvex` `^0.2.0` (`QueryLoading`,
+  `ConvexFunctionCaller.paginatedQuery`).
 - Require Dart `^3.7.0`, matching the minimum SDK required by the
   `dart_style` formatter versions accepted by the CLI.
 

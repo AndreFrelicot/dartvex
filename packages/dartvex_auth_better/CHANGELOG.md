@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-05
+
 ### Fixed
 
 - Compatibility with `@convex-dev/better-auth` 0.12.7+ / 0.13: an emptied or
@@ -40,8 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Non-200 Better Auth responses keep the decoded error body as `data` (with
   the Better Auth `code`), and 5xx/429 responses are `retryable` on every
   endpoint, not only `get-session` and `/convex/token`.
-- Network failures (`http.ClientException`) and request timeouts surface as
-  retryable `BetterAuthException`s instead of raw client exceptions.
+- **Breaking:** network failures (`http.ClientException`) and request
+  timeouts surface as retryable `BetterAuthException`s instead of raw client
+  exceptions.
 - `verifyMagicLink()` no longer follows Better Auth's error redirect; the
   `INVALID_TOKEN` / `EXPIRED_TOKEN` / `ATTEMPTS_EXCEEDED` code is reported as
   the exception's `code` (on web, read from the final redirect URL).
@@ -58,8 +61,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deployments, where it cannot be derived from `baseUrl`.
 - `BetterAuthClient(basePath: ...)` for servers that mount Better Auth on a
   custom `basePath` (default `/api/auth`).
-- `BetterAuthClient(requestTimeout: ...)`: every request now has a timeout
-  (default 30 seconds; `null` disables it).
+- `BetterAuthClient(requestTimeout: ...)`: **Breaking (behavior):** every
+  request now has a timeout (default 30 seconds; `null` disables it).
 - `BetterAuthException.code`, `BetterAuthEmailVerificationRequiredException`
   and `BetterAuthTwoFactorRequiredException`.
 - `ConvexBetterAuthProvider.adoptSession()` to hand a session obtained

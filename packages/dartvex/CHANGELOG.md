@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-05
+
 ### Added
 
 - `ConvexFunctionCaller.mutate` takes an optional `OptimisticUpdate`, so code
@@ -54,25 +56,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- The default `ConvexClientConfig.apiVersion` is now the tracked
-  `convexSyncApiVersion` constant, which follows the official client's sync
-  protocol version. The default `clientId` is now `dartvex-<package version>`
-  (it was `dart-dartvex`).
+- Parity baseline: this release is aligned with the official Convex
+  JavaScript client **1.49.0** (`convex` on npm; 0.2.0 was aligned with
+  1.41.0). The default `ConvexClientConfig.apiVersion` is now the exported
+  `convexSyncApiVersion` constant (`'1.49.0'`, was `'1.41.0'`), bumped
+  deliberately after diffing the official sync client sources. The default
+  `clientId` is now `dartvex-<package version>` (`dartvexVersion`; it was
+  `dart-dartvex`).
 - `ConvexStorage.uploadFile`'s `filename` is optional. It was never sent to
   Convex; it is only used in debug logs.
-- A pending mutation or action sent under one auth identity now fails with a
-  `ConvexException` when auth changes before it completes. It is no longer
+- **Breaking (behavior):** a pending mutation or action sent under one auth
+  identity now fails with a `ConvexException` when auth changes before it
+  completes. It is no longer
   replayed under the new identity.
-- `ConvexPaginatedQuery` rejects a `pageSize` or `loadMore` count below 1 with
-  an `ArgumentError`.
-- Encoding an `int` beyond ±2^53 that a float64 cannot represent exactly
-  throws an `ArgumentError` instead of silently changing the value. Use
+- **Breaking:** `ConvexPaginatedQuery` rejects a `pageSize` or `loadMore`
+  count below 1 with an `ArgumentError`.
+- **Breaking:** encoding an `int` beyond ±2^53 that a float64 cannot
+  represent exactly throws an `ArgumentError` instead of silently changing the value. Use
   `convexInt64` / `BigInt` for 64-bit integers.
-- Auth methods (`setAuth`, `setAuthWithRefresh`, `clearAuth`,
+- **Breaking:** auth methods (`setAuth`, `setAuthWithRefresh`, `clearAuth`,
   `updateAuthToken`) and `reconnectNow` on a closed client return a failed
   future instead of throwing synchronously.
-- `ConvexClient` rejects `.convex.site` deployment URLs (HTTP actions host)
-  with a descriptive `ArgumentError`.
+- **Breaking:** `ConvexClient` rejects `.convex.site` deployment URLs (the
+  HTTP actions host, which never served the sync protocol) with a descriptive
+  `ArgumentError`.
 - Documented that `ConvexException.retryable` means transient, not
   idempotent. An action that fails with `retryable: true` after a disconnect
   may already have run on the server.
@@ -97,8 +104,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `'Admin'`; `ConvexClient` now throws `ArgumentError` for any other value.
   `'None'` made the client report authenticated while the server treated it as
   anonymous.
-- Auth: `setAuthWithRefresh`'s `onAuthChange(true)` now fires once per auth
-  flow, when the server first confirms it, instead of on every token refresh.
+- Auth: **Breaking (behavior):** `setAuthWithRefresh`'s `onAuthChange(true)`
+  now fires once per auth flow, when the server first confirms it, instead of on every token refresh.
 - Auth: the refresh of a freshly fetched token is scheduled from its lifetime
   alone, so a device clock that runs ahead no longer causes a zero-delay
   refresh loop. A token pushed with `updateAuthToken` is judged against the
@@ -224,7 +231,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Auth: a token pushed by the provider after the `ConvexClient` was closed is
   logged instead of becoming an uncaught zone error.
 
-
 ## [0.2.0] - 2026-06-12
 
 ### Added
@@ -275,11 +281,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ConnectivitySignal` and `ConvexClientConfig.connectivitySignal` to reconnect
   immediately when the device regains network connectivity, cancelling any
   in-progress backoff.
-- Internal post-reconnect sync tracking (`hasSyncedPastLastReconnect`) across
-  the local sync state, request manager, and base client: the client now knows
-  when every query, auth update, and request issued before a reconnect has been
-  confirmed by the server. This is package-internal groundwork for upcoming
-  backoff-reset and auth-gating work and is not part of the public API.
+- Post-reconnect sync tracking across the local sync state, request manager,
+  and base client: the client knows when every query, auth update, and request
+  issued before a reconnect has been confirmed by the server. It is exposed as
+  the public `ConnectionStatus.hasSyncedPastLastReconnect` field (which backs
+  `ConnectionStatus.isLoading`) and drives the backoff reset and auth gating
+  shipped in this release.
 - `ConnectionState.fatalError`, a terminal connection state entered when the
   server reports an unrecoverable error.
 - `ConvexClientConfig.refreshTokenLeewaySeconds` (default `10`, matching the
@@ -594,9 +601,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   not refetched and reapplied by a later `AuthError`.
 - Cached token refresh scheduling now clamps to the token's remaining lifetime so
   aged cached tokens are refreshed before their actual expiration.
-- The default Convex sync API version now uses a currently supported Convex
-  client version, fixing browser WebSocket handshakes that cannot send the
-  native `Convex-Client` header.
+- The default Convex sync API version is now `1.41.0`, the official Convex
+  client release 0.2.0 is aligned with, fixing browser WebSocket handshakes
+  that cannot send the native `Convex-Client` header.
 - A Transition that reflects an auth version the client has already moved past
   no longer confirms auth (it is recognized as stale), matching the existing
   guard against stale `AuthError`s. Prevents a superseded token from being
