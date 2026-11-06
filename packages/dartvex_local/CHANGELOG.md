@@ -59,6 +59,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `reset()` no longer leaves later `mutate()` calls and replay waiting
+  forever behind a direct mutation of the previous identity that never gets
+  an answer.
+- A replay still running when `clearQueue()` is called stops at its next
+  step: it no longer saves ID remaps of the cleared queue, and mutations
+  queued since are replayed by a new run.
+- A mutation queued while replay was finishing stayed pending until the next
+  event; replay now restarts right away.
+- `QueueStorage` implementations must apply writes in call order (documented).
 - Stored maps that contain a `$commitTs` placeholder have their field names
   validated on decode like any other map; a reserved name next to a
   placeholder is rejected instead of passed through.

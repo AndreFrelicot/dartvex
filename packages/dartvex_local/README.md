@@ -37,7 +37,8 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
   connectivity resumes.
 - **At-least-once replay** — queued mutations can be retried after ambiguous
   network failures, so server mutations should be idempotent when they trigger
-  external side effects.
+  external side effects. A local storage failure while recording that a
+  replayed mutation was confirmed, followed by a restart, can also resend it.
 - **Optimistic updates for queued mutations** — app-defined
   `LocalMutationHandler` patches are applied to the cache as soon as a
   mutation is queued (offline, behind other queued mutations, or after a
@@ -76,7 +77,10 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 > in `LocalClientConfig`. `CacheStorage.deleteCacheEntry` must physically remove
 > a single entry so optimistic rollback and cache expiry stay correct.
 > `QueueStorage` must also persist failed locally-generated IDs so replay can
-> keep dependent mutations from being sent with stale IDs after a restart.
+> keep dependent mutations from being sent with stale IDs after a restart,
+> and must apply writes in call order even when several are in flight: a
+> store that reorders them can restore a stale rollback baseline (or a
+> removed entry) after a restart.
 
 ## Installation
 

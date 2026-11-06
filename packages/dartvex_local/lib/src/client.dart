@@ -712,6 +712,13 @@ class ConvexLocalClient {
   // longer matches, so nothing of the previous identity lands after reset().
   int _generation = 0;
 
+  // Queue epoch, bumped synchronously by clearQueue(). A replay run captures
+  // it when it starts and stops at its next step once it changes, so it
+  // cannot record an ID remap (in memory or in storage) for a mutation the
+  // app cleared, nor resolve later mutations with the remaps clearQueue()
+  // discarded.
+  int _queueEpoch = 0;
+
   // Set while reset() purges local state. Per-key chains and unchained
   // writes started meanwhile wait for it, so the purge cannot delete the
   // next identity's writes, and reads that seed subscribers wait for it so
@@ -942,8 +949,10 @@ class ConvexLocalClient {
   ///
   /// Queued mutations are replayed at least once. If a connection fails after
   /// the backend commits a mutation but before the client observes the result,
-  /// replay may call the mutation again. Design queued Convex mutations to be
-  /// idempotent when the operation can have external side effects.
+  /// replay may call the mutation again. A local storage failure while
+  /// recording that a replayed mutation was confirmed, followed by a restart,
+  /// can also send it again. Design queued Convex mutations to be idempotent
+  /// when the operation can have external side effects.
   ///
   /// Calls are serialized in FIFO order: a mutation does not start until the
   /// previous one has settled (sent directly or queued). This keeps concurrent
@@ -1299,7 +1308,11 @@ class ConvexLocalClient {
   ///   not rolled back into the purged cache; a [query] call made before
   ///   [reset] still returns its result to its caller;
   /// * a [mutate] call made before [reset] that was not queued yet is not
-  ///   queued: it resolves with [LocalMutationFailed].
+  ///   queued: it resolves with [LocalMutationFailed];
+  /// * a [mutate] call made before [reset] whose direct send is still
+  ///   awaiting the server no longer blocks later [mutate] calls or replay;
+  ///   it resolves with the server's answer when one arrives (a retryable
+  ///   failure resolves it with [LocalMutationFailed]).
   ///
   /// Replay does not start while the purge runs. Calls made after [reset]
   /// belong to the next identity: their storage writes and cache reads wait
@@ -1312,6 +1325,14 @@ class ConvexLocalClient {
     _assertNotDisposed();
     _generation++;
     _log('reset', 'generation $_generation');
+    // A direct send of the previous identity may never get an answer (auth
+    // changes do not reconnect, and mutationTimeout defaults to null). Stop
+    // it from blocking the next identity's mutate() calls and replay; its
+    // late result only reaches its own caller (a retryable failure resolves
+    // it with LocalMutationFailed, see _directFailure).
+    _detachDirectMutation();
+    _directInFlight = null;
+    _directChainRelease = null;
     _replayRetryTimer?.cancel();
     _replayRetryTimer = null;
     _replayRetryCount = 0;
@@ -1382,6 +1403,9 @@ class ConvexLocalClient {
   Future<void> clearQueue() async {
     _assertNotDisposed();
     final generation = _generation;
+    // Stops a replay run in flight before it records a remap or sends more
+    // of the queue being cleared (see _queueEpoch).
+    _queueEpoch++;
     // Capture the pre-optimistic baseline per target before discarding the
     // queue: the oldest pending mutation's rollback snapshot for a target is
     // the last server-confirmed value (snapshots are rebased on every remote
@@ -1787,8 +1811,13 @@ class ConvexLocalClient {
     // A reset() during this run discards the identity whose queue it sends:
     // the run then stops at its next step without bookkeeping, conflicts,
     // rollbacks, refreshes or retries, and leaves `_isSyncing` to reset().
+    // A clearQueue() during this run discards the queue (and the ID remaps)
+    // it works on: the run stops at its next step as well, without recording
+    // remaps, then hands over to a new run for whatever was queued since.
     final generation = _generation;
-    bool stale() => generation != _generation;
+    final queueEpoch = _queueEpoch;
+    bool identityChanged() => generation != _generation;
+    bool stale() => identityChanged() || queueEpoch != _queueEpoch;
     var scheduleRetry = false;
     // Post-replay cache refreshes, coalesced to one per distinct target and
     // run once the loop ends instead of once per replayed mutation.
@@ -2032,13 +2061,18 @@ class ConvexLocalClient {
         scheduleRetry = true;
       }
     } finally {
-      if (!stale()) {
+      if (!identityChanged()) {
         _isSyncing = false;
         if (!_disposed) {
           _updateConnectionState();
         }
         if (!_disposed && scheduleRetry) {
           _scheduleReplayRetry();
+        } else if (!_disposed && _pendingMutations.isNotEmpty) {
+          // A mutation queued while this run was finishing (for example while
+          // it cleared the failed local IDs), or after clearQueue() stopped
+          // it, found replay still running and did not schedule one itself.
+          _ensureReplayScheduled(afterRetryableFailure: false);
         }
         if (!_disposed && refreshTargets.isNotEmpty) {
           // Fire-and-forget: live subscriptions already receive server

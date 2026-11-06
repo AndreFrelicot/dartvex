@@ -34,6 +34,17 @@ class StoredPendingMutation {
 }
 
 /// Persistence interface for the offline mutation queue.
+///
+/// Implementations must apply writes in the order they are called, including
+/// when several calls are in flight at once: independent client operations
+/// (replay bookkeeping, the rebase of a queued mutation's rollback baseline
+/// after a remote update, [clearQueue]) can issue writes for the same entry
+/// concurrently, for example two [updateOptimisticData] calls or an
+/// [updateOptimisticData] followed by a [remove]. A store that reorders
+/// concurrent writes (an asynchronous backend with independent transactions,
+/// for example) can persist a stale rollback baseline or resurrect a removed
+/// entry, which a restart then restores. Reads must observe every write
+/// called before them.
 abstract class QueueStorage {
   /// Creates a queue storage implementation.
   QueueStorage();

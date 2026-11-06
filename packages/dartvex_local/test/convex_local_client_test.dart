@@ -2985,6 +2985,73 @@ void main() {
         expect(local.currentPendingMutations, isEmpty);
         expect(await store.loadAll(), isEmpty);
       });
+
+      test('a direct send of the previous identity that never gets an answer '
+          'does not block mutate() after reset()', () async {
+        final local = await open();
+        final stuck = Completer<Object?>();
+        remoteClient.mutationResults['tasks:create'] = <Object?>[
+          stuck.future,
+          'server-new',
+        ];
+
+        final previous = local.mutate('tasks:create', <String, dynamic>{
+          'title': 'previous-user',
+        });
+        await pumpEventQueue();
+        expect(remoteClient.mutationCalls, hasLength(1));
+        await local.reset().timeout(const Duration(seconds: 1));
+
+        final next = await local
+            .mutate('tasks:create', <String, dynamic>{'title': 'next-user'})
+            .timeout(const Duration(seconds: 1));
+        expect(next, isA<LocalMutationSuccess>());
+        expect((next as LocalMutationSuccess).value, 'server-new');
+
+        // The late answer still reaches the previous caller, and nothing of
+        // it is queued for the next identity.
+        stuck.complete('server-old');
+        expect(await previous, isA<LocalMutationSuccess>());
+        expect(local.currentPendingMutations, isEmpty);
+        expect(await store.loadAll(), isEmpty);
+      });
+
+      test('a detached direct send of the previous identity does not hold '
+          'back the next identity\'s replay after reset()', () async {
+        final local = await open();
+        final stuck = Completer<Object?>();
+        remoteClient.mutationResults['tasks:create'] = <Object?>[
+          stuck.future,
+          'server-new',
+        ];
+
+        final previous = local.mutate('tasks:create', <String, dynamic>{
+          'title': 'previous-user',
+        });
+        await pumpEventQueue();
+        expect(remoteClient.mutationCalls, hasLength(1));
+        // Detaches the direct send from the mutate chain; replay would still
+        // wait for it to settle.
+        await local.setNetworkMode(LocalNetworkMode.offline);
+        await local.reset();
+        expect(
+          await local.mutate('tasks:create', <String, dynamic>{
+            'title': 'next-user',
+          }),
+          isA<LocalMutationQueued>(),
+        );
+        await local.setNetworkMode(LocalNetworkMode.auto);
+
+        await waitForEmptyQueue(local, timeout: const Duration(seconds: 1));
+        expect(
+          remoteClient.mutationCalls.map((call) => call.args['title']),
+          <String>['previous-user', 'next-user'],
+        );
+
+        stuck.completeError(const ConvexException('timeout', retryable: true));
+        expect(await previous, isA<LocalMutationFailed>());
+        expect(await store.loadAll(), isEmpty);
+      });
     });
 
     test('F95: a mutation queued after a retryable direct failure while '
@@ -3459,6 +3526,76 @@ void main() {
       expect(conflicts, isEmpty);
       await local.setNetworkMode(LocalNetworkMode.offline);
       expect(await local.query('tasks:list'), <dynamic>['v2']);
+    });
+
+    test('a replayed mutation succeeding after clearQueue() records no ID '
+        'remap and does not remap mutations queued since', () async {
+      final local = await open(initialNetworkMode: LocalNetworkMode.offline);
+      final created =
+          await local.mutate('tasks:create', <String, dynamic>{'title': 'a'})
+              as LocalMutationQueued;
+      final localId =
+          created.pendingMutation.optimisticData!['operationId'] as String;
+      final reply = Completer<Object?>();
+      remoteClient
+        ..queryResults['tasks:list'] = <dynamic>[]
+        ..mutationResults['tasks:create'] = <Object?>[reply.future]
+        // No document ID: the advance itself records no remap.
+        ..mutationResults['tasks:advance'] = <Object?>[null];
+      await local.setNetworkMode(LocalNetworkMode.auto);
+      await pumpEventQueue();
+      expect(remoteClient.mutationCalls, hasLength(1));
+
+      await local.clearQueue();
+      // Queued behind the replay still in flight.
+      expect(
+        await local.mutate('tasks:advance', <String, dynamic>{
+          'taskId': localId,
+        }),
+        isA<LocalMutationQueued>(),
+      );
+      reply.complete('server-a');
+      await waitForEmptyQueue(local, timeout: const Duration(seconds: 1));
+
+      expect(await store.loadIdRemaps(), isEmpty);
+      expect(remoteClient.mutationCalls, hasLength(2));
+      expect(remoteClient.mutationCalls.last.name, 'tasks:advance');
+      expect(remoteClient.mutationCalls.last.args['taskId'], localId);
+    });
+
+    test('a mutation queued while replay clears the failed local IDs is '
+        'replayed without waiting for another event', () async {
+      final queue = HookedQueueStorage(store);
+      final gate = Completer<void>();
+      queue.clearFailedLocalIdsGate = gate.future;
+      final local = await open(
+        queueStorage: queue,
+        initialNetworkMode: LocalNetworkMode.offline,
+      );
+      await local.mutate('tasks:create', <String, dynamic>{'title': 'a'});
+      remoteClient
+        ..queryResults['tasks:list'] = <dynamic>[]
+        ..mutationResults['tasks:create'] = <Object?>[
+          const ConvexException('rejected'),
+          'server-b',
+        ];
+      await local.setNetworkMode(LocalNetworkMode.auto);
+      await queue.clearFailedLocalIdsReached.future.timeout(
+        const Duration(seconds: 1),
+      );
+
+      expect(
+        await local.mutate('tasks:create', <String, dynamic>{'title': 'b'}),
+        isA<LocalMutationQueued>(),
+      );
+      gate.complete();
+      await waitForEmptyQueue(local, timeout: const Duration(seconds: 1));
+
+      expect(
+        remoteClient.mutationCalls.map((call) => call.args['title']),
+        <String>['a', 'b'],
+      );
+      expect(await store.loadAll(), isEmpty);
     });
 
     test('F216/F221: onConflict from the config gets conflicts from replay '
@@ -4355,6 +4492,11 @@ class HookedQueueStorage implements QueueStorage {
   bool failNextRemove = false;
   bool failNextMarkStatus = false;
 
+  /// When set, the next [clearFailedLocalIds] completes
+  /// [clearFailedLocalIdsReached] and waits for this future first.
+  Future<void>? clearFailedLocalIdsGate;
+  final Completer<void> clearFailedLocalIdsReached = Completer<void>();
+
   @override
   Future<List<StoredPendingMutation>> loadAll() async {
     final gate = loadAllGate;
@@ -4425,7 +4567,15 @@ class HookedQueueStorage implements QueueStorage {
   Future<Set<String>> loadFailedLocalIds() => _inner.loadFailedLocalIds();
 
   @override
-  Future<void> clearFailedLocalIds() => _inner.clearFailedLocalIds();
+  Future<void> clearFailedLocalIds() async {
+    final gate = clearFailedLocalIdsGate;
+    if (gate != null) {
+      clearFailedLocalIdsGate = null;
+      clearFailedLocalIdsReached.complete();
+      await gate;
+    }
+    return _inner.clearFailedLocalIds();
+  }
 
   @override
   Future<void> close() => _inner.close();

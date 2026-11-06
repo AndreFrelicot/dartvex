@@ -13,7 +13,8 @@ metadata:
 cache and an offline mutation queue. Know the model before wiring it:
 
 - **At-least-once replay** — queued mutations may retry after ambiguous
-  network failures. Mutations with external side effects must be idempotent.
+  network failures (or after a local storage failure followed by a restart).
+  Mutations with external side effects must be idempotent.
 - **No merge engine** — conflicts surface via `onConflict`; the app decides.
 - **Not user-scoped** — the cache and queue belong to the device, not the
   signed-in user; call `reset()` on sign-out or user switch.
@@ -231,5 +232,6 @@ SQLite cache to a maximum entry count.
 - Forgetting `reset()` on sign-out — the next user would see cached data and
   replay the previous user's queue.
 - Custom web stores: `CacheStorage.deleteCacheEntry` must physically remove
-  single entries, and `QueueStorage` must persist failed locally-generated
-  IDs — both are required for correct rollback/replay.
+  single entries, `QueueStorage` must persist failed locally-generated IDs,
+  and `QueueStorage` must apply writes in call order even when several are in
+  flight — all are required for correct rollback/replay.
