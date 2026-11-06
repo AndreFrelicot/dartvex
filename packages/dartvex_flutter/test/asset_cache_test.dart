@@ -720,7 +720,141 @@ void main() {
         addTearDown(() {
           ConvexAssetCache.debugRepositoryFactory = null;
           ConvexAssetCache.debugFileSystemFactory = null;
+          ConvexAssetCache.debugHttpClientFactory = null;
           dir.deleteSync(recursive: true);
+        });
+      });
+
+      group('forced refresh', () {
+        const jpegUrl = 'https://files.example.com/photo.jpg?sig=OLD_SECRET';
+        const pngUrl = 'https://files.example.com/photo.png?sig=NEW_SECRET';
+        late MemoryCacheFileSystem fileSystem;
+        late List<http.BaseRequest> requests;
+
+        /// Serves [jpegUrl] as a complete JPEG; [pngUrl] as a PNG whose body
+        /// fails after the first chunk unless [pngSucceeds].
+        MockClient server({bool pngSucceeds = false}) {
+          return MockClient.streaming((request, _) async {
+            requests.add(request);
+            if (request.url.path.endsWith('.jpg')) {
+              return http.StreamedResponse(
+                Stream<List<int>>.value(<int>[1, 2, 3]),
+                200,
+                headers: {'content-type': 'image/jpeg'},
+              );
+            }
+            final body = StreamController<List<int>>();
+            body.add(<int>[9, 9]);
+            if (pngSucceeds) {
+              body.add(<int>[9]);
+            } else {
+              body.addError(
+                http.ClientException('Connection reset', request.url),
+              );
+            }
+            unawaited(body.close());
+            return http.StreamedResponse(
+              body.stream,
+              200,
+              headers: {'content-type': 'image/png'},
+            );
+          });
+        }
+
+        setUp(() {
+          fileSystem = MemoryCacheFileSystem();
+          requests = <http.BaseRequest>[];
+          ConvexAssetCache.debugFileSystemFactory = (_) => fileSystem;
+        });
+
+        /// Every cache variant that owns a real flutter_cache_manager
+        /// pipeline: the default store and a custom [CacheManager].
+        final variants = <String, ConvexAssetCache Function(MockClient)>{
+          'default store': (client) {
+            ConvexAssetCache.debugHttpClientFactory = (_) => client;
+            return ConvexAssetCache(cacheKey: 'dartvexFlutterTestRefresh');
+          },
+          'custom CacheManager': (client) => ConvexAssetCache.custom(
+            CacheManager(
+              Config(
+                'dartvexFlutterTestRefreshCustom',
+                repo: FakeCacheInfoRepository(),
+                fileSystem: fileSystem,
+                fileService: HttpFileService(httpClient: client),
+              ),
+            ),
+          ),
+        };
+
+        variants.forEach((name, create) {
+          test('$name: a refresh whose body fails after the headers announced '
+              'another file type keeps serving the previous file', () async {
+            final cache = create(server());
+            addTearDown(cache.dispose);
+
+            final original = await cache.prefetch('photo', jpegUrl);
+            expect(original.path, endsWith('.jpg'));
+
+            final error = await cache
+                .prefetch('photo', pngUrl, force: true)
+                .then<Object?>((_) => null, onError: (Object e) => e);
+            expect(error, isA<http.ClientException>());
+            expect(error.toString(), isNot(contains('NEW_SECRET')));
+            expect(requests, hasLength(2));
+
+            final cached = await cache.get('photo');
+            expect(cached, isNotNull);
+            expect(cached!.path, original.path);
+            expect(await cached.exists(), isTrue);
+            expect(await cached.readAsBytes(), <int>[1, 2, 3]);
+            // No partial download left next to it.
+            expect(await fileSystem.fileNames(), [
+              cached.uri.pathSegments.last,
+            ]);
+          });
+
+          test('$name: a successful refresh swaps in a new file with the new '
+              'extension and deletes the previous one', () async {
+            final cache = create(server(pngSucceeds: true));
+            addTearDown(cache.dispose);
+
+            final original = await cache.prefetch('photo', jpegUrl);
+            final refreshed = await cache.prefetch(
+              'photo',
+              pngUrl,
+              force: true,
+            );
+
+            expect(refreshed.path, isNot(original.path));
+            expect(refreshed.path, endsWith('.png'));
+            expect(await refreshed.readAsBytes(), <int>[9, 9, 9]);
+            expect((await cache.get('photo'))!.path, refreshed.path);
+            expect(await original.exists(), isFalse);
+            expect(await fileSystem.fileNames(), [
+              refreshed.uri.pathSegments.last,
+            ]);
+          });
+
+          for (final force in <bool>[false, true]) {
+            test('$name: a malformed URL fails without leaking it '
+                '(force: $force)', () async {
+              final cache = create(server());
+              addTearDown(cache.dispose);
+              const malformed =
+                  'https://files.example.com:bad/private?sig=SECRET';
+
+              final error = await cache
+                  .prefetch('photo', malformed, force: force)
+                  .then<Object?>((_) => null, onError: (Object e) => e);
+
+              expect(error, isA<FormatException>());
+              expect((error! as FormatException).source, isNull);
+              for (final secret in ['SECRET', '/private']) {
+                expect(error.toString(), isNot(contains(secret)));
+              }
+              expect(requests, isEmpty);
+            });
+          }
         });
       });
 
@@ -1048,6 +1182,65 @@ void main() {
       expect(requests.single, isA<http.Abortable>());
     });
 
+    testWidgets('ConvexImage reloads through a new httpClient and aborts the '
+        'download running on the previous one', (tester) async {
+      final oldRequests = <http.BaseRequest>[];
+      final oldBody = StreamController<List<int>>();
+      final oldClient = MockClient.streaming((request, _) async {
+        oldRequests.add(request);
+        return http.StreamedResponse(oldBody.stream, 200);
+      });
+      final newRequests = <http.BaseRequest>[];
+      final newClient = MockClient.streaming((request, _) async {
+        newRequests.add(request);
+        return http.StreamedResponse(
+          Stream<List<int>>.value(<int>[1, 2, 3]),
+          200,
+          contentLength: 3,
+        );
+      });
+      final client = FakeRuntimeClient(
+        initialConnectionState: ConvexConnectionState.connected,
+      );
+      client.onQuery = (name, args) async => 'https://example.com/img.png';
+
+      Widget build(http.Client httpClient) => Directionality(
+        textDirection: TextDirection.ltr,
+        child: ConvexImage(
+          storageId: 'img-1',
+          getUrlAction: 'files:getUrl',
+          client: client,
+          httpClient: httpClient,
+          placeholder: const Text('loading'),
+          errorBuilder: (context, error, retry) => Text('error $error'),
+          builder: (context, image) => const Text('loaded'),
+        ),
+      );
+
+      await tester.pumpWidget(build(oldClient));
+      await tester.pump();
+      await tester.pump();
+      expect(oldRequests, hasLength(1));
+      var aborted = false;
+      unawaited(
+        (oldRequests.single as http.Abortable).abortTrigger!.then((_) {
+          aborted = true;
+          // Like a real client: an aborted transfer ends its body stream.
+          oldBody.addError(http.RequestAbortedException());
+          oldBody.close();
+        }),
+      );
+
+      await tester.pumpWidget(build(newClient));
+      await tester.pump();
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await tester.pumpAndSettle();
+
+      expect(aborted, isTrue);
+      expect(newRequests, hasLength(1));
+      expect(find.text('loaded'), findsOneWidget);
+    });
+
     testWidgets('ConvexImage aborts its download when disposed', (
       tester,
     ) async {
@@ -1135,6 +1328,12 @@ class MemoryCacheFileSystem implements cache_manager.FileSystem {
 
   @override
   Future<File> createFile(String name) async => _files.file('/$name');
+
+  /// Names of the files currently stored.
+  Future<List<String>> fileNames() async => [
+    for (final entity in _files.directory('/').listSync())
+      if (entity is File) entity.basename,
+  ];
 }
 
 class FakeCacheManager implements BaseCacheManager, ConvexAssetCacheMetrics {

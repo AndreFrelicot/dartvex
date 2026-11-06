@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:dartvex_flutter/dartvex_flutter.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart'
+    show HttpExceptionWithStatus;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -112,6 +114,77 @@ void main() {
           (error! as http.ClientException).uri,
           Uri.parse('https://files.example.com:8443'),
         );
+      });
+
+      test('status errors keep their status code', () async {
+        final client = MockClient((_) async => http.Response('gone', 404));
+
+        final error = await ConvexFileDownloader.download(
+          url,
+          client: client,
+        ).then<Object?>((_) => null, onError: (Object e) => e);
+
+        expect(error, isA<HttpExceptionWithStatus>());
+        expect((error! as HttpExceptionWithStatus).statusCode, 404);
+      });
+
+      test('a malformed URL fails with a FormatException without the URL '
+          '(it is parsed inside the redacted path)', () async {
+        const malformed = 'https://files.example.com:bad/private?sig=SECRET';
+        var requests = 0;
+        final client = MockClient((_) async {
+          requests += 1;
+          return http.Response('', 200);
+        });
+
+        for (final injected in <http.Client?>[client, null]) {
+          final error = await ConvexFileDownloader.download(
+            malformed,
+            client: injected,
+          ).then<Object?>((_) => null, onError: (Object e) => e);
+
+          expect(error, isA<FormatException>());
+          final format = error! as FormatException;
+          expect(format.source, isNull);
+          for (final secret in ['SECRET', '/private', 'bad/private']) {
+            expect(format.toString(), isNot(contains(secret)));
+          }
+        }
+        expect(requests, 0);
+      });
+
+      test('other errors that mention the URL become URL-free client '
+          'errors', () async {
+        final client = MockClient(
+          (request) async =>
+              throw StateError('Unsupported request to ${request.url}'),
+        );
+
+        final error = await ConvexFileDownloader.download(
+          url,
+          client: client,
+        ).then<Object?>((_) => null, onError: (Object e) => e);
+
+        expect(error, isA<http.ClientException>());
+        expect(error.toString(), contains('Unsupported request'));
+        expect(error.toString(), isNot(contains('abc-123')));
+        expect(error.toString(), isNot(contains('s3cr3t')));
+        expect(
+          (error! as http.ClientException).uri,
+          Uri.parse('https://files.example.com:8443'),
+        );
+      });
+
+      test('errors that do not mention the URL are left alone', () async {
+        final original = StateError('socket closed');
+        final client = MockClient((_) async => throw original);
+
+        final error = await ConvexFileDownloader.download(
+          url,
+          client: client,
+        ).then<Object?>((_) => null, onError: (Object e) => e);
+
+        expect(error, same(original));
       });
     });
 

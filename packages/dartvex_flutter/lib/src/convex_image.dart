@@ -17,9 +17,10 @@ import 'storage_url.dart';
 /// [storageId], then downloads the image with optional progress tracking.
 /// The URL resolver is called as a query unless [useAction] is true.
 ///
-/// A download still running when the widget is disposed (or its [storageId]
-/// changes) is aborted. Downloads share one HTTP client (one connection pool,
-/// one URLSession on iOS/macOS) unless [httpClient] is provided.
+/// A download still running when the widget is disposed (or its [storageId],
+/// URL resolver, client or [httpClient] changes) is aborted. Downloads share
+/// one HTTP client (one connection pool, one URLSession on iOS/macOS) unless
+/// [httpClient] is provided.
 ///
 /// On failure, [errorBuilder] receives the error and a retry callback; with
 /// neither [errorBuilder] nor [errorWidget], the error is reported to
@@ -107,6 +108,11 @@ class ConvexImage extends StatefulWidget {
   /// HTTP client used for downloads. The widget never closes it. Defaults to
   /// one client shared by every [ConvexImage], created on first use from
   /// `createDefaultHttpClient()`.
+  ///
+  /// Replacing it (with a non-identical client) reloads the image like the
+  /// other inputs and aborts the download still running on the previous
+  /// client, so that client can be closed right away. Keep the instance
+  /// stable across rebuilds (do not create it in `build`).
   final http.Client? httpClient;
 
   @override
@@ -126,6 +132,7 @@ class _ConvexImageState extends State<ConvexImage> {
   String? _loadedGetUrlAction;
   bool? _loadedUseAction;
   ConvexRuntimeClient? _loadedClient;
+  http.Client? _loadedHttpClient;
   int _requestGeneration = 0;
   Completer<void>? _abortDownload;
 
@@ -141,7 +148,8 @@ class _ConvexImageState extends State<ConvexImage> {
     if (oldWidget.storageId != widget.storageId ||
         oldWidget.getUrlAction != widget.getUrlAction ||
         oldWidget.useAction != widget.useAction ||
-        oldWidget.client != widget.client) {
+        oldWidget.client != widget.client ||
+        !identical(oldWidget.httpClient, widget.httpClient)) {
       _loadIfNeeded();
     }
   }
@@ -167,6 +175,7 @@ class _ConvexImageState extends State<ConvexImage> {
         _loadedGetUrlAction == widget.getUrlAction &&
         _loadedUseAction == widget.useAction &&
         _loadedClient == client &&
+        identical(_loadedHttpClient, widget.httpClient) &&
         (_loading || _bytes != null || _error != null)) {
       return;
     }
@@ -174,6 +183,9 @@ class _ConvexImageState extends State<ConvexImage> {
     _loadedGetUrlAction = widget.getUrlAction;
     _loadedUseAction = widget.useAction;
     _loadedClient = client;
+    // A new client restarts the load: the running download (aborted by
+    // _fetchAndDownload) must not keep using a client the caller may close.
+    _loadedHttpClient = widget.httpClient;
     _fetchAndDownload(++_requestGeneration, client);
   }
 
@@ -192,6 +204,7 @@ class _ConvexImageState extends State<ConvexImage> {
     final storageId = widget.storageId;
     final getUrlAction = widget.getUrlAction;
     final useAction = widget.useAction;
+    final httpClient = widget.httpClient;
     _abortPendingDownload();
     final abort = _abortDownload = Completer<void>();
     setState(() {
@@ -213,6 +226,7 @@ class _ConvexImageState extends State<ConvexImage> {
         getUrlAction,
         useAction,
         client,
+        httpClient,
       )) {
         return;
       }
@@ -222,9 +236,7 @@ class _ConvexImageState extends State<ConvexImage> {
       // Step 2: download with progress tracking
       final bytes = await ConvexFileDownloader.download(
         urlStr,
-        client:
-            widget.httpClient ??
-            (_sharedHttpClient ??= createDefaultHttpClient()),
+        client: httpClient ?? (_sharedHttpClient ??= createDefaultHttpClient()),
         abortTrigger: abort.future,
         onProgress: (p) {
           if (!_isCurrentRequest(
@@ -233,6 +245,7 @@ class _ConvexImageState extends State<ConvexImage> {
             getUrlAction,
             useAction,
             client,
+            httpClient,
           )) {
             return;
           }
@@ -247,6 +260,7 @@ class _ConvexImageState extends State<ConvexImage> {
         getUrlAction,
         useAction,
         client,
+        httpClient,
       )) {
         return;
       }
@@ -261,6 +275,7 @@ class _ConvexImageState extends State<ConvexImage> {
         getUrlAction,
         useAction,
         client,
+        httpClient,
       )) {
         return;
       }
@@ -293,13 +308,15 @@ class _ConvexImageState extends State<ConvexImage> {
     String getUrlAction,
     bool useAction,
     ConvexRuntimeClient client,
+    http.Client? httpClient,
   ) {
     return mounted &&
         generation == _requestGeneration &&
         widget.storageId == storageId &&
         widget.getUrlAction == getUrlAction &&
         widget.useAction == useAction &&
-        _loadedClient == client;
+        _loadedClient == client &&
+        identical(widget.httpClient, httpClient);
   }
 
   @override

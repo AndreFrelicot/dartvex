@@ -244,6 +244,12 @@ On failure, `errorBuilder` receives the error and a `retry` callback; without
 `errorBuilder` or `errorWidget` the error is reported to
 `FlutterError.reportError`. `ConvexAssetCache()` instances with the same
 `cacheKey` share one store (`ConvexAssetCache.shared` uses the default key).
+Cached files are keyed by the bare `storageId`, not by deployment: an app that
+shows files from several deployments should pass each one its own cache, e.g.
+`cache: ConvexAssetCache(cacheKey: 'deploymentA')`. A forced refresh
+(`prefetch(..., force: true)`, or a mounted `ConvexCachedImage` whose client
+or URL resolver changed) replaces the cached file only once the new download
+has fully arrived. Errors never include the signed URL beyond its origin.
 Both widgets are native-only in this release; on web, use the same resolver and
 pass the returned URL to `Image.network`.
 

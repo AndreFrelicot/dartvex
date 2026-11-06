@@ -119,6 +119,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Download and asset-cache errors no longer leak a malformed signed URL: a
+  `FormatException` loses its `source`, and other errors mentioning the URL
+  become URL-free `ClientException`s.
+- `ConvexAssetCache.prefetch(force: true)` downloads the whole file before
+  swapping it in, so a failed refresh keeps the previous copy even when the
+  file type changes (flutter_cache_manager deleted it on the headers).
+- `ConvexImage` reloads when its `httpClient` changes and aborts the download
+  running on the previous client.
+- `ConvexFileDownloader.download` fails with `HttpExceptionWithStatus` (an
+  `HttpException`) on non-2xx responses.
 - Asset cache errors redact signed URLs, including redirected URLs and HTTP
   exception messages, before reaching image error builders or crash reporters.
 - The Apple HTTP wrapper waits for asynchronous response cancellation before

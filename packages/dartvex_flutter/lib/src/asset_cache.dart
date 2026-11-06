@@ -1,4 +1,7 @@
+import 'dart:async';
 import 'dart:io';
+import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:dartvex/dartvex.dart' show createDefaultHttpClient;
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
@@ -6,6 +9,7 @@ import 'package:http/http.dart' as http;
 import 'package:meta/meta.dart';
 
 import 'download_errors.dart';
+import 'file_downloader.dart';
 import 'media_types.dart';
 
 /// Caches binary assets (images, files) from Convex storage to disk,
@@ -46,6 +50,23 @@ class ConvexAssetCache {
   /// Replaces the disk filesystem in tests that exercise store lifecycle.
   @visibleForTesting
   static FileSystem Function(String cacheKey)? debugFileSystemFactory;
+
+  /// Replaces the HTTP client a shared store downloads with, in tests.
+  ///
+  /// The store owns the returned client and closes it with the store.
+  @visibleForTesting
+  static http.Client Function(String cacheKey)? debugHttpClientFactory;
+
+  /// Idle bound of a forced refresh's download (connection, headers, and the
+  /// gap between body chunks), like [ConvexFileDownloader.download]'s default.
+  static const Duration _refreshIdleTimeout = Duration(seconds: 30);
+
+  /// Pending forced-refresh commit per cache manager and key, so two
+  /// refreshes of one entry never interleave (and never orphan a file).
+  static final Expando<Map<String, Future<void>>> _commits =
+      Expando<Map<String, Future<void>>>();
+
+  static final Random _random = Random.secure();
 
   /// Creates an asset cache backed by the [CacheManager] for [cacheKey].
   ///
@@ -104,9 +125,19 @@ class ConvexAssetCache {
   ///
   /// [cacheKey] is a stable identifier for the asset (e.g., Convex storageId,
   /// S3 key, Cloudflare R2 path, or any custom identifier). If the asset is
-  /// already cached, this is a no-op unless [force] is `true`. A forced
-  /// refresh replaces the cached file only once the new download succeeded;
-  /// a failed refresh keeps the previous copy.
+  /// already cached, this is a no-op unless [force] is `true`.
+  ///
+  /// A forced refresh downloads the whole asset before touching the cache,
+  /// then stores it under a new file name and only afterwards deletes the
+  /// previous file, so a failed refresh (an error status, a dropped
+  /// connection mid-body, a stall longer than 30 seconds without progress)
+  /// keeps serving the previous copy. This holds for the default store and
+  /// for custom [CacheManager]s (downloaded through their `fileService`);
+  /// other [BaseCacheManager] implementations are refreshed with their own
+  /// `downloadFile(force: true)`.
+  ///
+  /// Errors never carry [url] beyond its origin (see
+  /// [ConvexFileDownloader.download]).
   Future<File> prefetch(
     String cacheKey,
     String url, {
@@ -114,7 +145,11 @@ class ConvexAssetCache {
   }) async {
     try {
       if (force) {
-        final info = await _cacheManager.downloadFile(
+        final cacheManager = _cacheManager;
+        if (cacheManager is CacheManager) {
+          return await _refresh(cacheManager, cacheKey, url);
+        }
+        final info = await cacheManager.downloadFile(
           url,
           key: cacheKey,
           force: true,
@@ -128,6 +163,144 @@ class ConvexAssetCache {
       return await _cacheManager.getSingleFile(url, key: cacheKey);
     } catch (error, stackTrace) {
       Error.throwWithStackTrace(redactDownloadError(error, url), stackTrace);
+    }
+  }
+
+  /// Downloads [url] completely, then swaps it in as [cacheKey]'s file.
+  ///
+  /// `CacheManager.downloadFile(force: true)` is not used: when the response's
+  /// content type maps to a different file extension, flutter_cache_manager
+  /// deletes the cached file as soon as the headers arrive, before streaming
+  /// the body, so a failed body destroyed the offline copy (and left a
+  /// partial file behind).
+  Future<File> _refresh(
+    CacheManager cacheManager,
+    String cacheKey,
+    String url,
+  ) async {
+    final store = _store;
+    final Uint8List bytes;
+    final FileServiceResponse response;
+    if (store != null) {
+      // The default store: download through its own client, abortable and
+      // bounded by the idle timeout like ConvexFileDownloader.
+      final download = await downloadWithHeaders(
+        url,
+        client: store.httpClient,
+        idleTimeout: _refreshIdleTimeout,
+      );
+      bytes = download.bytes;
+      // Only used for the headers-derived metadata (extension, validity,
+      // ETag), with flutter_cache_manager's own rules.
+      response = HttpGetResponse(
+        http.StreamedResponse(
+          const Stream<List<int>>.empty(),
+          download.statusCode,
+          headers: download.headers,
+        ),
+      );
+    } else {
+      response = await cacheManager.config.fileService
+          .get(url)
+          .timeout(_refreshIdleTimeout);
+      final status = response.statusCode;
+      if (status < 200 || status >= 300) {
+        unawaited(
+          response.content
+              .drain<void>()
+              .timeout(_refreshIdleTimeout)
+              .then<void>((_) {}, onError: (Object _) {}),
+        );
+        throw HttpExceptionWithStatus(
+          status,
+          'Failed to download file (status $status)',
+          uri: Uri.tryParse(url),
+        );
+      }
+      final builder = BytesBuilder(copy: false);
+      await for (final chunk in response.content.timeout(_refreshIdleTimeout)) {
+        builder.add(chunk);
+      }
+      bytes = builder.toBytes();
+    }
+    return _serializedCommit(
+      cacheManager,
+      cacheKey,
+      () => _commit(cacheManager, cacheKey, url, bytes, response),
+    );
+  }
+
+  static Future<File> _serializedCommit(
+    CacheManager cacheManager,
+    String cacheKey,
+    Future<File> Function() commit,
+  ) {
+    final commits = _commits[cacheManager] ??= <String, Future<void>>{};
+    final previous = commits[cacheKey];
+    final result = previous == null
+        ? commit()
+        : previous.then((_) => commit(), onError: (Object _) => commit());
+    final done = result.then<void>((_) {}, onError: (Object _) {});
+    commits[cacheKey] = done;
+    unawaited(
+      done.whenComplete(() {
+        if (identical(commits[cacheKey], done)) {
+          commits.remove(cacheKey);
+        }
+      }),
+    );
+    return result;
+  }
+
+  static Future<File> _commit(
+    CacheManager cacheManager,
+    String cacheKey,
+    String url,
+    Uint8List bytes,
+    FileServiceResponse response,
+  ) async {
+    final store = cacheManager.store;
+    // A new name (never the previous one) so a failed write cannot damage
+    // the cached copy, and FileImage (keyed by path) does not keep showing
+    // the previously decoded image.
+    final relativePath =
+        '${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}-'
+        '${_random.nextInt(1 << 32).toRadixString(36)}'
+        '${response.fileExtension}';
+    final file = await store.fileSystem.createFile(relativePath);
+    final previous = await store.retrieveCacheData(cacheKey);
+    try {
+      await file.writeAsBytes(bytes, flush: true);
+      await store.putFile(
+        CacheObject(
+          url,
+          key: cacheKey,
+          relativePath: relativePath,
+          validTill: response.validTill,
+          eTag: response.eTag,
+          id: previous?.id,
+          length: bytes.length,
+        ),
+      );
+    } catch (_) {
+      await _deleteQuietly(file);
+      rethrow;
+    }
+    if (previous != null && previous.relativePath != relativePath) {
+      await _deleteQuietly(
+        await store.fileSystem.createFile(previous.relativePath),
+      );
+    }
+    return file;
+  }
+
+  static Future<void> _deleteQuietly(File file) async {
+    try {
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } on Object catch (_) {
+      // Best effort: an orphaned file is only wasted space.
     }
   }
 
@@ -218,7 +391,9 @@ class _SharedStore {
     required int maxNrOfCacheObjects,
     required CacheInfoRepository repository,
   }) {
-    final httpClient = createDefaultHttpClient();
+    final httpClient =
+        ConvexAssetCache.debugHttpClientFactory?.call(cacheKey) ??
+        createDefaultHttpClient();
     return _SharedStore(
       cacheKey,
       CacheManager(

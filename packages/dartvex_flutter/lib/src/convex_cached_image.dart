@@ -15,11 +15,20 @@ import 'storage_url.dart';
 /// [ConvexAssetCache] using the stable [storageId] as cache key. The URL
 /// resolver is called as a query unless [useAction] is true.
 ///
-/// When the URL resolver ([getUrlAction], [useAction]) or the provider client
-/// changes after a load, the cached copy is deliberately bypassed and
-/// refreshed: a different resolver or deployment may serve different content
-/// for the same [storageId]. The refreshed download only replaces the cached
-/// file once it succeeded.
+/// The cache entry is keyed by the bare [storageId]: the deployment and the
+/// URL resolver are not part of the key, so a freshly mounted widget serves
+/// whatever file the [cache] holds for that [storageId], whichever client or
+/// resolver downloaded it. Apps that show files from several deployments in
+/// one process should give each deployment its own [cache] (for example
+/// `ConvexAssetCache(cacheKey: 'deploymentA')`, a separate store).
+///
+/// The only refresh this widget guarantees is within one mounted widget: when
+/// its URL resolver ([getUrlAction], [useAction]) or its client changes after
+/// a load, the cached copy is bypassed and downloaded again (a retry of that
+/// refresh bypasses it too). With the default store or a custom
+/// `CacheManager`, the new download replaces the cached file only once it has
+/// fully arrived; a failed refresh shows the error and keeps the previous
+/// file in the cache.
 ///
 /// On failure, [errorBuilder] receives the error and a retry callback; with
 /// neither [errorBuilder] nor [errorWidget], the error is reported to
@@ -57,6 +66,9 @@ class ConvexCachedImage extends StatefulWidget {
   final bool useAction;
 
   /// Optional cache override. Defaults to [ConvexAssetCache.shared].
+  ///
+  /// Entries are keyed by [storageId] only; use one cache per deployment when
+  /// mixing deployments (see the class documentation).
   final ConvexAssetCache? cache;
 
   /// Optional runtime client override.

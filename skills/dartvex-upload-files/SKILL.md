@@ -123,7 +123,9 @@ Pass `errorBuilder: (context, error, retry) => ...` to render failures with a
 retry button; without `errorBuilder`/`errorWidget`, failures are reported to
 `FlutterError.reportError` (visible in widget tests). `ConvexOfflineImage` /
 `ConvexAssetCache` add offline-fallback binary caching; `ConvexAssetCache()`
-instances with the same `cacheKey` share one store.
+instances with the same `cacheKey` share one store. Cache entries are keyed by
+`storageId` only, so apps mixing deployments should give each deployment its
+own cache (`cache: ConvexAssetCache(cacheKey: 'deploymentA')`).
 
 ### Flutter web caveat
 
