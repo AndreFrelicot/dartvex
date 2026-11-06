@@ -129,6 +129,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A FatalError reaches every subscriber and fails a pending `query()` even
+  when a listener changes auth while it is delivered; an auth change after a
+  FatalError no longer moves subscriptions back to loading.
+- `convexToCanonicalJson` (query keys) gives an integral double and the equal
+  int the same key beyond ±2^53 (for example `1e17` and
+  `100000000000000000`).
+- `ConvexClientWithAuth` marks its token-refresh calls to
+  `AuthProvider.loginFromCache` (`Zone.current[#dartvex.authTokenRefresh]` is
+  `true`), so a provider can let an explicit `loginFromCache()` supersede a
+  pending `login()` while a background refresh does not.
 - Explicit auth changes clear live query results and optimistic layers until
   the server confirms the new identity. Late transitions and reentrant
   listeners cannot expose the previous user's data or refill a local cache

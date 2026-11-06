@@ -237,23 +237,40 @@ void _checkFloat64Representable(int value) {
 /// Encodes [value] like [convexToJson], then normalizes numbers so the result is
 /// a stable, platform-independent key for query identity.
 ///
-/// A Dart `int` and an integral `double` (for example `10` and `10.0`) are the
-/// same Convex `float64` on the wire, but `jsonEncode` renders them differently
-/// on the Dart VM (`10` vs `10.0`) and identically on the web. This helper maps
-/// every finite integral `double` within ±2^53 to the equivalent `int`, so a
-/// key built with `jsonEncode(convexToCanonicalJson(args))` identifies the same
-/// query on every platform. Tagged values (`$integer`, `$float`, `$bytes`,
-/// `$commitTs`) are left untouched. Use it only for keys, never for the wire
-/// encoding.
+/// A Dart `int` and an integral `double` (for example `10` and `10.0`, or
+/// `100000000000000000` and `1e17`) are the same Convex `float64` on the wire,
+/// but `jsonEncode` renders them differently on the Dart VM (`10` vs `10.0`,
+/// `100000000000000000` vs `1e+17`) and identically on the web. This helper
+/// maps every finite integral `double` that equals a 64-bit `int` (any
+/// magnitude below 2^63, which is exactly the set of integral doubles a Dart
+/// `int` can hold on the VM) to that `int`, so a key built with
+/// `jsonEncode(convexToCanonicalJson(args))` identifies the same query however
+/// the number was written. Larger integral doubles have no `int` counterpart
+/// and stay doubles; `-0.0`, NaN and ±Infinity are already tagged `$float`
+/// values by [convexToJson]. Tagged values (`$integer`, `$float`, `$bytes`,
+/// `$commitTs`) are left untouched.
+///
+/// Use it only for keys, never for the wire encoding: the server must keep
+/// receiving exactly what [convexToJson] produces.
 dynamic convexToCanonicalJson(dynamic value) {
   return _normalizeNumbers(convexToJson(value));
 }
 
+/// 2^63 as a double: the exclusive upper bound of integral doubles that fit
+/// into a 64-bit `int` (the inclusive lower bound is -2^63).
+const double _twoTo63 = 9223372036854775808.0;
+
+/// Key-only number normalization behind [convexToCanonicalJson].
 dynamic _normalizeNumbers(dynamic json) {
   if (json is double) {
     if (json.isFinite &&
         json == json.truncateToDouble() &&
-        json.abs() <= _maxSafeInteger) {
+        json >= -_twoTo63 &&
+        json < _twoTo63 &&
+        // Defensive: -0.0 is a distinct Convex value (encoded as `$float`).
+        !(json == 0 && json.isNegative)) {
+      // Exact: every integral double in [-2^63, 2^63) is an int64 value, and
+      // the resulting int is float64-representable by construction.
       return json.toInt();
     }
     return json;

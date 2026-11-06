@@ -245,6 +245,34 @@ void main() {
       );
     });
 
+    test('convexToCanonicalJson maps large integral doubles to the same key',
+        () {
+      // 1e17 and 100000000000000000 are the same float64; 2^53 + 2 and
+      // -2^62 are exact float64 values beyond ±2^53 as well.
+      for (final (asInt, asDouble) in <(int, double)>[
+        (100000000000000000, 100000000000000000.0),
+        (-100000000000000000, -1e17),
+        (9007199254740994, 9007199254740994.0),
+        (-4611686018427387904, -4611686018427387904.0),
+      ]) {
+        expect(
+          jsonEncode(dartvex.convexToCanonicalJson(<String, dynamic>{
+            'v': asDouble,
+          })),
+          jsonEncode(dartvex.convexToCanonicalJson(<String, dynamic>{
+            'v': asInt,
+          })),
+          reason: '$asDouble and $asInt are the same Convex float64',
+        );
+        // The wire encoding is left alone.
+        expect(convexToJson(asDouble), same(asDouble));
+      }
+      // Integral doubles beyond the int64 range have no int counterpart and
+      // stay (finite) doubles instead of being clamped.
+      expect(dartvex.convexToCanonicalJson(1e19), 1e19);
+      expect(dartvex.convexToCanonicalJson(-1e300), -1e300);
+    });
+
     test(r'decoding $set and $map throws', () {
       expect(
         () => jsonToConvex(<String, dynamic>{r'$set': const <dynamic>[]}),

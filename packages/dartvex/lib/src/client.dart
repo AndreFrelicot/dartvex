@@ -16,7 +16,11 @@ import 'values/json_codec.dart';
 import 'transport/ws_factory.dart';
 import 'transport/ws_manager.dart';
 
-typedef _QueryEmission = ({int identity, QueryResult result});
+/// A result for one subscription, tagged with the query identity generation it
+/// was computed under. A `null` identity marks a terminal, identity-independent
+/// result (such as a fatal connection error) that every listener receives even
+/// if a preceding listener changed the auth identity during its delivery.
+typedef _QueryEmission = ({int? identity, QueryResult result});
 
 /// High-level connection state exposed by [ConvexClient].
 enum ConnectionState {
@@ -483,6 +487,11 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   /// good; new requests fail fast instead of hanging. See [_fatalException].
   String? _fatalError;
 
+  /// Set once the FatalError has been delivered to every subscription: it is
+  /// their last result, so a later identity change (whose loading events
+  /// would otherwise follow it) cannot move them back to loading forever.
+  bool _subscribersTerminated = false;
+
   /// Re-entrancy guard for the synchronous broadcast controllers: an event
   /// emitted while another emission is being delivered (for example a
   /// `mutate()` with an optimistic update called from a query listener, or a
@@ -892,8 +901,11 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     final stream = Stream<QueryResult>.multi((listener) {
       final forwarding = controller.stream.listen(
         (event) {
-          // A preceding listener of the same broadcast stream may sign out.
-          if (event.identity == _baseClient.queryIdentityGeneration) {
+          // A preceding listener of the same broadcast stream may sign out;
+          // identity-independent (terminal) results are delivered regardless.
+          final identity = event.identity;
+          if (identity == null ||
+              identity == _baseClient.queryIdentityGeneration) {
             listener.addSync(event.result);
           }
         },
@@ -1632,20 +1644,28 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     _dispatch(() => _deliverToSubscribers(queryId, result));
   }
 
-  /// Delivers [result] to every subscription that exists when the delivery
-  /// runs.
+  /// Delivers the terminal [result] to every subscription that exists when
+  /// the delivery runs.
+  ///
+  /// Used for global errors (a FatalError) that do not belong to any auth
+  /// identity: they are emitted without an identity tag, so a listener that
+  /// signs out or switches users while receiving one cannot keep it from the
+  /// listeners after it (and from a pending one-shot `query()`).
   void _emitToAllSubscribers(QueryResult result) {
     _dispatch(() {
-      final identity = _baseClient.queryIdentityGeneration;
+      _subscribersTerminated = true;
       for (final controller in _subscriptionControllers.values.toList()) {
         if (!controller.isClosed) {
-          controller.add((identity: identity, result: result));
+          controller.add((identity: null, result: result));
         }
       }
     });
   }
 
   void _deliverToSubscribers(int queryId, QueryResult result) {
+    if (_subscribersTerminated) {
+      return;
+    }
     final identity = _baseClient.queryIdentityGeneration;
     for (final subscriberId in _baseClient.subscriberIdsForQuery(queryId)) {
       if (identity != _baseClient.queryIdentityGeneration) {

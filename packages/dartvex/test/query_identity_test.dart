@@ -141,4 +141,59 @@ void main() {
       expect(client.isAuthenticated, isTrue);
     });
   }
+  test(
+      'a FatalError reaches every subscriber even if a listener signs out on it',
+      () async {
+    final first = client.subscribe('profile:me');
+    final firstListener = first.stream.listen((event) {
+      if (event is QueryError) {
+        unawaited(client.clearAuth().catchError((Object _) {}));
+      }
+    });
+    final events = <QueryResult>[];
+    final secondListener =
+        client.subscribe('profile:me').stream.listen(events.add);
+    addTearDown(firstListener.cancel);
+    addTearDown(secondListener.cancel);
+    Object? outcome;
+    unawaited(client.query('profile:me').then(
+          (value) => outcome = value,
+          onError: (Object error) => outcome = error,
+        ));
+    await settle();
+
+    socket.pushServerMessage(const FatalError(error: 'boom').toJson());
+    await settle();
+
+    expect(client.currentConnectionState, ConnectionState.fatalError);
+    expect(events.last, isA<QueryError>(),
+        reason: 'later subscribers never get the fatal error');
+    expect(
+      outcome,
+      isA<ConvexException>().having(
+        (error) => error.message,
+        'message',
+        contains('fatal server error: boom'),
+      ),
+      reason: 'a pending query() hangs forever',
+    );
+  });
+  test('an identity change after a FatalError keeps the error as last result',
+      () async {
+    final events = <QueryResult>[];
+    final listener = client.subscribe('profile:me').stream.listen(events.add);
+    addTearDown(listener.cancel);
+    await settle();
+    await update(1, 'alice');
+    expect(events.last, isA<QuerySuccess>());
+
+    socket.pushServerMessage(const FatalError(error: 'boom').toJson());
+    await settle();
+    expect(events.last, isA<QueryError>());
+
+    await client.clearAuth().catchError((Object _) {});
+    await settle();
+    expect(events.last, isA<QueryError>(),
+        reason: 'the sign-out moves the subscriber back to loading forever');
+  });
 }
