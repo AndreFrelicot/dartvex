@@ -370,10 +370,12 @@ TRACKED_FILES=$({
   list_tracked_files "$PINNED_SRC"
   list_tracked_files "$LATEST_SRC"
 } | sort -u)
+# -N treats a file missing on one side as empty, so files added or removed
+# upstream show up in full in the patch instead of as a bare diff error.
 for file in $TRACKED_FILES; do
-  if ! diff -q "$PINNED_SRC/$file" "$LATEST_SRC/$file" >/dev/null 2>&1; then
+  if ! diff -qN "$PINNED_SRC/$file" "$LATEST_SRC/$file" >/dev/null 2>&1; then
     CHANGED_FILES+="$file"$'\n'
-    diff -u --label "convex@$PINNED_VERSION/$file" --label "convex@$JS_LATEST/$file" \
+    diff -uN --label "convex@$PINNED_VERSION/$file" --label "convex@$JS_LATEST/$file" \
       "$PINNED_SRC/$file" "$LATEST_SRC/$file" >>"$SOURCE_DIFF_FILE" 2>/dev/null || true
   fi
 done
@@ -392,11 +394,42 @@ if [ "$VERSION_DRIFT" -eq 1 ] && [ "$STRUCTURE_ONLY" -eq 0 ]; then
 fi
 
 # --- 7. Check Rust SDK version ---
+# A failed or unparseable GitHub API response (rate limit, 403, network) is an
+# error (exit 2, after the report is written) in a full run. With
+# --structure-only (the pull-request CI job) the Rust tag never affects the
+# result and there is no previous run to compare against, so it is only a
+# warning there: an API rate limit must not turn pull requests red.
 echo ""
 echo "📦 Checking Rust SDK latest version..."
-RS_LATEST=$(curl -sL "https://api.github.com/repos/$CONVEX_RS_REPO/tags?per_page=1" |
-  perl -ne 'if (/"name": "convex-rs\/([^"]+)"/) { print "$1\n"; exit }' || true)
-RS_LATEST=${RS_LATEST:-unknown}
+FETCH_ERROR=""
+RS_LATEST="unknown"
+RS_CURL_ERR="$CACHE_DIR/rs-tags-curl.err"
+RS_AUTH=()
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+  RS_AUTH=(-H "Authorization: Bearer $GITHUB_TOKEN")
+fi
+if RS_RESPONSE=$(curl -sSfL --retry 2 -H "Accept: application/vnd.github+json" \
+  ${RS_AUTH[@]+"${RS_AUTH[@]}"} \
+  "https://api.github.com/repos/$CONVEX_RS_REPO/tags?per_page=1" 2>"$RS_CURL_ERR"); then
+  RS_PARSED=$(printf '%s\n' "$RS_RESPONSE" |
+    perl -ne 'if (/"name":\s*"convex-rs\/([^"]+)"/) { print "$1\n"; exit }' || true)
+  if [ -n "$RS_PARSED" ]; then
+    RS_LATEST="$RS_PARSED"
+  else
+    FETCH_ERROR="unexpected response from the GitHub tags API for $CONVEX_RS_REPO (no convex-rs/* tag found)"
+  fi
+else
+  FETCH_ERROR="GitHub tags API request for $CONVEX_RS_REPO failed: $(tr '\n' ' ' <"$RS_CURL_ERR" | sed 's/[[:space:]]*$//')"
+fi
+rm -f "$RS_CURL_ERR"
+if [ -n "$FETCH_ERROR" ]; then
+  if [ "$STRUCTURE_ONLY" -eq 1 ]; then
+    echo -e "${YELLOW}⚠️  Could not check the Rust SDK version ($FETCH_ERROR); ignored with --structure-only${NC}"
+    FETCH_ERROR=""
+  else
+    echo -e "${RED}❌ Could not check the Rust SDK version: $FETCH_ERROR${NC}"
+  fi
+fi
 echo "  Latest Rust SDK: $RS_LATEST"
 
 OUR_RS_VERSION="unknown"
@@ -405,7 +438,11 @@ if [ -f "$CACHE_DIR/tracked-rs-version.txt" ]; then
 fi
 echo "  Previous run:    $OUR_RS_VERSION"
 
-if [ "$RS_LATEST" != "$OUR_RS_VERSION" ] && [ "$OUR_RS_VERSION" != "unknown" ] && [ "$RS_LATEST" != "unknown" ]; then
+if [ "$RS_LATEST" = "unknown" ]; then
+  echo -e "${YELLOW}⚠️  Rust SDK version not checked${NC}"
+elif [ "$OUR_RS_VERSION" = "unknown" ]; then
+  echo "  (no previous run to compare against; recorded $RS_LATEST)"
+elif [ "$RS_LATEST" != "$OUR_RS_VERSION" ]; then
   echo -e "${YELLOW}⚠️  Rust SDK updated: $OUR_RS_VERSION → $RS_LATEST${NC}"
   if [ "$STRUCTURE_ONLY" -eq 0 ]; then
     DRIFT=1
@@ -427,6 +464,11 @@ echo ""
   echo "- Pinned convex (convexSyncApiVersion): $PINNED_VERSION"
   echo "- Latest convex: $JS_LATEST"
   echo "- Rust SDK: $RS_LATEST"
+  if [ -n "$FETCH_ERROR" ]; then
+    echo ""
+    echo "## ❌ Error"
+    echo "$FETCH_ERROR"
+  fi
   echo ""
   if [ -n "$CHANGED_FILES" ]; then
     echo "## Client sources changed since convex@$PINNED_VERSION"
@@ -463,7 +505,13 @@ echo ""
 echo "📄 Report saved: $REPORT_FILE"
 
 # --- Exit ---
-if [ $DRIFT -eq 0 ]; then
+if [ -n "$FETCH_ERROR" ]; then
+  if [ $DRIFT -ne 0 ]; then
+    echo -e "\n${RED}🔴 Protocol drift detected! Review changes above.${NC}"
+  fi
+  echo -e "\n${RED}❌ Protocol watch incomplete: $FETCH_ERROR${NC}"
+  exit 2
+elif [ $DRIFT -eq 0 ]; then
   echo -e "\n${GREEN}✅ No protocol drift detected.${NC}"
   exit 0
 else

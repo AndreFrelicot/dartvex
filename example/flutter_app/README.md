@@ -95,7 +95,7 @@ provider implementation differs.
 Uses `DemoAuthProvider`, a deterministic in-memory provider with no external
 service. Public screens and Better Auth work without this provider, but Demo
 mode requires a JWT generated locally from the example backend key material.
-The backend example requires Node.js 22 or newer and uses npm with the
+The backend example requires Node.js 22.9 or newer and uses npm with the
 committed `package-lock.json` (run `npm install` in `../convex-backend`
 first).
 
@@ -152,7 +152,7 @@ needed — credentials are stored in the Convex database.
 
 1. Install the Better Auth component in the Convex backend:
 
-   The backend example requires Node.js 22 or newer and uses npm with the
+   The backend example requires Node.js 22.9 or newer and uses npm with the
    committed `package-lock.json`, which already pins `better-auth` 1.7.17 and
    `@convex-dev/better-auth` ^0.13.0:
 

@@ -10,7 +10,7 @@
     "token": "node ./scripts/generate-demo-jwt.mjs"
   },
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.9.0"
   },
   "dependencies": {
     "@convex-dev/better-auth": "^0.13.0",

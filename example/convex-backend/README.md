@@ -23,8 +23,9 @@ these patterns in your own app.
 
 ## Install
 
-Requires Node.js 22 or newer (Convex 1.49 dropped Node.js 20). Use npm; this
-example commits an npm `package-lock.json`.
+Requires Node.js 22.9 or newer (Convex 1.49 dropped Node.js 20, and the pinned
+`packageManager`, npm 11.5.2, needs Node.js >=22.9.0 on the 22 line). Use npm;
+this example commits an npm `package-lock.json`.
 
 Pinned auth stack: `better-auth` 1.7.17 (exact) with
 `@convex-dev/better-auth` ^0.13.0 and `convex` ^1.49.0. Component 0.13

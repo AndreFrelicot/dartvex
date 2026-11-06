@@ -23,8 +23,12 @@ Thanks for your interest in contributing! Here's how to get started.
    Flutter packages), and `dart test` (`flutter test`)
 5. Open a pull request
 
-`flutter pub get` and `flutter analyze` may rewrite `analysis_options.yaml`;
-do not commit those rewrites.
+`flutter pub get` and `flutter analyze` may rewrite `analysis_options.yaml`.
+The `analyzer.exclude` entries Flutter 3.47+ adds (`build/**` and the platform
+directories) are already committed, so a current Flutter leaves these files
+unchanged; do not commit any other rewrite (reformatting, reordering, or
+entries an older or newer Flutter adds or removes) unless the change is
+intentional and called out in the pull request.
 
 ## Development
 
