@@ -87,6 +87,48 @@ void main() {
   });
 
   group('TypedConvexPaginatedQuery', () {
+    test('forwards hasPendingWrites', () async {
+      final delegate = _FakePaginatedQuery(
+        const ConvexPaginatedResult(
+          results: <dynamic>[1],
+          status: ConvexPaginationStatus.canLoadMore,
+          isDone: false,
+          hasPendingWrites: true,
+        ),
+      );
+      final query = TypedConvexPaginatedQuery<int>(
+        delegate,
+        (raw) => raw as int,
+      );
+      expect(query.current.hasPendingWrites, isTrue);
+
+      final received = <TypedConvexPaginatedResult<int>>[];
+      final subscription = query.stream.listen(received.add);
+      delegate.emit(
+        const ConvexPaginatedResult(
+          results: <dynamic>[1, 2],
+          status: ConvexPaginationStatus.canLoadMore,
+          isDone: false,
+        ),
+      );
+      // An undecodable snapshot still reports its pending writes.
+      delegate.emit(
+        const ConvexPaginatedResult(
+          results: <dynamic>['oops'],
+          status: ConvexPaginationStatus.canLoadMore,
+          isDone: false,
+          hasPendingWrites: true,
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(received.map((result) => result.hasPendingWrites), <bool>[
+        false,
+        true,
+      ]);
+      expect(received.last.status, ConvexPaginationStatus.error);
+      await subscription.cancel();
+    });
+
     test('exposes one stable stream and caches decoded snapshots', () async {
       var decodes = 0;
       final delegate = _FakePaginatedQuery(

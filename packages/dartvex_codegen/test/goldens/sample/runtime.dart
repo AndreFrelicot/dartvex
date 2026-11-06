@@ -162,12 +162,16 @@ class TypedConvexPaginatedResult<T> {
     required this.status,
     required this.isDone,
     this.error,
+    this.hasPendingWrites = false,
   });
 
   final List<T> items;
   final ConvexPaginationStatus status;
   final bool isDone;
   final Object? error;
+
+  /// Whether optimistic writes currently affect any loaded page in [items].
+  final bool hasPendingWrites;
 }
 
 class TypedConvexPaginatedQuery<T> {
@@ -213,6 +217,7 @@ class TypedConvexPaginatedQuery<T> {
         status: result.status,
         isDone: result.isDone,
         error: result.error,
+        hasPendingWrites: result.hasPendingWrites,
       );
     } catch (error) {
       // An item the bindings cannot decode is reported like a failed page
@@ -222,6 +227,7 @@ class TypedConvexPaginatedQuery<T> {
         status: ConvexPaginationStatus.error,
         isDone: result.isDone,
         error: error,
+        hasPendingWrites: result.hasPendingWrites,
       );
     }
     _lastRaw = result;

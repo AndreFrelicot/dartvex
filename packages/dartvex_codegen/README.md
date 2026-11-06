@@ -159,8 +159,10 @@ subscription.stream.listen((result) {
 A server value the bindings cannot decode (for example an enum value added
 after generation) arrives as a `TypedQueryError` rather than a stream error.
 Paginated queries return a `TypedConvexPaginatedQuery<T>` (`stream`,
-`current`, `items`, `loadMore()`, `cancel()`), which reports undecodable
-items as `ConvexPaginationStatus.error`. Optional arguments use
+`current`, `items`, `loadMore()`, `cancel()`). Its
+`TypedConvexPaginatedResult<T>` snapshots carry `items`, `status`, `isDone`,
+`error` and `hasPendingWrites` (optimistic writes affect a loaded page), and
+undecodable items are reported as `ConvexPaginationStatus.error`. Optional arguments use
 `Optional<T>` from `runtime.dart`, so an omitted argument and an explicit
 `null` stay distinct.
 

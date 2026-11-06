@@ -250,6 +250,61 @@ void _watcherTests({required bool recursive}) {
     });
   });
 
+  test(
+    'watches source directories reached through a symlink, without cycles',
+    () async {
+      final root = await Directory.systemTemp.createTemp('dartvex_watch_');
+      addTearDown(() => root.delete(recursive: true));
+      project = Directory(path.join(root.path, 'backend'));
+      await createProject(project.path);
+      final shared = Directory(path.join(root.path, 'shared', 'models'));
+      await shared.create(recursive: true);
+      // convex/shared -> ../../shared (outside the project), plus a link back
+      // to the project root and one to the output directory.
+      await Link(
+        path.join(project.path, 'convex', 'shared'),
+      ).create(path.join(root.path, 'shared'));
+      await Link(
+        path.join(project.path, 'convex', 'loop'),
+      ).create(project.path);
+      final output = path.join(project.path, 'lib', 'convex_api');
+      await Link(path.join(project.path, 'convex', 'gen')).create(output);
+      await startWatcher(configFor(project.path, output));
+
+      if (!recursive) {
+        final watched =
+            watcher.watchedDirectories
+                .map(
+                  (directory) => path.relative(directory, from: project.path),
+                )
+                .toList();
+        expect(
+          watched,
+          containsAll(<String>[
+            path.join('convex', 'shared'),
+            path.join('convex', 'shared', 'models'),
+          ]),
+        );
+        expect(watched, isNot(contains(path.join('convex', 'loop'))));
+        expect(watched, isNot(contains(path.join('convex', 'gen'))));
+        expect(watched.toSet(), hasLength(watched.length));
+      }
+
+      await File(path.join(shared.path, 'user.ts')).writeAsString('export {};');
+      expect(await nextTrigger(), isTrue);
+
+      // A link created after startup is followed as well.
+      final later = await Directory(path.join(root.path, 'later')).create();
+      await Link(path.join(project.path, 'convex', 'later')).create(later.path);
+      expect(await nextTrigger(), isTrue);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      await File(path.join(later.path, 'post.ts')).writeAsString('');
+      expect(await nextTrigger(), isTrue);
+    },
+    testOn: '!windows',
+    skip: recursive ? 'a recursive watch does not descend into links' : false,
+  );
+
   test('ignores the output directory when a symlink spells the project '
       'differently', () async {
     final root = await Directory.systemTemp.createTemp('dartvex_watch_');

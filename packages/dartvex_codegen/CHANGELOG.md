@@ -38,6 +38,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Generated `TypedConvexPaginatedResult` exposes `hasPendingWrites`.
+- Watch mode on Linux watches source directories reached through symlinks,
+  without following cycles.
 - `--watch --project` now sees changes in nested directories on Linux, where
   `Directory.watch(recursive: true)` only watches the top level; every
   directory except `node_modules`, `.git`, `.dart_tool`, and the output

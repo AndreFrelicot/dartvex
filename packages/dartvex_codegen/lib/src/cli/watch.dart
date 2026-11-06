@@ -197,6 +197,11 @@ class SourceWatcher {
   final StreamController<void> _controller = StreamController<void>();
   final Map<String, StreamSubscription<FileSystemEvent>> _subscriptions =
       <String, StreamSubscription<FileSystemEvent>>{};
+
+  /// Canonical (symlink-resolved) path of every per-directory watch, keyed
+  /// like [_subscriptions], so a directory reached both directly and through
+  /// a symlink (or a symlink cycle) is watched only once.
+  final Map<String, String> _canonicalWatched = <String, String>{};
   final List<Timer> _pollTimers = <Timer>[];
   Timer? _debounce;
   bool _closed = false;
@@ -218,6 +223,7 @@ class SourceWatcher {
     _cancelPolls();
     final subscriptions = _subscriptions.values.toList();
     _subscriptions.clear();
+    _canonicalWatched.clear();
     for (final subscription in subscriptions) {
       await subscription.cancel();
     }
@@ -270,6 +276,21 @@ class SourceWatcher {
         (!isRoot && _filter.ignores(normalized))) {
       return;
     }
+    // A directory reached through a symlink is watched under the spelling it
+    // was found by (event paths follow it), but only once per real directory:
+    // the canonical path catches a second route to it and symlink cycles, and
+    // also an ignored or output directory that the link renames.
+    final canonical = canonicalizeWatchPath(normalized);
+    if (_canonicalWatched.containsValue(canonical) ||
+        (!isRoot && _filter.ignores(canonical))) {
+      return;
+    }
+    _canonicalWatched[normalized] = canonical;
+    void unwatch() {
+      _subscriptions.remove(normalized)?.cancel();
+      _canonicalWatched.remove(normalized);
+    }
+
     // Arm the watch before listing children, so a subdirectory created in
     // between is reported by this watch rather than missed.
     _subscriptions[normalized] = Directory(normalized).watch().listen(
@@ -277,12 +298,14 @@ class SourceWatcher {
         if (_isIgnored(event)) {
           return;
         }
-        if (event.isDirectory) {
-          if (event.type == FileSystemEvent.create) {
-            _watchTree(event.path);
-          } else if (event is FileSystemMoveEvent &&
-              event.destination != null) {
-            _watchTree(event.destination!);
+        if (event.type == FileSystemEvent.create &&
+            (event.isDirectory || _isLinkToDirectory(event.path))) {
+          _watchTree(event.path);
+        } else if (event is FileSystemMoveEvent) {
+          final destination = event.destination;
+          if (destination != null &&
+              (event.isDirectory || _isLinkToDirectory(destination))) {
+            _watchTree(destination);
           }
         }
         _onChange();
@@ -290,13 +313,14 @@ class SourceWatcher {
       onError: (Object error, StackTrace stackTrace) {
         if (!isRoot && !Directory(normalized).existsSync()) {
           // The directory vanished before (or while) it was watched.
-          _subscriptions.remove(normalized)?.cancel();
+          unwatch();
           return;
         }
         _fail(error, stackTrace);
       },
       onDone: () {
         _subscriptions.remove(normalized);
+        _canonicalWatched.remove(normalized);
         if (isRoot) {
           _rootClosed(normalized);
         }
@@ -309,9 +333,20 @@ class SourceWatcher {
       return;
     }
     for (final child in children) {
-      if (child is Directory) {
+      if (child is Directory || _isLinkToDirectory(child.path)) {
         _watchTree(child.path);
       }
+    }
+  }
+
+  /// Whether [entityPath] is a symlink that (eventually) resolves to a
+  /// directory. Dangling links and links to files are not.
+  static bool _isLinkToDirectory(String entityPath) {
+    try {
+      return FileSystemEntity.isLinkSync(entityPath) &&
+          FileSystemEntity.isDirectorySync(entityPath);
+    } on FileSystemException {
+      return false;
     }
   }
 

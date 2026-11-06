@@ -119,7 +119,8 @@ sub.stream.listen((result) {
 Optional arguments are `Optional<T>` (`Optional.of(v)` / omitted), so
 "absent" and "explicit null" stay distinct. Paginated queries return a
 `TypedConvexPaginatedQuery<T>` (`stream`, `current`, `items`, `loadMore`,
-`cancel`).
+`cancel`); its `TypedConvexPaginatedResult<T>` snapshots carry `items`,
+`status`, `isDone`, `error` and `hasPendingWrites`.
 
 ### Which clients ConvexApi accepts
 
