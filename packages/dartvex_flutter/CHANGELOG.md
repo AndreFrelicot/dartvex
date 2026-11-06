@@ -7,15 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- Asset cache errors redact signed URLs, including redirected URLs and HTTP
-  exception messages, before reaching image error builders or crash reporters.
-- The Apple HTTP wrapper waits for asynchronous response cancellation before
-  closing the native client, preventing a leaked session after an abort.
-- Shared cache lifecycle tests use an in-memory filesystem so asynchronous
-  directory creation cannot race temporary directory cleanup in CI.
-
 ## [0.3.0] - 2026-11-05
 
 ### Added
@@ -128,6 +119,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Asset cache errors redact signed URLs, including redirected URLs and HTTP
+  exception messages, before reaching image error builders or crash reporters.
+- The Apple HTTP wrapper waits for asynchronous response cancellation before
+  closing the native client, preventing a leaked session after an abort.
 - `ConvexFileDownloader` errors (`HttpException`, `ClientException`,
   `RequestAbortedException`) carry the URL reduced to its origin. File URLs
   are bearer capabilities (a storage URL's path, a presigned URL's query),
