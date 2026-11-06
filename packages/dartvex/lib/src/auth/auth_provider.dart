@@ -26,6 +26,16 @@
 ///   fails with such an error signs the client out instead of keeping the
 ///   previous session, which is presumed dead too. Any other error is treated
 ///   as transient (or a cancelled login) and keeps a healthy previous session.
+/// * Every [login] / [loginFromCache] the app starts through the wrapper is a
+///   new user intent that supersedes the ones started before it, while a
+///   **background refresh** of the installed session is not. A provider that
+///   keeps a single current session can tell the two apart: the wrapper runs
+///   its refresh calls to [loginFromCache] in a zone where
+///   `Zone.current[#dartvex.authTokenRefresh]` is `true`. A refresh must not
+///   cancel a [login] that is still pending (that login replaces the
+///   refreshed session when it succeeds), whereas an explicit restore started
+///   after that login must win over it, so the provider and the wrapper end
+///   up on the same session.
 abstract class AuthProvider<TUser> {
   /// Creates an auth provider.
   AuthProvider();
@@ -59,3 +69,9 @@ abstract class AuthProvider<TUser> {
 /// that case, for example
 /// `class SessionGone extends StateError implements AuthSessionEndedError`.
 abstract interface class AuthSessionEndedError {}
+
+/// Zone value key that is `true` while `ConvexClientWithAuth` calls
+/// [AuthProvider.loginFromCache] as its token refresh hook (see the
+/// [AuthProvider] contract). Not exported: providers read it through the
+/// equal symbol literal `#dartvex.authTokenRefresh`.
+const Symbol authTokenRefreshZoneKey = #dartvex.authTokenRefresh;

@@ -526,12 +526,14 @@ void main() {
           email: 'alice@example.com',
         ),
       );
-      expect(provider.cachedSession?.sessionToken, 'ses_magic');
+      // Staged only: it becomes the current session once restored.
+      expect(provider.cachedSession, isNull);
 
       final session = await provider.loginFromCache(onIdToken: (_) {});
 
       expect(sessionRequests, ['Bearer ses_magic']);
       expect(session.token, 'jwt_adopted');
+      expect(provider.cachedSession?.sessionToken, 'ses_magic');
     });
 
     group('session races', () {
@@ -541,8 +543,10 @@ void main() {
         MockClient mock,
         Map<String, Completer<void>> getSessionGates,
         Map<String, Completer<void>> signInGates,
+        Map<String, int> getSessionStatus,
         List<String> signedOut,
       }) gatedMock({Completer<void>? signOutGate}) {
+        final getSessionStatus = <String, int>{};
         final getSessionGates = <String, Completer<void>>{};
         final signInGates = <String, Completer<void>>{};
         final signedOut = <String>[];
@@ -565,6 +569,10 @@ void main() {
           }
           if (path == '/api/auth/get-session') {
             await getSessionGates[bearer]?.future;
+            final status = getSessionStatus[bearer];
+            if (status != null) {
+              return http.Response('{"message":"unavailable"}', status);
+            }
             return http.Response(
               jsonEncode({
                 'session': {'id': 's', 'userId': bearer},
@@ -587,9 +595,149 @@ void main() {
           mock: mock,
           getSessionGates: getSessionGates,
           signInGates: signInGates,
+          getSessionStatus: getSessionStatus,
           signedOut: signedOut,
         );
       }
+
+      /// Runs [body] the way `ConvexClientWithAuth` runs its background token
+      /// refreshes.
+      Future<T> asRefresh<T>(Future<T> Function() body) => runZoned(
+            body,
+            zoneValues: const <Object?, Object?>{
+              #dartvex.authTokenRefresh: true,
+            },
+          );
+
+      Future<ConvexBetterAuthProvider> signedInAsA(MockClient mock) async {
+        final provider = ConvexBetterAuthProvider(
+          client: BetterAuthClient(baseUrl: baseUrl, httpClient: mock),
+        );
+        provider
+          ..email = 'a'
+          ..password = 'pw';
+        await provider.login(onIdToken: (_) {});
+        return provider;
+      }
+
+      test('an explicit loginFromCache supersedes a pending login', () async {
+        final setup = gatedMock();
+        final provider = await signedInAsA(setup.mock);
+        final gate = setup.signInGates['b'] = Completer<void>();
+        provider
+          ..email = 'b'
+          ..password = 'pw';
+        String? reported;
+        final login = provider.login(onIdToken: (token) => reported = token);
+
+        final restored = await provider.loginFromCache(onIdToken: (_) {});
+        expect(restored.sessionToken, 'ses_a');
+        gate.complete();
+
+        await expectLater(
+          login,
+          throwsA(isA<BetterAuthException>()
+              .having((e) => e.message, 'message', contains('superseded'))),
+        );
+        expect(reported, isNull);
+        expect(provider.cachedSession?.sessionToken, 'ses_a');
+        final refreshed = await asRefresh(
+          () => provider.loginFromCache(onIdToken: (_) {}),
+        );
+        expect(refreshed.token, 'jwt_ses_a');
+        await pumpEventQueue();
+        expect(setup.signedOut, ['ses_b']);
+      });
+
+      test('a background refresh does not supersede a pending login', () async {
+        final setup = gatedMock();
+        final provider = await signedInAsA(setup.mock);
+        final gate = setup.signInGates['b'] = Completer<void>();
+        provider
+          ..email = 'b'
+          ..password = 'pw';
+        final login = provider.login(onIdToken: (_) {});
+
+        final refreshed = await asRefresh(
+          () => provider.loginFromCache(onIdToken: (_) {}),
+        );
+        expect(refreshed.token, 'jwt_ses_a');
+        gate.complete();
+
+        final session = await login;
+        expect(session.sessionToken, 'ses_b');
+        expect(provider.cachedSession, same(session));
+        await pumpEventQueue();
+        expect(setup.signedOut, isEmpty);
+      });
+
+      test(
+          'adoptSession stages the session until an explicit loginFromCache '
+          'restores it', () async {
+        final setup = gatedMock();
+        final provider = await signedInAsA(setup.mock);
+        const adopted = BetterAuthSession(
+          token: 'jwt_magic',
+          sessionToken: 'ses_b',
+          userId: 'b',
+          email: 'b',
+        );
+        provider.adoptSession(adopted);
+        expect(provider.cachedSession?.sessionToken, 'ses_a');
+
+        setup.getSessionStatus['ses_b'] = 503;
+        await expectLater(
+          provider.loginFromCache(onIdToken: (_) {}),
+          throwsA(isA<BetterAuthException>()
+              .having((e) => e.retryable, 'retryable', isTrue)),
+        );
+        expect(provider.cachedSession?.sessionToken, 'ses_a');
+        // Background refreshes keep serving the current session.
+        final refreshed = await asRefresh(
+          () => provider.loginFromCache(onIdToken: (_) {}),
+        );
+        expect(refreshed.token, 'jwt_ses_a');
+        expect(provider.cachedSession?.sessionToken, 'ses_a');
+
+        // The adopted session stays staged for a retry.
+        setup.getSessionStatus.remove('ses_b');
+        final restored = await provider.loginFromCache(onIdToken: (_) {});
+        expect(restored.sessionToken, 'ses_b');
+        expect(provider.cachedSession?.sessionToken, 'ses_b');
+        final next = await asRefresh(
+          () => provider.loginFromCache(onIdToken: (_) {}),
+        );
+        expect(next.token, 'jwt_ses_b');
+      });
+
+      test(
+          'a rejected adopted session keeps the current session and is not '
+          'a session-ended error', () async {
+        final setup = gatedMock();
+        final provider = await signedInAsA(setup.mock);
+        provider.adoptSession(
+          const BetterAuthSession(
+            token: 'jwt_magic',
+            sessionToken: 'ses_b',
+            userId: 'b',
+            email: 'b',
+          ),
+        );
+        setup.getSessionStatus['ses_b'] = 401;
+
+        await expectLater(
+          provider.loginFromCache(onIdToken: (_) {}),
+          throwsA(isA<BetterAuthException>().having(
+            (e) => e is AuthSessionEndedError,
+            'is AuthSessionEndedError',
+            isFalse,
+          )),
+        );
+        expect(provider.cachedSession?.sessionToken, 'ses_a');
+        // The dead staged session was dropped: the next restore is A's.
+        final restored = await provider.loginFromCache(onIdToken: (_) {});
+        expect(restored.sessionToken, 'ses_a');
+      });
 
       test('a stale loginFromCache cannot overwrite a newer login', () async {
         final setup = gatedMock();

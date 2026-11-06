@@ -288,6 +288,25 @@ void main() {
     expect(errors, isEmpty);
   });
 
+  test(
+      'background refreshes call loginFromCache marked as refreshes; an '
+      'explicit loginFromCache is not marked', () async {
+    final h = _Harness();
+    addTearDown(h.close);
+    await h.auth.login();
+    // The client refetches a token through loginFromCache once the server
+    // confirmed the login token.
+    await _until(
+      () => h.provider.cacheCallIsRefresh.isNotEmpty,
+      reason: 'post-confirmation refresh',
+    );
+    expect(h.provider.cacheCallIsRefresh, everyElement(isTrue));
+
+    final refreshes = h.provider.cacheCallIsRefresh.length;
+    await h.auth.loginFromCache();
+    expect(h.provider.cacheCallIsRefresh[refreshes], isFalse);
+  });
+
   test('ConvexClient exposes isAuthenticated and currentAuthToken (F141, F146)',
       () async {
     final h = _Harness();
@@ -380,6 +399,10 @@ class _ScriptedProvider implements AuthProvider<_Session> {
   /// `onIdToken` callbacks passed to [loginFromCache].
   final List<void Function(String? token)> cacheCallbacks =
       <void Function(String? token)>[];
+
+  /// For every [loginFromCache] call, whether it ran as a background token
+  /// refresh (`Zone.current[#dartvex.authTokenRefresh] == true`).
+  final List<bool> cacheCallIsRefresh = <bool>[];
   int _logins = 0;
   _Session? nextLogin;
   _Session? _session;
@@ -420,6 +443,7 @@ class _ScriptedProvider implements AuthProvider<_Session> {
   Future<_Session> loginFromCache({
     required void Function(String? token) onIdToken,
   }) async {
+    cacheCallIsRefresh.add(Zone.current[#dartvex.authTokenRefresh] == true);
     final error = cacheError;
     if (error != null) {
       cacheError = null;

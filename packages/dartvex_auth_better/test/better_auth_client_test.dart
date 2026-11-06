@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:dartvex/dartvex.dart' show AuthSessionEndedError;
 import 'package:dartvex_auth_better/dartvex_auth_better.dart';
 import 'package:dartvex_auth_better/src/better_auth_client.dart'
     show followMagicLinkRedirects;
@@ -554,15 +555,19 @@ void main() {
       );
     });
 
-    test('throws typed exception when Convex token body has no string token',
-        () async {
-      for (final tokenBody in <String>[
-        jsonEncode(<String, dynamic>{}),
-        jsonEncode({'token': null}),
-        jsonEncode({'token': 42}),
-        jsonEncode('OK'),
-        '',
-      ]) {
+    test(
+        'a Convex token body without a string token is a plain exception and '
+        'signs the new session out', () async {
+      for (final entry in <String, bool>{
+        jsonEncode(<String, dynamic>{}): false,
+        jsonEncode({'token': null}): false,
+        jsonEncode({'token': ''}): false,
+        jsonEncode({'token': 42}): false,
+        jsonEncode('OK'): false,
+        '': true,
+        '<html>proxy</html>': true,
+      }.entries) {
+        final signedOut = <String?>[];
         final mock = MockClient((request) async {
           if (request.url.path == '/api/auth/sign-in/email') {
             return http.Response(
@@ -572,7 +577,11 @@ void main() {
             );
           }
           if (request.url.path == '/api/auth/convex/token') {
-            return http.Response(tokenBody, 200);
+            return http.Response(entry.key, 200);
+          }
+          if (request.url.path == '/api/auth/sign-out') {
+            signedOut.add(request.headers['Authorization']);
+            return http.Response('{}', 200);
           }
           return http.Response('Not found', 404);
         });
@@ -580,8 +589,112 @@ void main() {
 
         await expectLater(
           () => client.signIn(email: 'a@b.com', password: 'p'),
-          throwsA(isA<BetterAuthSessionExpiredException>()),
+          throwsA(
+            isA<BetterAuthException>()
+                .having((e) => e is AuthSessionEndedError,
+                    'is AuthSessionEndedError', isFalse)
+                .having((e) => e.retryable, 'retryable', entry.value),
+          ),
+          reason: entry.key,
         );
+        await pumpEventQueue();
+        expect(signedOut, ['Bearer tok'], reason: entry.key);
+      }
+    });
+
+    test(
+        'getSession: only a 401/403 from the Convex token endpoint ends the '
+        'session', () async {
+      for (final entry in <String, http.Response Function()>{
+        '200 {}': () => http.Response('{}', 200),
+        '200 HTML': () => http.Response('<html>proxy</html>', 200),
+        '200 empty token': () => http.Response('{"token":""}', 200),
+        '200 not JSON': () => http.Response('not json', 200),
+        '401': () => http.Response('', 401),
+        '403': () => http.Response('', 403),
+      }.entries) {
+        final mock = MockClient((request) async {
+          if (request.url.path == '/api/auth/get-session') {
+            return http.Response(
+              jsonEncode({
+                'session': {'id': 's1', 'userId': 'u1'},
+                'user': {'id': 'u1', 'email': 'a@b.com'},
+              }),
+              200,
+            );
+          }
+          if (request.url.path == '/api/auth/convex/token') {
+            return entry.value();
+          }
+          return http.Response('Not found', 404);
+        });
+        final client = BetterAuthClient(baseUrl: baseUrl, httpClient: mock);
+        final ends = entry.key.startsWith('40');
+
+        await expectLater(
+          () => client.getSession(sessionToken: 'ses'),
+          throwsA(
+            ends
+                ? isA<BetterAuthSessionExpiredException>()
+                : isA<BetterAuthException>().having(
+                    (e) => e is AuthSessionEndedError,
+                    'is AuthSessionEndedError',
+                    isFalse,
+                  ),
+          ),
+          reason: entry.key,
+        );
+      }
+    });
+
+    test(
+        'a Convex token rejection for a newly created session is not a '
+        'session-ended error and signs that session out', () async {
+      for (final status in <int>[401, 403]) {
+        for (final operation
+            in <String, Future<BetterAuthSession> Function(BetterAuthClient)>{
+          'signIn': (c) => c.signIn(email: 'a@b.com', password: 'p'),
+          'signUp': (c) => c.signUp(name: 'A', email: 'a@b.com', password: 'p'),
+          'verifyMagicLink': (c) => c.verifyMagicLink(token: 'magic'),
+        }.entries) {
+          final signedOut = <String?>[];
+          final mock = MockClient((request) async {
+            final path = request.url.path;
+            if (path == '/api/auth/sign-in/email' ||
+                path == '/api/auth/sign-up/email' ||
+                path == '/api/auth/magic-link/verify') {
+              return http.Response(
+                jsonEncode(_defaultSignInResponse),
+                200,
+                headers: {'set-auth-token': 'ses_new'},
+              );
+            }
+            if (path == '/api/auth/convex/token') {
+              return http.Response('', status);
+            }
+            if (path == '/api/auth/sign-out') {
+              signedOut.add(request.headers['Authorization']);
+              return http.Response('{}', 200);
+            }
+            return http.Response('Not found', 404);
+          });
+          final client = BetterAuthClient(baseUrl: baseUrl, httpClient: mock);
+          final reason = '${operation.key} $status';
+
+          await expectLater(
+            () => operation.value(client),
+            throwsA(
+              isA<BetterAuthException>()
+                  .having((e) => e is AuthSessionEndedError,
+                      'is AuthSessionEndedError', isFalse)
+                  .having((e) => e.retryable, 'retryable', isFalse)
+                  .having((e) => e.message, 'message', contains('rejected')),
+            ),
+            reason: reason,
+          );
+          await pumpEventQueue();
+          expect(signedOut, ['Bearer ses_new'], reason: reason);
+        }
       }
     });
 
@@ -1066,6 +1179,43 @@ void main() {
       );
     });
 
+    test(
+        'transport exceptions the HTTP client does not wrap (TLS handshake) '
+        'become retryable BetterAuthExceptions without leaking query tokens',
+        () async {
+      final mock = MockClient((request) async {
+        throw _FakeHandshakeException(
+          'Handshake error in client: CERTIFICATE_VERIFY_FAILED (${request.url})',
+        );
+      });
+      final client = BetterAuthClient(baseUrl: baseUrl, httpClient: mock);
+
+      await expectLater(
+        () => client.getSession(sessionToken: 'ses'),
+        throwsA(
+          isA<BetterAuthException>()
+              .having((error) => error.retryable, 'retryable', isTrue)
+              .having(
+                (error) => error.message,
+                'message',
+                contains('CERTIFICATE_VERIFY_FAILED'),
+              ),
+        ),
+      );
+      await expectLater(
+        () => client.verifyMagicLink(token: 'secret-magic-token'),
+        throwsA(
+          isA<BetterAuthException>()
+              .having((error) => error.retryable, 'retryable', isTrue)
+              .having(
+                (error) => error.toString(),
+                'toString',
+                isNot(contains('secret-magic-token')),
+              ),
+        ),
+      );
+    });
+
     test('network error messages do not leak query tokens', () async {
       final mock = MockClient((request) async {
         throw http.ClientException('Connection reset', request.url);
@@ -1438,6 +1588,17 @@ const _defaultSignInResponse = {
 /// Mimics package:http's BrowserClient: a request that does not follow
 /// redirects fails (fetch `redirect: 'error'`), and a followed redirect
 /// reports the final URL.
+/// Stands in for dart:io's `HandshakeException`, which `IOClient` does not
+/// wrap in a `ClientException`.
+class _FakeHandshakeException implements Exception {
+  _FakeHandshakeException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'HandshakeException: $message';
+}
+
 class _BrowserLikeClient extends http.BaseClient {
   _BrowserLikeClient(this.finalUrl);
 

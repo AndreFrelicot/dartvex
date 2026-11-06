@@ -274,7 +274,15 @@ await authClient.sendMagicLink(email: 'user@example.com');
 final session = await authClient.verifyMagicLink(token: magicLinkToken);
 provider.adoptSession(session);
 await authedClient.loginFromCache();
+await secureStorage.write(key: 'session_token', value: session.sessionToken);
 ```
+
+`adoptSession()` only stages the session: it becomes the provider's session
+(and `provider.cachedSession`) once that `loginFromCache()` succeeds. If the
+restore fails, the session that was signed in before stays current in both
+the provider and the Convex client; after a transient failure, calling
+`loginFromCache()` again retries the staged session. A `login()`, `logout()`
+or another `adoptSession()` discards it.
 
 Custom schemes used for `redirectTo` or `callbackURL` must be listed in the
 server's `trustedOrigins`. An invalid, expired or reused magic-link token
@@ -296,10 +304,15 @@ All adapter errors are `BetterAuthException`s (a `ConvexException`):
 - `code` — Better Auth's error code when the server sent one
   (`INVALID_EMAIL_OR_PASSWORD`, `EMAIL_NOT_VERIFIED`, `USER_ALREADY_EXISTS`,
   ...); `data` holds the decoded error body.
-- `retryable` — `true` for 5xx and 429 responses, network errors and
-  timeouts.
+- `retryable` — `true` for 5xx and 429 responses, network errors
+  (including TLS handshake failures), timeouts, and a Convex token response
+  that is not JSON (typically a proxy or captive portal page).
 - `BetterAuthSessionExpiredException` — the Convex token endpoint rejected
-  the session.
+  an existing session with 401/403 (an `AuthSessionEndedError`). A 200
+  token response without a token is a plain `BetterAuthException`, and so
+  is a rejected token for a session that `signIn`, `signUp` or
+  `verifyMagicLink` just created; that new session is signed out and the
+  session the app already had is kept.
 - `BetterAuthEmailVerificationRequiredException` — sign-up created the
   account without a session (`token: null`); exposes `user`.
 - `BetterAuthTwoFactorRequiredException` — sign-in needs a second factor
@@ -328,13 +341,18 @@ Implements `AuthProvider<BetterAuthSession>` from `dartvex`:
 - `ConvexBetterAuthProvider({client, initialSessionToken?})` — pass a
   persisted session token to restore the session across app restarts
 - `login()` — sign in with stored email/password
-- `loginFromCache()` — restore session from the cached (or seeded) token
+- `loginFromCache()` — restore session from the cached (or seeded) token, or
+  finish an `adoptSession()`. Through `authedClient.loginFromCache()` this
+  is a new user intent: a `login()` still in flight is superseded (it throws
+  and its new server session is signed out). The wrapper's background token
+  refreshes also call it, but never supersede a pending `login()`.
 - `logout()` — sign out and clear the cached session and credentials
 - `signUp({name, email, password, onIdToken?})` — create an account and cache
   its session; call `authedClient.login()` afterwards to authenticate the
   Convex client (it reuses the sign-up session)
-- `adoptSession(session)` — use a session obtained elsewhere (for example
-  from `verifyMagicLink`); follow with `authedClient.loginFromCache()`
+- `adoptSession(session)` — stage a session obtained elsewhere (for example
+  from `verifyMagicLink`); follow with `authedClient.loginFromCache()`, which
+  makes it current once restored
 
 ### BetterAuthSession
 

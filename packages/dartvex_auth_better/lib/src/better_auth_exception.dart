@@ -47,7 +47,14 @@ class BetterAuthException extends ConvexException {
 
 /// Exception thrown when a persisted Better Auth session is no longer valid.
 ///
-/// Thrown when the Convex token endpoint rejects the session (HTTP 401/403).
+/// Thrown when the Convex token endpoint rejects an existing session (HTTP
+/// 401/403), for example while `getSession` or
+/// `ConvexBetterAuthProvider.loginFromCache()` refreshes it. A token response
+/// without a usable token is a plain [BetterAuthException] instead, and so is
+/// a rejection of a session that sign-in, sign-up or magic-link verification
+/// has just created (that new session is signed out), since neither proves
+/// that the session the app already had has ended.
+///
 /// Note that `ConvexBetterAuthProvider.loginFromCache()` reports a session
 /// that Better Auth's `get-session` no longer recognizes as a [StateError]
 /// (`'Better Auth session expired.'`), not as this exception.

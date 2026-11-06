@@ -27,8 +27,9 @@ bool followMagicLinkRedirects = const bool.fromEnvironment(
 /// endpoints directly — no third-party Flutter SDK needed.
 ///
 /// Every request is bearer-token based and never relies on cookies.
-/// Transport failures (offline, DNS failure, reset connection) and request
-/// timeouts are reported as a [BetterAuthException] with `retryable: true`.
+/// Transport failures (offline, DNS failure, reset connection, TLS handshake
+/// failure) and request timeouts are reported as a [BetterAuthException]
+/// with `retryable: true`.
 class BetterAuthClient {
   /// Creates a [BetterAuthClient] for the given Convex [baseUrl].
   ///
@@ -297,7 +298,11 @@ class BetterAuthClient {
     final sessionToken = _extractSessionToken(response, body);
 
     final cookieJwt = _extractCookieValue(response, _convexJwtCookieName);
-    final convexJwt = cookieJwt ?? await _fetchConvexToken(sessionToken);
+    final convexJwt = cookieJwt ??
+        await _fetchConvexTokenForNewSession(
+          '/magic-link/verify',
+          sessionToken,
+        );
     return BetterAuthSession(
       token: convexJwt,
       sessionToken: sessionToken,
@@ -405,7 +410,8 @@ class BetterAuthClient {
     // Recent @convex-dev/better-auth versions expire this cookie on sign-in
     // and sign-up instead; an expired cookie counts as absent.
     final cookieJwt = _extractCookieValue(response, _convexJwtCookieName);
-    final convexJwt = cookieJwt ?? await _fetchConvexToken(sessionToken);
+    final convexJwt =
+        cookieJwt ?? await _fetchConvexTokenForNewSession(route, sessionToken);
 
     return BetterAuthSession(
       token: convexJwt,
@@ -417,7 +423,15 @@ class BetterAuthClient {
   }
 
   /// Fetches the Convex JWT from the Better Auth `/convex/token` endpoint.
+  ///
+  /// Only a 401/403 answer means Better Auth no longer accepts the session
+  /// ([BetterAuthSessionExpiredException]). A 200 answer without a usable
+  /// token says nothing about the session (a proxy, captive portal or
+  /// misconfigured server answered) and throws a plain [BetterAuthException]:
+  /// retryable when the body is not JSON at all, not retryable when it is
+  /// JSON without a non-empty string `token`.
   Future<String> _fetchConvexToken(String sessionToken) async {
+    final path = '$basePath/convex/token';
     final reply = await _send('GET', _endpoint('/convex/token'), headers: {
       'Authorization': 'Bearer $sessionToken',
     });
@@ -436,18 +450,52 @@ class BetterAuthClient {
     try {
       decoded = jsonDecode(response.body);
     } on FormatException {
-      throw const BetterAuthSessionExpiredException(
-        'Convex token endpoint returned no token.',
+      throw BetterAuthException(
+        'Convex token response from $path was not valid JSON '
+        '(status ${response.statusCode}).',
+        retryable: true,
       );
     }
 
     final token = decoded is Map<String, dynamic> ? decoded['token'] : null;
     if (token is! String || token.isEmpty) {
-      throw const BetterAuthSessionExpiredException(
-        'Convex token endpoint returned no token.',
+      throw BetterAuthException(
+        'Convex token response from $path had no token '
+        '(status ${response.statusCode}).',
       );
     }
     return token;
+  }
+
+  /// Fetches the Convex JWT of a session that was just created ([route] is
+  /// the endpoint that created it).
+  ///
+  /// On failure the new session is signed out in the background, since the
+  /// caller never receives it, and a rejection by the token endpoint is
+  /// reported as a plain, non-retryable [BetterAuthException]: it concerns
+  /// the new session only, so it must not read as the end of the session
+  /// the app already had ([BetterAuthSessionExpiredException] is an
+  /// `AuthSessionEndedError`).
+  Future<String> _fetchConvexTokenForNewSession(
+    String route,
+    String sessionToken,
+  ) async {
+    try {
+      return await _fetchConvexToken(sessionToken);
+    } catch (error) {
+      signOut(sessionToken: sessionToken).then<void>(
+        (_) {},
+        onError: (Object _) {},
+      );
+      if (error is BetterAuthSessionExpiredException) {
+        throw BetterAuthException(
+          'Better Auth created a session ($basePath$route) but the Convex '
+          'token endpoint rejected it: ${error.message} The new session is '
+          'being signed out.',
+        );
+      }
+      rethrow;
+    }
   }
 
   Uri _endpoint(String route) => Uri.parse('$siteUrl$basePath$route');
@@ -506,10 +554,37 @@ class BetterAuthClient {
       );
     } on http.ClientException catch (error) {
       throw BetterAuthException(
-        'Better Auth request to $path failed: ${error.message}',
+        'Better Auth request to $path failed: '
+        '${_redactQuery(error.message, uri)}',
+        retryable: true,
+      );
+    } on BetterAuthException {
+      rethrow;
+    } on Exception catch (error) {
+      // Transport failures the platform client does not wrap in a
+      // ClientException, such as a TLS handshake failure on the IO client
+      // (it only maps socket and HTTP errors).
+      throw BetterAuthException(
+        'Better Auth request to $path failed: '
+        '${_redactQuery(error.toString(), uri)}',
         retryable: true,
       );
     }
+  }
+
+  /// Removes the query parameter values of [uri] (which can carry tokens)
+  /// from a transport error [message].
+  static String _redactQuery(String message, Uri uri) {
+    var redacted = message;
+    for (final value in uri.queryParameters.values) {
+      if (value.isEmpty) {
+        continue;
+      }
+      redacted = redacted
+          .replaceAll(value, '<redacted>')
+          .replaceAll(Uri.encodeQueryComponent(value), '<redacted>');
+    }
+    return redacted;
   }
 
   static bool _isRetryableStatus(int statusCode) =>

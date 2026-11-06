@@ -211,6 +211,11 @@ await authedClient.loginFromCache();
 await secureStorage.write(key: 'session_token', value: session.sessionToken);
 ```
 
+`adoptSession` only stages the session: it becomes the provider's session
+(and `provider.cachedSession`) when that `loginFromCache()` succeeds. If the
+restore fails, the previous session stays current on both sides; after a
+transient failure the next `loginFromCache()` retries the staged session.
+
 Do not shortcut with `convexClient.setAuth(session.token)`: it skips the
 refresh. Custom schemes used for `redirectTo`/`callbackURL` must be listed in
 the server's `trustedOrigins`. A bad or reused token throws a
@@ -223,9 +228,14 @@ Every adapter error is a `BetterAuthException` (a `ConvexException`):
 
 - `code` — Better Auth's error code (`INVALID_EMAIL_OR_PASSWORD`,
   `USER_ALREADY_EXISTS`, ...); `data` holds the decoded error body.
-- `retryable` — `true` for 5xx/429, network errors and timeouts.
+- `retryable` — `true` for 5xx/429, network and TLS errors, timeouts, and a
+  non-JSON (proxy/HTML) Convex token response.
 - `BetterAuthSessionExpiredException` — the Convex token endpoint rejected
-  the session (delete the stored token).
+  an existing session with 401/403 (delete the stored token). A token
+  response without a token, or a rejected token for a session that
+  sign-in/sign-up/magic-link just created (that new session is signed out),
+  is a plain `BetterAuthException`: the session the app already had is
+  kept.
 - `BetterAuthEmailVerificationRequiredException` — sign-up created the
   account without a session; exposes `user`.
 - `BetterAuthTwoFactorRequiredException` — sign-in needs a second factor;
@@ -283,7 +293,12 @@ When the session no longer exists, throw an error implementing
 `AuthSessionEndedError` (for example
 `class SessionGone extends StateError implements AuthSessionEndedError`):
 a failed re-login or restore then signs out instead of keeping the previous
-session as authenticated. Any other error is treated as transient.
+session as authenticated. Any other error is treated as transient. Each
+`authedClient.login()`/`loginFromCache()` is a new user intent that
+supersedes the pending ones; the wrapper's background refresh calls run with
+`Zone.current[#dartvex.authTokenRefresh] == true`, so a provider that keeps
+one current session can let an explicit restore win over a pending login
+while a refresh leaves that login alone.
 
 ## C. Deployment-issued JWTs (`ctx.auth.signJwt`)
 

@@ -171,6 +171,11 @@ class ConvexClientWithAuth<TUser>
 
   /// Restores authentication from cached provider state.
   ///
+  /// Like [login], this is a new user intent: it supersedes a [login] or
+  /// [loginFromCache] that is still pending. (Background token refreshes also
+  /// call the provider's `loginFromCache`, but marked as refreshes, so they
+  /// never supersede a pending login; see [AuthProvider].)
+  ///
   /// If the user is already signed in and the restore fails (for example on a
   /// network blip), the existing session is kept and [currentAuthState]
   /// returns to its previous [AuthAuthenticated] value; the error is still
@@ -301,8 +306,12 @@ class ConvexClientWithAuth<TUser>
       _authBridge = bridge;
       _pendingAuthenticatedState = authenticatedState;
       final authHandle = await _client.setAuthWithRefresh(
-        fetchToken: ({required bool forceRefresh}) =>
-            bridge.fetchToken(forceRefresh: forceRefresh),
+        // Marked as a background refresh, so a provider does not mistake it
+        // for an explicit loginFromCache() that supersedes a pending login.
+        fetchToken: ({required bool forceRefresh}) => runZoned(
+          () => bridge.fetchToken(forceRefresh: forceRefresh),
+          zoneValues: const <Object?, Object?>{authTokenRefreshZoneKey: true},
+        ),
         // Bound to this flow: a superseded flow's auth failure must not
         // cancel a newer login (or log out the session that replaced it).
         onAuthChange: (isAuthenticated) =>

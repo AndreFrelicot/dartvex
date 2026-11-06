@@ -11,6 +11,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- An explicit `loginFromCache()` started while a `login()` is pending now
+  wins in the provider as in the Convex client: the late sign-in throws and
+  its server session is signed out, instead of replacing the restored
+  session and sending its JWT on the next refresh. Background refreshes
+  never cancel a pending login.
+- `adoptSession()` stages the session; it becomes current (and
+  `cachedSession`) only when the following `loginFromCache()` succeeds, so a
+  failed restore keeps the previous session on both sides.
+- Only a 401/403 from the Convex token endpoint is a
+  `BetterAuthSessionExpiredException`. A 200 answer without a usable token is
+  a plain `BetterAuthException`, and a token failure for a session that
+  sign-in, sign-up or magic-link verification just created never ends the
+  previous session (the new session is signed out).
+- Transport errors the HTTP client does not wrap (such as TLS handshake
+  failures) throw a retryable `BetterAuthException`.
 - `loginFromCache()`'s `'No cached Better Auth session.'` and
   `'Better Auth session expired.'` errors (still `StateError`s) and
   `BetterAuthSessionExpiredException` implement `AuthSessionEndedError`: a

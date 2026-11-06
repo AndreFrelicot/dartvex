@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dartvex/dartvex.dart';
 
 import 'better_auth_client.dart';
@@ -24,10 +26,13 @@ import 'better_auth_session.dart';
 ///   with them signs the Convex client out instead of keeping the previous
 ///   (same, now dead) session as authenticated.
 /// - A [BetterAuthSessionExpiredException] means the Convex token endpoint
-///   rejected the session; also "sign in again".
-/// - Any other [BetterAuthException] with `retryable: true` (5xx, 429,
-///   network errors, timeouts) is transient: keep the persisted token and
-///   retry later.
+///   rejected the session (HTTP 401/403); also "sign in again".
+/// - Any other [BetterAuthException] leaves the persisted token valid: with
+///   `retryable: true` (5xx, 429, network and TLS errors, timeouts, a non-JSON
+///   token response) retry later. This includes a [login] whose new session
+///   the Convex token endpoint rejected, and a rejected [adoptSession]
+///   session while another session is current: the session the app already
+///   had is kept.
 class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
   /// Creates a [ConvexBetterAuthProvider] using the given [client].
   ///
@@ -47,8 +52,13 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
   String? _pendingLoginEmail;
   String? _pendingLoginPassword;
 
-  /// Incremented whenever the provider's session is replaced or cleared
-  /// (login, signUp, adoptSession, logout, definitive expiry). Async
+  /// Session handed over by [adoptSession], made current by the next
+  /// successful explicit [loginFromCache].
+  BetterAuthSession? _adoptedSession;
+
+  /// Incremented whenever the provider's session is replaced, staged or
+  /// cleared, and by every user-started call (login, signUp, adoptSession,
+  /// an explicit loginFromCache, logout, definitive expiry). Async
   /// operations capture it before awaiting and drop their result when it
   /// changed, so a stale response can never resurrect an older session.
   int _sessionEpoch = 0;
@@ -76,8 +86,10 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
   /// instead of signing in a second time.
   ///
   /// Throws a [BetterAuthException] when a newer [login], [signUp],
-  /// [adoptSession] or [logout] started while the sign-in request was in
-  /// flight; the superseded server session is signed out in the background.
+  /// [adoptSession], explicit [loginFromCache] or [logout] started while the
+  /// sign-in request was in flight; the superseded server session is signed
+  /// out in the background. (A background token refresh does not supersede
+  /// it.)
   Future<BetterAuthSession> login({
     required void Function(String? token) onIdToken,
   }) async {
@@ -98,6 +110,7 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
       return pendingSession;
     }
     final epoch = ++_sessionEpoch;
+    _adoptedSession = null;
     final session = await client.signIn(email: e, password: p);
     _commitIfCurrent(epoch, session, operation: 'login()');
     onIdToken(session.token);
@@ -106,22 +119,55 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
 
   @override
 
-  /// Restores a Better Auth session from the cached session token.
+  /// Restores a Better Auth session from the cached session token, or
+  /// finishes an [adoptSession].
+  ///
+  /// An explicit call (for example `authedClient.loginFromCache()`) is a new
+  /// user intent: a [login], [signUp] or [loginFromCache] still in flight is
+  /// superseded by it, so a sign-in that completes later can no longer replace
+  /// the restored session. A background token refresh of the wrapper (a call
+  /// made in a zone where `Zone.current[#dartvex.authTokenRefresh]` is
+  /// `true`) only refreshes the current session and supersedes nothing.
+  ///
+  /// When a session staged by [adoptSession] is waiting, an explicit call
+  /// restores that session and makes it current only once Better Auth
+  /// confirmed it; a background refresh keeps refreshing the current session.
   ///
   /// Throws a [StateError] when there is no cached token or when Better Auth
   /// reports the session as expired (the dead token is cleared). Throws a
+  /// [BetterAuthException] when Better Auth rejects a staged adopted session
+  /// while another session is current (that session is kept). Throws a
   /// retryable [BetterAuthException] when the session was replaced or
   /// cleared while the refresh was in flight; the stale result is discarded.
   Future<BetterAuthSession> loginFromCache({
     required void Function(String? token) onIdToken,
   }) async {
-    final sessionToken = _sessionToken;
+    final isRefresh = Zone.current[#dartvex.authTokenRefresh] == true;
+    final adopted = isRefresh ? null : _adoptedSession;
+    final sessionToken = adopted?.sessionToken ?? _sessionToken;
     if (sessionToken == null) {
       throw _SessionEndedStateError('No cached Better Auth session.');
     }
-    final epoch = _sessionEpoch;
-    final refreshed = await client.getSession(sessionToken: sessionToken);
-    if (epoch != _sessionEpoch || _sessionToken != sessionToken) {
+    final epoch = isRefresh ? _sessionEpoch : ++_sessionEpoch;
+    // Whether this restores a staged session while another one is current:
+    // that session must survive the staged one being rejected.
+    final current = _sessionToken;
+    final replacesCurrent =
+        adopted != null && current != null && current != sessionToken;
+    BetterAuthSession? refreshed;
+    BetterAuthSessionExpiredException? rejection;
+    try {
+      refreshed = await client.getSession(sessionToken: sessionToken);
+    } on BetterAuthSessionExpiredException catch (error) {
+      if (!replacesCurrent) {
+        rethrow;
+      }
+      rejection = error;
+    }
+    // Every change of the current or staged session bumps the epoch, except
+    // a background refresh, which only re-commits the same session token.
+    if (epoch != _sessionEpoch ||
+        (adopted == null && _sessionToken != sessionToken)) {
       throw const BetterAuthException(
         'Better Auth session changed while it was being restored; the stale '
         'result was discarded.',
@@ -129,8 +175,21 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
       );
     }
     if (refreshed == null) {
+      if (replacesCurrent) {
+        // Only the staged session is gone; it never was the current one, so
+        // this is not an AuthSessionEndedError.
+        _adoptedSession = null;
+        throw BetterAuthException(
+          'The adopted Better Auth session is no longer valid'
+          '${rejection == null ? '' : ' (${rejection.message})'}; the current '
+          'session was kept.',
+        );
+      }
       _clearSession();
       throw _SessionEndedStateError('Better Auth session expired.');
+    }
+    if (adopted != null) {
+      _adoptedSession = null;
     }
     _clearPendingLoginSession();
     _cachedSession = refreshed;
@@ -173,6 +232,7 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
     void Function(String? token)? onIdToken,
   }) async {
     final epoch = ++_sessionEpoch;
+    _adoptedSession = null;
     final session = await client.signUp(
       name: name,
       email: email,
@@ -188,21 +248,36 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
     return session;
   }
 
-  /// Makes [session] the provider's current session, for sessions obtained
-  /// outside [login] (for example from [BetterAuthClient.verifyMagicLink]).
+  /// Stages [session], obtained outside [login] (for example from
+  /// [BetterAuthClient.verifyMagicLink]), to become the provider's session.
   ///
   /// Then call `authedClient.loginFromCache()` to authenticate the Convex
-  /// client with it. Persist `session.sessionToken` as usual.
+  /// client with it: the staged session becomes the current one (and
+  /// [cachedSession]) only when that restore succeeds. Until then — and if
+  /// the restore fails — the current session is kept, so background token
+  /// refreshes keep serving it. After a transient failure the session stays
+  /// staged and the next `loginFromCache()` retries it; a [login], [signUp],
+  /// [logout] or another [adoptSession] discards it. Persist
+  /// `session.sessionToken` once the restore succeeded.
+  ///
+  /// Like [login], this supersedes a [login], [signUp] or explicit
+  /// [loginFromCache] that is still in flight.
   void adoptSession(BetterAuthSession session) {
-    _commitSession(session);
+    _sessionEpoch++;
+    _clearPendingLoginSession();
+    _adoptedSession = session;
   }
 
   /// The currently cached session, if any.
+  ///
+  /// A session staged by [adoptSession] appears here only once
+  /// `loginFromCache()` restored it.
   BetterAuthSession? get cachedSession => _cachedSession;
 
   void _commitSession(BetterAuthSession session) {
     _sessionEpoch++;
     _clearPendingLoginSession();
+    _adoptedSession = null;
     _cachedSession = session;
     _sessionToken = session.sessionToken;
   }
@@ -219,8 +294,8 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
           .signOut(sessionToken: session.sessionToken)
           .then<void>((_) {}, onError: (Object _) {});
       throw BetterAuthException(
-        'Better Auth $operation was superseded by a newer login, signUp or '
-        'logout; its session was discarded.',
+        'Better Auth $operation was superseded by a newer login, signUp, '
+        'adoptSession, loginFromCache or logout; its session was discarded.',
       );
     }
     _commitSession(session);
@@ -230,6 +305,7 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
     _sessionEpoch++;
     _cachedSession = null;
     _sessionToken = null;
+    _adoptedSession = null;
     _clearPendingLoginSession();
   }
 
