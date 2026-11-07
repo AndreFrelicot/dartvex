@@ -145,10 +145,11 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
     final isRefresh = Zone.current[#dartvex.authTokenRefresh] == true;
     final adopted = isRefresh ? null : _adoptedSession;
     final sessionToken = adopted?.sessionToken ?? _sessionToken;
+    // An explicit restore supersedes older work even when there is no token.
+    final epoch = isRefresh ? _sessionEpoch : ++_sessionEpoch;
     if (sessionToken == null) {
       throw _SessionEndedStateError('No cached Better Auth session.');
     }
-    final epoch = isRefresh ? _sessionEpoch : ++_sessionEpoch;
     // Whether this restores a staged session while another one is current:
     // that session must survive the staged one being rejected.
     final current = _sessionToken;

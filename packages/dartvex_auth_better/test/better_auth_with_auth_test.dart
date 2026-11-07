@@ -285,6 +285,40 @@ void main() {
       expect(server.requests, contains('POST /api/auth/sign-out ses_b'));
     });
 
+    test('an explicit restore without a cached session cancels a pending login',
+        () async {
+      final gate = server.signInGates['b'] = Completer<void>();
+      provider
+        ..email = 'b'
+        ..password = 'pw';
+      final loginB = authed.login();
+      final loginRejected = expectLater(
+        loginB,
+        throwsA(isA<BetterAuthException>().having(
+          (e) => e.message,
+          'message',
+          contains('superseded'),
+        )),
+      );
+      await _waitUntil(
+        () => server.requests.contains('POST /api/auth/sign-in/email b'),
+        reason: 'sign-in of b in flight',
+      );
+
+      await expectLater(authed.loginFromCache(), throwsStateError);
+      gate.complete();
+      await loginRejected;
+
+      expect(provider.cachedSession, isNull);
+      expect(authed.currentAuthState,
+          isA<AuthUnauthenticated<BetterAuthSession>>());
+      expect(authed.currentAuthToken, isNull);
+      await _waitUntil(
+        () => server.requests.contains('POST /api/auth/sign-out ses_b'),
+        reason: 'superseded server session revoked',
+      );
+    });
+
     test('a background refresh does not cancel a pending login', () async {
       await signInA();
       final gate = server.signInGates['b'] = Completer<void>();

@@ -15,7 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wins in the provider as in the Convex client: the late sign-in throws and
   its server session is signed out, instead of replacing the restored
   session and sending its JWT on the next refresh. Background refreshes
-  never cancel a pending login.
+  never cancel a pending login. An explicit restore with no cached session
+  also supersedes a pending login and revokes its late server session.
 - `adoptSession()` stages the session; it becomes current (and
   `cachedSession`) only when the following `loginFromCache()` succeeds, so a
   failed restore keeps the previous session on both sides.
