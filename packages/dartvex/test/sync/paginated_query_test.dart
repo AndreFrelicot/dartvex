@@ -874,6 +874,34 @@ void main() {
       query.cancel();
     });
 
+    // https://github.com/AndreFrelicot/dartvex/issues/6
+    test('loadMore emits once when the next page is already known locally', () {
+      final source = _FakeSource();
+      final query = ConvexPaginatedQuery(
+        subscribe: source.subscribe,
+        readInitialResult: (_, args) =>
+            (args['paginationOpts'] as Map<String, dynamic>)['cursor'] == 'C'
+                ? _pageSuccess(<dynamic>['c', 'd'],
+                    continueCursor: 'D', isDone: false)
+                : null,
+        name: 'messages:list',
+        args: const <String, dynamic>{},
+        pageSize: 2,
+      );
+      source.pages[0]
+          .emitPage(<dynamic>['a', 'b'], continueCursor: 'C', isDone: false);
+      final emissions = <ConvexPaginatedResult>[];
+      query.stream.listen(emissions.add);
+
+      expect(query.loadMore(), isTrue);
+
+      expect(emissions, hasLength(1));
+      expect(emissions.single.results, <dynamic>['a', 'b', 'c', 'd']);
+      expect(emissions.single.status, ConvexPaginationStatus.canLoadMore);
+
+      query.cancel();
+    });
+
     test('no-op page events do not emit a new snapshot', () {
       final source = _FakeSource();
       final query = ConvexPaginatedQuery(
