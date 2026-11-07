@@ -3,39 +3,51 @@ import 'package:dartvex_auth_better/dartvex_auth_better.dart';
 
 /// Example: Sign in with Better Auth and connect to Convex.
 Future<void> main() async {
-  // 1. Create the Better Auth HTTP client
+  // 1. Create the Better Auth HTTP client. For local or self-hosted
+  //    deployments, also pass `siteUrl` (the deployment's CONVEX_SITE_URL).
   final authClient = BetterAuthClient(
     baseUrl: 'https://your-deployment.convex.cloud',
   );
 
-  // 2. Create the Convex auth provider
+  // 2. Create the Convex auth provider and the authenticated client wrapper.
   final authProvider = ConvexBetterAuthProvider(client: authClient);
-
-  // 3. Set credentials
-  authProvider.email = 'user@example.com';
-  authProvider.password = 'secret123';
-
-  // 4. Create an authenticated Convex client wrapper
   final convex = ConvexClient(
     'https://your-deployment.convex.cloud',
   );
-  final authedConvex = convex.withAuth(authProvider);
+  // disposeClient: true lets the wrapper close the ConvexClient (its socket
+  // and reconnect timers) on dispose, so the program can exit.
+  final authedConvex = convex.withAuth(authProvider, disposeClient: true);
 
-  // 5. Sign in — the provider calls Better Auth's HTTP endpoints and the
+  // 3. Sign in — the provider calls Better Auth's HTTP endpoints and the
   //    wrapper forwards the Convex JWT to the WebSocket client.
-  final session = await authedConvex.login();
+  authProvider.email = 'user@example.com';
+  authProvider.password = 'secret123';
+  try {
+    final session = await authedConvex.login();
+    print('Signed in as ${session.email} (${session.userId})');
+  } on BetterAuthException catch (error) {
+    // error.code is Better Auth's error code, e.g. INVALID_EMAIL_OR_PASSWORD.
+    print('Sign-in failed: ${error.code ?? error.message}');
+  }
 
-  print('Signed in as ${session.email} (${session.userId})');
+  // 4. Sign out through the wrapper so the Convex client is signed out too.
+  await authedConvex.logout();
 
-  // 6. Sign up a new user directly through the HTTP client when needed.
-  final newSession = await authClient.signUp(
-    name: 'Alice',
-    email: 'alice@example.com',
-    password: 'password123',
-  );
-  await authClient.signOut(sessionToken: newSession.sessionToken);
+  // 5. Sign up a new user, then authenticate the Convex client. login()
+  //    reuses the session created by signUp().
+  try {
+    await authProvider.signUp(
+      name: 'Alice',
+      email: 'alice@example.com',
+      password: 'password123',
+    );
+    await authedConvex.login();
+  } on BetterAuthEmailVerificationRequiredException {
+    print('Check your inbox to verify your email, then sign in.');
+  }
 
-  // 7. Clean up
+  // 6. Clean up: sign out, then release the HTTP client and the Convex
+  //    client (closed by the wrapper because of disposeClient: true).
   await authedConvex.logout();
   authClient.close();
   authedConvex.dispose();

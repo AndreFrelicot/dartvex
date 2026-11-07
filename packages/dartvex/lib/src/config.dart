@@ -2,6 +2,24 @@ import 'logging.dart';
 import 'transport/connectivity.dart';
 import 'transport/ws_interface.dart';
 
+/// The Dartvex package version, kept in sync with `pubspec.yaml`.
+///
+/// Sent as part of the default [ConvexClientConfig.clientId]
+/// (`dartvex-<version>`) so Convex can tell Dartvex releases apart. A test
+/// asserts it matches the pubspec version, so bump both together.
+const String dartvexVersion = '0.3.0';
+
+/// The Convex sync protocol version Dartvex reports by default.
+///
+/// Used as the default [ConvexClientConfig.apiVersion], which becomes the
+/// `/api/<version>/sync` path segment of the WebSocket URL — the only client
+/// version signal browsers (and Dart web) can send, since they cannot set
+/// headers. It is pinned to the official Convex JavaScript client release whose
+/// sync protocol (`protocol.ts`, `web_socket_manager.ts`) and value encoding
+/// Dartvex implements, and is bumped deliberately as part of a release after
+/// diffing those sources against the targeted Convex release.
+const String convexSyncApiVersion = '1.49.0';
+
 /// Factory for creating a platform-specific [WebSocketAdapter].
 typedef WebSocketAdapterFactory = WebSocketAdapter Function(String clientId);
 
@@ -9,10 +27,11 @@ typedef WebSocketAdapterFactory = WebSocketAdapter Function(String clientId);
 class ConvexClientConfig {
   /// Creates a client configuration.
   const ConvexClientConfig({
-    this.clientId = 'dart-dartvex',
-    this.apiVersion = '1.41.0',
+    this.clientId = 'dartvex-$dartvexVersion',
+    this.apiVersion = convexSyncApiVersion,
     this.authTokenType = 'User',
     this.refreshTokenLeewaySeconds = 10,
+    this.initialAuthTokenReuse = false,
     this.inactivityTimeout = const Duration(seconds: 60),
     this.connectTimeout = const Duration(seconds: 10),
     this.queryTimeout,
@@ -23,6 +42,7 @@ class ConvexClientConfig {
     this.maxBackoff = const Duration(seconds: 16),
     this.backoffJitter = 0.5,
     this.connectImmediately = true,
+    this.expectAuth = false,
     this.adapterFactory,
     this.connectivitySignal,
     this.logLevel = DartvexLogLevel.off,
@@ -30,27 +50,61 @@ class ConvexClientConfig {
   });
 
   /// Client identifier sent when establishing the WebSocket connection.
+  ///
+  /// Native adapters send it as the `Convex-Client` header. The default,
+  /// `dartvex-<version>` (see [dartvexVersion]), follows the
+  /// `<client>-<semver>` format the Convex backend parses, so deployments can
+  /// tell Dartvex releases apart.
   final String clientId;
 
   /// Convex sync API version path segment.
   ///
-  /// The default tracks the current Convex JavaScript client version because
-  /// Convex uses this path segment for client compatibility checks, especially
-  /// for browser WebSockets where custom headers cannot be sent.
+  /// Defaults to [convexSyncApiVersion]: the official Convex JavaScript client
+  /// release whose sync protocol Dartvex implements. Convex uses this path
+  /// segment for client compatibility checks, especially for browser
+  /// WebSockets where custom headers cannot be sent. Override it only to pin a
+  /// different protocol level.
   final String apiVersion;
 
   /// Token type used when authenticating with Convex.
+  ///
+  /// Must be `'User'` (the default, for end-user JWTs) or `'Admin'` (a
+  /// deployment admin key, only for trusted server-side processes); validated
+  /// by `ConvexClient`.
   final String authTokenType;
 
   /// How many seconds before a token's expiration the client proactively
   /// refreshes it.
   ///
-  /// The refresh is scheduled from the token's own lifetime (`exp - iat`) minus
-  /// this leeway rather than from the device wall clock, so scheduling stays
-  /// correct even when the device clock is skewed. If the leeway is larger than
-  /// the token's lifetime the client refreshes immediately. Defaults to `10`,
-  /// matching the official Convex client.
+  /// For a token freshly issued by `setAuthWithRefresh`'s fetcher, the refresh
+  /// is scheduled from the token's own lifetime (`exp - iat`) minus this
+  /// leeway, without consulting any clock, so a skewed device clock cannot
+  /// shift it. For a token of unknown age (one pushed with
+  /// `updateAuthToken`, or a cached token reused under
+  /// [initialAuthTokenReuse]) the delay is also bounded by the token's
+  /// remaining lifetime, judged against the server's clock (estimated from
+  /// the server-reported clock skew) when available. If the leeway is larger
+  /// than the token's lifetime the client refreshes immediately. Defaults to
+  /// `10`, matching the official Convex client.
   final int refreshTokenLeewaySeconds;
+
+  /// Experimental: reuse the cached token from `setAuthWithRefresh` once the
+  /// server confirms it, instead of immediately fetching a fresh one.
+  ///
+  /// By default (`false`), when the server accepts the token returned by
+  /// `fetchToken(forceRefresh: false)`, the client immediately fetches a fresh
+  /// token and sends it, which makes the server re-run every authenticated
+  /// query. With this enabled, the confirmed cached token is kept and its
+  /// refresh is scheduled [refreshTokenLeewaySeconds] before it expires, with
+  /// the remaining lifetime judged against the server's clock (the server's
+  /// clock-skew estimate from the confirming transition). When the server
+  /// reports no skew, the client falls back to the immediate refetch.
+  /// Mirrors the official client's experimental `initialAuthTokenReuse`
+  /// option.
+  ///
+  /// Useful with `ConvexClientWithAuth`, whose cached token was issued moments
+  /// earlier by `login()` / `loginFromCache()`.
+  final bool initialAuthTokenReuse;
 
   /// Maximum time to wait for server messages before reconnecting.
   ///
@@ -114,6 +168,20 @@ class ConvexClientConfig {
   /// Set to `false` to defer opening the socket until the first backend
   /// operation, auth update, or explicit reconnect request.
   final bool connectImmediately;
+
+  /// Whether the client should hold every query, mutation, and action until
+  /// auth has been decided.
+  ///
+  /// When `true`, the client starts paused: the socket may open, but nothing is
+  /// sent until the first `setAuth`, `setAuthWithRefresh`, or `clearAuth` call
+  /// releases the pause. Queries subscribed during app start (for example
+  /// while `ConvexClientWithAuth.loginFromCache` waits on the auth provider)
+  /// then run authenticated from the start instead of running unauthenticated
+  /// first and again once the token lands. A client created with
+  /// `expectAuth: true` that never receives an auth call stays paused — call
+  /// `clearAuth()` when the user is known to be signed out. Defaults to
+  /// `false`. Mirrors the official client's `expectAuth` option.
+  final bool expectAuth;
 
   /// Optional override for the platform WebSocket adapter.
   ///

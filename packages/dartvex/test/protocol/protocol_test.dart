@@ -278,6 +278,114 @@ void main() {
       );
     });
 
+    group('per-value decode isolation', () {
+      const unknownTag = <String, dynamic>{r'$futureTag': 'x'};
+
+      test(
+          'undecodable QueryUpdated value becomes a QueryFailed for that query',
+          () {
+        final decoded = ServerMessage.fromJson(<String, dynamic>{
+          'type': 'Transition',
+          'startVersion': const StateVersion.initial().toJson(),
+          'endVersion':
+              StateVersion(querySet: 1, identity: 0, ts: encodeTs(1)).toJson(),
+          'modifications': <dynamic>[
+            <String, dynamic>{
+              'type': 'QueryUpdated',
+              'queryId': 0,
+              'value': unknownTag,
+              'logLines': const <String>['l'],
+              'journal': 'j',
+            },
+            <String, dynamic>{
+              'type': 'QueryUpdated',
+              'queryId': 1,
+              'value': 'fine',
+              'logLines': const <String>[],
+            },
+          ],
+        }) as Transition;
+
+        final failed = decoded.modifications[0];
+        expect(failed, isA<QueryFailed>());
+        failed as QueryFailed;
+        expect(failed.queryId, 0);
+        expect(failed.errorMessage, contains('could not decode'));
+        expect(failed.logLines, const <String>['l']);
+        expect(failed.journal, 'j');
+        expect(failed.hasJournal, isTrue);
+        expect(
+          decoded.modifications[1],
+          isA<QueryUpdated>().having((m) => m.value, 'value', 'fine'),
+        );
+      });
+
+      test('undecodable QueryFailed errorData is dropped, not fatal', () {
+        final decoded = StateModification.fromJson(const <String, dynamic>{
+          'type': 'QueryFailed',
+          'queryId': 3,
+          'errorMessage': 'boom',
+          'errorData': unknownTag,
+        });
+        expect(
+          decoded,
+          isA<QueryFailed>()
+              .having((m) => m.errorMessage, 'errorMessage', 'boom')
+              .having((m) => m.errorData, 'errorData', isNull),
+        );
+      });
+
+      test('undecodable mutation and action results are flagged per response',
+          () {
+        final mutation = ServerMessage.fromJson(<String, dynamic>{
+          'type': 'MutationResponse',
+          'requestId': 1,
+          'success': true,
+          'result': unknownTag,
+          'ts': encodeTs(5),
+          'logLines': const <String>[],
+        }) as MutationResponse;
+        expect(mutation.success, isTrue);
+        expect(mutation.ts, encodeTs(5));
+        expect(mutation.result, isNull);
+        expect(mutation.resultDecodeError, contains('mutation result'));
+
+        final action = ServerMessage.fromJson(const <String, dynamic>{
+          'type': 'ActionResponse',
+          'requestId': 2,
+          'success': true,
+          'result': unknownTag,
+          'logLines': <String>[],
+        }) as ActionResponse;
+        expect(action.resultDecodeError, contains('action result'));
+
+        final failedWithBadData =
+            ServerMessage.fromJson(const <String, dynamic>{
+          'type': 'ActionResponse',
+          'requestId': 3,
+          'success': false,
+          'result': 'boom',
+          'errorData': unknownTag,
+          'logLines': <String>[],
+        }) as ActionResponse;
+        expect(failedWithBadData.errorMessage, 'boom');
+        expect(failedWithBadData.errorData, isNull);
+        expect(failedWithBadData.resultDecodeError, isNull);
+      });
+
+      test('envelope errors still throw', () {
+        expect(
+          () => ServerMessage.fromJson(const <String, dynamic>{
+            'type': 'MutationResponse',
+            'requestId': 'not-an-int',
+            'success': false,
+            'result': 'boom',
+          }),
+          throwsA(anything),
+        );
+      });
+    });
+
     test('MutationResponse failure ignores a server timestamp on the wire', () {
       // The official runtime parser never validates a failure's `ts`; dartvex
       // matches it by dropping any unexpected value instead of rejecting.

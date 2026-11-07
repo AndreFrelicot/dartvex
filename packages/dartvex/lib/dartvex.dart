@@ -2,8 +2,8 @@
 library;
 
 export 'src/auth/auth_client.dart' show ConvexAuthClient;
-export 'src/auth/auth_manager.dart' show AuthHandle;
-export 'src/auth/auth_provider.dart' show AuthProvider;
+export 'src/auth/auth_manager.dart' show AuthHandle, AuthTokenFetcher;
+export 'src/auth/auth_provider.dart' show AuthProvider, AuthSessionEndedError;
 export 'src/auth/auth_state.dart'
     show AuthAuthenticated, AuthLoading, AuthState, AuthUnauthenticated;
 export 'src/auth/client_with_auth.dart' show ConvexClientWithAuth;
@@ -18,7 +18,12 @@ export 'src/client.dart'
         QueryLoading,
         QueryResult,
         QuerySuccess;
-export 'src/config.dart' show ConvexClientConfig, WebSocketAdapterFactory;
+export 'src/config.dart'
+    show
+        ConvexClientConfig,
+        WebSocketAdapterFactory,
+        convexSyncApiVersion,
+        dartvexVersion;
 export 'src/exceptions.dart'
     show ConvexException, ConvexFileUploadException, ConvexStorageException;
 export 'src/logging.dart' show DartvexLogEvent, DartvexLogger, DartvexLogLevel;
@@ -33,6 +38,12 @@ export 'src/sync/paginated_query.dart'
         PageInitialResultReader,
         PageSubscriber,
         PageSubscription;
+export 'src/sync/remote_query_set.dart'
+    show
+        StoredQueryError,
+        StoredQueryLoading,
+        StoredQueryResult,
+        StoredQuerySuccess;
 export 'src/transport/connectivity.dart' show ConnectivitySignal;
 export 'src/transport/http_factory.dart'
     show createDefaultHttpClient, defaultHttpClientFactory;
@@ -43,4 +54,9 @@ export 'src/transport/ws_interface.dart'
 export 'src/transport/ws_manager.dart'
     show TransitionMetrics, TransitionMetricsCallback;
 export 'src/values/json_codec.dart'
-    show convexInt64, convexToJson, jsonToConvex;
+    show
+        ConvexCommitTsPlaceholder,
+        convexInt64,
+        convexToCanonicalJson,
+        convexToJson,
+        jsonToConvex;

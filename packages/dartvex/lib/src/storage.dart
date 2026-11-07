@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -37,32 +38,49 @@ class ConvexStorage {
 
   /// Upload a file to Convex storage.
   ///
-  /// 1. Calls [uploadUrlAction] (a Convex mutation) to get a signed upload URL.
+  /// 1. Calls [uploadUrlAction] to get a signed upload URL. It is invoked as a
+  ///    Convex mutation by default; set [useAction] when the backend generates
+  ///    upload URLs from an action.
   /// 2. POSTs [bytes] to that URL with the given [contentType].
   /// 3. Returns the `storageId` from the response.
+  ///
+  /// [filename] is only used for diagnostics (debug logging); it is not sent
+  /// to Convex or stored with the file. Store it yourself, for example by
+  /// passing it to the mutation that records the returned `storageId`.
+  ///
+  /// [timeout] bounds the upload request (sending the bytes and reading the
+  /// response); when it expires the request is aborted and a
+  /// [TimeoutException] is thrown. It does not apply to the upload-URL call,
+  /// which follows the client's own mutation/action timeouts. Defaults to no
+  /// timeout.
   ///
   /// Throws [ConvexFileUploadException] if the upload HTTP request fails.
   Future<String> uploadFile({
     required String uploadUrlAction,
     required Uint8List bytes,
-    required String filename,
+    String? filename,
     required String contentType,
     Map<String, dynamic>? uploadUrlArgs,
+    bool useAction = false,
+    Duration? timeout,
   }) async {
+    if (timeout != null && timeout <= Duration.zero) {
+      throw ArgumentError.value(timeout, 'timeout', 'must be positive');
+    }
     _log(
       DartvexLogLevel.debug,
       'Starting file upload',
       data: <String, Object?>{
         'uploadUrlAction': uploadUrlAction,
-        'filename': filename,
+        if (filename != null) 'filename': filename,
         'contentType': contentType,
         'sizeBytes': bytes.length,
       },
     );
-    final uploadUrl = await caller.mutate(
-      uploadUrlAction,
-      uploadUrlArgs ?? const <String, dynamic>{},
-    );
+    final urlArgs = uploadUrlArgs ?? const <String, dynamic>{};
+    final uploadUrl = useAction
+        ? await caller.action(uploadUrlAction, urlArgs)
+        : await caller.mutate(uploadUrlAction, urlArgs);
 
     final uri = _parseUploadUri(uploadUrlAction, uploadUrl);
     if (uri.scheme != 'https' && uri.scheme != 'http') {
@@ -88,11 +106,35 @@ class ConvexStorage {
 
     final client = _httpClient ?? createDefaultHttpClient();
     try {
-      final response = await client.post(
+      final abort = Completer<void>();
+      final upload = http.AbortableRequest(
+        'POST',
         uri,
-        headers: <String, String>{'Content-Type': contentType},
-        body: bytes,
-      );
+        abortTrigger: abort.future,
+      )
+        ..headers['Content-Type'] = contentType
+        ..bodyBytes = bytes;
+      final request = client.send(upload).then(http.Response.fromStream);
+      final http.Response response;
+      if (timeout == null) {
+        response = await request;
+      } else {
+        response = await request.timeout(
+          timeout,
+          onTimeout: () {
+            abort.complete();
+            _log(
+              DartvexLogLevel.error,
+              'File upload timed out',
+              data: <String, Object?>{'timeoutMs': timeout.inMilliseconds},
+            );
+            throw TimeoutException(
+              'File upload to Convex storage timed out after $timeout',
+              timeout,
+            );
+          },
+        );
+      }
 
       if (response.statusCode != 200) {
         _log(

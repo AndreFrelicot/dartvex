@@ -3,33 +3,12 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dartvex/dartvex.dart' show createDefaultHttpClient;
+import 'package:flutter_cache_manager/flutter_cache_manager.dart'
+    show HttpExceptionWithStatus;
 import 'package:http/http.dart' as http;
 
-/// Snapshot of an in-progress file download.
-class ConvexDownloadProgress {
-  /// Creates a download progress snapshot.
-  const ConvexDownloadProgress({
-    required this.received,
-    required this.total,
-    required this.progress,
-  });
-
-  /// Bytes received so far.
-  final int received;
-
-  /// Total bytes expected, or -1 if the server didn't send Content-Length.
-  final int total;
-
-  /// Download progress between 0.0 and 1.0, or -1.0 if total is unknown.
-  final double progress;
-
-  /// Whether the total size is known.
-  bool get hasTotalSize => total > 0;
-}
-
-/// Callback that reports download progress.
-typedef ConvexDownloadProgressCallback =
-    void Function(ConvexDownloadProgress progress);
+import 'download_errors.dart';
+import 'media_types.dart';
 
 /// Downloads files from URLs with byte-level progress tracking.
 ///
@@ -40,7 +19,7 @@ typedef ConvexDownloadProgressCallback =
 ///
 /// Native-only: this helper is not available on Flutter web. Use
 /// browser-native loading via `Image.network` or `fetch`-style APIs in
-/// web-specific UI.
+/// web-specific UI; on web, [download] fails with an `UnsupportedError`.
 ///
 /// ```dart
 /// final bytes = await ConvexFileDownloader.download(
@@ -60,6 +39,22 @@ class ConvexFileDownloader {
   /// [ConvexDownloadProgress] containing received bytes, total bytes,
   /// and progress ratio.
   ///
+  /// [client] is used for the request when given and is left open (the
+  /// caller owns it); reusing one client across downloads reuses its
+  /// connections (and, on iOS/macOS, its URLSession). Without it, a client
+  /// from `createDefaultHttpClient()` is created for this download and closed
+  /// afterwards.
+  ///
+  /// A non-2xx response fails with an [HttpException] (an
+  /// `HttpExceptionWithStatus` carrying the status code). Errors never carry
+  /// the URL beyond its origin: storage paths and signed queries are bearer
+  /// capabilities, so they are scrubbed from messages, URI fields and (for a
+  /// malformed URL) the [FormatException] source.
+  ///
+  /// Completing [abortTrigger] aborts the download: it fails with
+  /// `http.RequestAbortedException` and the transfer stops (for clients that
+  /// support aborting, which includes every default platform client).
+  ///
   /// [idleTimeout] bounds how long the download may stall without progress: it
   /// applies to establishing the connection, awaiting the response headers, and
   /// the gap between received body chunks. It is an idle (inter-event) bound,
@@ -70,51 +65,104 @@ class ConvexFileDownloader {
     String url, {
     ConvexDownloadProgressCallback? onProgress,
     Duration idleTimeout = const Duration(seconds: 30),
+    http.Client? client,
+    Future<void>? abortTrigger,
   }) async {
-    final uri = Uri.parse(url);
-    final client = createDefaultHttpClient();
-    try {
-      // The send() timeout bounds connection establishment and response
-      // headers together — the same stall window dart:io's connectionTimeout
-      // plus close().timeout() used to cover.
-      final response = await client
-          .send(http.Request('GET', uri))
-          .timeout(idleTimeout);
+    final download = await downloadWithHeaders(
+      url,
+      onProgress: onProgress,
+      idleTimeout: idleTimeout,
+      client: client,
+      abortTrigger: abortTrigger,
+    );
+    return download.bytes;
+  }
+}
 
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        try {
-          // Draining the error body is best-effort cleanup; bound it by the
-          // idle timeout so a stalled error response cannot hang the download,
-          // and never let a drain failure mask the status error thrown below.
-          await response.stream.drain<void>().timeout(idleTimeout);
-        } catch (_) {}
-        throw HttpException(
-          'Failed to download file (status ${response.statusCode})',
-          uri: uri,
-        );
-      }
+/// A completed download: the body and the response it came with.
+typedef DownloadResult = ({
+  Uint8List bytes,
+  int statusCode,
+  Map<String, String> headers,
+});
 
-      final contentLength = response.contentLength ?? -1;
-      final hasLength = contentLength > 0;
-      int received = 0;
-
-      final builder = BytesBuilder(copy: false);
-
-      await for (final chunk in response.stream.timeout(idleTimeout)) {
-        builder.add(chunk);
-        received += chunk.length;
-        onProgress?.call(
-          ConvexDownloadProgress(
-            received: received,
-            total: hasLength ? contentLength : -1,
-            progress: hasLength ? received / contentLength : -1,
-          ),
-        );
-      }
-
-      return builder.toBytes();
-    } finally {
-      client.close();
+/// [ConvexFileDownloader.download], also returning the response status and
+/// headers (the asset cache derives the file extension and validity from
+/// them). A non-2xx status fails with [HttpExceptionWithStatus].
+Future<DownloadResult> downloadWithHeaders(
+  String url, {
+  ConvexDownloadProgressCallback? onProgress,
+  Duration idleTimeout = const Duration(seconds: 30),
+  http.Client? client,
+  Future<void>? abortTrigger,
+}) async {
+  // Created lazily inside the try below, so a malformed URL never opens a
+  // client that would have to be closed.
+  http.Client? ownedClient;
+  // Fired by the caller's [abortTrigger] or by a failure (a timeout of
+  // send() or of the error-body drain only stops *waiting*), so a stalled
+  // request is never left running on the client.
+  final abort = Completer<void>();
+  void fireAbort() {
+    if (!abort.isCompleted) {
+      abort.complete();
     }
+  }
+
+  abortTrigger?.then((_) => fireAbort(), onError: (Object _) => fireAbort());
+  try {
+    // Parsed inside the try: Uri.parse's FormatException carries the whole
+    // (capability-bearing) URL as its source and must be redacted too.
+    final uri = Uri.parse(url);
+    final httpClient = client ?? (ownedClient = createDefaultHttpClient());
+    // The send() timeout bounds connection establishment and response
+    // headers together — the same stall window dart:io's connectionTimeout
+    // plus close().timeout() used to cover.
+    final response = await httpClient
+        .send(http.AbortableRequest('GET', uri, abortTrigger: abort.future))
+        .timeout(idleTimeout);
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      try {
+        // Draining the error body is best-effort cleanup; bound it by the
+        // idle timeout so a stalled error response cannot hang the download,
+        // and never let a drain failure mask the status error thrown below.
+        await response.stream.drain<void>().timeout(idleTimeout);
+      } catch (_) {}
+      throw HttpExceptionWithStatus(
+        response.statusCode,
+        'Failed to download file (status ${response.statusCode})',
+        uri: downloadOrigin(uri),
+      );
+    }
+
+    final contentLength = response.contentLength ?? -1;
+    final hasLength = contentLength > 0;
+    int received = 0;
+
+    final builder = BytesBuilder(copy: false);
+
+    await for (final chunk in response.stream.timeout(idleTimeout)) {
+      builder.add(chunk);
+      received += chunk.length;
+      onProgress?.call(
+        ConvexDownloadProgress(
+          received: received,
+          total: hasLength ? contentLength : -1,
+          progress: hasLength ? received / contentLength : -1,
+        ),
+      );
+    }
+
+    return (
+      bytes: builder.toBytes(),
+      statusCode: response.statusCode,
+      headers: response.headers,
+    );
+  } catch (error, stackTrace) {
+    fireAbort();
+    Error.throwWithStackTrace(redactDownloadError(error, url), stackTrace);
+  } finally {
+    ownedClient?.close();
   }
 }

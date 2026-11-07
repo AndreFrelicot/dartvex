@@ -7,6 +7,149 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-05
+
+### Added
+
+- `ConvexLocalClient.reset()` clears the queue, the recorded ID remaps, and
+  the cache. Call it on an explicit sign-out or user switch; the client never
+  clears anything on its own when the auth state changes. Work of the
+  previous identity still in flight when it is called is not persisted,
+  emitted or reported afterwards (see Fixed), and a `mutate()` issued before
+  it that was not queued yet resolves with `LocalMutationFailed`. The identity
+  caveats are documented on `ConvexLocalClient` and in the README.
+- `LocalClientConfig.onConflict`, so conflicts from a replay that starts while
+  the client opens are not missed.
+- `LocalMutationConflict.pendingMutationId` and `operationId`, to correlate a
+  conflict with the `LocalMutationQueued` result of the dropped mutation.
+- `LocalRemoteQuerySuccess.isSeed`. `ConvexRemoteClientAdapter` sets it on the
+  value the core client delivers from its own local state when a
+  subscription starts.
+- `JsonValueCodec` round-trips the Convex commit-timestamp placeholder
+  (`{"$commitTs": null}`, Convex 1.43+). The value is kept as the core
+  codec decodes it, or as the raw `{"$commitTs": null}` map when the core
+  codec does not model it.
+
+### Changed
+
+- **Breaking (behavior):** `currentConnectionState` is `online` only while
+  the remote connection is established. A connecting or reconnecting remote now reports `offline`
+  instead of `online`, matching when mutations are actually sent directly.
+- In auto mode, `query()` no longer waits without bound while the remote is
+  not connected: it returns the cached value right away, and without one
+  waits at most `refreshQueryTimeout` before throwing a `TimeoutException`.
+  While connected, behavior is unchanged.
+- **Breaking (behavior):** several `LocalMutationHandler`s can now be
+  registered for the same mutation; their patches are applied in registration
+  order. Handlers are
+  matched by canonical mutation name (`tasks.js:create` matches
+  `tasks:create`). Previously only the last handler per raw name was used.
+- Local-to-server ID remaps are kept after the queue drains and are applied to
+  direct sends as well, so a local ID still held by the cache or app state is
+  sent as its server ID. `clearQueue()` and `reset()` discard them.
+- Post-replay cache refreshes run once per distinct target after the replay
+  loop, and replay updates the in-memory queue instead of reloading the whole
+  persisted queue after every step.
+- `dev_dependencies`: `lints` `^6.1.0`.
+- Docs: `mutate` and `LocalMutationFailed` now state that handler, patch and
+  storage failures while queueing are thrown, and that handler patches only
+  apply to queued mutations (not to direct sends while online). `dispose`
+  documents that caller-supplied storage is always closed and the remote
+  client only with `disposeRemoteClient`.
+
+### Fixed
+
+- `reset()` no longer leaves later `mutate()` calls and replay waiting
+  forever behind a direct mutation of the previous identity that never gets
+  an answer.
+- A replay still running when `clearQueue()` is called stops at its next
+  step: it no longer saves ID remaps of the cleared queue, and mutations
+  queued since are replayed by a new run.
+- A mutation queued while replay was finishing stayed pending until the next
+  event; replay now restarts right away.
+- `QueueStorage` implementations must apply writes in call order (documented).
+- Stored maps that contain a `$commitTs` placeholder have their field names
+  validated on decode like any other map; a reserved name next to a
+  placeholder is rejected instead of passed through.
+- Query cache keys canonicalize numbers like the core client: `10` and
+  `10.0` (the same Convex float64) share one cache entry, on the VM and the
+  web. Entries cached on the VM for arguments holding integral doubles are
+  re-keyed, so they miss the cache once after upgrading.
+- Fixed a new Dart 3.13 analyzer warning (`unawaited_return_in_try_block`) in
+  `query()`; a failing cache write after a remote read also skipped the
+  method's error handling.
+- A direct `mutate()` in flight when the connection dropped held the FIFO
+  mutate chain until reconnect, so every later `mutate()` (even after
+  switching offline) waited unpersisted. The chain is now released when the
+  remote leaves `connected` or the client is forced offline; later calls are
+  queued, and replay waits for the in-flight request first, so call order is
+  kept.
+- Replay no longer drops queued mutations as conflicts when the
+  `ConvexClient` is closed or disposed, or hits a fatal error: the mutation is
+  kept, and replay stops until the remote reconnects. The adapter reports a
+  closed client as `disconnected`, and replay stops as soon as the remote is
+  no longer connected.
+- Cancelling a subscription and immediately subscribing to the same query
+  left the new subscriber without live updates and leaked its remote
+  subscription.
+- `setNetworkMode(auto)` no longer waits for the whole replay, so a following
+  `setNetworkMode(offline)` takes effect (and stops replay) right away.
+- A mutation queued while connected (after a retryable failure of the direct
+  send, or behind an in-flight direct send) is now replayed without waiting
+  for the next reconnect.
+- The post-replay refresh no longer stores the core client's stale
+  after-unsubscribe seed as the server value, which could drop the
+  just-synced write from the cache.
+- `Uint8List` (bytes) arguments were turned into plain integer lists during ID
+  remapping and in persisted optimistic targets, so replayed bytes arguments
+  were sent wrong and targets with bytes arguments got the wrong cache key.
+- The remote connection state is re-read after the queue loads on open, so a
+  connection established during an asynchronous storage load is not missed.
+- An optimistic patch on a live query whose cache entry was expired or pruned
+  by the cache policy (or cleared) now builds on the value subscribers last
+  received instead of replacing it.
+- A new subscriber to a query that other subscribers already receive gets the
+  latest event, including remote errors (which are not cached) and values
+  whose cache entry is gone.
+- Storage failures right after the server committed a replayed mutation no
+  longer roll it back, report a conflict, or re-send it; the local bookkeeping
+  is retried. Other storage errors during replay schedule a retry instead of
+  stalling the queue until the next reconnect.
+- Remote error events, optimistic queueing, rollbacks and cached-snapshot
+  emissions are serialized per query key with remote snapshot writes, so
+  asynchronous storage cannot reorder them.
+- A cache write failure no longer swallows remote results: live subscribers
+  still receive them and `query()` returns them. Storage errors are logged at
+  warning level.
+- `clearCache()` followed by `clearQueue()` (or a later replay conflict) no
+  longer writes the cleared values back from rollback snapshots.
+- Rolling back a dropped replayed mutation uses its latest rollback baseline,
+  including rebases from remote snapshots received during the round trip.
+- A mutation left marked `replaying` by a crash or a dispose mid-replay is
+  reset to `pending` when the client opens.
+- `reset()` no longer lets the previous user's in-flight work land after it:
+  a `query()` result, live query event or post-replay refresh whose cache
+  write was under way, or whose server response arrived later, could be
+  persisted after `reset()` returned and then served to the next user
+  offline; a replayed mutation completing later recorded its ID remap, and
+  one rejected later restored its rollback baseline and was reported to
+  `onConflict`; a `mutate()` issued just before `reset()` could still be
+  queued and replayed with the next user's auth. Async work now carries an
+  identity generation and drops its writes and emissions once `reset()` has
+  run; `reset()` purges only after writes already under way have landed,
+  replay waits for the purge, and the next user's writes and cache seeds
+  wait for it too.
+- When a remote snapshot rebased the rollback baseline of a queued mutation
+  that patches several queries, a concurrent rebase for another of its
+  queries could overwrite it with a stale copy, so rejecting the mutation
+  restored an outdated server value.
+- A replayed mutation that `clearQueue()` discarded while it was in flight no
+  longer restores its stale rollback baseline over newer server data, nor is
+  reported to `onConflict`, when the server then rejects it.
+- A new subscriber whose cache read was still resolving when it received a
+  newer value from the shared remote subscription is no longer handed the
+  older cached value afterwards.
+
 ## [0.2.0] - 2026-06-12
 
 ### Changed

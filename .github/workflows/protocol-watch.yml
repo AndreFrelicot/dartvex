@@ -14,15 +14,18 @@ jobs:
   check-drift:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Setup Node (for npm view)
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '22'
 
+      # Only the Rust SDK tag check needs state from the previous run; the
+      # JavaScript client is compared against the version pinned in the repo
+      # (convexSyncApiVersion), not against a cached copy.
       - name: Restore protocol cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .protocol-cache
           key: protocol-cache-${{ github.run_id }}
@@ -39,21 +42,56 @@ jobs:
           echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
           exit 0
 
-      - name: Create issue on drift
+      - name: Upload source diff
         if: steps.watch.outputs.exit_code != '0'
-        uses: actions/github-script@v7
+        uses: actions/upload-artifact@v7
+        with:
+          name: protocol-drift
+          path: |
+            .protocol-cache/drift-report.md
+            .protocol-cache/source-diff.patch
+          if-no-files-found: ignore
+
+      - name: Create or update the drift issue
+        if: steps.watch.outputs.exit_code != '0'
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
-            const output = fs.readFileSync('/tmp/watch-output.txt', 'utf8');
+            const output = fs.readFileSync('/tmp/watch-output.txt', 'utf8')
+              .replace(/\x1b\[[0-9;]*m/g, '');
             const report = fs.existsSync('.protocol-cache/drift-report.md')
               ? fs.readFileSync('.protocol-cache/drift-report.md', 'utf8')
               : 'No report generated';
+            const exitCode = '${{ steps.watch.outputs.exit_code }}';
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const heading = exitCode === '2'
+              ? '## Protocol watch failed\n\nThe weekly protocol watch could not complete (network or tooling error).'
+              : '## Protocol Drift Detected\n\nThe weekly protocol watch detected changes in the official Convex client.';
+            const body = `${heading}\n\nRun: ${runUrl} (the full source diff is attached as the \`protocol-drift\` artifact)\n\n### Watch Output\n\`\`\`\n${output.slice(-50000)}\n\`\`\`\n\n### Drift Report\n\n${report}\n\n---\n\n**Action required:** Review the changes (RELEASING.md, "Track the official Convex client"), update the Dart implementation if needed, and bump \`convexSyncApiVersion\`.`;
 
-            await github.rest.issues.create({
+            // Keep one open issue: comment on it instead of opening a new one
+            // every week while the drift is unresolved.
+            const { data: open } = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: `Protocol drift detected - ${new Date().toISOString().slice(0,10)}`,
-              body: `## Protocol Drift Detected\n\nThe weekly protocol watch detected changes in the Convex sync protocol.\n\n### Watch Output\n\`\`\`\n${output}\n\`\`\`\n\n### Drift Report\n\n${report}\n\n---\n\n**Action required:** Review the changes and update our protocol implementation if needed.`,
-              labels: ['protocol-drift', 'needs-review']
+              state: 'open',
+              labels: 'protocol-drift',
+              per_page: 1,
             });
+            if (open.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: open[0].number,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `Protocol drift detected - ${new Date().toISOString().slice(0, 10)}`,
+                body,
+                labels: ['protocol-drift', 'needs-review'],
+              });
+            }

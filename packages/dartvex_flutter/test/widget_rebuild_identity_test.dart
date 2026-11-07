@@ -89,11 +89,9 @@ void main() {
       await tester.pumpWidget(build((json) => 'b:${json['id']}'));
 
       expect(client.paginatedQueryCalls, hasLength(1));
-      expect(
-        capturedItems,
-        <String>['b:1'],
-        reason: 'a changed fromJson must re-map already-loaded items',
-      );
+      expect(capturedItems, <String>[
+        'b:1',
+      ], reason: 'a changed fromJson must re-map already-loaded items');
     },
   );
 

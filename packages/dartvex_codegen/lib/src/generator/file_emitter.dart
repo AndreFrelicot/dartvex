@@ -28,10 +28,15 @@ class FileEmitter {
   /// Writes [files] into [outputDirectory].
   ///
   /// When [dryRun] is true, this method returns without touching the filesystem.
+  ///
+  /// An unreadable manifest (for example one left with git merge-conflict
+  /// markers) does not abort generation: [onWarning] is told, stale-file
+  /// cleanup is skipped for this run, and a fresh manifest is written.
   Future<void> emit({
     required String outputDirectory,
     required Map<String, String> files,
     required bool dryRun,
+    void Function(String warning)? onWarning,
   }) async {
     if (dryRun) {
       return;
@@ -41,7 +46,7 @@ class FileEmitter {
     await directory.create(recursive: true);
     final outputRoot = path.normalize(path.absolute(directory.path));
     final manifestFile = File(path.join(outputRoot, manifestName));
-    final previousFiles = await _readManifest(manifestFile);
+    final previousFiles = await _readManifest(manifestFile, onWarning);
 
     for (final entry in files.entries) {
       final file = _fileFor(outputRoot, entry.key);
@@ -75,18 +80,33 @@ class FileEmitter {
       await file.writeAsString(entry.value);
     }
 
-    await manifestFile.writeAsString(
-      const JsonEncoder.withIndent(
-        '  ',
-      ).convert(<String, Object?>{'files': files.keys.toList()..sort()}),
-    );
+    // Write-then-rename so an interrupted run (Ctrl+C in --watch) cannot
+    // leave a truncated manifest behind.
+    final manifestJson = const JsonEncoder.withIndent(
+      '  ',
+    ).convert(<String, Object?>{'files': files.keys.toList()..sort()});
+    final temporaryManifest = File('${manifestFile.path}.tmp');
+    await temporaryManifest.writeAsString(manifestJson, flush: true);
+    await temporaryManifest.rename(manifestFile.path);
   }
 
-  Future<List<String>> _readManifest(File file) async {
+  Future<List<String>> _readManifest(
+    File file,
+    void Function(String warning)? onWarning,
+  ) async {
     if (!await file.exists()) {
       return const <String>[];
     }
-    final decoded = jsonDecode(await file.readAsString());
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(await file.readAsString());
+    } on FormatException catch (error) {
+      onWarning?.call(_unreadableManifestWarning(file, error.message));
+      return const <String>[];
+    } on FileSystemException catch (error) {
+      onWarning?.call(_unreadableManifestWarning(file, error.message));
+      return const <String>[];
+    }
     if (decoded is! Map<String, dynamic>) {
       return const <String>[];
     }
@@ -96,6 +116,11 @@ class FileEmitter {
     }
     return files.whereType<String>().toList(growable: false);
   }
+
+  String _unreadableManifestWarning(File file, String reason) =>
+      'Ignoring unreadable generator manifest ${file.path} ($reason). It '
+      'will be rewritten; stale generated files from earlier runs are not '
+      'deleted this time.';
 
   File _fileFor(String outputRoot, String relativePath) =>
       File(_safeJoin(outputRoot, relativePath));

@@ -49,22 +49,19 @@ void main() {
       client.dispose();
     });
 
-    test('conditional import resolves to native adapter on this platform', () {
+    test('conditional import resolves to a platform adapter', () {
       // On dart:io platforms, the factory resolves to NativeWebSocketAdapter.
-      // On web, it resolves to WebPlatformWebSocketAdapter.
-      // We cannot test the web path here, but we verify the factory function
-      // exists and returns a non-null adapter.
+      // On web, it resolves to WebPlatformWebSocketAdapter. Constructed
+      // without connecting, so the test never touches the network.
+      final adapter = createDefaultWebSocketAdapter('test-client');
+      expect(adapter, isA<WebSocketAdapter>());
+      expect(adapter.isConnected, isFalse);
+
       final client = ConvexClient(
         'https://demo.convex.cloud',
-        config: const ConvexClientConfig(
-          // Use the default adapter factory (conditional import path).
-          reconnectBackoff: <Duration>[Duration(seconds: 30)],
-        ),
+        config: const ConvexClientConfig(connectImmediately: false),
       );
-
-      // If we get here without error, the conditional import resolved
-      // correctly on this platform.
-      expect(client.currentConnectionState, isNotNull);
+      expect(client.currentConnectionState, ConnectionState.disconnected);
       client.dispose();
     });
   });

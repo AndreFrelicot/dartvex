@@ -19,6 +19,15 @@ void main() {
     expect(authCaller, isNull);
   });
 
+  test('exports AuthTokenFetcher, the setAuthWithRefresh parameter type',
+      () async {
+    Future<String?> fetchImpl({required bool forceRefresh}) async =>
+        forceRefresh ? 'fresh' : null;
+    final AuthTokenFetcher fetcher = fetchImpl;
+
+    expect(await fetcher(forceRefresh: true), 'fresh');
+  });
+
   test('exports TransitionMetrics from the public barrel', () {
     final metrics = TransitionMetrics(
       transitTimeMs: 150,
@@ -64,5 +73,28 @@ void main() {
     expect(subscriber, isNull);
     expect(initialResultReader, isNull);
     expect(subscription, isNull);
+  });
+
+  test('exports stored query results and the commit-timestamp placeholder', () {
+    const StoredQueryResult success = StoredQuerySuccess(
+      value: 1,
+      logLines: <String>[],
+    );
+    const StoredQueryResult loading = StoredQueryLoading();
+    const StoredQueryResult error = StoredQueryError(
+      message: 'boom',
+      logLines: <String>[],
+    );
+
+    expect(success, isA<StoredQuerySuccess>());
+    expect(loading, isA<StoredQueryLoading>());
+    expect(error, isA<StoredQueryError>());
+    expect(
+      jsonToConvex(convexToJson(ConvexCommitTsPlaceholder.instance)),
+      same(ConvexCommitTsPlaceholder.instance),
+    );
+    expect(convexToCanonicalJson(2.0), 2);
+    expect(convexSyncApiVersion, isNotEmpty);
+    expect(dartvexVersion, isNotEmpty);
   });
 }

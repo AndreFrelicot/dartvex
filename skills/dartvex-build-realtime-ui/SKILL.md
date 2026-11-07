@@ -4,7 +4,7 @@ description: Build reactive Flutter UI on Convex with dartvex_flutter - live que
 license: MIT
 metadata:
   author: AndreFrelicot
-  ecosystem-version: "0.2.0"
+  ecosystem-version: "0.3.0"
 ---
 
 # Build Realtime Flutter UI
@@ -16,8 +16,10 @@ Prerequisite: a `ConvexProvider` at the root of the tree
 ConvexProvider(client: ConvexClientRuntime(client), child: const MyApp())
 ```
 
-All widgets below find the client via the provider; pass `client:` explicitly
-only to override.
+Create the `ConvexClient` once (not in `build`). All widgets below find the
+client via the provider; pass `client:` explicitly only to override. Code
+below the provider can also build generated bindings with
+`ConvexApi(ConvexProvider.of(context).functionCaller)`.
 
 ## Live data — ConvexQuery
 
@@ -40,11 +42,18 @@ ConvexQuery<List<Message>>(
 ```
 
 - Subscribes on mount, cancels on dispose, re-renders on every server push.
+- A decode failure surfaces as `snapshot.error` holding a
+  `ConvexDecodeException` (with the raw value), not a crash.
 - The subscription identity is `client + query + args` (deep-compared):
   changing them resubscribes; an inline `decode` closure does NOT — but a
   *changed* decoder re-decodes the latest data.
 
 ## Writes — ConvexMutation / ConvexAction
+
+`T` must match what the function returns: the quickstart's `messages:send`
+returns the inserted ID (`String`). For a mutation that returns nothing, use
+`ConvexMutation<void>`; otherwise pass `decode:`. A result that does not fit
+`T` fails with a `ConvexDecodeException` even though the write committed.
 
 ```dart
 ConvexMutation<String>(
@@ -60,7 +69,11 @@ ConvexMutation<String>(
 )
 ```
 
-`ConvexAction` is identical for Convex actions.
+`ConvexAction` is identical for Convex actions. Both are single-flight: a
+call made while one is in flight rejects with a `StateError`, so disable the
+trigger while `snapshot.isLoading` (a mutation stays in flight until the
+server confirms it, including while offline), or call
+`ConvexProvider.of(context).mutate(...)` directly to send several at once.
 
 ### Optimistic updates
 
@@ -84,7 +97,9 @@ ConvexMutation<String>(
 
 Rules: the update must be **pure** (it is replayed on every fresh server
 result while pending). `store.setQuery(..., null)` sets a real Convex
-`null`; use `store.clearQuery(name, args)` to reset to loading.
+`null`; use `store.clearQuery(name, args)` to reset to loading. These
+optimistic updates apply to the core client; with a `dartvex_local`
+adapter, use `LocalMutationHandler` patches instead (`dartvex-setup-offline`).
 
 ## Infinite scroll — PaginatedQueryBuilder
 
@@ -110,18 +125,24 @@ PaginatedQueryBuilder<Message>(
 
 Identity caveat: changing `query`, `args`, `pageSize`, or `client` resets the
 loaded pages (a changed `fromJson` alone does not — pages are kept and
-re-mapped).
+re-mapped). Add `errorBuilder: (context, error, items, retry) => ...` to show
+a failed page (server error or `ConvexDecodeException`) with a retry button.
+`loadMore` may be called from an `itemBuilder` (infinite scroll). In core
+Dart, `client.paginatedQuery(...)` returns a `ConvexPaginatedQuery` with
+`loadMore()`, `reset()` (restart from the first page) and `cancel()`.
 
 ## Connection and auth indicators
 
 ```dart
-// Rich status: syncing, retries, inflight writes
+// Rich status: offline, catching up, inflight writes
 ConvexConnectionStatusBuilder(
   builder: (context, status) {
-    if (status.isLoading) return const Text('Syncing…');
     if (!status.isWebSocketConnected) {
-      return Text('Reconnecting (attempt ${status.connectionRetries})');
+      return Text(status.hasEverConnected
+          ? 'Offline — reconnecting (attempt ${status.connectionRetries})'
+          : 'Connecting…');
     }
+    if (status.isLoading) return const Text('Catching up…');
     return Text('Online — ${status.inflightMutations} pending');
   },
 )
@@ -134,8 +155,10 @@ ConvexAuthRefreshingBuilder(
 ```
 
 Coarse variants: `ConvexConnectionBuilder`, `ConvexConnectionIndicator`.
-`status.isConnected` means socket up AND fully re-synced — prefer it over
-raw socket state for "online" badges.
+`status.isConnected` means socket up AND fully re-synced — prefer it for
+"online" badges. `status.isLoading` only means "catching up after a
+reconnect": it stays `false` while the socket is down and before the first
+connection, so it is not an offline signal.
 
 To reconnect instantly when connectivity returns (instead of waiting out
 backoff), construct the client with
@@ -148,7 +171,8 @@ backoff), construct the client with
   state deliberately.
 - Doing writes in `decode`/`builder` — keep them pure; side effects belong
   in `mutate` callbacks.
-- Showing "offline" from `isWebSocketConnected` alone — use `isConnected`
-  (sync-aware) or `status.isLoading`.
+- Showing "offline" from `status.isLoading` — it stays `false` while
+  disconnected. Use `!status.isWebSocketConnected` (with `hasEverConnected`
+  to tell "connecting" from "offline"), or `isConnected` for "online".
 - For generic layout/navigation/styling work, use the official Flutter
   skills: `npx skills add flutter/skills`.

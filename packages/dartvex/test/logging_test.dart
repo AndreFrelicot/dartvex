@@ -438,6 +438,7 @@ class _FakeLoggedCaller implements ConvexFunctionCaller, DartvexLogSource {
   Future<dynamic> mutate(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
+    OptimisticUpdate? optimisticUpdate,
   ]) async {
     return mutations[name]!(args);
   }

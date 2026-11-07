@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:dartvex_flutter/dartvex_flutter.dart';
+import 'package:dartvex_flutter/src/runtime_client.dart'
+    show ConvexSeededSubscription;
 
 class FakeRuntimeClient implements ConvexRuntimeClient {
   FakeRuntimeClient({
@@ -29,6 +31,18 @@ class FakeRuntimeClient implements ConvexRuntimeClient {
   Future<dynamic> Function(String name, Map<String, dynamic> args)? onMutate;
   Future<dynamic> Function(String name, Map<String, dynamic> args)? onAction;
   ConvexPaginatedResult? nextPaginatedInitialResult;
+
+  /// When set, [subscribe] throws this synchronously (like a disposed client).
+  Object? subscribeError;
+
+  /// When set, [paginatedQuery] throws this synchronously.
+  Object? paginatedQueryError;
+
+  /// Seed reported by the next subscription's `currentEvent`.
+  ConvexRuntimeQueryEvent? nextSubscriptionSeed;
+
+  /// Called by every paginated query's `loadMore`.
+  void Function(FakeRuntimePaginatedQuery query, int? numItems)? onLoadMore;
 
   ConvexConnectionState _currentConnectionState;
   ConnectionStatus _currentConnectionStatus;
@@ -181,10 +195,16 @@ class FakeRuntimeClient implements ConvexRuntimeClient {
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) {
+    final error = subscribeError;
+    if (error != null) {
+      throw error;
+    }
     final subscription = FakeRuntimeSubscription(
       name,
       Map<String, dynamic>.from(args),
+      currentEvent: nextSubscriptionSeed,
     );
+    nextSubscriptionSeed = null;
     subscribeCalls.add(
       FakeSubscriptionCall(name, Map<String, dynamic>.from(args), subscription),
     );
@@ -197,11 +217,16 @@ class FakeRuntimeClient implements ConvexRuntimeClient {
     Map<String, dynamic> args, {
     int pageSize = 20,
   }) {
+    final error = paginatedQueryError;
+    if (error != null) {
+      throw error;
+    }
     final query = FakeRuntimePaginatedQuery(
       name,
       Map<String, dynamic>.from(args),
       pageSize,
       initial: nextPaginatedInitialResult,
+      onLoadMore: onLoadMore,
     );
     nextPaginatedInitialResult = null;
     paginatedQueryCalls.add(
@@ -247,6 +272,7 @@ class FakeRuntimePaginatedQuery implements ConvexRuntimePaginatedQuery {
     this.args,
     this.pageSize, {
     ConvexPaginatedResult? initial,
+    this.onLoadMore,
   }) : _current =
            initial ??
            const ConvexPaginatedResult(
@@ -264,6 +290,8 @@ class FakeRuntimePaginatedQuery implements ConvexRuntimePaginatedQuery {
   int loadMoreCount = 0;
   int? lastLoadMoreNumItems;
   bool isCanceled = false;
+  final void Function(FakeRuntimePaginatedQuery query, int? numItems)?
+  onLoadMore;
 
   @override
   Stream<ConvexPaginatedResult> get stream => _controller.stream;
@@ -275,6 +303,7 @@ class FakeRuntimePaginatedQuery implements ConvexRuntimePaginatedQuery {
   bool loadMore([int? numItems]) {
     loadMoreCount += 1;
     lastLoadMoreNumItems = numItems;
+    onLoadMore?.call(this, numItems);
     return true;
   }
 
@@ -317,8 +346,12 @@ class FakeRuntimePaginatedQuery implements ConvexRuntimePaginatedQuery {
   }
 }
 
-class FakeRuntimeSubscription implements ConvexRuntimeSubscription {
-  FakeRuntimeSubscription(this.name, this.args);
+class FakeRuntimeSubscription
+    implements ConvexRuntimeSubscription, ConvexSeededSubscription {
+  FakeRuntimeSubscription(this.name, this.args, {this.currentEvent});
+
+  @override
+  final ConvexRuntimeQueryEvent? currentEvent;
 
   final String name;
   final Map<String, dynamic> args;

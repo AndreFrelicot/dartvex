@@ -57,6 +57,10 @@ Future<void> main(List<String> args) async {
     selectedPackageNames: selected,
   );
   final internalConstraintIssues = _findInternalConstraintIssues(packages);
+  final devConstraintIssues = _findInternalConstraintIssues(
+    packages,
+    devDependencies: true,
+  );
 
   switch (cli.command) {
     case 'plan':
@@ -68,6 +72,7 @@ Future<void> main(List<String> args) async {
         publishOrder: publishOrder,
         baselines: baselines,
         internalConstraintIssues: internalConstraintIssues,
+        devConstraintIssues: devConstraintIssues,
         includeDependents: cli.includeDependents,
         selectAll: cli.selectAll,
       );
@@ -81,6 +86,7 @@ Future<void> main(List<String> args) async {
         publishOrder: publishOrder,
         baselines: baselines,
         internalConstraintIssues: internalConstraintIssues,
+        devConstraintIssues: devConstraintIssues,
         includeDependents: cli.includeDependents,
         selectAll: cli.selectAll,
         brief: true,
@@ -222,6 +228,8 @@ class PackageInfo {
     required this.publishTool,
     required this.internalDependencies,
     required this.internalDependencyConstraints,
+    this.internalDevDependencies = const <String>{},
+    this.internalDevDependencyConstraints = const <String, String>{},
   });
 
   final String name;
@@ -229,8 +237,18 @@ class PackageInfo {
   final String directoryName;
   final Directory directory;
   final PublishTool publishTool;
+
+  /// Internal packages listed under `dependencies`. Only these are release
+  /// edges: published users resolve them.
   final Set<String> internalDependencies;
   final Map<String, String> internalDependencyConstraints;
+
+  /// Internal packages listed under `dev_dependencies`. Published users never
+  /// resolve them, so they do not select packages for release or affect the
+  /// publish order; they still need path overrides for dry-runs and are
+  /// checked as a repo-health warning.
+  final Set<String> internalDevDependencies;
+  final Map<String, String> internalDevDependencyConstraints;
 }
 
 enum PublishTool { dart, flutter }
@@ -244,9 +262,8 @@ class SemVer implements Comparable<SemVer> {
   final String? prerelease;
 
   factory SemVer.parse(String input) {
-    final match = RegExp(
-      r'^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$',
-    ).firstMatch(input.trim());
+    final match = RegExp(r'^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$')
+        .firstMatch(input.trim());
     if (match == null) {
       throw FormatException('Unsupported version format: $input');
     }
@@ -374,12 +391,15 @@ Future<List<PackageInfo>> _loadPackages(String repoRoot) async {
     final parsed = _parsePubspec(pubspecFile.readAsLinesSync());
     final dependencies = <String>{};
     final constraints = <String, String>{};
+    final devDependencies = <String>{};
+    final devConstraints = <String, String>{};
     for (final section in ['dependencies', 'dev_dependencies']) {
+      final isDev = section == 'dev_dependencies';
       final entries = parsed[section] as Map<String, String>? ?? {};
       for (final entry in entries.entries) {
         if (packageNames.contains(entry.key)) {
-          dependencies.add(entry.key);
-          constraints[entry.key] = entry.value;
+          (isDev ? devDependencies : dependencies).add(entry.key);
+          (isDev ? devConstraints : constraints)[entry.key] = entry.value;
         }
       }
     }
@@ -391,6 +411,8 @@ Future<List<PackageInfo>> _loadPackages(String repoRoot) async {
       publishTool: package.publishTool,
       internalDependencies: dependencies,
       internalDependencyConstraints: constraints,
+      internalDevDependencies: devDependencies,
+      internalDevDependencyConstraints: devConstraints,
     );
   }
 
@@ -646,12 +668,16 @@ List<PackageInfo> _topologicalPublishOrder({
 }
 
 List<ConstraintIssue> _findInternalConstraintIssues(
-  List<PackageInfo> packages,
-) {
+  List<PackageInfo> packages, {
+  bool devDependencies = false,
+}) {
   final packageByName = {for (final package in packages) package.name: package};
   final issues = <ConstraintIssue>[];
   for (final package in packages) {
-    for (final entry in package.internalDependencyConstraints.entries) {
+    final constraints = devDependencies
+        ? package.internalDevDependencyConstraints
+        : package.internalDependencyConstraints;
+    for (final entry in constraints.entries) {
       final dependency = packageByName[entry.key];
       if (dependency == null) {
         continue;
@@ -741,6 +767,7 @@ void _printPlan({
   required List<PackageInfo> publishOrder,
   required Map<String, String?> baselines,
   required List<ConstraintIssue> internalConstraintIssues,
+  List<ConstraintIssue> devConstraintIssues = const <ConstraintIssue>[],
   required bool includeDependents,
   required bool selectAll,
   bool brief = false,
@@ -795,12 +822,14 @@ void _printPlan({
       ];
       final marker = flags.isEmpty ? 'unchanged' : flags.join(', ');
       final deps = package.internalDependencies.toList()..sort();
+      final devDeps = package.internalDevDependencies.toList()..sort();
       stdout.writeln(
         '  - ${package.name} ${package.version} '
         '[${package.publishTool.name}] '
         'baseline=${baseline ?? 'missing'} '
         'status=$marker '
-        'internal_deps=${deps.isEmpty ? 'none' : deps.join(',')}',
+        'internal_deps=${deps.isEmpty ? 'none' : deps.join(',')}'
+        '${devDeps.isEmpty ? '' : ' internal_dev_deps=${devDeps.join(',')}'}',
       );
     }
   }
@@ -813,6 +842,19 @@ void _printPlan({
       stdout.writeln(
         '  - ${issue.dependentPackage} depends on ${issue.dependencyPackage} '
         'with ${issue.constraint}, but local version is ${issue.actualVersion}',
+      );
+    }
+  }
+  if (devConstraintIssues.isNotEmpty) {
+    stdout.writeln(
+      'Internal dev_dependency constraints (warning only; dev dependencies do '
+      'not select packages for release):',
+    );
+    for (final issue in devConstraintIssues) {
+      stdout.writeln(
+        '  - ${issue.dependentPackage} dev-depends on '
+        '${issue.dependencyPackage} with ${issue.constraint}, but local '
+        'version is ${issue.actualVersion}',
       );
     }
   }
@@ -905,9 +947,10 @@ Future<void> _writeInternalDependencyOverrides({
   required PackageInfo package,
   required Map<String, PackageInfo> packageByName,
 }) async {
-  final internalDependencies =
-      package.internalDependencies.where(packageByName.containsKey).toList()
-        ..sort();
+  final internalDependencies = <String>{
+    ...package.internalDependencies,
+    ...package.internalDevDependencies,
+  }.where(packageByName.containsKey).toList()..sort();
   if (internalDependencies.isEmpty) {
     return;
   }
@@ -921,9 +964,8 @@ Future<void> _writeInternalDependencyOverrides({
   }
 
   for (final packageDirectory in _pubspecDirectories(tempPackage)) {
-    await File(
-      _joinPath(packageDirectory.path, 'pubspec_overrides.yaml'),
-    ).writeAsString(buffer.toString());
+    await File(_joinPath(packageDirectory.path, 'pubspec_overrides.yaml'))
+        .writeAsString(buffer.toString());
   }
 }
 

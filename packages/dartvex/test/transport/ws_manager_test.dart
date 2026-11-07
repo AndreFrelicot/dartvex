@@ -806,10 +806,10 @@ void main() {
           .toList(growable: false);
       expect(connectMessages, hasLength(1));
       expect(connectMessages.single['connectionCount'], 0);
-      expect(
-        connectMessages.single['lastCloseReason'],
-        'Bad state: connect failed',
-      );
+      // A failed attempt only records a close reason when none is pending, as
+      // the official client's onclose does, so the first successful Connect
+      // still reports the original 'InitialConnect'.
+      expect(connectMessages.single['lastCloseReason'], 'InitialConnect');
 
       await manager.dispose();
     });
@@ -1126,7 +1126,6 @@ void main() {
         onConnected: () => const <ClientMessage>[],
         onMessage: (message) {
           received.add(message);
-          return const <ClientMessage>[];
         },
         onDisconnected: (_) async {},
         onConnectionStateChanged: (_, __) {},
@@ -1304,7 +1303,6 @@ void main() {
           if (message is FatalError) {
             await manager.reconnectNow(message.error);
           }
-          return const <ClientMessage>[];
         },
         onDisconnected: (_) async {},
         onConnectionStateChanged: (_, __) {},

@@ -32,7 +32,7 @@ bash example/generate_bindings.sh
 
 ## Run the backend
 
-The backend example requires Node.js 20.19.0 or newer and uses npm with the
+The backend example requires Node.js 22.9 or newer and uses npm with the
 committed `package-lock.json`.
 
 ```bash

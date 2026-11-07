@@ -1,6 +1,7 @@
 import 'package:dartvex/dartvex.dart' show ConnectionStatus;
 import 'package:flutter/widgets.dart';
 
+import 'client_state_builder.dart';
 import 'provider.dart';
 import 'runtime_client.dart';
 
@@ -30,13 +31,11 @@ class ConvexConnectionBuilder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final runtimeClient = client ?? ConvexProvider.of(context);
-    return StreamBuilder<ConvexConnectionState>(
-      stream: runtimeClient.connectionState,
-      initialData: runtimeClient.currentConnectionState,
-      builder: (context, snapshot) {
-        final state = snapshot.data ?? runtimeClient.currentConnectionState;
-        return builder(context, state);
-      },
+    return ClientStateBuilder<ConvexRuntimeClient, ConvexConnectionState>(
+      client: runtimeClient,
+      stream: (client) => client.connectionState,
+      current: (client) => client.currentConnectionState,
+      builder: builder,
     );
   }
 }
@@ -64,13 +63,11 @@ class ConvexConnectionStatusBuilder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final runtimeClient = client ?? ConvexProvider.of(context);
-    return StreamBuilder<ConnectionStatus>(
-      stream: runtimeClient.connectionStatus,
-      initialData: runtimeClient.currentConnectionStatus,
-      builder: (context, snapshot) {
-        final status = snapshot.data ?? runtimeClient.currentConnectionStatus;
-        return builder(context, status);
-      },
+    return ClientStateBuilder<ConvexRuntimeClient, ConnectionStatus>(
+      client: runtimeClient,
+      stream: (client) => client.connectionStatus,
+      current: (client) => client.currentConnectionStatus,
+      builder: builder,
     );
   }
 }

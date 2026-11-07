@@ -10,18 +10,23 @@ class TasksApi {
 
   final ConvexFunctionCaller _client;
 
-  Future<AdvanceTaskResult> advanceTask({required TasksId taskId}) async {
+  Future<AdvanceTaskResult> advanceTask({
+    required TasksId taskId,
+    OptimisticUpdate? optimisticUpdate,
+  }) async {
     final raw$ = await _client.mutate(
       'tasks:advanceTask',
       _encodeAdvanceTaskArgs((taskId: taskId)),
+      optimisticUpdate,
     );
     return _decodeAdvanceTaskResult(raw$);
   }
 
-  Future<double> clearTasks() async {
+  Future<double> clearTasks({OptimisticUpdate? optimisticUpdate}) async {
     final raw$ = await _client.mutate(
       'tasks:clearTasks',
       const <String, dynamic>{},
+      optimisticUpdate,
     );
     return expectDouble(raw$, label: 'ClearTasksResult');
   }
@@ -34,6 +39,7 @@ class TasksApi {
     required String priority,
     required String? summary,
     required String title,
+    OptimisticUpdate? optimisticUpdate,
   }) async {
     final raw$ = await _client.mutate(
       'tasks:createTask',
@@ -46,6 +52,7 @@ class TasksApi {
         summary: summary,
         title: title,
       )),
+      optimisticUpdate,
     );
     return TasksId(expectString(raw$, label: 'CreateTaskResult'));
   }
@@ -66,37 +73,26 @@ class TasksApi {
       'tasks:listBoard',
       const <String, dynamic>{},
     );
-    final typedStream$ = subscription$.stream.map((event) {
-      switch (event) {
-        case QuerySuccess(:final value):
-          return TypedQuerySuccess<List<ListBoardResultItem>>(
-            expectList(
-              value,
-              label: 'ListBoardResult',
-            ).map((item) => _decodeListBoardResultItem(item)).toList(),
-          );
-        case QueryLoading(:final hasPendingWrites):
-          return TypedQueryLoading<List<ListBoardResultItem>>(
-            hasPendingWrites: hasPendingWrites,
-          );
-        case QueryError(:final message, :final data, :final logLines):
-          return TypedQueryError<List<ListBoardResultItem>>(
-            message,
-            data: data,
-            logLines: logLines,
-          );
-      }
-    });
     return TypedConvexSubscription<List<ListBoardResultItem>>(
       subscription$,
-      typedStream$,
+      subscription$.stream.map(
+        (event$) => typedQueryResult<List<ListBoardResultItem>>(
+          event$,
+          (raw$) => expectList(
+            raw$,
+            label: 'ListBoardResult',
+          ).map((item) => _decodeListBoardResultItem(item)).toList(),
+          'tasks:listBoard',
+        ),
+      ),
     );
   }
 
-  Future<double> seedBoard() async {
+  Future<double> seedBoard({OptimisticUpdate? optimisticUpdate}) async {
     final raw$ = await _client.mutate(
       'tasks:seedBoard',
       const <String, dynamic>{},
+      optimisticUpdate,
     );
     return expectDouble(raw$, label: 'SeedBoardResult');
   }

@@ -5,10 +5,30 @@ Thanks for your interest in contributing! Here's how to get started.
 ## Getting Started
 
 1. Fork the repo and clone your fork
-2. Run `dart pub get` in each package under `packages/`
+2. For each package you work on, point its internal Dartvex dependencies at
+   the local checkout, then fetch dependencies:
+
+   ```sh
+   bash scripts/ci-local-dependency-overrides.sh packages/dartvex_flutter
+   cd packages/dartvex_flutter && flutter pub get
+   ```
+
+   The script writes a gitignored `pubspec_overrides.yaml`, so packages are
+   tested against the unreleased `dartvex` on your branch rather than the
+   pub.dev release. Use `flutter pub get` for `dartvex_flutter` and the
+   Flutter examples, `dart pub get` elsewhere.
 3. Make your changes
-4. Run `dart analyze` and `dart test` in the affected packages
+4. Run the same checks as CI in the affected packages: `dart format`,
+   `dart analyze --fatal-infos` (`flutter analyze --fatal-infos` for
+   Flutter packages), and `dart test` (`flutter test`)
 5. Open a pull request
+
+`flutter pub get` and `flutter analyze` may rewrite `analysis_options.yaml`.
+The `analyzer.exclude` entries Flutter 3.47+ adds (`build/**` and the platform
+directories) are already committed, so a current Flutter leaves these files
+unchanged; do not commit any other rewrite (reformatting, reordering, or
+entries an older or newer Flutter adds or removes) unless the change is
+intentional and called out in the pull request.
 
 ## Development
 
@@ -24,7 +44,8 @@ This is a monorepo with multiple packages:
 
 ## Code Style
 
-- Run `dart format .` before committing
+- Run `dart format .` before committing (CI runs
+  `dart format --set-exit-if-changed`)
 - Follow the [Effective Dart](https://dart.dev/effective-dart) guidelines
 - Add dartdoc comments to all public APIs
 

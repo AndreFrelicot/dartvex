@@ -25,25 +25,16 @@ class AdminUsersApi {
       'admin/users:diagnose',
       _encodeDiagnoseArgs((level: level)),
     );
-    final typedStream$ = subscription$.stream.map((event) {
-      switch (event) {
-        case QuerySuccess(:final value):
-          return TypedQuerySuccess<DiagnoseResult>(
-            _decodeDiagnoseResult(value),
-          );
-        case QueryLoading(:final hasPendingWrites):
-          return TypedQueryLoading<DiagnoseResult>(
-            hasPendingWrites: hasPendingWrites,
-          );
-        case QueryError(:final message, :final data, :final logLines):
-          return TypedQueryError<DiagnoseResult>(
-            message,
-            data: data,
-            logLines: logLines,
-          );
-      }
-    });
-    return TypedConvexSubscription<DiagnoseResult>(subscription$, typedStream$);
+    return TypedConvexSubscription<DiagnoseResult>(
+      subscription$,
+      subscription$.stream.map(
+        (event$) => typedQueryResult<DiagnoseResult>(
+          event$,
+          (raw$) => _decodeDiagnoseResult(raw$),
+          'admin/users:diagnose',
+        ),
+      ),
+    );
   }
 
   Future<SyncTypeResult> syncValue({

@@ -7,7 +7,6 @@ void main() {
     test('fetchToken without forceRefresh returns the cached token', () async {
       final bridge = AuthTokenBridge<String>(
         authProvider: _FakeProvider(),
-        onIdToken: (_) {},
         initialToken: 'cached',
       );
       expect(await bridge.fetchToken(forceRefresh: false), 'cached');
@@ -18,7 +17,6 @@ void main() {
       final provider = _FakeProvider()..refreshError = StateError('blip');
       final bridge = AuthTokenBridge<String>(
         authProvider: provider,
-        onIdToken: (_) {},
         initialToken: 'cached',
       );
 
@@ -38,7 +36,6 @@ void main() {
       final provider = _FakeProvider()..refreshedToken = 'fresh';
       final bridge = AuthTokenBridge<String>(
         authProvider: provider,
-        onIdToken: (_) {},
         initialToken: 'cached',
       );
 
@@ -51,7 +48,6 @@ void main() {
       final provider = _FakeProvider()..refreshedToken = 'fresh';
       final bridge = AuthTokenBridge<String>(
         authProvider: provider,
-        onIdToken: (_) {},
         initialToken: 'cached',
       );
 

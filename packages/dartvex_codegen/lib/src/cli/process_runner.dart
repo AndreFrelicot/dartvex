@@ -1,10 +1,19 @@
-import 'dart:convert';
 import 'dart:io';
+
+import '../spec/spec_json.dart';
 
 /// Thrown when the external Convex CLI cannot be executed successfully.
 class ProcessRunnerException implements Exception {
   /// Creates a process runner failure with optional captured output.
-  ProcessRunnerException(this.message, {this.stdout, this.stderr});
+  ProcessRunnerException(
+    this.message, {
+    this.stdout,
+    this.stderr,
+    this.exitCode,
+  });
+
+  /// Maximum number of captured output lines included by [toString].
+  static const int outputTailLines = 10;
 
   /// Human-readable failure details.
   final String message;
@@ -15,8 +24,34 @@ class ProcessRunnerException implements Exception {
   /// Captured standard error, when available.
   final String? stderr;
 
+  /// The exit code of the failed process, when it ran.
+  final int? exitCode;
+
+  /// Returns [message] followed by the last [outputTailLines] lines of the
+  /// captured stderr (or stdout when stderr is empty), so the real Convex CLI
+  /// error (for example `No CONVEX_DEPLOYMENT set`) reaches the user.
   @override
-  String toString() => message;
+  String toString() {
+    final stderrText = stderr?.trim() ?? '';
+    final output = stderrText.isNotEmpty ? stderrText : (stdout?.trim() ?? '');
+    if (output.isEmpty) {
+      return message;
+    }
+    final lines = output.split(RegExp(r'\r?\n'));
+    final truncated = lines.length > outputTailLines;
+    final tail =
+        truncated ? lines.sublist(lines.length - outputTailLines) : lines;
+    final buffer =
+        StringBuffer(message)
+          ..writeln()
+          ..write(tail.map((line) => '  $line').join('\n'));
+    if (truncated) {
+      buffer
+        ..writeln()
+        ..write('  (output truncated; rerun with --verbose for the full log)');
+    }
+    return buffer.toString();
+  }
 }
 
 /// Abstraction for obtaining a Convex function spec from an external process.
@@ -64,7 +99,10 @@ class SystemProcessRunner implements ProcessRunner {
           runInShell: true,
         );
       } on ProcessException catch (error) {
-        lastFailure = ProcessRunnerException(error.message);
+        lastFailure = ProcessRunnerException(
+          error.message,
+          stderr: error.message,
+        );
         continue;
       }
 
@@ -77,29 +115,48 @@ class SystemProcessRunner implements ProcessRunner {
         stdout.writeln(stdoutText);
         stderr.writeln(stderrText);
       }
-      if (_looksLikeMissingExecutable(stderrText)) {
-        lastFailure = ProcessRunnerException(stderrText);
+      if (looksLikeMissingExecutable(result.exitCode, stderrText)) {
+        lastFailure = ProcessRunnerException(
+          '${candidate.join(' ')} is not available',
+          stdout: stdoutText,
+          stderr: stderrText,
+          exitCode: result.exitCode,
+        );
         continue;
       }
       throw ProcessRunnerException(
-        'convex function-spec failed in $projectDirectory',
+        'convex function-spec failed in $projectDirectory '
+        '(`${candidate.join(' ')}` exited with code ${result.exitCode}):',
         stdout: stdoutText,
         stderr: stderrText,
+        exitCode: result.exitCode,
       );
     }
     throw ProcessRunnerException(
       'Unable to run "convex function-spec". Install the Convex CLI or use '
       '--spec-file.',
       stderr: lastFailure?.stderr,
+      exitCode: lastFailure?.exitCode,
     );
   }
+}
 
-  bool _looksLikeMissingExecutable(String stderrText) {
-    final lowered = stderrText.toLowerCase();
-    return lowered.contains('not found') ||
-        lowered.contains('command not found') ||
-        lowered.contains('is not recognized');
+/// Whether a failed candidate run means the CLI itself is missing, so the
+/// next package runner should be tried.
+///
+/// Only shell "command not found" exit codes (127 on POSIX shells, 9009 for
+/// `cmd.exe`) and the package runners' own "no such executable" messages
+/// count. Real Convex CLI failures that merely contain "not found" (such as
+/// `Deployment "x" not found`) are reported instead of being retried.
+bool looksLikeMissingExecutable(int exitCode, String stderrText) {
+  if (exitCode == 127 || exitCode == 9009) {
+    return true;
   }
+  final lowered = stderrText.toLowerCase();
+  return lowered.contains('command not found') ||
+      lowered.contains('is not recognized as an internal or external') ||
+      lowered.contains('command "convex" not found') ||
+      lowered.contains('could not determine executable to run');
 }
 
 /// Extracts the first balanced Convex function spec JSON object from stdout.
@@ -107,79 +164,25 @@ String extractFunctionSpecJson(String stdoutText) {
   if (stdoutText.isEmpty) {
     throw ProcessRunnerException('convex function-spec produced no output.');
   }
-
-  var searchStart = stdoutText.indexOf('{');
-  if (searchStart == -1) {
+  if (!stdoutText.contains('{')) {
     throw ProcessRunnerException(
       'convex function-spec did not emit valid JSON.',
       stdout: stdoutText,
     );
   }
-
-  Object? lastError;
-  var foundJsonObject = false;
-  while (searchStart != -1) {
-    var depth = 0;
-    var inString = false;
-    var escaped = false;
-    for (var index = searchStart; index < stdoutText.length; index += 1) {
-      final char = stdoutText.codeUnitAt(index);
-      if (inString) {
-        if (escaped) {
-          escaped = false;
-        } else if (char == 0x5c) {
-          escaped = true;
-        } else if (char == 0x22) {
-          inString = false;
-        }
-        continue;
-      }
-
-      if (char == 0x22) {
-        inString = true;
-      } else if (char == 0x7b) {
-        depth += 1;
-      } else if (char == 0x7d) {
-        depth -= 1;
-        if (depth == 0) {
-          final candidate = stdoutText.substring(searchStart, index + 1);
-          try {
-            final decoded = jsonDecode(candidate);
-            if (decoded is Map<String, dynamic>) {
-              foundJsonObject = true;
-              if (_looksLikeFunctionSpec(decoded)) {
-                return candidate;
-              }
-              lastError =
-                  'JSON object is missing string "url" and list "functions" '
-                  'fields';
-            } else {
-              lastError = 'JSON value is ${decoded.runtimeType}, not an object';
-            }
-          } catch (error) {
-            lastError = error;
-          }
-          break;
-        }
-        if (depth < 0) {
-          break;
-        }
-      }
-    }
-    searchStart = stdoutText.indexOf('{', searchStart + 1);
+  final scan = scanFunctionSpecJson(stdoutText);
+  final json = scan.json;
+  if (json != null) {
+    return json;
   }
-
   throw ProcessRunnerException(
-    foundJsonObject
+    scan.foundJsonObject
         ? 'convex function-spec did not emit a Convex function spec JSON '
             'object.'
-        : lastError == null
+        : scan.lastError == null
         ? 'convex function-spec did not emit a complete JSON object.'
-        : 'convex function-spec output contains invalid JSON: $lastError',
+        : 'convex function-spec output contains invalid JSON: '
+            '${scan.lastError}',
     stdout: stdoutText,
   );
-}
-
-bool _looksLikeFunctionSpec(Map<String, dynamic> object) {
-  return object['url'] is String && object['functions'] is List<dynamic>;
 }

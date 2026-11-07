@@ -60,37 +60,36 @@ class DartGenerator {
   /// Generates the runtime, API modules, and schema types for [spec].
   GeneratedOutput generate(FunctionsSpec spec) {
     final warnings = <String>[...spec.warnings];
-    final root = _buildTree(spec);
+    final root = _buildTree(spec, warnings);
+    final tableIdClassNames = _resolveTableIdClassNames(
+      _collectTableNames(root),
+    );
     final files = <String, String>{};
 
     files['runtime.dart'] = _formatOrThrow(_buildRuntimeFile(), 'runtime.dart');
 
     for (final node in _flattenNodes(root)) {
-      if (node.pathSegments.isEmpty) {
-        files['api.dart'] = _formatOrThrow(
-          _renderNode(node, isRoot: true),
-          'api.dart',
-        );
-      } else {
-        final filePath = _moduleFilePath(node);
-        files[filePath] = _formatOrThrow(
-          _renderNode(node, isRoot: false),
-          filePath,
-        );
-      }
-      warnings.addAll(node.renderWarnings);
-      warnings.addAll(node.typeWarnings);
+      final isRoot = node.pathSegments.isEmpty;
+      final filePath = isRoot ? 'api.dart' : _moduleFilePath(node);
+      final typeContext = TypeRenderContext(
+        naming: _naming,
+        tableIdClassNames: tableIdClassNames,
+      );
+      files[filePath] = _formatOrThrow(
+        _renderNode(node, isRoot: isRoot, typeContext: typeContext),
+        filePath,
+      );
+      warnings.addAll(typeContext.warnings);
     }
 
     files['schema.dart'] = _formatOrThrow(
-      _buildSchemaFile(root.tableNames),
+      _buildSchemaFile(tableIdClassNames),
       'schema.dart',
     );
-    warnings.addAll(root.warnings);
     return GeneratedOutput(files: files, warnings: warnings);
   }
 
-  _ModuleNode _buildTree(FunctionsSpec spec) {
+  _ModuleNode _buildTree(FunctionsSpec spec, List<String> warnings) {
     final root = _ModuleNode(pathSegments: const <String>[]);
     final publicFunctions =
         spec.publicFunctions.toList()
@@ -98,7 +97,7 @@ class DartGenerator {
 
     for (final baseFunction in spec.functions) {
       if (baseFunction is HttpFunctionSpec) {
-        root.warnings.add(
+        warnings.add(
           'Skipping HTTP action ${baseFunction.method} ${baseFunction.path}; '
           'this generator currently targets queries, mutations, and actions.',
         );
@@ -119,7 +118,6 @@ class DartGenerator {
       node.functions.add(function);
     }
 
-    _collectTableNames(root);
     _validateGeneratedMembers(root);
     return root;
   }
@@ -163,33 +161,93 @@ class DartGenerator {
     }
   }
 
-  void _collectTableNames(_ModuleNode node) {
-    for (final function in node.functions) {
-      final typeContext = TypeRenderContext(naming: _naming);
-      final mapper = TypeMapper(naming: _naming);
-      mapper.mapType(
-        function.returns,
-        suggestedName: '${_naming.typeName(function.functionName)}Result',
-        context: typeContext,
-      );
-      if (function.args is ConvexObjectType) {
-        final argsObject = function.args as ConvexObjectType;
-        for (final entry in argsObject.value.entries) {
-          mapper.mapType(
-            entry.value.fieldType,
-            suggestedName:
-                '${_naming.typeName(function.functionName)}${_naming.typeName(entry.key)}',
-            context: typeContext,
-          );
-        }
+  /// Collects every table referenced by a `v.id(...)` in the public functions
+  /// under [root].
+  ///
+  /// This is a pure walk over the validators: it does not map types, so it
+  /// cannot disagree with the renderer about generated type names. Record
+  /// keys are skipped because id-typed keys are generated as plain `String`
+  /// map keys and never reference an ID class.
+  Set<String> _collectTableNames(_ModuleNode root) {
+    final tables = <String>{};
+    void visit(ConvexType type) {
+      switch (type) {
+        case ConvexIdType(:final tableName):
+          tables.add(tableName);
+        case ConvexArrayType(:final value):
+          visit(value);
+        case ConvexRecordType(:final values):
+          visit(values.fieldType);
+        case ConvexObjectType(:final value):
+          for (final field in value.values) {
+            visit(field.fieldType);
+          }
+        case ConvexUnionType(:final value):
+          value.forEach(visit);
+        case ConvexAnyType() ||
+            ConvexBooleanType() ||
+            ConvexStringType() ||
+            ConvexNumberType() ||
+            ConvexNullType() ||
+            ConvexBigIntType() ||
+            ConvexCommitTsType() ||
+            ConvexFunctionHandleType() ||
+            ConvexBytesType() ||
+            ConvexLiteralType():
+          break;
       }
-      node.tableNames.addAll(typeContext.tableNames);
     }
-    for (final child in node.children.values) {
-      _collectTableNames(child);
-      node.tableNames.addAll(child.tableNames);
-      node.warnings.addAll(child.warnings);
+
+    for (final node in _flattenNodes(root)) {
+      for (final function in node.functions) {
+        visit(function.returns);
+        visit(function.args);
+      }
     }
+    return tables;
+  }
+
+  /// Assigns each table its generated `ConvexTableId` subclass name.
+  ///
+  /// System tables (`_storage`, `_scheduled_functions`) normally keep their
+  /// short names (`StorageId`). When one sanitizes to the same class name as
+  /// a user table (`storage`), the system table gets a `System` prefix
+  /// (`SystemStorageId`) since system tables cannot be renamed. Any other
+  /// collision throws a [NamingException].
+  Map<String, String> _resolveTableIdClassNames(Set<String> tables) {
+    final sortedTables = tables.toList()..sort();
+    final byDefaultName = <String, List<String>>{};
+    for (final table in sortedTables) {
+      (byDefaultName['${_naming.typeName(table)}Id'] ??= <String>[]).add(table);
+    }
+    final result = <String, String>{};
+    for (final table in sortedTables) {
+      final defaultName = '${_naming.typeName(table)}Id';
+      final group = byDefaultName[defaultName]!;
+      final collidesWithUserTable =
+          group.length > 1 &&
+          table.startsWith('_') &&
+          group.any((other) => !other.startsWith('_'));
+      result[table] =
+          collidesWithUserTable
+              ? 'System${_naming.typeName(table)}Id'
+              : defaultName;
+    }
+
+    final tableByClass = <String, String>{};
+    for (final table in sortedTables) {
+      final typeName = result[table]!;
+      final existingTable = tableByClass[typeName];
+      if (existingTable != null) {
+        throw NamingException(
+          'Generated table ID class name collision: "$typeName" is used by '
+          'tables "$existingTable" and "$table". Rename one of the Convex '
+          'tables.',
+        );
+      }
+      tableByClass[typeName] = table;
+    }
+    return result;
   }
 
   Iterable<_ModuleNode> _flattenNodes(_ModuleNode root) sync* {
@@ -205,7 +263,11 @@ class DartGenerator {
     }
   }
 
-  String _renderNode(_ModuleNode node, {required bool isRoot}) {
+  String _renderNode(
+    _ModuleNode node, {
+    required bool isRoot,
+    required TypeRenderContext typeContext,
+  }) {
     final filePath = isRoot ? 'api.dart' : _moduleFilePath(node);
     final imports =
         ImportManager()
@@ -235,15 +297,10 @@ class DartGenerator {
       );
     }
 
-    final typeContext = TypeRenderContext(naming: _naming);
-    final methods = <String>[];
-    final helpers = <String>[];
-    for (final function in node.functions) {
-      final rendered = _renderFunction(function, context: typeContext);
-      methods.add(rendered.methods);
-      helpers.add(rendered.helpers);
-    }
-    node.typeWarnings = typeContext.warnings;
+    final methods = <String>[
+      for (final function in node.functions)
+        _renderFunction(function, context: typeContext),
+    ];
 
     if (typeContext.usesTypedData) {
       imports.add('dart:typed_data');
@@ -285,9 +342,6 @@ class DartGenerator {
         ..writeln(_indent(method.trimRight(), 2))
         ..writeln();
     }
-    if (buffer.toString().endsWith('\n\n')) {
-      buffer.write('');
-    }
     buffer.writeln('}');
 
     final definitions = typeContext.renderDefinitions();
@@ -296,15 +350,10 @@ class DartGenerator {
         ..writeln()
         ..writeln(definitions);
     }
-    for (final helper in helpers.where((helper) => helper.isNotEmpty)) {
-      buffer
-        ..writeln()
-        ..writeln(helper.trimRight());
-    }
     return '${buffer.toString().trimRight()}\n';
   }
 
-  _RenderedFunction _renderFunction(
+  String _renderFunction(
     FunctionSpec function, {
     required TypeRenderContext context,
   }) {
@@ -331,13 +380,18 @@ class DartGenerator {
       'Mutation' => 'mutate',
       'Action' => 'action',
       _ =>
-        throw StateError('Unsupported function type ${function.functionType}'),
+        throw GenerationException(
+          'Unsupported function type "${function.functionType}" for '
+          '${function.identifier}.',
+        ),
     };
+    final isMutation = function.functionType == 'Mutation';
 
     final methodBuffer = StringBuffer();
-    final helperBuffer = StringBuffer();
     var requestArgsExpression = 'const <String, dynamic>{}';
-    String signature;
+    final namedParameters = <String>[];
+    final positionalParameters = <String>[];
+    final argNames = <String>{};
 
     if (argsType is ConvexObjectType && argsType.value.isNotEmpty) {
       final argsObject = mapper.mapType(
@@ -345,115 +399,139 @@ class DartGenerator {
         suggestedName: '${functionPrefix}Args',
         context: context,
       );
-      final argsFields = <String>[];
+      final fieldNames = mapper.resolveObjectFieldNames(
+        argsType.value.keys,
+        ownerName: '${functionPrefix}Args',
+      );
       final recordAssignments = <String>[];
       for (final entry in argsType.value.entries) {
-        final fieldName = _naming.fieldName(entry.key);
+        final fieldName = fieldNames[entry.key]!;
+        argNames.add(fieldName);
         final mappedField = mapper.mapType(
           entry.value.fieldType,
-          suggestedName: '${functionPrefix}Args${_naming.typeName(entry.key)}',
+          suggestedName:
+              '${functionPrefix}Args'
+              '${mapper.fieldTypeSuffix(entry.key, fieldName)}',
           context: context,
         );
         if (entry.value.optional) {
-          argsFields.add(
+          namedParameters.add(
             'Optional<${mappedField.annotation}> '
             '$fieldName = const Optional.absent()',
           );
         } else {
-          argsFields.add('required ${mappedField.annotation} $fieldName');
+          namedParameters.add('required ${mappedField.annotation} $fieldName');
         }
         recordAssignments.add('$fieldName: $fieldName');
       }
       requestArgsExpression = argsObject.encode(
         '(${recordAssignments.join(', ')})',
       );
-      signature = '{${argsFields.join(', ')}}';
     } else if (argsType is ConvexObjectType && argsType.value.isEmpty) {
-      signature = '';
-    } else if (argsType is ConvexAnyType) {
-      signature = '[Map<String, dynamic> args = const <String, dynamic>{}]';
-      requestArgsExpression = 'args';
+      // No arguments.
     } else {
-      throw StateError(
-        'Top-level arguments for ${function.identifier} must be an object or any',
+      if (argsType is! ConvexAnyType) {
+        // Convex accepts any validator for `args` (for example a union of
+        // objects or a record). Such shapes have no named-parameter form, so
+        // they take the same untyped map as an unvalidated function.
+        context.warnings.add(
+          'Function "${function.identifier}" has a non-object top-level args '
+          'validator (${argsType.type}); generated with an untyped '
+          'Map<String, dynamic> argument.',
+        );
+      }
+      positionalParameters.add(
+        'Map<String, dynamic> args = const <String, dynamic>{}',
       );
+      requestArgsExpression = 'args';
+      argNames.add('args');
     }
+
+    var optimisticArgument = '';
+    var optimisticParameter = '';
+    if (isMutation) {
+      if (argNames.contains('optimisticUpdate')) {
+        context.warnings.add(
+          'Function "${function.identifier}" has an argument that collides '
+          'with the generated "optimisticUpdate" parameter; generated without '
+          'optimistic update support.',
+        );
+      } else {
+        // Optimistic updates are forwarded positionally, matching
+        // ConvexClient.mutate(name, [args, optimisticUpdate]).
+        optimisticArgument = ', optimisticUpdate';
+        optimisticParameter = 'OptimisticUpdate? optimisticUpdate';
+      }
+    }
+
+    String renderSignature({required bool includeOptimistic}) {
+      final optimistic = <String>[
+        if (includeOptimistic && optimisticParameter.isNotEmpty)
+          optimisticParameter,
+      ];
+      if (positionalParameters.isNotEmpty) {
+        final positional = <String>[...positionalParameters, ...optimistic];
+        return '[${positional.join(', ')}]';
+      }
+      final named = <String>[...namedParameters, ...optimistic];
+      return named.isEmpty ? '' : '{${named.join(', ')}}';
+    }
+
+    final functionNameLiteral = dartSingleQuotedString(
+      function.convexFunctionName,
+    );
 
     // Generated locals carry a `$` suffix: sanitized Convex argument names can
     // never contain `$`, so a user argument named `raw`, `subscription`, or
     // `query` cannot collide with (and shadow) a generated local.
     methodBuffer
       ..write('Future<${resultType.annotation}> $methodName(')
-      ..write(signature)
+      ..write(renderSignature(includeOptimistic: true))
       ..writeln(') async {');
     final decodeExpression = resultType.decode(r'raw$');
+    final call =
+        '_client.$operation($functionNameLiteral, '
+        '$requestArgsExpression$optimisticArgument)';
     if (decodeExpression == 'null') {
       // A `v.null()` return needs no decode; skip the binding so the
       // generated method does not hold an unused local.
       methodBuffer
-        ..writeln(
-          "  await _client.$operation("
-          '${dartSingleQuotedString(function.convexFunctionName)}, '
-          '$requestArgsExpression);',
-        )
+        ..writeln('  await $call;')
         ..writeln('  return null;')
         ..writeln('}');
     } else {
       methodBuffer
-        ..writeln(
-          "  final raw\$ = await _client.$operation("
-          '${dartSingleQuotedString(function.convexFunctionName)}, '
-          '$requestArgsExpression);',
-        )
+        ..writeln('  final raw\$ = await $call;')
         ..writeln('  return $decodeExpression;')
         ..writeln('}');
     }
 
     if (function.functionType == 'Query') {
+      final annotation = resultType.annotation;
+      // Decoding happens inside typedQueryResult (runtime.dart), which turns
+      // a decode failure into a TypedQueryError instead of a stream error.
       methodBuffer
         ..writeln()
-        ..write(
-          'TypedConvexSubscription<${resultType.annotation}> '
-          '${methodName}Subscribe(',
-        )
-        ..write(signature)
+        ..write('TypedConvexSubscription<$annotation> ${methodName}Subscribe(')
+        ..write(renderSignature(includeOptimistic: false))
         ..writeln(') {')
         ..writeln(
-          "  final subscription\$ = _client.subscribe("
-          '${dartSingleQuotedString(function.convexFunctionName)}, '
-          '$requestArgsExpression);',
+          '  final subscription\$ = _client.subscribe('
+          '$functionNameLiteral, $requestArgsExpression);',
         )
-        ..writeln('  final typedStream\$ = subscription\$.stream.map((event) {')
-        ..writeln('    switch (event) {')
-        ..writeln('      case QuerySuccess(:final value):')
+        ..writeln('  return TypedConvexSubscription<$annotation>(')
+        ..writeln('    subscription\$,')
+        ..writeln('    subscription\$.stream.map(')
         ..writeln(
-          '        return TypedQuerySuccess<${resultType.annotation}>(${resultType.decode('value')});',
+          '      (event\$) => typedQueryResult<$annotation>(event\$, '
+          '(raw\$) => $decodeExpression, $functionNameLiteral),',
         )
-        ..writeln('      case QueryLoading(:final hasPendingWrites):')
-        ..writeln(
-          '        return TypedQueryLoading<${resultType.annotation}>('
-          'hasPendingWrites: hasPendingWrites);',
-        )
-        ..writeln(
-          '      case QueryError(:final message, :final data, :final logLines):',
-        )
-        ..writeln(
-          '        return TypedQueryError<${resultType.annotation}>('
-          'message, data: data, logLines: logLines);',
-        )
-        ..writeln('    }')
-        ..writeln('  });')
-        ..writeln(
-          '  return TypedConvexSubscription<${resultType.annotation}>('
-          'subscription\$, typedStream\$);',
-        )
+        ..writeln('    ),')
+        ..writeln('  );')
         ..writeln('}');
     }
 
-    return _RenderedFunction(
-      methods: methodBuffer.toString(),
-      helpers: helperBuffer.toString(),
-    );
+    return methodBuffer.toString();
   }
 
   /// Detects whether [function] is a Convex paginated query and, if so, returns
@@ -518,7 +596,7 @@ class DartGenerator {
       for (final entry in args.value.entries)
         if (entry.key != 'paginationOpts') entry.key: entry.value,
     };
-    if (otherArgs.keys.any((key) => _naming.fieldName(key) == 'pageSize')) {
+    if (_naming.resolveFieldNames(otherArgs.keys).values.contains('pageSize')) {
       // The paginated wrapper exposes its own `pageSize` parameter; a user
       // argument with that (sanitized) name would declare it twice. Fall back
       // to a plain query method, which still exposes paginationOpts directly.
@@ -532,7 +610,7 @@ class DartGenerator {
     return _PaginationInfo(elementType: elementType, otherArgs: otherArgs);
   }
 
-  _RenderedFunction _renderPaginatedQuery(
+  String _renderPaginatedQuery(
     FunctionSpec function,
     _PaginationInfo info, {
     required TypeRenderContext context,
@@ -559,12 +637,18 @@ class DartGenerator {
 
     final argsFields = <String>[];
     final argsMapEntries = <String>[];
+    final fieldNames = mapper.resolveObjectFieldNames(
+      info.otherArgs.keys,
+      ownerName: '${functionPrefix}Args',
+    );
     for (final entry in info.otherArgs.entries) {
       final fieldKey = dartSingleQuotedString(entry.key);
-      final fieldName = _naming.fieldName(entry.key);
+      final fieldName = fieldNames[entry.key]!;
       final mappedField = mapper.mapType(
         entry.value.fieldType,
-        suggestedName: '${functionPrefix}Args${_naming.typeName(entry.key)}',
+        suggestedName:
+            '${functionPrefix}Args'
+            '${mapper.fieldTypeSuffix(entry.key, fieldName)}',
         context: context,
       );
       if (entry.value.optional) {
@@ -608,25 +692,11 @@ class DartGenerator {
           ..writeln('  );')
           ..write('}');
 
-    return _RenderedFunction(methods: methodBuffer.toString(), helpers: '');
+    return methodBuffer.toString();
   }
 
-  String _buildSchemaFile(Set<String> tables) {
-    final sortedTables = tables.toList()..sort();
-    final tableIdClasses = <String, String>{};
-    for (final table in sortedTables) {
-      final typeName = '${_naming.typeName(table)}Id';
-      final existingTable = tableIdClasses[typeName];
-      if (existingTable != null) {
-        throw NamingException(
-          'Generated table ID class name collision: "$typeName" is used by '
-          'tables "$existingTable" and "$table". Rename one of the Convex '
-          'tables.',
-        );
-      }
-      tableIdClasses[typeName] = table;
-    }
-
+  String _buildSchemaFile(Map<String, String> tableIdClassNames) {
+    final sortedTables = tableIdClassNames.keys.toList()..sort();
     final buffer =
         StringBuffer()
           ..writeln(generatedFileHeader)
@@ -636,7 +706,7 @@ class DartGenerator {
           ..writeln();
 
     for (final table in sortedTables) {
-      final typeName = '${_naming.typeName(table)}Id';
+      final typeName = tableIdClassNames[table]!;
       buffer
         ..writeln('class $typeName extends ConvexTableId {')
         ..writeln('  const $typeName(super.value);')
@@ -734,9 +804,17 @@ sealed class TypedQueryResult<T> {
 }
 
 class TypedQuerySuccess<T> extends TypedQueryResult<T> {
-  const TypedQuerySuccess(this.value);
+  const TypedQuerySuccess(
+    this.value, {
+    this.logLines = const <String>[],
+    this.hasPendingWrites = false,
+  });
 
   final T value;
+  final List<String> logLines;
+
+  /// Whether optimistic updates currently affect [value].
+  final bool hasPendingWrites;
 }
 
 class TypedQueryLoading<T> extends TypedQueryResult<T> {
@@ -757,6 +835,41 @@ class TypedQueryError<T> extends TypedQueryResult<T> {
   final List<String> logLines;
 }
 
+/// Converts a raw query [event] into a typed result.
+///
+/// A value that [decode] rejects (for example an enum value added on the
+/// server after these bindings were generated) becomes a [TypedQueryError]
+/// instead of a stream error, so exhaustive switches over
+/// [TypedQueryResult] see every failure.
+TypedQueryResult<T> typedQueryResult<T>(
+  QueryResult event,
+  T Function(dynamic raw) decode,
+  String functionName,
+) {
+  switch (event) {
+    case QuerySuccess(:final value, :final logLines, :final hasPendingWrites):
+      final T decoded;
+      try {
+        decoded = decode(value);
+      } catch (error) {
+        return TypedQueryError<T>(
+          'Failed to decode \$functionName result: \$error',
+          data: error,
+          logLines: logLines,
+        );
+      }
+      return TypedQuerySuccess<T>(
+        decoded,
+        logLines: logLines,
+        hasPendingWrites: hasPendingWrites,
+      );
+    case QueryLoading(:final hasPendingWrites):
+      return TypedQueryLoading<T>(hasPendingWrites: hasPendingWrites);
+    case QueryError(:final message, :final data, :final logLines):
+      return TypedQueryError<T>(message, data: data, logLines: logLines);
+  }
+}
+
 class TypedConvexSubscription<T> {
   const TypedConvexSubscription(this._delegate, this.stream);
 
@@ -774,12 +887,16 @@ class TypedConvexPaginatedResult<T> {
     required this.status,
     required this.isDone,
     this.error,
+    this.hasPendingWrites = false,
   });
 
   final List<T> items;
   final ConvexPaginationStatus status;
   final bool isDone;
   final Object? error;
+
+  /// Whether optimistic writes currently affect any loaded page in [items].
+  final bool hasPendingWrites;
 }
 
 class TypedConvexPaginatedQuery<T> {
@@ -787,15 +904,23 @@ class TypedConvexPaginatedQuery<T> {
 
   final ConvexPaginatedQuery _delegate;
   final T Function(dynamic raw) _decode;
+  ConvexPaginatedResult? _lastRaw;
+  TypedConvexPaginatedResult<T>? _lastTyped;
 
-  Stream<TypedConvexPaginatedResult<T>> get stream =>
-      _delegate.stream.map(_toTyped);
+  /// Created once, so a widget passing `stream: query.stream` on every build
+  /// keeps the same subscription.
+  late final Stream<TypedConvexPaginatedResult<T>> stream = _delegate.stream
+      .map(_toTyped);
 
+  /// The latest typed snapshot. Decoded once per raw snapshot and cached.
   TypedConvexPaginatedResult<T> get current => _toTyped(_delegate.current);
 
-  List<T> get items => _delegate.current.results.map(_decode).toList();
+  /// The decoded items of [current] (an unmodifiable, cached list).
+  List<T> get items => current.items;
 
-  ConvexPaginationStatus get status => _delegate.status;
+  /// The status of [current]; [ConvexPaginationStatus.error] also reports
+  /// items that could not be decoded.
+  ConvexPaginationStatus get status => current.status;
 
   bool get isDone => _delegate.isDone;
 
@@ -806,12 +931,33 @@ class TypedConvexPaginatedQuery<T> {
   }
 
   TypedConvexPaginatedResult<T> _toTyped(ConvexPaginatedResult result) {
-    return TypedConvexPaginatedResult<T>(
-      items: result.results.map(_decode).toList(),
-      status: result.status,
-      isDone: result.isDone,
-      error: result.error,
-    );
+    final cached = _lastTyped;
+    if (cached != null && identical(result, _lastRaw)) {
+      return cached;
+    }
+    TypedConvexPaginatedResult<T> typed;
+    try {
+      typed = TypedConvexPaginatedResult<T>(
+        items: List<T>.unmodifiable(result.results.map(_decode)),
+        status: result.status,
+        isDone: result.isDone,
+        error: result.error,
+        hasPendingWrites: result.hasPendingWrites,
+      );
+    } catch (error) {
+      // An item the bindings cannot decode is reported like a failed page
+      // instead of throwing from a getter or erroring the stream.
+      typed = TypedConvexPaginatedResult<T>(
+        items: List<T>.unmodifiable(<T>[]),
+        status: ConvexPaginationStatus.error,
+        isDone: result.isDone,
+        error: error,
+        hasPendingWrites: result.hasPendingWrites,
+      );
+    }
+    _lastRaw = result;
+    _lastTyped = typed;
+    return typed;
   }
 }
 
@@ -861,6 +1007,19 @@ BigInt expectBigInt(dynamic value, {String? label}) {
     return value;
   }
   throw FormatException('Expected \${label ?? 'bigint'}, got \${describeType(value)}');
+}
+
+/// Decodes a `v.commitTs()` value: a [BigInt] commit timestamp, or
+/// [ConvexCommitTsPlaceholder.instance] when the mutation that wrote the field
+/// reads it back before committing.
+Object expectCommitTs(dynamic value, {String? label}) {
+  if (value is BigInt) {
+    return value;
+  }
+  if (value is ConvexCommitTsPlaceholder) {
+    return value;
+  }
+  throw FormatException('Expected \${label ?? 'commitTs'}, got \${describeType(value)}');
 }
 
 Uint8List expectBytes(dynamic value, {String? label}) {
@@ -931,17 +1090,6 @@ class _ModuleNode {
   final List<String> pathSegments;
   final Map<String, _ModuleNode> children = <String, _ModuleNode>{};
   final List<FunctionSpec> functions = <FunctionSpec>[];
-  final Set<String> tableNames = <String>{};
-  final List<String> warnings = <String>[];
-  List<String> renderWarnings = <String>[];
-  List<String> typeWarnings = <String>[];
-}
-
-class _RenderedFunction {
-  const _RenderedFunction({required this.methods, required this.helpers});
-
-  final String methods;
-  final String helpers;
 }
 
 /// Describes a detected paginated query: its page element type (or `null` for

@@ -1,8 +1,8 @@
 name: dartvex_codegen
 description: >-
   CLI code generator for Convex backends. Generates type-safe Dart bindings
-  from your Convex schema.
-version: 0.2.0
+  from the validators in your Convex function spec.
+version: 0.3.0
 homepage: https://github.com/AndreFrelicot/dartvex
 repository: https://github.com/AndreFrelicot/dartvex/tree/main/packages/dartvex_codegen
 issue_tracker: https://github.com/AndreFrelicot/dartvex/issues
@@ -30,6 +30,6 @@ executables:
   dartvex_codegen: dartvex_codegen
 
 dev_dependencies:
-  dartvex: ^0.2.0
+  dartvex: ^0.3.0
   lints: ^5.1.1
   test: ^1.25.15

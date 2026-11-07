@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'spec_json.dart';
+
 /// The placeholder deployment URL written into committed function specs so a
 /// real Convex deployment URL never reaches version control.
 const String placeholderDeploymentUrl = 'https://your-deployment.convex.cloud';
@@ -12,13 +14,17 @@ const String placeholderDeploymentUrl = 'https://your-deployment.convex.cloud';
 /// preserved and the output is re-serialized with a 2-space indent to match
 /// Convex's own formatting so committed diffs stay minimal. The transform is
 /// idempotent: scrubbing already-scrubbed JSON yields identical output.
+///
+/// Like `generate --project`, banner or log lines that a package runner
+/// prints around the spec (for example yarn v1's `yarn run v1.22` / `Done in`
+/// lines) are skipped; only the embedded function spec object is kept.
 String scrubFunctionSpec(
   String rawJson, {
   String placeholderUrl = placeholderDeploymentUrl,
 }) {
   final Object? decoded;
   try {
-    decoded = jsonDecode(rawJson);
+    decoded = decodeFunctionSpecJson(rawJson);
   } on FormatException catch (error) {
     throw FormatException('function-spec is not valid JSON: ${error.message}');
   }

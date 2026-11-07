@@ -2,7 +2,11 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:dartvex_flutter/dartvex_flutter.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart'
+    show HttpExceptionWithStatus;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 void main() {
   group('ConvexFileDownloader.download', () {
@@ -70,5 +74,245 @@ void main() {
         );
       },
     );
+
+    group('errors carry the URL reduced to its origin', () {
+      const url =
+          'https://files.example.com:8443/api/storage/abc-123?sig=s3cr3t';
+
+      test('status errors', () async {
+        final client = MockClient((_) async => http.Response('denied', 403));
+
+        final error = await ConvexFileDownloader.download(
+          url,
+          client: client,
+        ).then<Object?>((_) => null, onError: (Object e) => e);
+
+        expect(error, isA<HttpException>());
+        final httpError = error! as HttpException;
+        expect(httpError.uri, Uri.parse('https://files.example.com:8443'));
+        expect(httpError.toString(), isNot(contains('abc-123')));
+        expect(httpError.toString(), isNot(contains('s3cr3t')));
+      });
+
+      test('transport errors', () async {
+        final client = MockClient(
+          (request) async => throw http.ClientException(
+            'Connection failed for $url',
+            request.url,
+          ),
+        );
+
+        final error = await ConvexFileDownloader.download(
+          url,
+          client: client,
+        ).then<Object?>((_) => null, onError: (Object e) => e);
+
+        expect(error, isA<http.ClientException>());
+        expect(error.toString(), isNot(contains('abc-123')));
+        expect(error.toString(), isNot(contains('s3cr3t')));
+        expect(
+          (error! as http.ClientException).uri,
+          Uri.parse('https://files.example.com:8443'),
+        );
+      });
+
+      test('status errors keep their status code', () async {
+        final client = MockClient((_) async => http.Response('gone', 404));
+
+        final error = await ConvexFileDownloader.download(
+          url,
+          client: client,
+        ).then<Object?>((_) => null, onError: (Object e) => e);
+
+        expect(error, isA<HttpExceptionWithStatus>());
+        expect((error! as HttpExceptionWithStatus).statusCode, 404);
+      });
+
+      test('a malformed URL fails with a FormatException without the URL '
+          '(it is parsed inside the redacted path)', () async {
+        const malformed = 'https://files.example.com:bad/private?sig=SECRET';
+        var requests = 0;
+        final client = MockClient((_) async {
+          requests += 1;
+          return http.Response('', 200);
+        });
+
+        for (final injected in <http.Client?>[client, null]) {
+          final error = await ConvexFileDownloader.download(
+            malformed,
+            client: injected,
+          ).then<Object?>((_) => null, onError: (Object e) => e);
+
+          expect(error, isA<FormatException>());
+          final format = error! as FormatException;
+          expect(format.source, isNull);
+          for (final secret in ['SECRET', '/private', 'bad/private']) {
+            expect(format.toString(), isNot(contains(secret)));
+          }
+        }
+        expect(requests, 0);
+      });
+
+      test('other errors that mention the URL become URL-free client '
+          'errors', () async {
+        final client = MockClient(
+          (request) async =>
+              throw StateError('Unsupported request to ${request.url}'),
+        );
+
+        final error = await ConvexFileDownloader.download(
+          url,
+          client: client,
+        ).then<Object?>((_) => null, onError: (Object e) => e);
+
+        expect(error, isA<http.ClientException>());
+        expect(error.toString(), contains('Unsupported request'));
+        expect(error.toString(), isNot(contains('abc-123')));
+        expect(error.toString(), isNot(contains('s3cr3t')));
+        expect(
+          (error! as http.ClientException).uri,
+          Uri.parse('https://files.example.com:8443'),
+        );
+      });
+
+      test('errors that do not mention the URL are left alone', () async {
+        final original = StateError('socket closed');
+        final client = MockClient((_) async => throw original);
+
+        final error = await ConvexFileDownloader.download(
+          url,
+          client: client,
+        ).then<Object?>((_) => null, onError: (Object e) => e);
+
+        expect(error, same(original));
+      });
+    });
+
+    test('uses an injected client and leaves it open', () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      server.listen((request) async {
+        request.response.add(<int>[7]);
+        await request.response.close();
+      });
+      final client = _CountingClient(http.Client());
+      addTearDown(client.inner.close);
+      final url = 'http://${server.address.host}:${server.port}/file';
+
+      expect(await ConvexFileDownloader.download(url, client: client), [7]);
+      expect(await ConvexFileDownloader.download(url, client: client), [7]);
+
+      expect(client.requests, 2);
+      expect(client.closed, isFalse);
+    });
+
+    test('completing abortTrigger aborts a stalled download', () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      server.listen((request) async {
+        request.response.statusCode = 200;
+        request.response.add(<int>[1, 2, 3]);
+        await request.response.flush();
+      });
+      final abort = Completer<void>();
+
+      final download = ConvexFileDownloader.download(
+        'http://${server.address.host}:${server.port}/file',
+        abortTrigger: abort.future,
+        idleTimeout: const Duration(seconds: 10),
+      );
+      Timer(const Duration(milliseconds: 100), abort.complete);
+
+      await expectLater(download, throwsA(isA<http.RequestAbortedException>()));
+    });
+
+    test('aborts the request when the response headers time out', () async {
+      final client = _StallingClient();
+
+      await expectLater(
+        ConvexFileDownloader.download(
+          'https://example.com/file',
+          client: client,
+          idleTimeout: const Duration(milliseconds: 50),
+        ),
+        throwsA(isA<TimeoutException>()),
+      );
+
+      // A stalled request must not be left running on a shared client.
+      expect(await client.aborted, isTrue);
+    });
+
+    test('aborts the request when draining an error body times out', () async {
+      final client = _StallingClient(errorStatus: 500);
+
+      await expectLater(
+        ConvexFileDownloader.download(
+          'https://example.com/file',
+          client: client,
+          idleTimeout: const Duration(milliseconds: 50),
+        ),
+        throwsA(isA<HttpException>()),
+      );
+
+      expect(await client.aborted, isTrue);
+    });
   });
+}
+
+class _CountingClient extends http.BaseClient {
+  _CountingClient(this.inner);
+
+  final http.Client inner;
+  int requests = 0;
+  bool closed = false;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) {
+    requests += 1;
+    return inner.send(request);
+  }
+
+  @override
+  void close() => closed = true;
+}
+
+/// Never finishes on its own: either the response headers ([errorStatus]
+/// null) or the error body stall until the request's abort trigger fires.
+class _StallingClient extends http.BaseClient {
+  _StallingClient({this.errorStatus});
+
+  final int? errorStatus;
+  final Completer<bool> _aborted = Completer<bool>();
+
+  /// Whether the abort trigger fired (false after a grace period).
+  Future<bool> get aborted => _aborted.future.timeout(
+    const Duration(milliseconds: 500),
+    onTimeout: () => false,
+  );
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) {
+    final trigger = request is http.Abortable ? request.abortTrigger : null;
+    final headers = Completer<http.StreamedResponse>();
+    final body = StreamController<List<int>>();
+    trigger?.then((_) {
+      if (!_aborted.isCompleted) {
+        _aborted.complete(true);
+      }
+      final error = http.RequestAbortedException(request.url);
+      if (!headers.isCompleted) {
+        headers.completeError(error);
+      } else {
+        body
+          ..addError(error)
+          ..close();
+      }
+    });
+    final status = errorStatus;
+    if (status != null) {
+      body.add(<int>[1, 2, 3]);
+      headers.complete(http.StreamedResponse(body.stream, status));
+    }
+    return headers.future;
+  }
 }

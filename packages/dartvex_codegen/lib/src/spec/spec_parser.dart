@@ -1,6 +1,5 @@
-import 'dart:convert';
-
 import 'function_spec.dart';
+import 'spec_json.dart';
 
 /// Raised when a Convex function spec cannot be parsed or validated.
 class SpecParserException implements FormatException {
@@ -29,8 +28,15 @@ class SpecParser {
   const SpecParser();
 
   /// Parses a JSON string into a [FunctionsSpec].
+  ///
+  /// Strict JSON is tried first. If that fails, the first balanced JSON
+  /// object that looks like a function spec is extracted from [jsonSource],
+  /// so noisy package-runner output (for example yarn v1 banners captured
+  /// with `yarn convex function-spec > spec.json`) is accepted just like the
+  /// `--project` path accepts it. When no spec can be found, the original
+  /// strict-JSON [FormatException] is rethrown.
   FunctionsSpec parseString(String jsonSource) {
-    final decoded = jsonDecode(jsonSource);
+    final decoded = decodeFunctionSpecJson(jsonSource);
     if (decoded is! Map<String, dynamic>) {
       throw SpecParserException('function-spec root must be a JSON object');
     }
@@ -49,7 +55,16 @@ class SpecParser {
               'Each function entry must be a JSON object',
             );
           }
-          return _parseBaseFunctionSpec(item, warnings);
+          final functionWarnings = <String>[];
+          final function = _parseBaseFunctionSpec(item, functionWarnings);
+          // Only public functions are generated; degraded types inside
+          // internal functions would produce warnings about code that is
+          // never emitted.
+          if (function is FunctionSpec &&
+              function.visibility.kind == 'public') {
+            warnings.addAll(functionWarnings);
+          }
+          return function;
         })
         .toList(growable: false);
     return FunctionsSpec(url: url, functions: functions, warnings: warnings);
@@ -138,6 +153,28 @@ class SpecParser {
         return const ConvexBigIntType();
       case 'bytes':
         return const ConvexBytesType();
+      case 'commitTs':
+        return const ConvexCommitTsType();
+      case 'function':
+        return ConvexFunctionHandleType(
+          fnType: map['fnType'] is String ? map['fnType'] as String : null,
+          args:
+              map['args'] == null
+                  ? null
+                  : _parseType(
+                    _readMap(map, 'args'),
+                    context: _appendContext(context, 'function args'),
+                    warnings: warnings,
+                  ),
+          returns:
+              map['returns'] == null
+                  ? null
+                  : _parseType(
+                    _readMap(map, 'returns'),
+                    context: _appendContext(context, 'function returns'),
+                    warnings: warnings,
+                  ),
+        );
       case 'literal':
         return ConvexLiteralType(map['value']);
       case 'union':

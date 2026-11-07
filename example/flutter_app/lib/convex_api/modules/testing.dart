@@ -36,27 +36,15 @@ class TestingApi {
       'testing:specialValuesSnapshot',
       const <String, dynamic>{},
     );
-    final typedStream$ = subscription$.stream.map((event) {
-      switch (event) {
-        case QuerySuccess(:final value):
-          return TypedQuerySuccess<SpecialValuesSnapshotResult>(
-            _decodeSpecialValuesSnapshotResult(value),
-          );
-        case QueryLoading(:final hasPendingWrites):
-          return TypedQueryLoading<SpecialValuesSnapshotResult>(
-            hasPendingWrites: hasPendingWrites,
-          );
-        case QueryError(:final message, :final data, :final logLines):
-          return TypedQueryError<SpecialValuesSnapshotResult>(
-            message,
-            data: data,
-            logLines: logLines,
-          );
-      }
-    });
     return TypedConvexSubscription<SpecialValuesSnapshotResult>(
       subscription$,
-      typedStream$,
+      subscription$.stream.map(
+        (event$) => typedQueryResult<SpecialValuesSnapshotResult>(
+          event$,
+          (raw$) => _decodeSpecialValuesSnapshotResult(raw$),
+          'testing:specialValuesSnapshot',
+        ),
+      ),
     );
   }
 }

@@ -2,13 +2,14 @@
 
 The minimum Convex semantics needed to use dartvex. For *authoring* backends
 (schema, validators, indexes, cron), use the official Convex skills
-(`npx skills add get-convex/agent-skills`) or https://docs.convex.dev.
+(`npx skills add convex/agent-skills`) or https://docs.convex.dev.
 
 ## Deployments and URLs
 
 A Convex backend is a *deployment* reachable at
 `https://<name>.convex.cloud`. dartvex talks to it over a WebSocket sync
-protocol (same one as the official JS client). The URL identifies the
+protocol (the one the official JS client uses; Dartvex 0.3.0 tracks
+`convex` 1.49.0, see `convexSyncApiVersion`). The URL identifies the
 environment (dev/prod are separate deployments) — treat it like
 configuration, not code.
 
@@ -31,17 +32,19 @@ function declared with no args takes `{}`.
 | Convex | Dart (decode) | Dart (encode args) |
 |--------|---------------|--------------------|
 | `v.string()` | `String` | `String` |
-| `v.number()` (float64) | `double` (or `int`-valued `num`) | `int` or `double` |
+| `v.number()` (float64) | `num` — `int` for integral values, else `double` (generated bindings always use `double`) | `int` or `double` (an `int` beyond ±2^53 that a float64 cannot hold throws) |
 | `v.int64()` | `BigInt` | `convexInt64(n)` or `BigInt` |
+| `v.commitTs()` (convex 1.43+) | `BigInt`; an unresolved `{"$commitTs": null}` placeholder (a mutation returning a field it just wrote) decodes to `ConvexCommitTsPlaceholder.instance` — generated bindings type it `Object` | — |
 | `v.boolean()` | `bool` | `bool` |
 | `v.null()` | `null` | `null` |
 | `v.bytes()` | `Uint8List` | `Uint8List` |
 | `v.array(...)` | `List<dynamic>` | `List` |
 | `v.object({...})` | `Map<String, dynamic>` | `Map<String, dynamic>` |
 | `v.id("table")` | `String` (document ID) | `String` |
+| `v.function()` | `String` (function handle) | `String` |
 
-Special encodings (`$integer`, `$float`, `$bytes`) are handled by dartvex
-automatically. Do not build them by hand.
+Special encodings (`$integer`, `$float`, `$bytes`, `$commitTs`) are handled
+by dartvex automatically. Do not build them by hand.
 
 Documents returned by queries carry system fields `_id` (string ID) and
 `_creationTime` (float64 milliseconds).
@@ -70,7 +73,9 @@ The client authenticates the WebSocket by sending an OpenID Connect JWT
 `ctx.auth.getUserIdentity()` exposes the verified identity. dartvex handles
 delivery, refresh scheduling, and re-auth on reconnect — you supply the
 token via `client.setAuth(...)`, `client.setAuthWithRefresh(...)`, or an
-`AuthProvider` adapter such as `dartvex_auth_better`.
+`AuthProvider` adapter such as `dartvex_auth_better`. A deployment can also
+mint its own short-lived JWTs in a mutation (`ctx.auth.signJwt`); see the
+`dartvex-setup-auth` skill.
 
 ## Errors
 

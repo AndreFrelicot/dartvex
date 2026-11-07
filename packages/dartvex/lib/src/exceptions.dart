@@ -49,7 +49,14 @@ class ConvexException implements Exception {
   /// Optional log lines attached to the failure.
   final List<String> logLines;
 
-  /// Whether retrying the operation may succeed.
+  /// Whether the failure is transient: sending the operation again may succeed.
+  ///
+  /// This is **not** an idempotency guarantee. In particular, an action that
+  /// was already sent when the connection dropped fails with
+  /// `retryable: true`, yet the server may already have run it — only retry
+  /// actions (and mutations with external side effects) that are safe to run
+  /// twice. Failures caused by the server rejecting the request, by disposing
+  /// the client, or by a fatal server error are `false`.
   final bool retryable;
 
   @override

@@ -7,6 +7,127 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-05
+
+### Added
+
+- Supports the convex 1.43+/1.49 validator kinds: `v.commitTs()` maps to
+  `Object` (`expectCommitTs`: a `BigInt` commit timestamp, or
+  `ConvexCommitTsPlaceholder.instance` when a mutation returns a field it
+  wrote with `db.vars.commitTs` before committing; Convex types it
+  `bigint | CommitTsPlaceholder`) and `v.function()` handles map to
+  `String`, instead of degrading to `dynamic` with an "Unknown Convex type"
+  warning. **Breaking (regenerated bindings):** fields of these kinds change
+  from `dynamic` to `Object` / `String`.
+  **Breaking (library API):** the exported sealed `ConvexType` gains the
+  `ConvexCommitTsType` and `ConvexFunctionHandleType` subclasses, so
+  exhaustive switches over `ConvexType` need new cases.
+- Generated mutation methods take an optional `OptimisticUpdate?
+  optimisticUpdate` and forward it to `ConvexFunctionCaller.mutate`
+  (positionally, matching `ConvexClient.mutate`). **Breaking:** regenerated
+  bindings require `dartvex` `^0.3.0`, whose `ConvexFunctionCaller.mutate`
+  accepts it; custom `ConvexFunctionCaller` implementations must add the
+  parameter.
+- `TypedQuerySuccess` now carries `hasPendingWrites` and `logLines` from the
+  underlying `QuerySuccess`.
+- Top-level `dartvex_codegen --help` (or `-h`, `help`) lists the `generate`
+  and `scrub` commands and exits 0.
+- `ProcessRunnerException` has an `exitCode`, and its `toString()` includes
+  the last lines of the captured Convex CLI output.
+- `FileEmitter.emit` accepts an `onWarning` callback.
+
+### Fixed
+
+- Generated `TypedConvexPaginatedResult` exposes `hasPendingWrites`.
+- Watch mode on Linux watches source directories reached through symlinks,
+  without following cycles.
+- `--watch --project` now sees changes in nested directories on Linux, where
+  `Directory.watch(recursive: true)` only watches the top level; every
+  directory except `node_modules`, `.git`, `.dart_tool`, and the output
+  directory is watched individually.
+- `--watch --project` re-reads the deployed function spec 2, 5, and 10
+  seconds after each change, so a `convex dev` push that finishes after the
+  first regeneration no longer leaves stale bindings. Unchanged specs are not
+  rewritten.
+- Watch mode arms its filesystem watches before the initial generation (so
+  edits made during it are not lost), keeps watching when the initial
+  generation fails, and survives atomic replaces of a `--spec-file` (it
+  watches the parent directory). A truncated, empty spec file is skipped
+  silently. A watch error or a removed watched directory now exits non-zero
+  with a concise message instead of hanging or crashing with an unhandled
+  error.
+- Generated union case classes no longer collide with nested types named
+  from the same prefix (an object member's `value` field or a record member's
+  values), which produced duplicate declarations that did not compile. Case
+  class names are unchanged; the nested type gets a numeric suffix.
+- Unions of distinct literals with the same runtime type plus another member
+  (`v.union(v.literal('auto'), v.literal('none'), v.number())`) no longer
+  fail as "Ambiguous union".
+- An argument named like the return type (for example `result`) no longer
+  aborts generation with a spurious "Name collision": table names are now
+  collected without mapping types.
+- `_id`/`_creationTime` next to user fields `id`/`creationTime` no longer
+  abort generation; the system fields are generated as `systemId` and
+  `systemCreationTime`.
+- A system table whose ID class collides with a user table's (`_storage` and
+  `storage`) no longer aborts generation; the system table's class gets a
+  `System` prefix (`SystemStorageId`).
+- Field and function names `toString`, `hashCode`, `runtimeType`, and
+  `noSuchMethod` get a `Value` suffix instead of producing invalid record
+  fields or overrides.
+- Non-object top-level `args` validators (unions, records) generate an
+  untyped `Map<String, dynamic>` argument with a warning instead of crashing
+  the run with an uncaught `StateError`.
+- Records keyed by `v.id(...)`, string literals, or unions of those keep
+  their value type (`Map<String, V>`) instead of degrading to
+  `Map<String, dynamic>` with a misleading "keys are not strings" warning.
+  **Breaking (regenerated bindings):** such fields change type.
+- **Breaking (behavior):** decode failures in generated subscriptions
+  become `TypedQueryError` events instead of stream errors. `TypedConvexPaginatedQuery` reports
+  undecodable items as `ConvexPaginationStatus.error` instead of throwing
+  from `current`/`items` or erroring the stream.
+- `TypedConvexPaginatedQuery.stream` returns the same stream on every access
+  (a `StreamBuilder` no longer resubscribes on rebuild), and `current`/`items`
+  decode each snapshot once. **Breaking:** `items` is now an unmodifiable
+  list.
+- Failing `convex function-spec` runs show the CLI's own error output (for
+  example `No CONVEX_DEPLOYMENT set`) instead of only "failed in <dir>".
+  Errors that merely contain "not found" (such as `Deployment "x" not found`)
+  are no longer mistaken for a missing CLI and retried with other package
+  runners.
+- `scrub` and `generate --spec-file` accept the same noisy runner output
+  (for example yarn v1 banners) that `--project` already tolerates.
+- A corrupted or merge-conflicted generator manifest no longer breaks every
+  run with an opaque `FormatException`; it is ignored with a warning and
+  rewritten. The manifest is now written atomically.
+- Unknown types inside internal functions, which are never generated, no
+  longer produce warnings.
+- Warnings and watch-mode errors go to stderr, so `--dry-run` output stays
+  clean. Unknown commands print usage to stderr.
+- `--watch --project` matches the output directory however a symlink spells
+  it (macOS `/var` vs `/private/var`, or a relative `--output` resolved
+  against the real current directory while `--project` names a symlink), so
+  writing the bindings no longer triggers another regeneration or, on Linux,
+  a watch of the output directory. Ignored directory names (`node_modules`,
+  `.git`, `.dart_tool`) only count below the project directory, so a project
+  that itself lives under such a directory is still watched.
+
+### Changed
+
+- Generated subscriptions delegate to a new `typedQueryResult` helper in the
+  generated `runtime.dart`.
+- Package descriptions now say bindings are generated from the function spec
+  validators rather than "from your Convex schema".
+- The README documents watch-mode behavior, type-mapping rules, naming
+  rules, custom `ConvexFunctionCaller` clients, and that the exported
+  pipeline stages are not yet a stable API.
+- Removed the duplicate `test/update_goldens.dart`; use
+  `dart run tool/update_goldens.dart`.
+- README and example: the bindings come from the functions deployed to the
+  project's deployment (`convex function-spec`), not from local sources;
+  documents the generated result types and which clients `ConvexApi`
+  accepts, and the example shows the real generated shape.
+
 ## [0.2.0] - 2026-06-12
 
 ### Added
@@ -75,7 +196,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Widen the `dartvex` dev-dependency to `^0.2.0` for golden fixture validation.
-  Generated output is unchanged.
+- **Breaking (noted after release):** regenerated bindings changed in this
+  release: the sealed `TypedQueryResult` gained a `TypedQueryLoading` case
+  (exhaustive `switch`es need a new branch), paginated queries generate
+  typed wrappers, and the output requires `dartvex` `^0.2.0` (`QueryLoading`,
+  `ConvexFunctionCaller.paginatedQuery`).
 - Require Dart `^3.7.0`, matching the minimum SDK required by the
   `dart_style` formatter versions accepted by the CLI.
 

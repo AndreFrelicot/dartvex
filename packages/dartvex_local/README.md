@@ -20,7 +20,7 @@ Offline-capable extension for [dartvex](https://pub.dev/packages/dartvex) — th
 |---------|-------------|
 | [`dartvex`](https://pub.dev/packages/dartvex) | Core client — WebSocket sync, subscriptions, auth |
 | [`dartvex_flutter`](https://pub.dev/packages/dartvex_flutter) | Flutter widgets — Provider, Query, Mutation |
-| [`dartvex_codegen`](https://pub.dev/packages/dartvex_codegen) | CLI code generator — type-safe Dart bindings from schema |
+| [`dartvex_codegen`](https://pub.dev/packages/dartvex_codegen) | CLI code generator — type-safe Dart bindings from function validators |
 | **[`dartvex_local`](https://pub.dev/packages/dartvex_local)** | Offline support — SQLite cache, mutation queue |
 | [`dartvex_auth_better`](https://pub.dev/packages/dartvex_auth_better) | Better Auth adapter |
 
@@ -28,15 +28,23 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 
 ## What it does
 
-- **Query cache** — remote query results are persisted in SQLite and served
-  as fallback when the remote is unreachable or slow.
-- **Offline mutation queue** — mutations issued while offline are queued and
-  replayed in order when connectivity resumes.
+- **Query cache** — remote query results are persisted in SQLite. While the
+  remote is not connected, `query()` returns the cached value right away (and
+  without one waits at most `refreshQueryTimeout` for the remote); a
+  retryable remote failure also falls back to the cache.
+- **Offline mutation queue** — mutations issued while offline (forced, or
+  while the remote is not connected) are queued and replayed in order when
+  connectivity resumes.
 - **At-least-once replay** — queued mutations can be retried after ambiguous
   network failures, so server mutations should be idempotent when they trigger
-  external side effects.
-- **Optimistic updates** — app-defined `LocalMutationHandler` patches are
-  applied to the cache immediately, before the mutation reaches the server.
+  external side effects. A local storage failure while recording that a
+  replayed mutation was confirmed, followed by a restart, can also resend it.
+- **Optimistic updates for queued mutations** — app-defined
+  `LocalMutationHandler` patches are applied to the cache as soon as a
+  mutation is queued (offline, behind other queued mutations, or after a
+  retryable failure), before it reaches the server. A mutation sent directly
+  while online is not patched locally; for instant feedback on that path use
+  the core client's optimistic updates (`ConvexClient.mutate`).
 - **Deterministic network mode** — `setNetworkMode(offline)` forces the
   client offline regardless of actual connectivity.
 
@@ -69,22 +77,30 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 > in `LocalClientConfig`. `CacheStorage.deleteCacheEntry` must physically remove
 > a single entry so optimistic rollback and cache expiry stay correct.
 > `QueueStorage` must also persist failed locally-generated IDs so replay can
-> keep dependent mutations from being sent with stale IDs after a restart.
+> keep dependent mutations from being sent with stale IDs after a restart,
+> and must apply writes in call order even when several are in flight: a
+> store that reorders them can restore a stale rollback baseline (or a
+> removed entry) after a restart.
 
 ## Installation
 
 ```yaml
 dependencies:
-  dartvex: ^0.2.0
-  dartvex_local: ^0.2.0
+  dartvex: ^0.3.0
+  dartvex_local: ^0.3.0
 ```
 
 ## Quick Start
 
 ```dart
 import 'package:dartvex_local/dartvex_local.dart';
+import 'package:path_provider/path_provider.dart';
 
-final store = await SqliteLocalStore.open('/tmp/dartvex_demo.sqlite');
+// Open the database in a persistent, app-private directory. A relative path
+// fails on iOS/Android (the working directory is `/`), and a temp directory
+// loses the offline queue on reboot.
+final dir = await getApplicationSupportDirectory();
+final store = await SqliteLocalStore.open('${dir.path}/dartvex.sqlite');
 
 final localClient = await ConvexLocalClient.open(
   client: remoteConvexClient,
@@ -92,11 +108,28 @@ final localClient = await ConvexLocalClient.open(
     cacheStorage: store,
     queueStorage: store,
     mutationHandlers: <LocalMutationHandler>[],
+    onConflict: (conflict) => print('Dropped ${conflict.mutationName}'),
   ),
 );
+
+final result = await localClient.mutate('messages:send', {'body': 'Hi'});
+switch (result) {
+  case LocalMutationSuccess(:final value):
+    print('Sent: $value');
+  case LocalMutationQueued(:final queuePosition):
+    print('Queued at #$queuePosition');
+  case LocalMutationFailed(:final error):
+    print('Rejected: $error'); // mutate() does not throw for server errors
+}
 ```
 
+In a pure Dart program, pick a persistent path the same way (for example
+under the user's data directory).
+
 ## Mutation Handlers
+
+Handlers are matched by canonical mutation name, and several handlers can be
+registered for the same mutation (for example one per affected query).
 
 ```dart
 class SendMessageHandler extends LocalMutationHandler {
@@ -139,10 +172,51 @@ class SendMessageHandler extends LocalMutationHandler {
 | Scenario | Behavior |
 |----------|----------|
 | Remote query fails (retryable) | Falls back to cache if available |
-| Query while offline, no cache | Throws `StateError` |
-| Mutation while offline | Queued as `LocalMutationQueued` |
-| Mutation replay fails (non-retryable) | Dropped, `onConflict` called |
-| Action while offline | Throws `ConvexException` |
+| Query while the remote is not connected | Returns the cached value; without one, waits up to `refreshQueryTimeout`, then throws `TimeoutException` |
+| Query while forced offline, no cache | Throws `StateError` |
+| Mutation while offline or not connected | Queued as `LocalMutationQueued` |
+| Direct mutation rejected by the server | `LocalMutationFailed` |
+| Handler, patch, or storage error while queueing | `mutate()` throws; nothing is queued |
+| Mutation replay rejected by the server | Dropped, rolled back, `onConflict` called |
+| Remote client closed or disconnected during replay | Mutation kept in the queue and retried later |
+| Action while forced offline | Throws `ConvexException` |
+
+`currentConnectionState` is `online` only while the remote connection is
+established; a connecting or reconnecting remote reports `offline`.
+
+Pass `onConflict` in `LocalClientConfig` so conflicts from a replay that
+starts while the client opens are not missed. Each `LocalMutationConflict`
+carries the `pendingMutationId` of the queued entry.
+
+## Sign-out and switching users
+
+The cache and the queue are not scoped to a user: queued mutations replay with
+whatever auth the `ConvexClient` has when they are sent. Apply auth (for
+example `login` or `loginFromCache`) before, or right after,
+`ConvexLocalClient.open`, and call `reset()` on an explicit sign-out or user
+switch. `reset()` clears the queue, the recorded ID remaps, and the cache.
+Work of the previous user still in flight when it is called (a query or
+replayed mutation awaiting the server, a live query result being written) is
+not cached, emitted or reported afterwards, and a `mutate()` issued before
+`reset()` that was not queued yet resolves with `LocalMutationFailed`. Results
+the remote delivers after `reset()` is called count as the next user's, so
+sign out (or apply the next user's auth) on the `ConvexClient` first. The
+client never clears anything on its own when the auth state changes, so a
+transient token-refresh failure does not discard offline work.
+
+## Codegen and Flutter widgets
+
+`ConvexLocalClient` does not implement `ConvexFunctionCaller` (used by
+generated APIs) or the `dartvex_flutter` runtime client interface: its
+`mutate` returns a `LocalMutationResult` rather than the mutation's value.
+Use it directly (`subscribe` emits `LocalQuerySuccess` / `LocalQueryError`
+with their `source` and `hasPendingWrites`), or write an adapter that decides
+how queued and failed results map onto your calls. The Dartvex example app
+ships one for the Flutter widgets,
+[`LocalConvexRuntimeClient`](https://github.com/AndreFrelicot/dartvex/blob/main/example/flutter_app/lib/src/core/local_runtime_client.dart)
+(no pagination support; its `mutate` resolves with the
+`LocalMutationResult`). Typed calls made through the wrapped `ConvexClient`
+bypass the cache and the queue.
 
 ## Full Documentation
 

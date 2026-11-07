@@ -71,6 +71,8 @@ bool shouldEmitDartvexLog({
 }
 
 /// Emits a structured Dartvex log event when logging is enabled.
+///
+/// Exceptions thrown by [logger] are caught and ignored.
 void emitDartvexLog({
   required DartvexLogLevel configuredLevel,
   required DartvexLogger? logger,
@@ -91,14 +93,21 @@ void emitDartvexLog({
   if (sink == null) {
     return;
   }
-  sink(
-    DartvexLogEvent(
-      level: eventLevel,
-      message: message,
-      tag: tag,
-      error: error,
-      stackTrace: stackTrace,
-      data: data,
-    ),
-  );
+  try {
+    sink(
+      DartvexLogEvent(
+        level: eventLevel,
+        message: message,
+        tag: tag,
+        error: error,
+        stackTrace: stackTrace,
+        data: data,
+      ),
+    );
+  } catch (_) {
+    // Logging must never change the client's control flow: a throwing sink
+    // (for example a test logger that fails on error-level events) would
+    // otherwise escape from transport error handlers and break message
+    // processing.
+  }
 }

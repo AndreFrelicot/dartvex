@@ -25,9 +25,9 @@
 
 - **Pure-Dart core** — the `dartvex` client has no Rust FFI or Flutter
   dependency; companion packages add Flutter/native integrations where noted.
-- **Type-safe codegen** — Generate Dart bindings from your Convex schema. Catch errors at compile time.
+- **Type-safe codegen** — Generate Dart bindings from your deployed Convex functions' validators. Catch errors at compile time.
 - **Flutter widgets** — `ConvexProvider`, `ConvexQuery`, `ConvexMutation` and more for reactive UI.
-- **Offline capable** — SQLite query cache and mutation queue with optimistic updates.
+- **Offline capable** — SQLite query cache and mutation queue with optimistic patches for queued writes.
 - **Multi-platform** — iOS, Android, web, macOS, Linux, Windows.
 
 Web support covers the core realtime client, auth, storage URL resolution, and
@@ -60,11 +60,21 @@ void main() async {
 
 | Package | Description | Version |
 |---------|-------------|---------|
-| [`dartvex`](packages/dartvex/) | Core client — WebSocket sync, subscriptions, auth | 0.2.0 |
-| [`dartvex_flutter`](packages/dartvex_flutter/) | Flutter widgets — Provider, Query, Mutation | 0.2.0 |
-| [`dartvex_codegen`](packages/dartvex_codegen/) | CLI code generator — type-safe Dart bindings from schema | 0.2.0 |
-| [`dartvex_local`](packages/dartvex_local/) | Offline support — SQLite cache, mutation queue | 0.2.0 |
-| [`dartvex_auth_better`](packages/dartvex_auth_better/) | Better Auth adapter | 0.2.0 |
+| [`dartvex`](packages/dartvex/) | Core client — WebSocket sync, subscriptions, auth | 0.3.0 |
+| [`dartvex_flutter`](packages/dartvex_flutter/) | Flutter widgets — Provider, Query, Mutation | 0.3.0 |
+| [`dartvex_codegen`](packages/dartvex_codegen/) | CLI code generator — type-safe Dart bindings from function validators | 0.3.0 |
+| [`dartvex_local`](packages/dartvex_local/) | Offline support — SQLite cache, mutation queue | 0.3.0 |
+| [`dartvex_auth_better`](packages/dartvex_auth_better/) | Better Auth adapter | 0.3.0 |
+
+Packages are versioned and released independently. Minimum SDKs: `dartvex`
+and `dartvex_auth_better` Dart 3.6, `dartvex_codegen` Dart 3.7,
+`dartvex_local` Dart 3.10, `dartvex_flutter` Dart 3.10 / Flutter 3.38.1
+(iOS 15 / macOS 12 on Apple platforms).
+
+**Convex compatibility:** Dartvex 0.3.0 implements the sync protocol of the
+official Convex JavaScript client **1.49.0** (`convexSyncApiVersion`, sent
+as the default API version); behavior described as matching "the official
+client" refers to that release.
 
 ## Agent Skills
 
@@ -87,7 +97,7 @@ npx skills add AndreFrelicot/dartvex
 | `dartvex-upload-files` | Convex file storage and cached image widgets |
 | `dartvex-test-with-fakes` | Widget tests with `FakeConvexClient` |
 
-They pair with the official [`get-convex/agent-skills`](https://github.com/get-convex/agent-skills)
+They pair with the official [`convex/agent-skills`](https://github.com/convex/agent-skills)
 (backend authoring) and [`flutter/skills`](https://github.com/flutter/skills)
 (general Flutter UI).
 
@@ -107,7 +117,7 @@ They pair with the official [`get-convex/agent-skills`](https://github.com/get-c
 └─────────────────────────────────────────────────────────────────────────────┘
 
                               dartvex_codegen
-                   (generates typed bindings from schema)
+          (typed bindings from the deployed functions' spec)
 ```
 
 ## Installation
@@ -117,11 +127,11 @@ They pair with the official [`get-convex/agent-skills`](https://github.com/get-c
 ```yaml
 # pubspec.yaml
 dependencies:
-  dartvex: ^0.2.0
-  dartvex_flutter: ^0.2.0  # If using Flutter
+  dartvex: ^0.3.0
+  dartvex_flutter: ^0.3.0  # If using Flutter
 
 dev_dependencies:
-  dartvex_codegen: ^0.2.0  # For code generation
+  dartvex_codegen: ^0.3.0  # For code generation
 ```
 
 ### 2. Configure your client
@@ -147,10 +157,20 @@ class MyApp extends StatelessWidget {
 ### 3. Generate type-safe bindings
 
 ```bash
+# From the Convex project directory: reads the functions deployed to its
+# dev deployment (push changes with `npx convex dev` first).
+dart run dartvex_codegen generate \
+  --project path/to/convex-backend \
+  --output lib/convex_api/
+
+# Or from an exported (and scrubbed) spec file:
 dart run dartvex_codegen generate \
   --spec-file path/to/function_spec.json \
   --output lib/convex_api/
 ```
+
+Below a `ConvexProvider`, build the typed API with
+`ConvexApi(ConvexProvider.of(context).functionCaller)`.
 
 ### 4. Use in your widgets
 
@@ -213,15 +233,25 @@ final provider = ConvexBetterAuthProvider(client: authClient)
 final client = ConvexClient('https://your-deployment.convex.cloud');
 final authedClient = client.withAuth(provider);
 await authedClient.login();
+
+// Sign out through the wrapper, so the Convex client is signed out too:
+await authedClient.logout();
 ```
+
+Any other OIDC provider (or JWTs minted by your deployment with
+`ctx.auth.signJwt`) works through `client.setAuthWithRefresh(...)`.
 
 ### Offline Support
 
 ```dart
 import 'package:dartvex_local/dartvex_local.dart';
+import 'package:path_provider/path_provider.dart';
 
 final remoteClient = ConvexClient('https://your-deployment.convex.cloud');
-final store = await SqliteLocalStore.open('my_app.sqlite');
+// Use a persistent app directory: relative paths fail on iOS/Android, and a
+// temp directory loses the offline queue.
+final dir = await getApplicationSupportDirectory();
+final store = await SqliteLocalStore.open('${dir.path}/my_app.sqlite');
 final localClient = await ConvexLocalClient.open(
   client: remoteClient,
   config: LocalClientConfig(
@@ -231,8 +261,10 @@ final localClient = await ConvexLocalClient.open(
   ),
 );
 
-// Queries served from cache when offline
-// Mutations queued and synced when back online
+// While the remote is not connected, query() returns the cached value (and
+// without one waits at most refreshQueryTimeout); subscriptions are seeded
+// from the cache. Mutations made offline are queued and replayed in order,
+// and mutate() reports the outcome as a LocalMutationResult.
 ```
 
 The local-first query cache and mutation queue use SQLite and are intended for

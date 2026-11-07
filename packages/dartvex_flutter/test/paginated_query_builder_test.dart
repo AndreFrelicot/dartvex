@@ -235,7 +235,7 @@ void main() {
     expect(capturedStatus, PaginationStatus.error);
   });
 
-  testWidgets('maps item decode failures to error status without throwing', (
+  testWidgets('maps item decode failures to error status and reports them', (
     tester,
   ) async {
     final client = connectedClient();
@@ -266,7 +266,8 @@ void main() {
     );
     await tester.pump();
 
-    expect(tester.takeException(), isNull);
+    // Contained (no ErrorWidget) but reported, so the failure is debuggable.
+    expect(tester.takeException(), isA<FormatException>());
     expect(capturedStatus, PaginationStatus.error);
   });
 
@@ -315,7 +316,7 @@ void main() {
       buildPaginated(
         client: client,
         args: const <String, dynamic>{'channel': 'a'},
-        onBuild: (_, __) {},
+        onBuild: (_, _) {},
       ),
     );
     expect(client.paginatedQueryCalls, hasLength(1));
@@ -325,7 +326,7 @@ void main() {
       buildPaginated(
         client: client,
         args: const <String, dynamic>{'channel': 'b'},
-        onBuild: (_, __) {},
+        onBuild: (_, _) {},
       ),
     );
 
@@ -343,14 +344,14 @@ void main() {
     final args = <String, dynamic>{'channel': 'a'};
 
     await tester.pumpWidget(
-      buildPaginated(client: client, args: args, onBuild: (_, __) {}),
+      buildPaginated(client: client, args: args, onBuild: (_, _) {}),
     );
     expect(client.paginatedQueryCalls, hasLength(1));
     final firstQuery = client.paginatedQueryCalls.first.query;
 
     args['channel'] = 'b';
     await tester.pumpWidget(
-      buildPaginated(client: client, args: args, onBuild: (_, __) {}),
+      buildPaginated(client: client, args: args, onBuild: (_, _) {}),
     );
 
     expect(client.paginatedQueryCalls, hasLength(2));

@@ -79,9 +79,17 @@ sealed class TypedQueryResult<T> {
 }
 
 class TypedQuerySuccess<T> extends TypedQueryResult<T> {
-  const TypedQuerySuccess(this.value);
+  const TypedQuerySuccess(
+    this.value, {
+    this.logLines = const <String>[],
+    this.hasPendingWrites = false,
+  });
 
   final T value;
+  final List<String> logLines;
+
+  /// Whether optimistic updates currently affect [value].
+  final bool hasPendingWrites;
 }
 
 class TypedQueryLoading<T> extends TypedQueryResult<T> {
@@ -102,6 +110,41 @@ class TypedQueryError<T> extends TypedQueryResult<T> {
   final List<String> logLines;
 }
 
+/// Converts a raw query [event] into a typed result.
+///
+/// A value that [decode] rejects (for example an enum value added on the
+/// server after these bindings were generated) becomes a [TypedQueryError]
+/// instead of a stream error, so exhaustive switches over
+/// [TypedQueryResult] see every failure.
+TypedQueryResult<T> typedQueryResult<T>(
+  QueryResult event,
+  T Function(dynamic raw) decode,
+  String functionName,
+) {
+  switch (event) {
+    case QuerySuccess(:final value, :final logLines, :final hasPendingWrites):
+      final T decoded;
+      try {
+        decoded = decode(value);
+      } catch (error) {
+        return TypedQueryError<T>(
+          'Failed to decode $functionName result: $error',
+          data: error,
+          logLines: logLines,
+        );
+      }
+      return TypedQuerySuccess<T>(
+        decoded,
+        logLines: logLines,
+        hasPendingWrites: hasPendingWrites,
+      );
+    case QueryLoading(:final hasPendingWrites):
+      return TypedQueryLoading<T>(hasPendingWrites: hasPendingWrites);
+    case QueryError(:final message, :final data, :final logLines):
+      return TypedQueryError<T>(message, data: data, logLines: logLines);
+  }
+}
+
 class TypedConvexSubscription<T> {
   const TypedConvexSubscription(this._delegate, this.stream);
 
@@ -119,12 +162,16 @@ class TypedConvexPaginatedResult<T> {
     required this.status,
     required this.isDone,
     this.error,
+    this.hasPendingWrites = false,
   });
 
   final List<T> items;
   final ConvexPaginationStatus status;
   final bool isDone;
   final Object? error;
+
+  /// Whether optimistic writes currently affect any loaded page in [items].
+  final bool hasPendingWrites;
 }
 
 class TypedConvexPaginatedQuery<T> {
@@ -132,15 +179,23 @@ class TypedConvexPaginatedQuery<T> {
 
   final ConvexPaginatedQuery _delegate;
   final T Function(dynamic raw) _decode;
+  ConvexPaginatedResult? _lastRaw;
+  TypedConvexPaginatedResult<T>? _lastTyped;
 
-  Stream<TypedConvexPaginatedResult<T>> get stream =>
-      _delegate.stream.map(_toTyped);
+  /// Created once, so a widget passing `stream: query.stream` on every build
+  /// keeps the same subscription.
+  late final Stream<TypedConvexPaginatedResult<T>> stream = _delegate.stream
+      .map(_toTyped);
 
+  /// The latest typed snapshot. Decoded once per raw snapshot and cached.
   TypedConvexPaginatedResult<T> get current => _toTyped(_delegate.current);
 
-  List<T> get items => _delegate.current.results.map(_decode).toList();
+  /// The decoded items of [current] (an unmodifiable, cached list).
+  List<T> get items => current.items;
 
-  ConvexPaginationStatus get status => _delegate.status;
+  /// The status of [current]; [ConvexPaginationStatus.error] also reports
+  /// items that could not be decoded.
+  ConvexPaginationStatus get status => current.status;
 
   bool get isDone => _delegate.isDone;
 
@@ -151,12 +206,33 @@ class TypedConvexPaginatedQuery<T> {
   }
 
   TypedConvexPaginatedResult<T> _toTyped(ConvexPaginatedResult result) {
-    return TypedConvexPaginatedResult<T>(
-      items: result.results.map(_decode).toList(),
-      status: result.status,
-      isDone: result.isDone,
-      error: result.error,
-    );
+    final cached = _lastTyped;
+    if (cached != null && identical(result, _lastRaw)) {
+      return cached;
+    }
+    TypedConvexPaginatedResult<T> typed;
+    try {
+      typed = TypedConvexPaginatedResult<T>(
+        items: List<T>.unmodifiable(result.results.map(_decode)),
+        status: result.status,
+        isDone: result.isDone,
+        error: result.error,
+        hasPendingWrites: result.hasPendingWrites,
+      );
+    } catch (error) {
+      // An item the bindings cannot decode is reported like a failed page
+      // instead of throwing from a getter or erroring the stream.
+      typed = TypedConvexPaginatedResult<T>(
+        items: List<T>.unmodifiable(<T>[]),
+        status: ConvexPaginationStatus.error,
+        isDone: result.isDone,
+        error: error,
+        hasPendingWrites: result.hasPendingWrites,
+      );
+    }
+    _lastRaw = result;
+    _lastTyped = typed;
+    return typed;
   }
 }
 
@@ -217,6 +293,21 @@ BigInt expectBigInt(dynamic value, {String? label}) {
   }
   throw FormatException(
     'Expected ${label ?? 'bigint'}, got ${describeType(value)}',
+  );
+}
+
+/// Decodes a `v.commitTs()` value: a [BigInt] commit timestamp, or
+/// [ConvexCommitTsPlaceholder.instance] when the mutation that wrote the field
+/// reads it back before committing.
+Object expectCommitTs(dynamic value, {String? label}) {
+  if (value is BigInt) {
+    return value;
+  }
+  if (value is ConvexCommitTsPlaceholder) {
+    return value;
+  }
+  throw FormatException(
+    'Expected ${label ?? 'commitTs'}, got ${describeType(value)}',
   );
 }
 

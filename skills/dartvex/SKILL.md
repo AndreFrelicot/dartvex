@@ -4,7 +4,7 @@ description: Entry point for building Dart and Flutter apps on Convex with the d
 license: MIT
 metadata:
   author: AndreFrelicot
-  ecosystem-version: "0.2.0"
+  ecosystem-version: "0.3.0"
 ---
 
 # Dartvex Development
@@ -18,7 +18,7 @@ generator. Five packages on pub.dev:
 |---------|------|
 | `dartvex` | Core client — WebSocket sync, subscriptions, auth, storage |
 | `dartvex_flutter` | Flutter widgets — provider, query/mutation builders, images |
-| `dartvex_codegen` | CLI — type-safe Dart bindings from a Convex function spec |
+| `dartvex_codegen` | CLI — type-safe Dart bindings from the deployed functions' spec |
 | `dartvex_local` | Offline — SQLite query cache and mutation queue |
 | `dartvex_auth_better` | Better Auth adapter for self-hosted authentication |
 
@@ -45,7 +45,7 @@ npx skills add AndreFrelicot/dartvex
 - **Authoring the Convex backend** (schema design, validators, indexes,
   queries/mutations in TypeScript, cron, components): use the official
   Convex skills if installed, or suggest
-  `npx skills add get-convex/agent-skills`. Reference: https://docs.convex.dev
+  `npx skills add convex/agent-skills`. Reference: https://docs.convex.dev
 - **General Flutter UI work** (layout, navigation, testing patterns beyond
   dartvex): use the official Flutter skills if installed, or suggest
   `npx skills add flutter/skills`.
@@ -55,8 +55,13 @@ npx skills add AndreFrelicot/dartvex
 - Never hardcode a real Convex deployment URL or secret in committed code or
   docs. Use `https://your-deployment.convex.cloud` placeholders; inject the
   real URL at run time (`--dart-define`, environment, or gitignored config).
-- The packages release in lockstep; depend on matching minors
-  (`dartvex: ^0.2.0` with `dartvex_flutter: ^0.2.0`, etc.).
+- The packages are versioned independently (only changed packages are
+  released). Depend on the latest release of each package you use and let
+  pub resolve `dartvex` from their constraints; currently all five are
+  `^0.3.0`.
 - Plain Dart `int`/`double` map to Convex `v.number()`. Use
   `convexInt64(value)` or `BigInt` only for `v.int64()` arguments.
+- Dartvex 0.3.0 tracks the official Convex JavaScript client 1.49.0
+  (`convexSyncApiVersion`); behavior described as "like the official
+  client" refers to that release.
 - Source and full documentation: https://github.com/AndreFrelicot/dartvex

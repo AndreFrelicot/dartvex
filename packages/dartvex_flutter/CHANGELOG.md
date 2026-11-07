@@ -7,7 +7,238 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-05
+
+### Added
+
+- `PaginatedQueryBuilder.errorBuilder` (`PaginatedQueryErrorWidgetBuilder`)
+  receives the error object of a failed query — the page's server error or a
+  decode failure — plus the items loaded so far and a `retry` callback that
+  restarts the query. The existing `builder` signature is unchanged.
+- `ConvexDecodeException` (error, stack trace and raw value), used by
+  `ConvexQuery`, `ConvexMutation`, `ConvexAction` and `PaginatedQueryBuilder`
+  when decoding a successful result fails.
+- `ConvexProvider.of(context).functionCaller` (extension
+  `ConvexRuntimeFunctionCaller`) returns a core `ConvexFunctionCaller` for the
+  provider's client, so generated `ConvexApi` bindings and `ConvexStorage`
+  can be built below a provider. `ConvexClientRuntime` returns its wrapped
+  client (now also exposed as `ConvexClientRuntime.client`); custom runtime
+  clients can opt in through `ConvexFunctionCallerSource`.
+- `FakeConvexClient`: optional `args:` filter on `emitSubscription`,
+  `emitSubscriptionError` and `emitPaginated` (emissions stay name-scoped by
+  default); `source` / `hasPendingWrites` on `emitSubscription`;
+  `emitSubscriptionLoading`; `error` on `emitPaginated`; recorded
+  `queryCalls` / `mutationCalls` / `actionCalls` (`FakeConvexCall`, including
+  the mutation's `optimisticUpdate`); `isDisposed`;
+  `FakeConvexPaginatedQuery.args` and `lastLoadMoreNumItems`;
+  `FakeConvexSubscription.args`; and `functionCaller` support. The dartdoc
+  lists where the fake intentionally differs from the real client.
+- `ConvexImage.errorBuilder` and `ConvexCachedImage.errorBuilder`
+  (`ConvexImageErrorBuilder`) receive the error and a `retry` callback.
+  **Breaking (behavior):** without `errorBuilder` or `errorWidget`, load
+  failures are now reported to `FlutterError.reportError` (like
+  `Image.network`) instead of being invisible.
+- `ConvexImage.httpClient` and `ConvexFileDownloader.download(client:,
+  abortTrigger:)`: downloads can use a caller-owned client, and an in-flight
+  download can be aborted.
+
+### Changed
+
+- **Breaking:** the unnamed `ConvexAssetCache` constructor is now a
+  factory: instances with the same `cacheKey` share one ref-counted
+  `CacheManager` (classes extending `ConvexAssetCache` must use
+  `ConvexAssetCache.custom`). `ConvexOfflineImage` now reports "no cached
+  asset and no URL" as a `ConvexStorageException` instead of a `String`.
+- The native-only media helpers (`ConvexImage`, `ConvexCachedImage`,
+  `ConvexOfflineImage`, `ConvexAssetCache`, `ConvexFileDownloader`) are now
+  exported through a conditional export: web (JS and WASM) builds get
+  API-compatible stand-ins that render the error state or fail with an
+  `UnsupportedError`, so the package's web import graph no longer reaches
+  `dart:io` or `flutter_cache_manager` (WASM-compatible on pub.dev). Native
+  behavior is unchanged. On web, `ConvexAssetCache.custom` takes an `Object`
+  and `ConvexAssetSnapshot.file` is always `null`.
+
+- **Breaking (tests):** `FakeConvexClient` now behaves like a disposed
+  `ConvexClient` after `dispose()`: `subscribe`, `paginatedQuery` and `reconnectNow` throw and
+  `query` / `mutate` / `action` reject with
+  `ConvexException('ConvexClient has been disposed')`; emissions are
+  ignored. `FakeConvexPaginatedQuery.loadMore` returns `true` only while the
+  current status is `canLoadMore`, like the real engine (it always returned
+  `true`).
+
+- **Breaking:** Requires Dart `^3.10.0` and Flutter `>=3.38.1`, and on Apple
+  platforms iOS 15 / macOS 12 or later; apps must raise
+  `IPHONEOS_DEPLOYMENT_TARGET` / `MACOSX_DEPLOYMENT_TARGET` (and their Podfile
+  `platform`, if any). `cupertino_http` is now `>=3.1.0 <4.0.0` (up from
+  `^2.4.0`, which excluded the current major and conflicted with apps already
+  on it), `objective_c` `>=9.5.0 <10.0.0` and `http` `^1.5.0`. On Flutter
+  3.47 and later pub resolves `cupertino_http` 3.1.1 / `objective_c` 9.6,
+  which carry upstream native memory-leak fixes; earlier Flutter releases pin
+  `meta` below what those versions need and get 3.1.0 / 9.5. (Flutter 3.38.0
+  itself shipped a prerelease Dart 3.10 build that `^3.10.0` does not accept.)
+- `connectivity_plus` now accepts `>=6.1.0 <8.0.0`, so apps on
+  `connectivity_plus` 7.x can depend on `dartvex_flutter`. (7.x itself raises
+  the Android build requirements to AGP 8.12.1, Gradle 8.13 and Kotlin 2.2.)
+- The NSURLSession WebSocket transport now runs every connection on one
+  shared, process-wide `URLSession` and sends the `Convex-Client` header on
+  the handshake request. Foundation never fully releases a session that has
+  run a WebSocket task, even after invalidation, so the previous
+  session-per-connection design still leaked a native session on every
+  reconnect.
+- **Breaking:** decode failures are now a public `ConvexDecodeException`
+  everywhere:
+  `ConvexQuery` used a private wrapper type, and `ConvexMutation` /
+  `ConvexAction` surfaced the raw decoder error, indistinguishable from a
+  rejected request even though the server had already committed the write.
+  Code catching the raw decoder error (for example `on TypeError`) from a
+  mutation or action future must catch `ConvexDecodeException` instead.
+- **Breaking (behavior):** `PaginatedQueryBuilder` reports item decode
+  failures to `FlutterError.reportError` (still contained: no `ErrorWidget`),
+  instead of silently switching to the error status. Widget tests that pump
+  undecodable items now see the reported error.
+- `ConvexClientRuntime` no longer keeps a `connectionState` listener (it reads
+  the wrapped client's state directly), and two wrappers around the same
+  client with the same `disposeClient` are now equal. A wrapper re-created
+  inline in a `build` method no longer makes every descendant resubscribe,
+  reset pagination, or re-download images, and no longer leaks a listener per
+  rebuild.
+- `ConvexProvider` no longer calls `reconnectNow` on app resume for a lazy
+  client (`connectImmediately: false`) that has not started yet, which opened
+  a socket before the first backend operation or auth update.
+- `ConvexMutation` and `ConvexAction` share one request state machine; their
+  single-flight behavior (a call made while another is in flight rejects with
+  a `StateError`) is unchanged and now documented.
+- `dev_dependencies`: `flutter_lints` `^6.0.0`.
+- README: no longer promises that additions to `ConvexRuntimeClient` are
+  non-breaking for custom implementations, and documents the sample
+  `ConvexLocalClient` adapter in the example app.
+- The `ConvexQuerySource` dartdoc now states that, with `ConvexClientRuntime`,
+  `source` only reflects pending optimistic writes: a subscription seeded from
+  the core's recently-unsubscribed cache is reported as `remote` and may be
+  stale until the next server result.
+
+### Fixed
+
+- Download and asset-cache errors no longer leak a malformed signed URL: a
+  `FormatException` loses its `source`, and other errors mentioning the URL
+  become URL-free `ClientException`s.
+- `ConvexAssetCache.prefetch(force: true)` downloads the whole file before
+  swapping it in, so a failed refresh keeps the previous copy even when the
+  file type changes (flutter_cache_manager deleted it on the headers).
+- `ConvexImage` reloads when its `httpClient` changes and aborts the download
+  running on the previous client.
+- `ConvexFileDownloader.download` fails with `HttpExceptionWithStatus` (an
+  `HttpException`) on non-2xx responses.
+- Asset cache errors redact signed URLs, including redirected URLs and HTTP
+  exception messages, before reaching image error builders or crash reporters.
+- The Apple HTTP wrapper waits for asynchronous response cancellation before
+  closing the native client, preventing a leaked session after an abort.
+- `ConvexFileDownloader` errors (`HttpException`, `ClientException`,
+  `RequestAbortedException`) carry the URL reduced to its origin. File URLs
+  are bearer capabilities (a storage URL's path, a presigned URL's query),
+  and these errors reach `FlutterError.reportError` and crash reporters
+  through `ConvexImage`/`ConvexCachedImage`.
+- `ConvexCachedImage`: retrying a failed refresh after a client or URL
+  resolver change still bypasses the cache instead of serving the file
+  cached for the previous client, and a superseded download of the same
+  entry can no longer finish after (and overwrite) the newer one.
+- On iOS and macOS the default HTTP client (used by storage uploads, asset
+  downloads and auth adapters such as `dartvex_auth_better`) kept cookies in
+  the shared, persistent `HTTPCookieStorage` and attached them to later
+  requests. A Better Auth session cookie stored by sign-in then made sign-out
+  and the next sign-in fail with 403 (missing Origin) and could override the
+  explicit bearer token. Both NSURLSession transports (the default HTTP
+  client installed by `installCupertinoTransport()` and the WebSocket) now
+  use an ephemeral, cookie-less configuration, matching the `dart:io` and web
+  transports, which never sent cookies.
+- HTTP clients created by the default factory on Apple platforms can be
+  closed while a request is still running (for example from a `finally`
+  after a timeout); `cupertino_http` 3 would otherwise throw a `StateError`
+  that masks the original failure. The native session is released once the
+  last request finishes.
+- The NSURLSession WebSocket close/error state machine is now covered by unit
+  tests through a native-task seam.
+- `ConvexAuthBuilder`, `ConvexConnectionBuilder`,
+  `ConvexConnectionStatusBuilder` and `ConvexAuthRefreshingBuilder` kept the
+  previous client's last value after the client was swapped (for example a
+  fresh signed-out auth client kept showing the signed-in user). They now
+  re-seed from the new client's current value.
+- `ConvexQuery` kept the previous client's data (with `hasData: true`) after a
+  client swap, even next to the new client's error. A client change now resets
+  to the loading state; changing only the query or args on the same client
+  still keeps the previous data while refreshing.
+- Widgets driven by the core's synchronous streams no longer throw
+  "setState() called during build" when the client emits during a build or
+  layout pass — for example `loadMore()` called from a `ListView.itemBuilder`,
+  a lazy client connecting because a descendant subscribed, or
+  `loginFromCache()` from a descendant's `initState`. The rebuild is deferred
+  to after the frame.
+- Calling the `ConvexMutation` / `ConvexAction` executor after the widget was
+  unmounted threw before the request was sent; the request is now sent and
+  only the snapshot update is skipped.
+- `ConvexQuery` renders the client's live result in its first frame, instead
+  of a loading frame, when another widget already holds a live subscription to
+  the same query and arguments through a `ConvexClientRuntime` of the same
+  client.
+- `ConvexQuery` and `PaginatedQueryBuilder` no longer throw out of lifecycle
+  methods (replacing the subtree with an `ErrorWidget`) when the client
+  rejects the subscription synchronously, for example a disposed client. They
+  show an error state and retry on the next dependency or client change.
+- `PaginatedQueryBuilder` only decodes items whose raw value changed since the
+  previous emission, and no longer copies the item list on every build.
+- A `FakeConvexClient` query handler that throws now delivers a
+  `ConvexRuntimeQueryError` event (an error snapshot) instead of an uncaught
+  microtask error. The `mutate` dartdoc no longer suggests observing the
+  optimistic update from a handler, which never received it.
+- `ConvexAssetCache(cacheKey: k)` instances (including
+  `ConvexAssetCache.shared`) each opened their own `CacheManager` over the
+  same database and file directory, and disposing one closed the store under
+  the others. They now share one store per key, closed (with its HTTP client)
+  when the last instance is disposed; `dispose()` is idempotent.
+- `ConvexAssetCache.prefetch(force: true)` (also used by `ConvexCachedImage`
+  after a client or resolver change) removed the cached file before
+  downloading, so a failed refresh lost the offline copy. The new file now
+  replaces the old one only after a successful download.
+- `ConvexOfflineImage` no longer flashes a loading frame (and re-reads the
+  cache) when only its `url` changes — rotating signed URLs, or `url`
+  becoming `null` offline — while the asset is already shown.
+- `ConvexImage` aborts the running download when it is disposed or starts a
+  new load, and reuses one HTTP client (one connection pool, one URLSession
+  on Apple platforms) for every image instead of creating one per download.
+- `ConvexCachedImage` compares clients with `==`, so an equal re-created
+  `ConvexClientRuntime` no longer bypasses the cache and re-downloads.
+- The `ConvexImage` dartdoc `onProgress` example printed `p * 100`; it now
+  uses `p.progress`.
+- Disposing a `ConvexAssetCache()` right after creating it, or after its
+  metadata store failed to open (for example the SQLite backend used on
+  Android, iOS and macOS when its plugin is unavailable), threw a null-check
+  error from `flutter_cache_manager`'s repository `close()`, which
+  `CacheManager.dispose()` calls without waiting for the open. `dispose()` now
+  waits for a pending open and skips closing a store that never opened; a
+  failed open surfaces as an error of each cache operation instead of an
+  uncaught async error. A store re-created for the same `cacheKey` while the
+  previous one is still closing opens only after that close.
+- A `ConvexMutation` / `ConvexAction` request still in flight when the widget
+  was unmounted left the executor "in progress" forever, so every later call
+  through it (allowed after unmount) failed with a `StateError`.
+- `ConvexFileDownloader.download` (and `ConvexImage`) now aborts the request
+  when waiting for the response headers or draining an error body times out;
+  it previously stopped waiting but left the request running on the client.
+- The Apple default HTTP client no longer keeps its native session open
+  forever when an aborted request's response is never read (a caller that
+  timed out and moved on): an abort releases the request, and a late reader
+  gets a `RequestAbortedException`.
+
 ## [0.2.0] - 2026-06-12
+
+### Changed
+
+- **Breaking for implementors** (noted after release): classes that
+  `implement ConvexRuntimeClient` must add the members introduced in this
+  release — `paginatedQuery`, `connectionStatus`, `currentConnectionStatus`,
+  `authRefreshing`, `currentAuthRefreshing` — and the optional
+  `OptimisticUpdate? optimisticUpdate` parameter on `mutate`. Code that only
+  uses `ConvexClientRuntime` or `FakeConvexClient` is unaffected.
 
 ### Added
 

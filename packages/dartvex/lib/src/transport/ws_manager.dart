@@ -13,9 +13,13 @@ import 'ws_interface.dart';
 /// Builds the initial messages to send once the socket connects.
 typedef ConnectedMessageBuilder = FutureOr<List<ClientMessage>> Function();
 
-/// Handles a decoded server message and returns any outgoing responses.
-typedef ServerMessageHandler = FutureOr<List<ClientMessage>> Function(
-    ServerMessage message);
+/// Handles a decoded server message.
+///
+/// Any value the handler returns is ignored: a handler that needs to send
+/// messages must route them through the client's re-queueing flush, because
+/// the transport drops sends while the socket is paused or disconnected and
+/// this return path has no way to re-queue them.
+typedef ServerMessageHandler = FutureOr<void> Function(ServerMessage message);
 
 /// Called when the socket disconnects.
 typedef DisconnectHandler = FutureOr<void> Function(String reason);
@@ -33,6 +37,18 @@ typedef TimestampGetter = String? Function();
 /// Returns whether the client has re-synced every query, auth update, and
 /// request that predated the most recent reconnect.
 typedef SyncedStateGetter = bool Function();
+
+/// Receives a human-readable description of an abnormal server disconnect.
+///
+/// See [WebSocketManager.onServerDisconnectError].
+typedef ServerDisconnectErrorHandler = void Function(String message);
+
+/// WebSocket close codes that are expected during normal operation and are
+/// therefore not reported through [ServerDisconnectErrorHandler]. Mirrors the
+/// official client: normal closure, going away (common when a mobile app is
+/// backgrounded), no status, and Convex's retryable "not found" (transient
+/// during a deployment push).
+const Set<int> _expectedCloseCodes = <int>{1000, 1001, 1005, 4040};
 
 /// Performance metrics for a received Transition message.
 class TransitionMetrics {
@@ -128,6 +144,8 @@ class WebSocketManager {
     MonotonicClock? clock,
     this.onMessagesSent,
     this.onTransitionMetrics,
+    this.onStatusChanged,
+    this.onServerDisconnectError,
     this.logLevel = DartvexLogLevel.off,
     this.logger,
   })  : _random = random ?? Random(),
@@ -199,7 +217,26 @@ class WebSocketManager {
   final MonotonicClock _clock;
 
   /// Optional callback that receives transition performance metrics.
+  ///
+  /// User code: an exception thrown here is logged and otherwise ignored, so
+  /// it can never drop the Transition or force a reconnect.
   final TransitionMetricsCallback? onTransitionMetrics;
+
+  /// Optional callback invoked when a transport metric that is not tied to a
+  /// connection-state transition changes (currently [connectionRetries]), so
+  /// the owner can republish its connection status snapshot.
+  final void Function()? onStatusChanged;
+
+  /// Optional, experimental hook that receives a description of an abnormal
+  /// server disconnect, for telemetry.
+  ///
+  /// Invoked for a server/network close that carries a close reason and whose
+  /// close code is not one of the codes expected during normal operation
+  /// (1000, 1001, 1005, 4040). Never invoked for client-initiated closes.
+  /// Mirrors the official client's unstable `onServerDisconnectError` option;
+  /// which reasons are reported may change. An exception thrown by the
+  /// callback is logged and otherwise ignored.
+  final ServerDisconnectErrorHandler? onServerDisconnectError;
 
   /// Minimum log level emitted by the manager.
   final DartvexLogLevel logLevel;
@@ -219,6 +256,12 @@ class WebSocketManager {
   /// reconnect) cannot interleave with the next incoming message. Each message
   /// is chained after the previous one completes; errors are isolated so the
   /// chain never stalls.
+  ///
+  /// Close events are routed through the same chain, so frames the socket
+  /// delivered before it closed are always handled before the disconnect
+  /// bookkeeping runs. Without this, a response and a close arriving in the
+  /// same read could be processed close-first, failing an action whose
+  /// response was already on hand.
   Future<void> _messageQueue = Future<void>.value();
 
   bool _disposed = false;
@@ -232,15 +275,54 @@ class WebSocketManager {
   /// of running its handshake against the newer attempt's socket (which would
   /// write a second `Connect` frame onto it — a protocol violation).
   int _connectAttempt = 0;
+
+  /// Identity of the connection incoming frames belong to. Advanced whenever
+  /// a connection is torn down or replaced (a new connect attempt, [stop], a
+  /// handled close or synthetic disconnect), so frames queued from the old
+  /// connection are discarded rather than applied to the next session.
+  int _socketEpoch = 0;
   _SocketPauseState _pauseState = _SocketPauseState.no;
   int _connectionCount = 0;
+
+  /// Index into the backoff progression. In fixed-schedule mode it is clamped
+  /// to the schedule's last entry; [_connectionRetries] is the unbounded
+  /// public counter.
   int _reconnectIndex = 0;
+
+  /// Reconnect attempts scheduled since the last successful re-sync; backs
+  /// [connectionRetries]. Reset at the same sites as [_reconnectIndex].
+  int _connectionRetries = 0;
   bool _hasEverConnected = false;
-  String _lastCloseReason = 'InitialConnect';
+
+  /// Close reason reported in the next `Connect` frame.
+  ///
+  /// Mirrors the official client: starts as `InitialConnect`, is cleared once
+  /// a `Connect` frame has been sent, is set unconditionally by a
+  /// client-initiated close, and is only filled in by a server/network close
+  /// (or a failed reconnect attempt) when no reason is recorded yet — so the
+  /// first disconnect's reason survives failed retries.
+  String? _lastCloseReason = 'InitialConnect';
   String? _pendingCloseReason;
 
+  /// When the pending reconnect timer was scheduled (monotonic ms) and its
+  /// delay, so a connectivity-restore shortcut can report the time it saved.
+  int? _reconnectScheduledAtMs;
+  int _reconnectScheduledDelayMs = 0;
+
+  /// Backoff time skipped by the last connectivity-restore reconnect, reported
+  /// to the server as a `NetworkRecoveryReconnect` event once that reconnect's
+  /// handshake completes.
+  int? _pendingNetworkRecoveryTimeSavedMs;
+
   /// Whether the socket adapter is currently connected.
+  ///
+  /// Only means the adapter is open: while [isPaused] the socket may still be
+  /// waiting for its deferred handshake, and [sendMessages] sends nothing.
   bool get isConnected => adapter.isConnected;
+
+  /// Whether the socket is [pause]d for auth, so [sendMessages] sends nothing
+  /// until [resume] flushes the buffered state.
+  bool get isPaused => _pauseState != _SocketPauseState.no;
 
   /// Whether the socket has ever reached the connected (ready) state.
   ///
@@ -255,12 +337,20 @@ class WebSocketManager {
   /// repeated connection churn.
   int get connectionCount => _connectionCount;
 
-  /// The current reconnect-backoff retry index.
+  /// The number of reconnect attempts since the last successful re-sync.
   ///
   /// Counts connect attempts since the last successful re-sync and is reset to
   /// zero once the client has caught up (see [hasSyncedPastLastReconnect]).
+  /// Keeps counting past the end of a fixed [reconnectBackoff] schedule.
   /// Mirrors the official client's `connectionRetries`.
-  int get connectionRetries => _reconnectIndex;
+  int get connectionRetries => _connectionRetries;
+
+  /// The current reading of the monotonic clock that stamps `Connect.clientTs`.
+  ///
+  /// Combined with a Transition's `clientClockSkew` (computed by the server
+  /// from that same `clientTs`), this yields the client's estimate of the
+  /// server's current time.
+  int get clientNowMillis => _clock.nowMillis;
 
   /// Starts the WebSocket lifecycle.
   Future<void> start() async {
@@ -295,7 +385,7 @@ class WebSocketManager {
         error: error,
         stackTrace: stackTrace,
       );
-      await _closeOrSyntheticDisconnect(_lastCloseReason,
+      await _closeOrSyntheticDisconnect(_lastCloseReason!,
           clientInitiated: true);
       return sentMessages;
     }
@@ -319,23 +409,48 @@ class WebSocketManager {
   }
 
   /// Forces a reconnect using [reason] as the last close reason.
+  ///
+  /// Uses the 100ms client-initiated backoff base. While the manager is
+  /// already waiting out a reconnect backoff, the pending wait is replaced by
+  /// a fresh client-base delay instead of being left to run its course.
+  /// No-op while stopped for a reauth (the reauth's restart owns the
+  /// connection) or after dispose.
   Future<void> reconnectNow(String reason) async {
-    _lastCloseReason = reason;
-    _chunkBuffer = null;
     _log(
       DartvexLogLevel.info,
       'Reconnect requested',
       data: <String, Object?>{'reason': reason},
     );
+    if (_disposed || _stopped) {
+      return;
+    }
     if (adapter.isConnected) {
+      _chunkBuffer = null;
+      _lastCloseReason = reason;
       _pendingCloseReason = reason;
       await _closeOrSyntheticDisconnect(reason, clientInitiated: true);
       return;
     }
     if (_connecting) {
+      _lastCloseReason = reason;
       _pendingCloseReason = reason;
       return;
     }
+    if (_closeHandled && (_reconnectTimer?.isActive ?? false)) {
+      // Waiting out a backoff after a disconnect that was already reported
+      // once: do not report it again, and keep the recorded close reason so
+      // the next Connect still carries the real cause. Only the wait itself
+      // is replaced, by the short client-initiated delay (not by the 0ms
+      // connectivity-restore path).
+      _log(
+        DartvexLogLevel.info,
+        'Replacing pending reconnect backoff with the client-initiated delay',
+      );
+      _scheduleReconnect(clientInitiated: true, manual: true);
+      return;
+    }
+    _chunkBuffer = null;
+    _lastCloseReason = reason;
     await _handleSyntheticDisconnect(reason, clientInitiated: true);
   }
 
@@ -343,15 +458,23 @@ class WebSocketManager {
   /// while the manager is waiting to reconnect (disconnected with a scheduled
   /// retry).
   ///
-  /// No-op when connected, mid-connect, or disposed. Used to react to a restored
-  /// network connection without resetting the backoff progression.
+  /// No-op when connected, mid-connect, stopped, or disposed. Used to react to
+  /// a restored network connection without resetting the backoff progression.
+  /// Once the reconnect's handshake completes, a `NetworkRecoveryReconnect`
+  /// event reporting the skipped wait is sent, as the official client does.
   void reconnectImmediatelyIfWaiting() {
-    if (_disposed || _connecting || adapter.isConnected) {
+    if (_disposed || _stopped || _connecting || adapter.isConnected) {
       return;
     }
     final timer = _reconnectTimer;
     if (timer == null || !timer.isActive) {
       return;
+    }
+    final scheduledAt = _reconnectScheduledAtMs;
+    if (scheduledAt != null) {
+      final elapsed = _clock.nowMillis - scheduledAt;
+      _pendingNetworkRecoveryTimeSavedMs =
+          max(0, _reconnectScheduledDelayMs - elapsed);
     }
     _log(
       DartvexLogLevel.info,
@@ -393,21 +516,38 @@ class WebSocketManager {
     );
   }
 
-  void _attachListeners() {
-    _messageSubscription ??= adapter.messages.listen((raw) {
-      _messageQueue = _messageQueue
-          .then((_) => _handleRawMessage(raw))
-          .catchError((Object error, StackTrace stackTrace) {
-        // _handleRawMessage already contains its own error handling; this guard
-        // only keeps the serialization chain alive so a later failure cannot
-        // block all subsequent messages.
+  /// Appends [step] to the serialized message chain.
+  ///
+  /// The step catches everything itself, so the chain can never become an
+  /// errored future that would silently skip every later message.
+  void _enqueue(Future<void> Function() step) {
+    _messageQueue = _messageQueue.then((_) async {
+      try {
+        await step();
+      } catch (error, stackTrace) {
+        // The steps already contain their own error handling; this guard only
+        // keeps the serialization chain alive so a later failure cannot block
+        // all subsequent messages.
         _log(
           DartvexLogLevel.error,
-          'Unhandled error while processing WebSocket message',
+          'Unhandled error while processing WebSocket event',
           error: error,
           stackTrace: stackTrace,
         );
-      });
+      }
+    });
+  }
+
+  void _attachListeners() {
+    _messageSubscription ??= adapter.messages.listen((raw) {
+      // Tag the frame with the connection it arrived on. A frame still queued
+      // when that connection is torn down (stop() for a reauth, a handled
+      // close, a client-initiated reconnect) is dropped instead of being
+      // applied to the next session, whose state the handshake has reset —
+      // the official client gets the same effect by detaching `onmessage`
+      // from a socket it closes.
+      final epoch = _socketEpoch;
+      _enqueue(() => _handleRawMessage(raw, epoch));
     }, onError: (Object error, StackTrace stackTrace) {
       unawaited(
         _handleAdapterStreamError(
@@ -419,7 +559,8 @@ class WebSocketManager {
       );
     });
     _closeSubscription ??= adapter.closeEvents.listen((event) {
-      unawaited(_handleClosed(event));
+      // Behind any frames already queued, so they are handled first.
+      _enqueue(() => _handleClosed(event));
     }, onError: (Object error, StackTrace stackTrace) {
       unawaited(
         _handleAdapterStreamError(
@@ -480,13 +621,17 @@ class WebSocketManager {
     _connecting = true;
     _closeHandled = false;
     final attempt = ++_connectAttempt;
-    _log(
-      DartvexLogLevel.info,
-      'Connecting WebSocket',
-      data: <String, Object?>{'deploymentUrl': deploymentUrl},
-    );
-    onConnectionStateChanged(false, true);
+    _socketEpoch += 1;
     try {
+      // Inside the try: user-supplied callbacks (the logger, the connection
+      // state listener) must not be able to leave _connecting stuck at true,
+      // which would make every later reconnect a silent no-op.
+      _log(
+        DartvexLogLevel.info,
+        'Connecting WebSocket',
+        data: <String, Object?>{'deploymentUrl': deploymentUrl},
+      );
+      onConnectionStateChanged(false, true);
       await adapter.connect(_buildWebSocketUrl()).timeout(connectTimeout);
       if (attempt != _connectAttempt) {
         // stop() superseded this attempt while the socket was opening; its
@@ -503,9 +648,17 @@ class WebSocketManager {
         );
         return;
       }
+      if (!adapter.isConnected) {
+        // connect() returned without an open socket — e.g. a close() that
+        // raced the handshake made the adapter discard the late socket. No
+        // close event will ever arrive for it, so treat the attempt as failed
+        // here; returning quietly would leave the manager with nothing
+        // connected and nothing scheduled.
+        throw StateError('WebSocket was not open after connect completed');
+      }
       _connecting = false;
       _pendingCloseReason = null;
-      _reconnectTimer?.cancel();
+      _cancelReconnectTimer();
       _resetInactivityTimer();
       _log(DartvexLogLevel.info, 'WebSocket connected');
       if (_pauseState != _SocketPauseState.no) {
@@ -524,8 +677,8 @@ class WebSocketManager {
         );
         return;
       }
-      await _sendInitialMessages();
-      if (!adapter.isConnected) {
+      final handshakeSent = await _sendInitialMessages();
+      if (!handshakeSent || !adapter.isConnected) {
         return;
       }
       _markConnected();
@@ -535,6 +688,22 @@ class WebSocketManager {
         // stop()/restart() that superseded it owns the connection lifecycle
         // now, and running _handleClosed here would schedule a reconnect (or
         // clobber _connecting) on top of the newer attempt.
+        return;
+      }
+      if (!_connecting) {
+        // The socket had already opened: the failure came from the handshake
+        // (for example a throwing session-restore builder), so this socket
+        // may be open without its session. Force a clean client-initiated
+        // reconnect instead of misreporting it as a failed connect.
+        _log(
+          DartvexLogLevel.error,
+          'WebSocket handshake failed',
+          error: error,
+        );
+        _lastCloseReason = 'HandshakeFailed';
+        _pendingCloseReason = _lastCloseReason;
+        await _closeOrSyntheticDisconnect(_lastCloseReason!,
+            clientInitiated: true);
         return;
       }
       _connecting = false;
@@ -557,31 +726,55 @@ class WebSocketManager {
               ? 'ConnectTimeout after ${connectTimeout.inMilliseconds}ms'
               : error.toString(),
         ),
+        connectFailure: true,
       );
     }
   }
 
   /// Sends the post-connect handshake: the [Connect] message followed by the
   /// session-restoring messages built by [onConnected].
-  Future<void> _sendInitialMessages() async {
+  ///
+  /// Returns whether the handshake completed on the socket it started on. A
+  /// failed `Connect` send is handled like any other failed send (a
+  /// `FailedToSendMessage` reconnect), and an asynchronous [onConnected] whose
+  /// socket was replaced meanwhile is abandoned rather than replayed onto the
+  /// newer socket.
+  Future<bool> _sendInitialMessages() async {
     if (!adapter.isConnected) {
       _log(
         DartvexLogLevel.debug,
         'Skipping WebSocket handshake because the socket is no longer open',
       );
-      return;
+      return false;
     }
-    adapter.send(
-      jsonEncode(
-        Connect(
-          sessionId: _sessionId,
-          connectionCount: _connectionCount,
-          lastCloseReason: _lastCloseReason,
-          maxObservedTimestamp: maxObservedTimestamp(),
-          clientTs: _clock.nowMillis,
-        ).toJson(),
-      ),
-    );
+    final epoch = _socketEpoch;
+    try {
+      adapter.send(
+        jsonEncode(
+          Connect(
+            sessionId: _sessionId,
+            connectionCount: _connectionCount,
+            lastCloseReason: _lastCloseReason,
+            maxObservedTimestamp: maxObservedTimestamp(),
+            clientTs: _clock.nowMillis,
+          ).toJson(),
+        ),
+      );
+    } catch (error, stackTrace) {
+      _lastCloseReason = 'FailedToSendMessage';
+      _pendingCloseReason = _lastCloseReason;
+      _log(
+        DartvexLogLevel.error,
+        'Failed to send WebSocket Connect message',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      await _closeOrSyntheticDisconnect(_lastCloseReason!,
+          clientInitiated: true);
+      return false;
+    }
+    // The reason has been reported to the server; the next one starts fresh.
+    _lastCloseReason = null;
     // Resolve synchronously when possible: the production [onConnected]
     // (BaseClient.prepareReconnect) returns its messages synchronously, and
     // yielding to the event loop between the Connect frame and the
@@ -595,22 +788,59 @@ class WebSocketManager {
       reconnectMessages = messagesOrFuture;
     } else {
       reconnectMessages = await messagesOrFuture;
-      if (_pauseState != _SocketPauseState.no) {
-        // Paused while an asynchronous [onConnected] was building the
-        // handshake messages, with the Connect frame already on the wire.
-        // They cannot be buffered here, and resume() must not replay a second
-        // Connect on this socket, so force a clean reconnect: the fresh
-        // socket opens paused and defers its full handshake to resume().
-        _log(
-          DartvexLogLevel.warn,
-          'Socket paused during the connect handshake; forcing a clean '
-          'reconnect so the session-restoring messages are not dropped',
-        );
-        await reconnectNow('PausedDuringHandshake');
-        return;
+      if (epoch != _socketEpoch || !adapter.isConnected) {
+        // The socket this handshake started on was torn down while the
+        // asynchronous builder ran; the replacement socket runs (or ran) its
+        // own full handshake, so these messages must not be sent onto it.
+        return false;
       }
     }
+    if (_pauseState != _SocketPauseState.no) {
+      // Paused while [onConnected] was building the handshake messages, with
+      // the Connect frame already on the wire: by an asynchronous builder, or
+      // synchronously by a listener it notified (the production builder
+      // dispatches rolled-back optimistic updates, and a listener may start
+      // an auth flow). The messages cannot be buffered here, and resume()
+      // must not replay a second Connect on this socket, so force a clean
+      // reconnect: the fresh socket opens paused and defers its full
+      // handshake to resume().
+      _log(
+        DartvexLogLevel.warn,
+        'Socket paused during the connect handshake; forcing a clean '
+        'reconnect so the session-restoring messages are not dropped',
+      );
+      await reconnectNow('PausedDuringHandshake');
+      return false;
+    }
     await sendMessages(reconnectMessages);
+    if (epoch != _socketEpoch || !adapter.isConnected) {
+      return false;
+    }
+    _sendNetworkRecoveryEventIfPending();
+    return true;
+  }
+
+  /// Reports the backoff time a connectivity-restore reconnect skipped, as the
+  /// official client's `NetworkRecoveryReconnect` event.
+  void _sendNetworkRecoveryEventIfPending() {
+    final timeSavedMs = _pendingNetworkRecoveryTimeSavedMs;
+    if (timeSavedMs == null) {
+      return;
+    }
+    _pendingNetworkRecoveryTimeSavedMs = null;
+    _log(
+      DartvexLogLevel.info,
+      'Network recovery reconnect skipped part of the backoff',
+      data: <String, Object?>{'timeSavedMs': timeSavedMs},
+    );
+    unawaited(
+      sendMessages(<ClientMessage>[
+        Event(
+          eventType: 'NetworkRecoveryReconnect',
+          event: <String, Object?>{'timeSavedMs': timeSavedMs},
+        ),
+      ]),
+    );
   }
 
   /// Pauses the socket so [sendMessages] buffers instead of sending.
@@ -644,8 +874,8 @@ class WebSocketManager {
             DartvexLogLevel.debug,
             'Resuming WebSocket; running deferred '
             'handshake');
-        await _sendInitialMessages();
-        if (adapter.isConnected) {
+        final handshakeSent = await _sendInitialMessages();
+        if (handshakeSent && adapter.isConnected) {
           _markConnected();
         }
       case _SocketPauseState.yes:
@@ -662,12 +892,20 @@ class WebSocketManager {
           // [sendMessages] drop the drained messages on a live connection —
           // the deferred auth, the resume query-set delta, and any drained
           // requests would only be rebuilt by the next reconnect.
+          final epoch = _socketEpoch;
           final messagesOrFuture = onResume!();
           final List<ClientMessage> messages;
           if (messagesOrFuture is List<ClientMessage>) {
             messages = messagesOrFuture;
           } else {
             messages = await messagesOrFuture;
+            if (epoch != _socketEpoch) {
+              // The connection changed while the asynchronous [onResume]
+              // ran; the new connection's handshake rebuilds the query set,
+              // auth, and unsent requests, so these must not be replayed onto
+              // it.
+              return;
+            }
             if (_pauseState != _SocketPauseState.no) {
               // Paused again while an asynchronous [onResume] was building
               // the messages. They are already drained out of the base client
@@ -693,12 +931,16 @@ class WebSocketManager {
   ///
   /// Used during a reauth so in-flight messages do not retry with stale auth;
   /// the connection is re-established by [restart] (which replays the session
-  /// with the refreshed token). No-op once disposed.
+  /// with the refreshed token). Publishes a disconnected state when a
+  /// connection was open or opening, so the coarse connection state agrees
+  /// with [isConnected] while the reauth's token fetch runs. No-op once
+  /// disposed.
   Future<void> stop() async {
     if (_disposed) {
       return;
     }
     _log(DartvexLogLevel.debug, 'Stopping WebSocket for reauth');
+    final wasLive = adapter.isConnected || _connecting;
     _stopped = true;
     _pauseState = _SocketPauseState.no;
     _connecting = false;
@@ -706,19 +948,29 @@ class WebSocketManager {
     // instead of completing a handshake the restart() will redo on a fresh
     // socket. Mirrors the official client's stop(), which detaches and closes
     // a "connecting" socket.
-    _connectAttempt += 1;
-    _reconnectTimer?.cancel();
+    final stopAttempt = ++_connectAttempt;
+    // Frames still queued from the stopped socket must not be applied to the
+    // session restart() rebuilds.
+    _socketEpoch += 1;
+    _cancelReconnectTimer();
     _inactivityTimer?.cancel();
     _chunkBuffer = null;
     // Close unconditionally: when a connect is mid-flight the adapter is not
-    // "connected" yet, but close() advances its connect generation so the
-    // late socket is discarded at the adapter level instead of opening
-    // unmanaged while stopped. Closing an idle adapter is a no-op.
-    // _handleClosed sees _stopped and skips its reconnect bookkeeping;
-    // restart() rebuilds the session.
+    // "connected" yet, but close() makes the built-in adapters discard the
+    // late socket (native: by advancing its connect generation; web: by
+    // failing the pending connect) instead of letting it open unmanaged while
+    // stopped. Closing an idle adapter is a no-op. _handleClosed sees _stopped
+    // and skips its reconnect bookkeeping; restart() rebuilds the session.
     await _closeAdapterBestEffort(
       'Failed to close WebSocket while stopping for reauth',
     );
+    // A slow close handshake can outlive the stop: a superseding restart()
+    // (or another stop/restart cycle) may already have reconnected, and a late
+    // "disconnected" would then contradict the live connection. Publish only
+    // while this stop is still the latest word on the connection.
+    if (wasLive && !_disposed && _stopped && stopAttempt == _connectAttempt) {
+      onConnectionStateChanged(false, false);
+    }
   }
 
   /// Re-establishes the connection after [stop]. No-op unless stopped.
@@ -749,13 +1001,25 @@ class WebSocketManager {
         .toString();
   }
 
-  Future<void> _handleRawMessage(String raw) async {
+  Future<void> _handleRawMessage(String raw, int epoch) async {
     if (_disposed) {
       return;
     }
+    if (epoch != _socketEpoch) {
+      // Queued from a connection that has since been torn down.
+      _log(
+        DartvexLogLevel.debug,
+        'Dropping WebSocket frame from a superseded connection',
+      );
+      return;
+    }
     try {
-      _resetInactivityTimer();
-      final messageLengthBytes = utf8.encode(raw).length;
+      if (adapter.isConnected) {
+        // Only a live connection re-arms the liveness timer; a frame handled
+        // after its connection went away must not arm a timer that would
+        // later close whatever the adapter fronts by then.
+        _resetInactivityTimer();
+      }
       final decoded = jsonDecode(raw);
       if (decoded is! Map<String, dynamic>) {
         throw FormatException('Server message must be an object', raw);
@@ -771,7 +1035,7 @@ class WebSocketManager {
         }
         _reportTransitionMetrics(
           assembledTransition.transition,
-          assembledTransition.messageLengthBytes,
+          assembledTransition.rawMessage,
         );
         message = assembledTransition.transition;
       } else {
@@ -784,18 +1048,16 @@ class WebSocketManager {
           );
         }
         if (message is Transition) {
-          _reportTransitionMetrics(message, messageLengthBytes);
+          _reportTransitionMetrics(message, raw);
         }
       }
-      final outgoing = await onMessage(message);
+      await onMessage(message);
       // Reset the reconnect backoff only once the client has caught up on all
       // work that predated the last reconnect, rather than on every Transition
       // or response. This mirrors the official client and prevents a flapping
       // server from resetting the backoff before the connection proves itself.
-      final syncedPastLastReconnect = hasSyncedPastLastReconnect();
-      await sendMessages(outgoing);
-      if (syncedPastLastReconnect) {
-        _reconnectIndex = 0;
+      if (hasSyncedPastLastReconnect()) {
+        _resetRetries();
       }
     } catch (error, stackTrace) {
       _chunkBuffer = null;
@@ -807,8 +1069,34 @@ class WebSocketManager {
         error: error,
         stackTrace: stackTrace,
       );
-      await _closeOrSyntheticDisconnect(_lastCloseReason,
+      await _closeOrSyntheticDisconnect(_lastCloseReason!,
           clientInitiated: true);
+    }
+  }
+
+  void _resetRetries() {
+    if (_reconnectIndex == 0 && _connectionRetries == 0) {
+      return;
+    }
+    _reconnectIndex = 0;
+    _connectionRetries = 0;
+    _notifyStatusChanged();
+  }
+
+  void _notifyStatusChanged() {
+    final callback = onStatusChanged;
+    if (callback == null) {
+      return;
+    }
+    try {
+      callback();
+    } catch (error, stackTrace) {
+      _log(
+        DartvexLogLevel.error,
+        'Connection status listener threw',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
   }
 
@@ -859,14 +1147,27 @@ class WebSocketManager {
         decoded,
       );
     }
-    return _AssembledTransition(
-      transition: message,
-      messageLengthBytes: utf8.encode(assembled).length,
-    );
+    return _AssembledTransition(transition: message, rawMessage: assembled);
   }
 
-  void _reportTransitionMetrics(Transition transition, int messageLengthBytes) {
+  /// Size threshold above which a Transition is logged as oversized.
+  static const int _oversizedTransitionBytes = 20000000;
+
+  /// Transit time above which a Transition is logged as slow.
+  static const double _slowTransitionMs = 20000;
+
+  void _reportTransitionMetrics(Transition transition, String rawMessage) {
     if (transition.clientClockSkew == null || transition.serverTs == null) {
+      return;
+    }
+    final callback = onTransitionMetrics;
+    final warnEnabled = logger != null &&
+        shouldEmitDartvexLog(
+          configuredLevel: logLevel,
+          eventLevel: DartvexLogLevel.warn,
+        );
+    if (callback == null && !warnEnabled) {
+      // Nobody consumes the numbers; skip measuring the message entirely.
       return;
     }
 
@@ -877,14 +1178,30 @@ class WebSocketManager {
       return;
     }
 
-    final metrics = TransitionMetrics(
-      transitTimeMs: transitTimeMs,
-      messageSizeBytes: messageLengthBytes,
-      bytesPerSecond: messageLengthBytes / (transitTimeMs / 1000),
-    );
-    onTransitionMetrics?.call(metrics);
+    // Counted without allocating a UTF-8 copy of a potentially huge message.
+    final messageLengthBytes = utf8EncodedLength(rawMessage);
+    if (callback != null) {
+      final metrics = TransitionMetrics(
+        transitTimeMs: transitTimeMs,
+        messageSizeBytes: messageLengthBytes,
+        bytesPerSecond: messageLengthBytes / (transitTimeMs / 1000),
+      );
+      try {
+        callback(metrics);
+      } catch (error, stackTrace) {
+        // User code: a throwing metrics callback must not be classified as an
+        // invalid server message (which would drop this Transition and force a
+        // reconnect on every subsequent one).
+        _log(
+          DartvexLogLevel.error,
+          'onTransitionMetrics callback threw',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+    }
 
-    if (messageLengthBytes > 20000000) {
+    if (messageLengthBytes > _oversizedTransitionBytes) {
       _log(
         DartvexLogLevel.warn,
         'Received oversized transition',
@@ -895,7 +1212,7 @@ class WebSocketManager {
           ),
         },
       );
-    } else if (transitTimeMs > 20000) {
+    } else if (transitTimeMs > _slowTransitionMs) {
       _log(
         DartvexLogLevel.warn,
         'Transition arrived slowly',
@@ -907,7 +1224,39 @@ class WebSocketManager {
     }
   }
 
-  Future<void> _handleClosed(WebSocketCloseEvent event) async {
+  /// Returns the number of bytes [value] occupies when UTF-8 encoded, without
+  /// allocating the encoding.
+  ///
+  /// Matches `utf8.encode(value).length`, including the 3-byte replacement
+  /// character that the encoder substitutes for an unpaired surrogate.
+  @visibleForTesting
+  static int utf8EncodedLength(String value) {
+    var length = 0;
+    final codeUnits = value.length;
+    for (var i = 0; i < codeUnits; i++) {
+      final unit = value.codeUnitAt(i);
+      if (unit < 0x80) {
+        length += 1;
+      } else if (unit < 0x800) {
+        length += 2;
+      } else if (unit >= 0xD800 &&
+          unit <= 0xDBFF &&
+          i + 1 < codeUnits &&
+          (value.codeUnitAt(i + 1) & 0xFC00) == 0xDC00) {
+        // A surrogate pair encodes one supplementary code point (4 bytes).
+        length += 4;
+        i += 1;
+      } else {
+        length += 3;
+      }
+    }
+    return length;
+  }
+
+  Future<void> _handleClosed(
+    WebSocketCloseEvent event, {
+    bool connectFailure = false,
+  }) async {
     if (_disposed || _closeHandled || _stopped) {
       // A stop() close is deliberate: restart() will rebuild the session, so we
       // must not run the disconnect bookkeeping or schedule a reconnect here.
@@ -945,6 +1294,7 @@ class WebSocketManager {
       return;
     }
     _closeHandled = true;
+    _socketEpoch += 1;
     if (_pauseState == _SocketPauseState.uninitialized) {
       // `uninitialized` means "the current socket opened while paused and its
       // handshake is deferred to resume()". That socket is gone, so revert to
@@ -976,20 +1326,53 @@ class WebSocketManager {
           'errorMessage': event.errorMessage,
       },
     );
+    if (clientInitiated) {
+      _lastCloseReason = reason;
+    } else {
+      // Keep the first reason across failed reconnect attempts, as the
+      // official client's onclose does.
+      _lastCloseReason ??= reason;
+    }
+    if (!clientInitiated && !connectFailure) {
+      _reportServerDisconnectError(event);
+    }
     _inactivityTimer?.cancel();
     _chunkBuffer = null;
     _connecting = false;
     onConnectionStateChanged(false, false);
     await onDisconnected(reason);
-    _lastCloseReason = reason;
-    _scheduleReconnect(clientInitiated: clientInitiated);
+    _scheduleReconnect(clientInitiated: clientInitiated, reason: reason);
+  }
+
+  void _reportServerDisconnectError(WebSocketCloseEvent event) {
+    final callback = onServerDisconnectError;
+    final closeReason = event.reason;
+    if (callback == null ||
+        closeReason == null ||
+        closeReason.isEmpty ||
+        _expectedCloseCodes.contains(event.code)) {
+      return;
+    }
+    final message = event.code == null
+        ? 'WebSocket closed: $closeReason'
+        : 'WebSocket closed with code ${event.code}: $closeReason';
+    try {
+      callback(message);
+    } catch (error, stackTrace) {
+      _log(
+        DartvexLogLevel.error,
+        'onServerDisconnectError callback threw',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
   }
 
   /// Handles a disconnect with no real socket close event to drive it.
   ///
   /// Only ever reached on a client-initiated reconnect path (a forced
-  /// reconnect, a detected error, or an inactivity-timeout close that itself
-  /// failed), so the reconnect uses the client backoff base by default.
+  /// reconnect, a detected error, an inactivity timeout, or a close the client
+  /// issued itself), so the reconnect uses the client backoff base by default.
   Future<void> _handleSyntheticDisconnect(
     String reason, {
     bool clientInitiated = true,
@@ -998,6 +1381,7 @@ class WebSocketManager {
       return;
     }
     _closeHandled = true;
+    _socketEpoch += 1;
     if (_pauseState == _SocketPauseState.uninitialized) {
       // See _handleClosed: the socket whose handshake was deferred is gone,
       // so the next socket must defer its handshake to resume() again.
@@ -1009,36 +1393,56 @@ class WebSocketManager {
       'WebSocket disconnected',
       data: <String, Object?>{'reason': reason},
     );
+    _lastCloseReason = reason;
     _inactivityTimer?.cancel();
     _chunkBuffer = null;
     _connecting = false;
     onConnectionStateChanged(false, false);
     await onDisconnected(reason);
-    _lastCloseReason = reason;
-    _scheduleReconnect(clientInitiated: clientInitiated);
+    _scheduleReconnect(clientInitiated: clientInitiated, reason: reason);
   }
 
+  /// Closes the current socket and runs the disconnect bookkeeping right away,
+  /// without waiting for the platform's close event.
+  ///
+  /// Mirrors the official client's `closeAndReconnect`: on a dead connection
+  /// the close event only arrives after the platform's closing-handshake
+  /// timeout (up to a minute in browsers), and nothing would reconnect, fail
+  /// in-flight requests, or report the disconnect until then. The late close
+  /// event is discarded by [_handleClosed]'s guards (`_closeHandled`, an open
+  /// successor socket, or an in-flight connect).
   Future<void> _closeOrSyntheticDisconnect(
     String reason, {
     required bool clientInitiated,
   }) async {
-    if (!adapter.isConnected) {
-      await _handleSyntheticDisconnect(reason,
-          clientInitiated: clientInitiated);
+    // The socket this cleanup is for. A close handshake can be slow: its real
+    // close event may already have run the disconnect bookkeeping, and the
+    // reconnect it scheduled may already have opened (and replayed the
+    // session onto) a replacement socket by the time close() returns.
+    final epoch = _socketEpoch;
+    if (adapter.isConnected) {
+      try {
+        await adapter.close();
+      } catch (error, stackTrace) {
+        _log(
+          DartvexLogLevel.error,
+          'Failed to close WebSocket before reconnect',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+    }
+    if (epoch != _socketEpoch) {
+      // The closed socket's disconnect was already handled (or a stop or a
+      // newer connection superseded it); a synthetic disconnect now would
+      // tear down the successor connection and fail its in-flight actions.
+      _log(
+        DartvexLogLevel.debug,
+        'Skipping the synthetic disconnect of an already superseded socket',
+      );
       return;
     }
-    try {
-      await adapter.close();
-    } catch (error, stackTrace) {
-      _log(
-        DartvexLogLevel.error,
-        'Failed to close WebSocket before reconnect',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      await _handleSyntheticDisconnect(reason,
-          clientInitiated: clientInitiated);
-    }
+    await _handleSyntheticDisconnect(reason, clientInitiated: clientInitiated);
   }
 
   Future<void> _closeAdapterBestEffort(String message) async {
@@ -1054,17 +1458,33 @@ class WebSocketManager {
     }
   }
 
+  void _cancelReconnectTimer() {
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    _reconnectScheduledAtMs = null;
+  }
+
+  /// Schedules the next connect attempt.
+  ///
+  /// [reason] classifies a server/network close against the overload table.
+  /// [manual] marks an explicit [reconnectNow] that replaces a pending backoff
+  /// wait: it uses the first client-initiated delay without advancing the
+  /// backoff progression, so a failure afterwards resumes where it left off.
   void _scheduleReconnect({
     bool immediate = false,
     bool clientInitiated = false,
+    bool manual = false,
+    String? reason,
   }) {
     if (_disposed) {
       return;
     }
-    _reconnectTimer?.cancel();
+    _cancelReconnectTimer();
     final delay = _nextReconnectDelay(
       immediate: immediate,
-      clientInitiated: clientInitiated,
+      clientInitiated: clientInitiated || manual,
+      manual: manual,
+      reason: reason ?? '',
     );
     _log(
       DartvexLogLevel.info,
@@ -1072,52 +1492,82 @@ class WebSocketManager {
       data: <String, Object?>{
         'delayMs': delay.inMilliseconds,
         'connectionCount': _connectionCount,
-        'reason': _lastCloseReason,
+        'reason': _lastCloseReason ?? reason,
       },
     );
+    _reconnectScheduledAtMs = _clock.nowMillis;
+    _reconnectScheduledDelayMs = delay.inMilliseconds;
     _reconnectTimer = Timer(delay, () {
+      _reconnectScheduledAtMs = null;
       unawaited(_connect());
     });
+    _notifyStatusChanged();
   }
 
-  /// Computes the next reconnect delay and advances the retry counter.
+  /// Computes the next reconnect delay and advances the retry counters.
   ///
-  /// A non-empty [reconnectBackoff] schedule is used verbatim (no jitter);
-  /// otherwise an exponential backoff with jitter is derived from [maxBackoff],
-  /// [backoffJitter], and a base that depends on who triggered the reconnect:
-  /// the official 100ms client base when [clientInitiated] (a forced reconnect
-  /// or a client-detected error), otherwise the reason-classified server/unknown
-  /// base (the server-overload table, or [initialBackoff] for an unclassified
-  /// close).
+  /// With an empty [reconnectBackoff] schedule, an exponential backoff with
+  /// jitter is derived from [maxBackoff], [backoffJitter], and a base that
+  /// depends on who triggered the reconnect: the official 100ms client base
+  /// when [clientInitiated] (a forced reconnect or a client-detected error),
+  /// otherwise the base classified from [reason] (the server-overload table,
+  /// or [initialBackoff] for an unclassified close).
+  ///
+  /// A non-empty [reconnectBackoff] schedule is used verbatim (no jitter) for
+  /// server/network closes. A client-initiated reconnect uses the 100ms
+  /// client base (doubling per retry, no jitter) but never waits longer than
+  /// the schedule's entry, so [reconnectNow] stays prompt under a long fixed
+  /// schedule.
   Duration _nextReconnectDelay({
     required bool immediate,
     required bool clientInitiated,
+    required bool manual,
+    required String reason,
   }) {
     if (immediate) {
       return Duration.zero;
     }
+    final retries = manual ? 0 : _connectionRetries;
+    if (!manual) {
+      _connectionRetries += 1;
+    }
     if (reconnectBackoff.isNotEmpty) {
-      final index = _reconnectIndex < reconnectBackoff.length
-          ? _reconnectIndex
-          : reconnectBackoff.length - 1;
-      if (_reconnectIndex < reconnectBackoff.length - 1) {
+      final index = min(_reconnectIndex, reconnectBackoff.length - 1);
+      if (!manual && _reconnectIndex < reconnectBackoff.length - 1) {
         _reconnectIndex += 1;
       }
-      return reconnectBackoff[index];
+      final scheduled = reconnectBackoff[index];
+      if (!clientInitiated) {
+        return scheduled;
+      }
+      return computeExponentialBackoff(
+        retryIndex: retries,
+        baseBackoffMs: _clientReconnectInitialBackoffMs,
+        maxBackoffMs: scheduled.inMilliseconds,
+        jitter: 0,
+        randomUnit: 0.5,
+      );
     }
     final baseMs = clientInitiated
         ? _clientReconnectInitialBackoffMs
-        : _classifiedInitialBackoffMs(_lastCloseReason);
+        : _classifiedInitialBackoffMs(reason);
     final delay = computeExponentialBackoff(
-      retryIndex: _reconnectIndex,
+      retryIndex: manual ? 0 : _reconnectIndex,
       baseBackoffMs: baseMs,
       maxBackoffMs: maxBackoff.inMilliseconds,
       jitter: backoffJitter,
       randomUnit: _random.nextDouble(),
     );
-    _reconnectIndex += 1;
+    if (!manual) {
+      _reconnectIndex += 1;
+    }
     return delay;
   }
+
+  /// Retry indexes above this saturate the exponential backoff anyway
+  /// (`2^62` times any realistic base already exceeds every cap), so larger
+  /// indexes are clamped before `pow` to keep the arithmetic finite.
+  static const int _maxBackoffExponent = 62;
 
   /// Computes the jittered exponential reconnect delay for [retryIndex].
   ///
@@ -1129,8 +1579,10 @@ class WebSocketManager {
   /// `+ actualBackoff * (random - 0.5)`. A double base (`pow(2.0, …)`) is used
   /// deliberately: an int `pow(2, retryIndex)` wraps a 64-bit integer to 0 at
   /// index 64 (and negative at 63), which would collapse the backoff to ~0 and
-  /// hot-loop after a long unbroken run of failed reconnects. With a double it
-  /// saturates to a finite (or `Infinity`) value, so the cap always holds.
+  /// hot-loop after a long unbroken run of failed reconnects. The exponent is
+  /// additionally clamped, and a zero (or negative) base short-circuits to
+  /// zero, so `0 * 2^1024` (`0 * Infinity`, i.e. NaN) can never reach
+  /// `round()` and the cap always holds.
   @visibleForTesting
   static Duration computeExponentialBackoff({
     required int retryIndex,
@@ -1139,10 +1591,17 @@ class WebSocketManager {
     required double jitter,
     required double randomUnit,
   }) {
-    final exponentialMs = baseBackoffMs * pow(2.0, retryIndex);
+    if (baseBackoffMs <= 0 || maxBackoffMs <= 0) {
+      return Duration.zero;
+    }
+    final exponent = retryIndex.clamp(0, _maxBackoffExponent);
+    final exponentialMs = baseBackoffMs * pow(2.0, exponent);
     final cappedMs = min(exponentialMs, maxBackoffMs.toDouble());
     final jitterSpan = cappedMs * jitter * (randomUnit * 2 - 1);
     final delayMs = (cappedMs + jitterSpan).clamp(0.0, double.infinity);
+    if (!delayMs.isFinite) {
+      return Duration(milliseconds: maxBackoffMs);
+    }
     return Duration(milliseconds: delayMs.round());
   }
 
@@ -1158,27 +1617,18 @@ class WebSocketManager {
   void _resetInactivityTimer() {
     _inactivityTimer?.cancel();
     _inactivityTimer = Timer(inactivityTimeout, () async {
-      if (_disposed) {
+      // Only an open connection can go inactive. A timer that outlived its
+      // connection (one that slipped past a teardown) must not close whatever
+      // the adapter fronts now — closing an in-flight connect would make the
+      // adapter discard it silently.
+      if (_disposed || _stopped || !adapter.isConnected) {
         return;
       }
-      _lastCloseReason = 'ServerInactivity';
-      _pendingCloseReason = _lastCloseReason;
+      const reason = 'InactiveServer';
+      _lastCloseReason = reason;
+      _pendingCloseReason = reason;
       _log(DartvexLogLevel.warn, 'Closing WebSocket after inactivity timeout');
-      try {
-        await adapter.close();
-      } catch (error, stackTrace) {
-        _log(
-          DartvexLogLevel.error,
-          'Failed to close WebSocket after inactivity timeout',
-          error: error,
-          stackTrace: stackTrace,
-        );
-        // The close failed, so no close event will arrive to drive the
-        // reconnect. Fall back to a synthetic disconnect so the client still
-        // reconnects instead of sitting idle on a dead socket.
-        await _handleSyntheticDisconnect(_lastCloseReason,
-            clientInitiated: true);
-      }
+      await _closeOrSyntheticDisconnect(reason, clientInitiated: true);
     });
   }
 
@@ -1216,9 +1666,11 @@ class _TransitionChunkBuffer {
 class _AssembledTransition {
   const _AssembledTransition({
     required this.transition,
-    required this.messageLengthBytes,
+    required this.rawMessage,
   });
 
   final Transition transition;
-  final int messageLengthBytes;
+
+  /// The reassembled raw JSON, measured lazily for metrics.
+  final String rawMessage;
 }

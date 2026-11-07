@@ -39,7 +39,7 @@ echo ""
 echo "| Date | Commit | Description | Impact |"
 echo "|------|--------|-------------|--------|"
 
-curl -s "https://api.github.com/repos/get-convex/convex-js/commits?path=src/browser/sync/protocol.ts&per_page=50&since=${SINCE}T00:00:00Z" | \
+curl -sL "https://api.github.com/repos/convex/convex-js/commits?path=src/browser/sync/protocol.ts&per_page=50&since=${SINCE}T00:00:00Z" | \
   jq -r '.[] | [.commit.committer.date, .sha[0:7], (.commit.message | split("\n")[0])] | @tsv' | \
   while IFS=$'\t' read -r date sha msg; do
     short_date=$(echo "$date" | cut -c1-10)
@@ -63,7 +63,7 @@ echo ""
 echo "| Date | Commit | Description | Impact |"
 echo "|------|--------|-------------|--------|"
 
-curl -s "https://api.github.com/repos/get-convex/convex-js/commits?path=src/browser/sync/client.ts&per_page=50&since=${SINCE}T00:00:00Z" | \
+curl -sL "https://api.github.com/repos/convex/convex-js/commits?path=src/browser/sync/client.ts&per_page=50&since=${SINCE}T00:00:00Z" | \
   jq -r '.[] | [.commit.committer.date, .sha[0:7], (.commit.message | split("\n")[0])] | @tsv' | \
   while IFS=$'\t' read -r date sha msg; do
     short_date=$(echo "$date" | cut -c1-10)
@@ -84,12 +84,12 @@ echo ""
 echo "| Version | Date | Notable Changes |"
 echo "|---------|------|-----------------|"
 
-curl -s "https://api.github.com/repos/get-convex/convex-rs/tags?per_page=20" | \
+curl -sL "https://api.github.com/repos/convex/convex-rs/tags?per_page=20" | \
   jq -r '.[].name' | while read -r tag; do
     version=$(echo "$tag" | sed 's|convex-rs/||')
-    sha=$(curl -s "https://api.github.com/repos/get-convex/convex-rs/git/refs/tags/$tag" | jq -r '.object.sha // empty')
+    sha=$(curl -sL "https://api.github.com/repos/convex/convex-rs/git/refs/tags/$tag" | jq -r '.object.sha // empty')
     if [ -n "$sha" ]; then
-      date=$(curl -s "https://api.github.com/repos/get-convex/convex-rs/commits/$sha" | jq -r '.commit.committer.date // empty' | cut -c1-10)
+      date=$(curl -sL "https://api.github.com/repos/convex/convex-rs/commits/$sha" | jq -r '.commit.committer.date // empty' | cut -c1-10)
       echo "| $version | $date | — |"
     fi
   done
@@ -100,9 +100,9 @@ echo ""
 echo "## Protocol Change Frequency"
 echo ""
 
-JS_PROTOCOL_COUNT=$(curl -s "https://api.github.com/repos/get-convex/convex-js/commits?path=src/browser/sync/protocol.ts&per_page=50&since=${SINCE}T00:00:00Z" | jq 'length')
-JS_CLIENT_COUNT=$(curl -s "https://api.github.com/repos/get-convex/convex-js/commits?path=src/browser/sync/client.ts&per_page=50&since=${SINCE}T00:00:00Z" | jq 'length')
-RS_TAG_COUNT=$(curl -s "https://api.github.com/repos/get-convex/convex-rs/tags?per_page=20" | jq 'length')
+JS_PROTOCOL_COUNT=$(curl -sL "https://api.github.com/repos/convex/convex-js/commits?path=src/browser/sync/protocol.ts&per_page=50&since=${SINCE}T00:00:00Z" | jq 'length')
+JS_CLIENT_COUNT=$(curl -sL "https://api.github.com/repos/convex/convex-js/commits?path=src/browser/sync/client.ts&per_page=50&since=${SINCE}T00:00:00Z" | jq 'length')
+RS_TAG_COUNT=$(curl -sL "https://api.github.com/repos/convex/convex-rs/tags?per_page=20" | jq 'length')
 
 YEARS=$(( ($(date +%s) - $(date -d "$SINCE" +%s)) / 31536000 + 1 ))
 

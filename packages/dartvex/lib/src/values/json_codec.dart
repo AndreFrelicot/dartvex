@@ -6,11 +6,42 @@ final BigInt _maxInt64 = BigInt.parse('9223372036854775807');
 final BigInt _byteMask = BigInt.from(0xff);
 const int _maxIdentifierLength = 1024;
 
+/// Largest magnitude below which every Dart [int] is exactly representable as
+/// a Convex `float64` (`2^53`).
+const int _maxSafeInteger = 9007199254740992;
+
+/// The placeholder for a mutation's commit timestamp (`db.vars.commitTs`).
+///
+/// Convex (since 1.43) lets a mutation write `ctx.db.vars.commitTs` into a
+/// document field; the value resolves to an `int64` when the mutation commits.
+/// Reading such a field back inside the writing mutation yields this
+/// placeholder, and a mutation, action, or error payload that returns it is
+/// serialized on the wire as `{"$commitTs": null}`. [jsonToConvex] decodes that
+/// shape to [ConvexCommitTsPlaceholder.instance] and [convexToJson] encodes the
+/// instance back, mirroring the official client's `CommitTsPlaceholder`.
+///
+/// The placeholder carries no numeric value: read the document again after the
+/// mutation completes to get the resolved timestamp. Compare with
+/// `identical(value, ConvexCommitTsPlaceholder.instance)` or
+/// `value is ConvexCommitTsPlaceholder`.
+final class ConvexCommitTsPlaceholder {
+  const ConvexCommitTsPlaceholder._();
+
+  /// The singleton placeholder value.
+  static const ConvexCommitTsPlaceholder instance =
+      ConvexCommitTsPlaceholder._();
+
+  @override
+  String toString() => '[unresolved commit timestamp]';
+}
+
 /// Creates an explicit Convex `int64` value for `v.int64()` arguments.
 ///
-/// Plain Dart [int] values encode as JSON numbers for `v.number()` arguments.
-/// Use this helper, or [BigInt.from], when the Convex function expects
-/// `v.int64()`.
+/// Plain Dart [int] values encode as JSON numbers (Convex `float64`) for
+/// `v.number()` arguments, and must be exactly representable as a `float64`
+/// (any value within ±2^53 is). Use this helper, or [BigInt.from], when the
+/// Convex function expects `v.int64()` or the value needs full 64-bit
+/// precision.
 BigInt convexInt64(int value) {
   final int64 = BigInt.from(value);
   _checkInt64(int64);
@@ -19,8 +50,14 @@ BigInt convexInt64(int value) {
 
 /// Encodes Dart values into Convex's canonical JSON representation.
 ///
-/// [BigInt], [Uint8List], and special [double] values are encoded with the
-/// tagged shapes expected by the Convex sync protocol.
+/// [BigInt], [Uint8List], special [double] values, and
+/// [ConvexCommitTsPlaceholder.instance] are encoded with the tagged shapes
+/// expected by the Convex sync protocol.
+///
+/// Throws an [ArgumentError] for values Convex cannot represent, including a
+/// Dart [int] that is not exactly representable as a `float64` (beyond ±2^53
+/// on the Dart VM) — pass such values as a [BigInt] (`v.int64()`) or a string
+/// instead of letting the server silently round them.
 dynamic convexToJson(dynamic value) {
   return _convexToJson(value);
 }
@@ -28,7 +65,8 @@ dynamic convexToJson(dynamic value) {
 /// Decodes Convex's canonical JSON representation into Dart values.
 ///
 /// Convex `int64`, `bytes`, and special floating-point sentinels are converted
-/// to [BigInt], [Uint8List], and [double] values respectively.
+/// to [BigInt], [Uint8List], and [double] values respectively, and the
+/// `{"$commitTs": null}` placeholder to [ConvexCommitTsPlaceholder.instance].
 /// Object fields preserve the incoming map's iteration order.
 dynamic jsonToConvex(dynamic value) {
   if (value == null || value is bool || value is num || value is String) {
@@ -69,6 +107,11 @@ dynamic jsonToConvex(dynamic value) {
           throw FormatException('Malformed \$float field', map);
         }
         return _decodeFloat64(encoded);
+      case r'$commitTs':
+        if (entry.value != null) {
+          throw FormatException('Malformed \$commitTs field', map);
+        }
+        return ConvexCommitTsPlaceholder.instance;
       case r'$set':
         throw FormatException(
           'Received a Set which is no longer supported as a Convex type.',
@@ -119,6 +162,7 @@ dynamic _convexToJson(dynamic value) {
     return <String, String>{r'$integer': _encodeInt64(value)};
   }
   if (value is int) {
+    _checkFloat64Representable(value);
     return value;
   }
   if (value is double) {
@@ -129,6 +173,9 @@ dynamic _convexToJson(dynamic value) {
   }
   if (value is Uint8List) {
     return <String, String>{r'$bytes': base64Encode(value)};
+  }
+  if (value is ConvexCommitTsPlaceholder) {
+    return const <String, Object?>{r'$commitTs': null};
   }
   if (value is List) {
     return value.map(_convexToJson).toList(growable: false);
@@ -165,6 +212,79 @@ dynamic _convexToJson(dynamic value) {
     'value',
     '${value.runtimeType} is not a supported Convex type.',
   );
+}
+
+/// Rejects a Dart [int] that the server would silently round when parsing it as
+/// a `float64`. On the web every [int] is already a double, so this never
+/// throws there; on the VM it only throws beyond ±2^53 for values that have no
+/// exact `float64` representation.
+void _checkFloat64Representable(int value) {
+  if (value <= _maxSafeInteger && value >= -_maxSafeInteger) {
+    return;
+  }
+  if (BigInt.from(value.toDouble()) == BigInt.from(value)) {
+    return;
+  }
+  throw ArgumentError.value(
+    value,
+    'value',
+    'int $value cannot be represented exactly as a Convex float64 '
+        '(v.number()). Pass it as a BigInt (convexInt64 / v.int64()) or as a '
+        'string instead.',
+  );
+}
+
+/// Encodes [value] like [convexToJson], then normalizes numbers so the result is
+/// a stable, platform-independent key for query identity.
+///
+/// A Dart `int` and an integral `double` (for example `10` and `10.0`, or
+/// `100000000000000000` and `1e17`) are the same Convex `float64` on the wire,
+/// but `jsonEncode` renders them differently on the Dart VM (`10` vs `10.0`,
+/// `100000000000000000` vs `1e+17`) and identically on the web. This helper
+/// maps every finite integral `double` that equals a 64-bit `int` (any
+/// magnitude below 2^63, which is exactly the set of integral doubles a Dart
+/// `int` can hold on the VM) to that `int`, so a key built with
+/// `jsonEncode(convexToCanonicalJson(args))` identifies the same query however
+/// the number was written. Larger integral doubles have no `int` counterpart
+/// and stay doubles; `-0.0`, NaN and ±Infinity are already tagged `$float`
+/// values by [convexToJson]. Tagged values (`$integer`, `$float`, `$bytes`,
+/// `$commitTs`) are left untouched.
+///
+/// Use it only for keys, never for the wire encoding: the server must keep
+/// receiving exactly what [convexToJson] produces.
+dynamic convexToCanonicalJson(dynamic value) {
+  return _normalizeNumbers(convexToJson(value));
+}
+
+/// 2^63 as a double: the exclusive upper bound of integral doubles that fit
+/// into a 64-bit `int` (the inclusive lower bound is -2^63).
+const double _twoTo63 = 9223372036854775808.0;
+
+/// Key-only number normalization behind [convexToCanonicalJson].
+dynamic _normalizeNumbers(dynamic json) {
+  if (json is double) {
+    if (json.isFinite &&
+        json == json.truncateToDouble() &&
+        json >= -_twoTo63 &&
+        json < _twoTo63 &&
+        // Defensive: -0.0 is a distinct Convex value (encoded as `$float`).
+        !(json == 0 && json.isNegative)) {
+      // Exact: every integral double in [-2^63, 2^63) is an int64 value, and
+      // the resulting int is float64-representable by construction.
+      return json.toInt();
+    }
+    return json;
+  }
+  if (json is List) {
+    return json.map(_normalizeNumbers).toList(growable: false);
+  }
+  if (json is Map) {
+    return <String, dynamic>{
+      for (final entry in json.entries)
+        entry.key as String: _normalizeNumbers(entry.value),
+    };
+  }
+  return json;
 }
 
 void _checkInt64(BigInt value) {

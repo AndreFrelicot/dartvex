@@ -17,11 +17,11 @@ edits. Create package tags only after each package is successfully published.
 
 The release helper uses one git tag per package:
 
-- `dartvex-v0.1.0`
-- `dartvex_flutter-v0.1.0`
-- `dartvex_codegen-v0.1.0`
-- `dartvex_local-v0.1.0`
-- `dartvex_auth_better-v0.1.0`
+- `dartvex-v0.3.0`
+- `dartvex_flutter-v0.3.0`
+- `dartvex_codegen-v0.3.0`
+- `dartvex_local-v0.3.0`
+- `dartvex_auth_better-v0.3.0`
 
 If older releases were published before tags existed, use `--since-ref=<git-ref>`
 for that release, then start tagging packages after the next publication.
@@ -50,7 +50,10 @@ What the plan shows:
 - packages changed since the package baseline
 - internal dependents impacted by those changes
 - publish order for the selected set
-- internal dependency constraint mismatches
+- internal dependency constraint mismatches (a mismatch in `dev_dependencies`,
+  such as `dartvex_codegen`'s dev dependency on `dartvex`, is only a warning:
+  dev dependencies are not publish-order edges and do not reach pub.dev
+  users)
 
 To see the wider impact set:
 
@@ -58,18 +61,62 @@ To see the wider impact set:
 dart scripts/release_packages.dart plan --include-dependents --since-ref=<git-ref>
 ```
 
+## Track the Official Convex Client
+
+`dartvex` mirrors a specific release of the official Convex JavaScript client
+(`convex` on npm). That release is `convexSyncApiVersion` in
+`packages/dartvex/lib/src/config.dart`; it is also the default
+`ConvexClientConfig.apiVersion` sent in the `/api/<version>/sync` path, and
+docs that say "matches the official client" refer to it. Bump it only on
+purpose, in a `dartvex` release:
+
+1. Pick the target `convex` release (usually the latest:
+   `npm view convex version`).
+2. Diff the official client between the pinned and the target version and
+   port every behavior change, or record why it does not apply. At minimum
+   review:
+   - `src/browser/sync/protocol.ts` (messages and fields)
+   - `src/browser/sync/web_socket_manager.ts` (reconnect, backoff, close codes)
+   - `src/browser/sync/client.ts` (request, query, and transition handling)
+   - `src/browser/sync/authentication_manager.ts` (token fetch and refresh)
+   - `src/values/` (value encoding, including new special types)
+
+   `scripts/protocol-watch.sh` downloads both versions from the npm registry
+   and writes these diffs to `source-diff.patch` (the weekly Protocol Watch
+   workflow attaches it to the `protocol-drift` issue):
+
+   ```sh
+   ./scripts/protocol-watch.sh   # exit 1 = drift, see drift-report.md
+   ```
+
+3. Update `convexSyncApiVersion`, the "Compatibility" notes in the root and
+   `dartvex` READMEs, and the `dartvex` CHANGELOG ("Parity baseline is now
+   ...").
+
 ## Prepare Packages
 
 For each package you actually intend to publish:
 
 1. update `version` in that package's `pubspec.yaml`
-2. add a matching entry to that package's `CHANGELOG.md`
-3. if an internal dependency now needs a newer version range, update the constraint in the dependent package and bump that dependent package too
-4. run package tests and analysis
-5. sweep `skills/` for API drift: snippets and version ranges in the agent
-   skills must match the versions being published (skills describe the
-   published API, not unreleased `main`)
-6. commit the release-prep changes before pub.dev dry-runs or publish
+2. when bumping `dartvex`, update `dartvexVersion` in
+   `packages/dartvex/lib/src/config.dart` to the same version (it is the
+   default `clientId`, `dartvex-<version>`; `config_test.dart` fails if it
+   differs from the pubspec)
+3. move the `## [Unreleased]` entries of that package's `CHANGELOG.md` under
+   a `## [X.Y.Z] - YYYY-MM-DD` heading (keep an empty `## [Unreleased]` above
+   it), and mark every breaking change with **Breaking:**
+4. if an internal dependency now needs a newer version range, update the constraint in the dependent package and bump that dependent package too
+5. run package tests and analysis
+6. sweep `skills/`, the package READMEs, the root README, and the examples
+   for API drift: snippets, class/enum/method names, behavior claims, and
+   version ranges must match the versions being published (skills describe
+   the published API, not unreleased `main`)
+7. commit the release-prep changes before pub.dev dry-runs or publish
+
+CI also checks each package against its declared SDK floor (the `min-sdk` and
+`min-sdk-flutter` jobs: `pub downgrade` + analyze, then tests). When you raise
+a dependency's lower bound or a package's `environment` constraint, update
+the floor in that job's matrix.
 
 Typical order:
 
@@ -158,6 +205,8 @@ When you are preparing on one machine and publishing on another:
 2. push the release-prep commit
 3. pull that exact commit on the publishing machine
 4. verify no package directory contains a local `pubspec_overrides.yaml`
+   (`scripts/ci-local-dependency-overrides.sh` writes them for local
+   development)
 5. run the dry-runs there before publishing
 
 ## Publish
@@ -191,10 +240,14 @@ Recommended cross-machine flow:
 
 1. On the prep machine, commit release-prep changes and push the branch.
 2. On the publishing machine, pull the release-prep commit and run
-   `dart scripts/release_packages.dart dry-run --include-dependents`.
-3. Publish in the computed order.
-4. Create one tag per successfully published package on the published commit.
-5. Push the tags.
+   `dart scripts/release_packages.dart dry-run --include-dependents` (with
+   internal overrides, so the unpublished set is checked together).
+3. Publish the internal dependencies first (`dartvex` when it changed).
+4. Wait until pub.dev serves the new versions, then rerun the dependents'
+   dry-run with `--no-internal-overrides`.
+5. Publish the dependents in the computed order once that dry-run is green.
+6. Create one tag per successfully published package on the published commit.
+7. Push the tags.
 
 If a publish fails midway, tag only the packages that were actually published,
 fix the issue, then repeat planning from the remaining package tags.

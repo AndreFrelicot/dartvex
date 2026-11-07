@@ -7,6 +7,291 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-05
+
+### Added
+
+- `AuthSessionEndedError`: a marker interface for errors thrown by
+  `AuthProvider.login`/`loginFromCache` when the provider's session no longer
+  exists. A replacement login or restore failing with such an error signs
+  the client out instead of keeping the previous session (which ran on the
+  same, now dead, session) as authenticated. Other errors still keep a
+  healthy previous session.
+- `ConvexFunctionCaller.mutate` takes an optional `OptimisticUpdate`, so code
+  written against the interface (and `ConvexClientWithAuth`) can apply
+  optimistic updates. **Breaking for implementors:** classes that
+  `implement ConvexFunctionCaller` must add the optional
+  `OptimisticUpdate? optimisticUpdate` parameter to `mutate`.
+- `ConvexClientConfig.expectAuth`: when `true`, the client holds the socket
+  until the first `setAuth` / `setAuthWithRefresh` / `clearAuth`, so no query
+  ever runs unauthenticated. Mirrors the official client's `expectAuth`.
+- `ConvexCommitTsPlaceholder.instance`: the server's `$commitTs` placeholder
+  (an unresolved commit timestamp) now decodes to this exported singleton and
+  encodes back to `{"$commitTs": null}` instead of failing the whole message.
+- `convexToCanonicalJson`, which encodes a value the way query tokens are
+  keyed (integral doubles such as `1.0` match `1`).
+- `ConvexPaginatedQuery.reset()` restarts pagination from the first page with
+  a fresh pagination id. The query also resets itself when the server reports
+  `InvalidCursor` for an already-loaded page.
+- `ConvexPaginatedResult.hasPendingWrites`, aggregated from the loaded pages.
+- `StoredQueryResult`, `StoredQuerySuccess`, `StoredQueryLoading`, and
+  `StoredQueryError` are exported. They were already referenced by the public
+  `PageSubscription` / `PageInitialResultReader` types.
+- `dartvexVersion` and `convexSyncApiVersion` constants.
+- `ConvexStorage.uploadFile` accepts `useAction` (generate the upload URL from
+  an action) and a `timeout` for the upload request.
+- Transport: `ConvexClient(onServerDisconnectError: ...)`, an experimental
+  telemetry hook that receives a description of each abnormal server
+  disconnect (a server close with a reason and a code other than 1000, 1001,
+  1005, or 4040). Mirrors the official client's unstable option.
+- Transport: a reconnect triggered by `ConnectivitySignal` now reports the
+  backoff time it skipped to the server as a `NetworkRecoveryReconnect` event,
+  as the official client does.
+- Auth: `ConvexClientConfig.initialAuthTokenReuse` (experimental, default
+  `false`). When enabled, a cached token from `setAuthWithRefresh` that the
+  server confirms is kept, and its refresh is scheduled from the token's
+  remaining lifetime on the server's clock (from the confirming transition's
+  clock skew), instead of being immediately replaced by a fresh fetch. Mirrors
+  the official client's option.
+- Auth: `ConvexClient.isAuthenticated` (the current value of `authState`, which
+  does not replay) and `ConvexClient.currentAuthToken` /
+  `ConvexClientWithAuth.currentAuthToken` (the token currently in use,
+  reflecting every refresh; the counterpart of the official `getAuth()`).
+- Auth: the `AuthTokenFetcher` typedef used by `setAuthWithRefresh` is now
+  exported.
+
+### Changed
+
+- Parity baseline: this release is aligned with the official Convex
+  JavaScript client **1.49.0** (`convex` on npm; 0.2.0 was aligned with
+  1.41.0). The default `ConvexClientConfig.apiVersion` is now the exported
+  `convexSyncApiVersion` constant (`'1.49.0'`, was `'1.41.0'`), bumped
+  deliberately after diffing the official sync client sources. The default
+  `clientId` is now `dartvex-<package version>` (`dartvexVersion`; it was
+  `dart-dartvex`).
+- `ConvexStorage.uploadFile`'s `filename` is optional. It was never sent to
+  Convex; it is only used in debug logs.
+- **Breaking (behavior):** a pending mutation or action sent under one auth
+  identity now fails with a `ConvexException` when auth changes before it
+  completes. It is no longer
+  replayed under the new identity.
+- **Breaking:** `ConvexPaginatedQuery` rejects a `pageSize` or `loadMore`
+  count below 1 with an `ArgumentError`.
+- **Breaking:** encoding an `int` beyond ±2^53 that a float64 cannot
+  represent exactly throws an `ArgumentError` instead of silently changing the value. Use
+  `convexInt64` / `BigInt` for 64-bit integers.
+- **Breaking:** auth methods (`setAuth`, `setAuthWithRefresh`, `clearAuth`,
+  `updateAuthToken`) and `reconnectNow` on a closed client return a failed
+  future instead of throwing synchronously.
+- **Breaking:** `ConvexClient` rejects `.convex.site` deployment URLs (the
+  HTTP actions host, which never served the sync protocol) with a descriptive
+  `ArgumentError`.
+- Documented that `ConvexException.retryable` means transient, not
+  idempotent. An action that fails with `retryable: true` after a disconnect
+  may already have run on the server.
+- Transport: `Connect.lastCloseReason` now follows the official client: it is
+  cleared once a `Connect` has been sent (a reauth stop/restart reports none),
+  failed reconnect attempts no longer overwrite the original disconnect reason
+  with raw exception text, and an inactivity timeout reports `InactiveServer`
+  (was `ServerInactivity`).
+- Transport: with a fixed `reconnectBackoff` schedule, client-initiated
+  reconnects (`reconnectNow`, a detected protocol error, an inactivity timeout)
+  now use the 100ms client base, never waiting longer than the schedule's
+  entry. Server/network closes still use the schedule verbatim.
+- Transport: a reauth's socket stop now publishes `ConnectionState.disconnected`
+  (it used to keep reporting `connected` while the socket was closed), so the
+  coarse state agrees with `ConnectionStatus.isWebSocketConnected`. The
+  `ConnectionState` docs now spell out that a reconnect backoff wait is
+  reported as `disconnected`.
+- Transport (internal): the `ServerMessageHandler` callback no longer returns
+  messages to send; that return path silently dropped messages while the socket
+  was paused or disconnected.
+- Auth: **Breaking:** `ConvexClientConfig.authTokenType` must be `'User'` or
+  `'Admin'`; `ConvexClient` now throws `ArgumentError` for any other value.
+  `'None'` made the client report authenticated while the server treated it as
+  anonymous.
+- Auth: **Breaking (behavior):** `setAuthWithRefresh`'s `onAuthChange(true)`
+  now fires once per auth flow, when the server first confirms it, instead of on every token refresh.
+- Auth: the refresh of a freshly fetched token is scheduled from its lifetime
+  alone, so a device clock that runs ahead no longer causes a zero-delay
+  refresh loop. A token pushed with `updateAuthToken` is judged against the
+  server's clock when the server reports its skew, and otherwise waits at
+  least 5 seconds.
+- Auth: a token fetch that throws while recovering from a server rejection is
+  retried twice (after 500ms and 2s) before the user is signed out.
+- Auth: a server auth rejection is now logged at error level with the server's
+  reason ("Failed to authenticate: ..., check your server auth config"), as
+  the official client does.
+- Auth: the `AuthProvider` docs now spell out the contract
+  `ConvexClientWithAuth` relies on: `loginFromCache` is the token refresh hook,
+  must return a freshly issued token, and reports "no session" by throwing.
+  `AuthAuthenticated.userInfo` is documented as a login-time snapshot.
+
+### Fixed
+
+- A FatalError reaches every subscriber and fails a pending `query()` even
+  when a listener changes auth while it is delivered; an auth change after a
+  FatalError no longer moves subscriptions back to loading.
+- `convexToCanonicalJson` (query keys) gives an integral double and the equal
+  int the same key beyond ±2^53 (for example `1e17` and
+  `100000000000000000`).
+- `ConvexClientWithAuth` marks its token-refresh calls to
+  `AuthProvider.loginFromCache` (`Zone.current[#dartvex.authTokenRefresh]` is
+  `true`), so a provider can let an explicit `loginFromCache()` supersede a
+  pending `login()` while a background refresh does not.
+- Explicit auth changes clear live query results and optimistic layers until
+  the server confirms the new identity. Late transitions and reentrant
+  listeners cannot expose the previous user's data or refill a local cache
+  after `ConvexLocalClient.reset()`. Same-user token refreshes retain results.
+- Upload timeouts abort the HTTP request, including on a shared client,
+  instead of only stopping the wait. Requires `http >=1.5.0`.
+- `ConvexClientWithAuth.logout()` starts the provider's sign-out in the same
+  synchronous step that stops the refresh flow, instead of after awaiting
+  it. A `login()` started while the logout was pending could otherwise have
+  its new session captured and revoked by the provider.
+- A token pushed by a login that is still running is no longer applied to
+  the session it is replacing: it was written into the previous flow's
+  bridge and sent to the server while the previous user was still
+  installed, and kept if the login then failed. Pushes are now applied only
+  to the flow's own bridge, once its provider call returned (the result's
+  token is the one installed).
+- The WebSocket handshake checks for a pause raised while its
+  session-restoring messages were being built on the synchronous path too
+  (a listener notified of rolled-back optimistic updates may start an auth
+  flow): it forces a clean reconnect instead of dropping the restored query
+  set and replayed requests until the next reconnect.
+- `query()` / `queryOnce()` no longer resolve from the after-unsubscribe
+  cache, which could return a stale value or re-throw an old error. Live
+  `subscribe()` still seeds from the warm cache.
+- The after-unsubscribe cache is no longer refilled with results from a
+  previous auth identity. Results kept across a reconnect still seed new
+  subscribers.
+- Calling `mutate`, `loadMore`, `cancel`, or auth methods from inside a
+  query, connection-status, or auth-state listener no longer throws
+  `StateError: Cannot fire new event...`. Nested events are queued and
+  delivered in order.
+- A listener that applies an optimistic update to another query in the same
+  transition is no longer overwritten by the transition's precomputed result.
+- A second listener on a `ConvexSubscription.stream` now receives the current
+  value, not only future changes.
+- `close()` no longer hangs when a subscription stream listener is paused.
+- `resume()` sends the auth and query-set messages before replayed requests.
+- A request queued during a reauth pause is no longer sent twice when the
+  socket restarts.
+- A `FatalError` rolls back optimistic updates. Later `mutate`, `action`,
+  `query`, and `subscribe` calls fail at once with the fatal error.
+- A server value that cannot be decoded fails only that query, mutation, or
+  action. It no longer tears down the socket and loops reconnecting.
+- A mutation whose success response arrived before its timeout no longer
+  fails with a timeout while waiting for the transition.
+- `queryOnce<T>` reports a type mismatch as a `ConvexException` naming the
+  function and expected type.
+- Before the first successful connection, retries report `connecting`
+  rather than `reconnecting`.
+- A logger that throws no longer breaks message processing. Optimistic update
+  callbacks that throw during replay are logged at warn level.
+- Query tokens treat `1` and `1.0` arguments as the same query.
+- `ConvexPaginatedQuery`:
+  - `loadMore` no longer chains from a stale continue cursor seeded from the
+    cache. It waits for the first live page.
+  - Ongoing page splits survive a same-range update.
+  - No-op page updates no longer emit duplicate snapshots.
+  - When the client closes, the query emits an error and completes instead of
+    hanging.
+- `applyOptimisticUpdate` no longer reports duplicate changed query tokens.
+- Transport: `ConvexClient.reconnectNow` (and so the app-resume reconnect)
+  now cuts short a pending reconnect backoff instead of doing nothing until the
+  wait elapsed. It uses the 100ms client delay without advancing the backoff
+  progression and without reporting the disconnect a second time.
+- Transport: client-initiated reconnects (reconnectNow, protocol errors, failed
+  sends, inactivity timeouts) no longer wait for the platform's close event,
+  which on a dead connection can take up to a minute on web.
+- Transport: a connect that returns without an open socket (for example after
+  a stale inactivity timer closed it mid-handshake) is now retried instead of
+  stalling the client in `connecting` forever; the inactivity timer only acts
+  on, and is only re-armed by, a live connection.
+- Transport: an exception thrown by `onTransitionMetrics` is logged instead of
+  dropping the Transition and forcing a reconnect on every subsequent one.
+- Transport: `initialBackoff: Duration.zero` no longer turns the backoff into
+  NaN after 1024 retries, which permanently stopped reconnecting.
+- Transport: frames received before a close are now handled before the
+  disconnect, so an action whose response arrived in the same read as the
+  server's close is no longer failed as "Connection lost while action was in
+  flight".
+- Transport: `ConnectionStatus.connectionRetries` keeps counting with a fixed
+  `reconnectBackoff` schedule (it stopped at the schedule length minus one),
+  and changes to it are now republished on `connectionStatus`.
+- Transport: frames still queued from a socket that a reauth stopped (or that
+  was otherwise torn down) are dropped instead of being applied to the new
+  session, where they forced a spurious reconnect.
+- Transport: a throwing `DartvexLogger` can no longer leave the transport stuck
+  (`_connecting` never cleared) or break the message queue; logger exceptions
+  are swallowed.
+- Transport: a failing `Connect` send now triggers the usual
+  `FailedToSendMessage` reconnect instead of escaping to the caller (for
+  example out of `setAuthWithRefresh`'s socket resume), and an asynchronous
+  handshake whose socket was replaced meanwhile is abandoned instead of being
+  replayed onto the new socket.
+- Transport: Transition size metrics are measured without allocating a UTF-8
+  copy of every frame, and only when a metrics callback or warning log consumes
+  them.
+- Transport: removed dead close-suppression bookkeeping from the web adapter;
+  added loopback contract tests for the native adapter.
+- Auth: a server `AuthError` no longer signs the user out when a concurrent
+  refresh had already applied the very token the reauth fetched; the session is
+  kept and only a definitively rejected token logs out.
+- Auth: a socket stopped by a reauth is restarted as soon as a newer
+  `setAuth`, `clearAuth`, or `setAuthWithRefresh` supersedes it, instead of
+  staying down until the stale token fetch returns. The reauth no longer blocks
+  the handling of other server messages.
+- Auth: `setAuthWithRefresh` no longer inherits the previous flow's pending
+  confirmation (the old token's confirmation could count for the new flow), and
+  an `updateAuthToken` during its initial fetch no longer leaves the caller with
+  a no-op handle while the flow keeps running.
+- Auth: `setAuth`, `clearAuth`, and the auth failure paths now clear the
+  transport token before reporting signed-out and do not report a stale result
+  over a newer auth call, so a re-entrant `setAuth` from an `authState`
+  listener is no longer overwritten.
+- Auth: a listener that clears auth from `onAuthChange(true)` no longer crashes
+  the confirmation handling; throwing `onAuthChange` / `authState` listeners
+  are logged instead of breaking the auth flow.
+- Auth: `ConvexClientWithAuth.logout()` supersedes the current flow before the
+  provider's sign-out, so a `login()` started meanwhile is no longer torn down
+  when the sign-out completes. Local state is cleared even if the provider
+  throws.
+- Auth: `ConvexClientWithAuth.login()` / `loginFromCache()` can be called from
+  an `authState` listener (it threw `StateError` on the synchronous
+  controller); states are delivered in order.
+- Auth: a failure of a superseded flow no longer cancels an in-progress
+  `login()`, and a failed `login()` / `loginFromCache()` while signed in keeps
+  the existing session instead of signing the user out.
+- Auth: a token pushed by the provider after the `ConvexClient` was closed is
+  logged instead of becoming an uncaught zone error.
+- A mutation or action issued while auth holds the socket pause (for example
+  right as a `setAuthWithRefresh` token arrives, or with `expectAuth`) is no
+  longer sent twice with the same request id, nor stranded until the next
+  server message: the queue is left for the auth resume to send in order, and
+  a request whose send failed is not requeued on top of the reconnect that
+  already replays it.
+- A server `FatalError` now reaches existing subscribers: a pending `query()`
+  rejects, live subscriptions receive a `QueryError`, and paginated queries
+  move to the error status instead of loading forever.
+- Transport: when a send fails on a socket whose close is slow, the late
+  cleanup of that socket no longer tears down the connection that already
+  replaced it (a needless extra reconnect that failed actions sent on the new
+  socket as lost).
+- Transport: a reauth whose socket close is slow no longer reports
+  `disconnected` over a connection that a superseding auth call already
+  re-established.
+- Auth: a server `AuthError` handled after `close()` is logged instead of
+  becoming an uncaught zone error.
+- Auth: a `logout()` while a reauth is still stopping the socket no longer
+  calls the provider's refresh hook (`loginFromCache`) for the ended session.
+- Auth: while a `ConvexClientWithAuth.login()` / `loginFromCache()` is pending,
+  the live session's provider pushes are no longer dropped: a rotated token is
+  applied, and a sign-out (`null`) push means a failed re-login signs the user
+  out instead of restoring the dead session.
+
 ## [0.2.0] - 2026-06-12
 
 ### Added
@@ -57,11 +342,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ConnectivitySignal` and `ConvexClientConfig.connectivitySignal` to reconnect
   immediately when the device regains network connectivity, cancelling any
   in-progress backoff.
-- Internal post-reconnect sync tracking (`hasSyncedPastLastReconnect`) across
-  the local sync state, request manager, and base client: the client now knows
-  when every query, auth update, and request issued before a reconnect has been
-  confirmed by the server. This is package-internal groundwork for upcoming
-  backoff-reset and auth-gating work and is not part of the public API.
+- Post-reconnect sync tracking across the local sync state, request manager,
+  and base client: the client knows when every query, auth update, and request
+  issued before a reconnect has been confirmed by the server. It is exposed as
+  the public `ConnectionStatus.hasSyncedPastLastReconnect` field (which backs
+  `ConnectionStatus.isLoading`) and drives the backoff reset and auth gating
+  shipped in this release.
 - `ConnectionState.fatalError`, a terminal connection state entered when the
   server reports an unrecoverable error.
 - `ConvexClientConfig.refreshTokenLeewaySeconds` (default `10`, matching the
@@ -376,9 +662,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   not refetched and reapplied by a later `AuthError`.
 - Cached token refresh scheduling now clamps to the token's remaining lifetime so
   aged cached tokens are refreshed before their actual expiration.
-- The default Convex sync API version now uses a currently supported Convex
-  client version, fixing browser WebSocket handshakes that cannot send the
-  native `Convex-Client` header.
+- The default Convex sync API version is now `1.41.0`, the official Convex
+  client release 0.2.0 is aligned with, fixing browser WebSocket handshakes
+  that cannot send the native `Convex-Client` header.
 - A Transition that reflects an auth version the client has already moved past
   no longer confirms auth (it is recognized as stale), matching the existing
   guard against stale `AuthError`s. Prevents a superseded token from being

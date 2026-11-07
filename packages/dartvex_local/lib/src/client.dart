@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:typed_data';
+
 import 'package:collection/collection.dart';
 import 'package:dartvex/dartvex.dart';
 
@@ -21,10 +23,14 @@ enum LocalNetworkMode {
 
 /// High-level connectivity state exposed by [ConvexLocalClient].
 enum LocalConnectionState {
-  /// The client is online and serving remote traffic normally.
+  /// The remote connection is established and remote traffic is served
+  /// normally.
   online,
 
-  /// The client is fully offline.
+  /// The client is offline: either forced offline with
+  /// [LocalNetworkMode.offline], or the remote is not connected (still
+  /// connecting, reconnecting, or disconnected). Mutations issued in this
+  /// state are queued.
   offline,
 
   /// The client is replaying queued mutations to catch up with the backend.
@@ -91,10 +97,20 @@ sealed class LocalRemoteQueryEvent {
 /// Remote query event containing a successful result value.
 class LocalRemoteQuerySuccess extends LocalRemoteQueryEvent {
   /// Creates a successful remote query event.
-  const LocalRemoteQuerySuccess(this.value);
+  const LocalRemoteQuerySuccess(this.value, {this.isSeed = false});
 
   /// The returned query value.
   final dynamic value;
+
+  /// Whether the remote client delivered this value from its own local state
+  /// when the subscription started, instead of as a server result received
+  /// after subscribing.
+  ///
+  /// Such a seed (for example the core client's last known value for a query
+  /// that was unsubscribed earlier) can predate recent writes. The local
+  /// client does not treat seeds as confirmation of a just-replayed mutation.
+  /// Custom [LocalRemoteClient] implementations may leave this `false`.
+  final bool isSeed;
 }
 
 /// Remote query event indicating a query is temporarily loading.
@@ -128,6 +144,11 @@ abstract class LocalRemoteSubscription {
 }
 
 /// Remote client abstraction used by [ConvexLocalClient].
+///
+/// When the remote becomes permanently unusable (closed or disposed), an
+/// implementation should report [LocalRemoteConnectionState.disconnected]
+/// before failing pending calls, so replay keeps the queued mutations instead
+/// of treating those failures as server rejections.
 abstract class LocalRemoteClient {
   /// Creates a remote client abstraction.
   LocalRemoteClient();
@@ -246,7 +267,15 @@ class LocalMutationQueued extends LocalMutationResult {
   final PendingMutation pendingMutation;
 }
 
-/// Mutation result produced when the mutation fails and cannot be queued.
+/// Mutation result produced when a mutation sent directly (not queued) fails.
+///
+/// This covers non-retryable remote errors on the online fast path, a direct
+/// send that failed after it stopped blocking later calls (see
+/// [ConvexLocalClient.mutate]), and a call that [ConvexLocalClient.reset]
+/// discarded before it was sent or queued. Local failures while queueing (a
+/// throwing [LocalMutationHandler] or patch, or a storage/codec error) are
+/// thrown from [ConvexLocalClient.mutate] instead. Queued mutations that the server later
+/// rejects are reported through [ConvexLocalClient.onConflict].
 class LocalMutationFailed extends LocalMutationResult {
   /// Creates a failed mutation result.
   const LocalMutationFailed(this.error);
@@ -328,7 +357,18 @@ class LocalMutationConflict {
     required this.args,
     required this.error,
     required this.queuedAt,
+    this.pendingMutationId,
+    this.operationId,
   });
+
+  /// Storage identifier of the dropped queue entry; matches
+  /// [PendingMutation.id] of the [LocalMutationQueued.pendingMutation] that
+  /// [ConvexLocalClient.mutate] returned.
+  final int? pendingMutationId;
+
+  /// Local operation identifier of the dropped mutation; matches
+  /// [LocalMutationContext.operationId] passed to its handler.
+  final String? operationId;
 
   /// Canonical mutation name that failed.
   final String mutationName;
@@ -433,6 +473,7 @@ class LocalClientConfig {
     this.disposeRemoteClient = false,
     this.logLevel = DartvexLogLevel.off,
     this.logger,
+    this.onConflict,
   });
 
   /// Storage used for cached query results.
@@ -452,12 +493,26 @@ class LocalClientConfig {
   final QueryCachePolicy queryCachePolicy;
 
   /// Mutation handlers that generate optimistic patches.
+  ///
+  /// Handlers are matched by canonical mutation name (`messages.js:send` and
+  /// `messages:send` are the same mutation). Several handlers may be registered
+  /// for one mutation, for example one per affected query; their patches are
+  /// applied in registration order.
+  ///
+  /// Patches only apply when a mutation is queued (offline, behind queued
+  /// mutations, or after a retryable failure). A mutation sent directly while
+  /// online is not patched locally; use the core client's optimistic updates
+  /// for instant feedback on that path.
   final List<LocalMutationHandler> mutationHandlers;
 
   /// Initial network mode applied when the client opens.
   final LocalNetworkMode initialNetworkMode;
 
-  /// Maximum time spent waiting for a remote cache refresh after replay.
+  /// Maximum time spent waiting for a one-shot remote result when the local
+  /// client cannot rely on an established connection.
+  ///
+  /// Bounds the cache refresh after replay and [ConvexLocalClient.query] calls
+  /// made while the remote is not connected and nothing is cached.
   final Duration refreshQueryTimeout;
 
   /// Whether the caller-supplied remote client should be disposed automatically.
@@ -474,9 +529,35 @@ class LocalClientConfig {
 
   /// Optional structured log sink.
   final DartvexLogger? logger;
+
+  /// Initial value of [ConvexLocalClient.onConflict].
+  ///
+  /// Pass the callback here rather than assigning it after
+  /// [ConvexLocalClient.open] returns: replay can start while the client
+  /// opens, and a conflict reported before the callback is set is not
+  /// delivered.
+  final void Function(LocalMutationConflict conflict)? onConflict;
 }
 
 /// Offline-first client that layers cache and mutation replay onto Dartvex.
+///
+/// ## Identity
+///
+/// The query cache and the mutation queue are not scoped to a signed-in user:
+/// cache keys are the query name and arguments, and queued mutations are
+/// replayed with whatever auth the remote client has when they are sent.
+/// Apps that support sign-out or switching accounts on one device should:
+///
+/// * apply auth to the [ConvexClient] (for example `login` or
+///   `loginFromCache`) before, or right after, calling [open], so replay does
+///   not run unauthenticated once the socket connects; and
+/// * call [reset] on an explicit sign-out or user switch, so the next user
+///   neither sees the previous user's cached results nor replays their queued
+///   mutations.
+///
+/// The client deliberately does not clear anything on its own when the auth
+/// state changes: a transient token-refresh failure must not discard the
+/// user's offline work.
 class ConvexLocalClient {
   ConvexLocalClient._(
     this._remoteClient,
@@ -486,7 +567,8 @@ class ConvexLocalClient {
     this._disposeRemoteClient,
   ) : _networkMode = _config.initialNetworkMode,
       _currentConnectionState = LocalConnectionState.online,
-      _lastRemoteConnectionState = _remoteClient.currentConnectionState;
+      _lastRemoteConnectionState = _remoteClient.currentConnectionState,
+      onConflict = _config.onConflict;
 
   /// Opens a local client backed by a [ConvexClient].
   static Future<ConvexLocalClient> open({
@@ -553,8 +635,8 @@ class ConvexLocalClient {
   final StreamController<List<PendingMutation>> _pendingMutationsController =
       StreamController<List<PendingMutation>>.broadcast(sync: true);
 
-  final Map<String, LocalMutationHandler> _mutationHandlersByName =
-      <String, LocalMutationHandler>{};
+  final Map<String, List<LocalMutationHandler>> _mutationHandlersByName =
+      <String, List<LocalMutationHandler>>{};
   final Map<String, _LocalQueryState> _queryStates =
       <String, _LocalQueryState>{};
   final Map<int, _LocalSubscriptionState> _subscriptionStates =
@@ -575,9 +657,31 @@ class ConvexLocalClient {
   int _nextSubscriptionId = 0;
   int _operationCounter = 0;
 
+  // Local-to-server document ID mappings recorded by replay. They are kept
+  // after the queue drains (cached optimistic documents and app state can
+  // still hold the local IDs) and applied to direct sends as well as replay;
+  // clearQueue() and reset() discard them.
+  Map<String, String> _idRemaps = <String, String>{};
+
+  // Settles when the direct (fast path) mutation currently in flight settles.
+  // Replay waits for it so later queued mutations still commit after it.
+  Future<void>? _directInFlight;
+
+  // Releases the FIFO mutate chain held by the direct mutation in flight. It
+  // is completed early when the remote stops being connected or the client is
+  // forced offline: the core client keeps (and replays) that request, so
+  // later mutate() calls must not wait for the reconnect to be queued.
+  Completer<void>? _directChainRelease;
+
+  // Results of replayed mutations that the server committed but whose local
+  // queue bookkeeping failed (storage error). Replay retries the bookkeeping
+  // for these entries instead of sending them again.
+  final Map<int, Object?> _committedReplayResults = <int, Object?>{};
+
   // Serializes mutate() calls so concurrent mutations are applied in FIFO call
   // order and cannot race the "send directly while the queue is empty" fast
-  // path into committing out of order.
+  // path into committing out of order. A direct send releases the chain early
+  // when it is detached (see _directChainRelease).
   Future<void> _mutateChain = Future<void>.value();
 
   // Serializes setNetworkMode() transitions: the offline transition suspends
@@ -593,12 +697,45 @@ class ConvexLocalClient {
   // rebase iterations diverged (a replay removing a pending mutation
   // mid-flight), the older event's final write could land after the newer
   // one's, leaving a stale rebased value in the cache and as the subscribers'
-  // latest emission until the next remote event. Entries are removed once
-  // their chain drains, so one-shot query() keys do not accumulate.
+  // latest emission until the next remote event. Remote error emissions, the
+  // optimistic snapshot/apply of a queued mutation, rollbacks and cached
+  // snapshot emissions join the same per-key chains (see _runOnKeyChains).
+  // Entries are removed once their chain drains, so one-shot query() keys do
+  // not accumulate.
   final Map<String, Future<void>> _snapshotChainsByKey =
       <String, Future<void>>{};
 
+  // Identity generation, bumped synchronously by reset(). Async work started
+  // on behalf of an identity (a query, a remote event, a replay run, a
+  // mutate() call, a refresh, a rollback) captures it when it starts and
+  // drops its storage writes, in-memory updates and emissions once it no
+  // longer matches, so nothing of the previous identity lands after reset().
+  int _generation = 0;
+
+  // Queue epoch, bumped synchronously by clearQueue(). A replay run captures
+  // it when it starts and stops at its next step once it changes, so it
+  // cannot record an ID remap (in memory or in storage) for a mutation the
+  // app cleared, nor resolve later mutations with the remaps clearQueue()
+  // discarded.
+  int _queueEpoch = 0;
+
+  // Set while reset() purges local state. Per-key chains and unchained
+  // writes started meanwhile wait for it, so the purge cannot delete the
+  // next identity's writes, and reads that seed subscribers wait for it so
+  // they cannot see the previous identity's cache. Replay does not start
+  // while it is set.
+  Future<void>? _resetBarrier;
+
+  // Storage writes not serialized by a per-key chain (replay bookkeeping, a
+  // patch-less enqueue or drop) that are in flight. reset() lets them land
+  // before purging, so none of them is persisted after the purge.
+  final Set<Future<void>> _unchainedWrites = <Future<void>>{};
+
   /// Callback invoked when replay drops a permanently failed queued mutation.
+  ///
+  /// Initialized from [LocalClientConfig.onConflict]. Replay can start while
+  /// the client opens, so set the callback through the config to receive
+  /// conflicts reported before [open] returns.
   void Function(LocalMutationConflict conflict)? onConflict;
 
   /// Broadcasts high-level connectivity state changes.
@@ -625,11 +762,36 @@ class ConvexLocalClient {
 
   Future<void> _initialize() async {
     for (final handler in _config.mutationHandlers) {
-      _mutationHandlersByName[handler.mutationName] = handler;
+      _mutationHandlersByName
+          .putIfAbsent(
+            canonicalizeQueryName(handler.mutationName),
+            () => <LocalMutationHandler>[],
+          )
+          .add(handler);
     }
 
     _pendingMutations = await _mutationQueue.loadAll();
+    // A crash or dispose in the middle of replay leaves the row it was sending
+    // marked as replaying; nothing is replaying it now.
+    final staleReplaying = _pendingMutations
+        .where((mutation) => mutation.status == PendingMutationStatus.replaying)
+        .toList(growable: false);
+    for (final mutation in staleReplaying) {
+      await _mutationQueue.markStatus(
+        mutation.id,
+        PendingMutationStatus.pending,
+        errorMessage: mutation.errorMessage,
+      );
+    }
+    if (staleReplaying.isNotEmpty) {
+      _pendingMutations = await _mutationQueue.loadAll();
+    }
+    _idRemaps = await _mutationQueue.loadIdRemaps();
     _rebuildPendingWriteCounts();
+    // The connection state captured in the constructor can be stale: a
+    // transition during the storage loads above was broadcast before this
+    // client listened.
+    _lastRemoteConnectionState = _remoteClient.currentConnectionState;
     _remoteConnectionSubscription = _remoteClient.connectionState.listen(
       _handleRemoteConnectionState,
       onError: _handleRemoteConnectionError,
@@ -642,12 +804,29 @@ class ConvexLocalClient {
   }
 
   /// Executes a query, falling back to cache when possible.
+  ///
+  /// When forced offline, only the cache is read. In auto mode:
+  ///
+  /// * while the remote is connected, the remote result is returned (and
+  ///   cached); a retryable remote failure falls back to the cache;
+  /// * while the remote is not connected, a cached value is returned right
+  ///   away; without one, the remote result is awaited for at most
+  ///   [LocalClientConfig.refreshQueryTimeout] before a [TimeoutException] is
+  ///   thrown.
+  ///
+  /// A call made before [reset] whose remote result arrives after it still
+  /// returns that result, but does not cache it.
   Future<dynamic> query(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) async {
     _assertNotDisposed();
+    final generation = _generation;
     final descriptor = LocalQueryDescriptor(name, _snapshotArgs(args));
+    if (_resetBarrier != null) {
+      await _waitForReset();
+      _assertNotDisposed();
+    }
     if (_networkMode == LocalNetworkMode.offline) {
       final cached = await _queryCache.read(descriptor.name, descriptor.args);
       if (cached != null) {
@@ -656,9 +835,17 @@ class ConvexLocalClient {
       throw StateError('No cached value available for $name while offline');
     }
 
+    if (_lastRemoteConnectionState != LocalRemoteConnectionState.connected) {
+      return _queryWhileDisconnected(descriptor, generation);
+    }
+
     try {
       final value = await _remoteClient.query(descriptor.name, descriptor.args);
-      return _writeRemoteSnapshotAndRebasePending(descriptor, value);
+      return await _writeRemoteSnapshotAndRebasePending(
+        descriptor,
+        value,
+        generation: generation,
+      );
     } on ConvexException catch (error) {
       if (!error.retryable) {
         rethrow;
@@ -678,6 +865,38 @@ class ConvexLocalClient {
       }
       rethrow;
     }
+  }
+
+  Future<dynamic> _queryWhileDisconnected(
+    LocalQueryDescriptor descriptor,
+    int generation,
+  ) async {
+    final cached = await _queryCache.read(descriptor.name, descriptor.args);
+    if (cached != null) {
+      return cached.value;
+    }
+    // A one-shot query on a disconnected core client waits for the server
+    // without bound. Use a cancellable subscription so the wait is bounded and
+    // the remote subscription is released on timeout.
+    final dynamic value;
+    try {
+      value = await _remoteQueryOnce(
+        descriptor,
+        timeout: _config.refreshQueryTimeout,
+        acceptSeed: true,
+      );
+    } on TimeoutException {
+      final late = await _queryCache.read(descriptor.name, descriptor.args);
+      if (late != null) {
+        return late.value;
+      }
+      rethrow;
+    }
+    return _writeRemoteSnapshotAndRebasePending(
+      descriptor,
+      value,
+      generation: generation,
+    );
   }
 
   /// Subscribes to a query with cache seeding and optional remote updates.
@@ -715,69 +934,109 @@ class ConvexLocalClient {
 
   /// Executes a mutation immediately or queues it for offline replay.
   ///
+  /// In auto mode, with the remote connected and nothing queued, the mutation
+  /// is sent directly and resolves with [LocalMutationSuccess], or
+  /// [LocalMutationFailed] for a non-retryable remote error. Otherwise (forced
+  /// offline, remote not connected, queued mutations still pending, or a
+  /// retryable failure of the direct send) it is persisted to the queue, its
+  /// [LocalMutationHandler] patches are applied to the cache, and it resolves
+  /// with [LocalMutationQueued]. Handler patches are not applied to mutations
+  /// sent directly.
+  ///
+  /// Throws (instead of returning [LocalMutationFailed]) when queueing fails
+  /// locally: a handler or patch that throws, or a storage or codec error. The
+  /// mutation is then not queued.
+  ///
   /// Queued mutations are replayed at least once. If a connection fails after
   /// the backend commits a mutation but before the client observes the result,
-  /// replay may call the mutation again. Design queued Convex mutations to be
-  /// idempotent when the operation can have external side effects.
+  /// replay may call the mutation again. A local storage failure while
+  /// recording that a replayed mutation was confirmed, followed by a restart,
+  /// can also send it again. Design queued Convex mutations to be idempotent
+  /// when the operation can have external side effects.
   ///
   /// Calls are serialized in FIFO order: a mutation does not start until the
   /// previous one has settled (sent directly or queued). This keeps concurrent
   /// mutations from racing the empty-queue fast path and committing out of
-  /// order; mutations awaited sequentially are unaffected.
+  /// order; mutations awaited sequentially are unaffected. A direct send that
+  /// is still in flight when the remote disconnects (or the client is forced
+  /// offline) stops blocking later calls, which are queued instead; the remote
+  /// client keeps and resends that request, and replay waits for it before
+  /// sending the queue. If such a detached send then fails with a retryable
+  /// error, it resolves with [LocalMutationFailed] rather than being queued
+  /// behind later mutations.
+  ///
+  /// A call made before [reset] that has not been sent or queued when [reset]
+  /// runs is discarded: it resolves with [LocalMutationFailed] (a
+  /// [StateError]), so it is neither queued nor replayed for the next
+  /// identity.
   Future<LocalMutationResult> mutate(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
   ]) {
     _assertNotDisposed();
+    final generation = _generation;
     final normalizedArgs = _snapshotArgs(args);
+    final chainRelease = Completer<void>();
     final result = _mutateChain.then(
-      (_) => _mutateInternal(name, normalizedArgs),
+      (_) => _mutateInternal(name, normalizedArgs, chainRelease, generation),
     );
     // Keep the chain alive across failures without leaking a prior call's error
-    // to the next caller.
-    _mutateChain = result.then((_) {}, onError: (_) {});
+    // to the next caller. The chain is released when this call settles, or
+    // earlier when its direct send is detached (see _directChainRelease).
+    unawaited(
+      result.then<void>((_) {}, onError: (Object _) {}).whenComplete(() {
+        if (!chainRelease.isCompleted) {
+          chainRelease.complete();
+        }
+      }),
+    );
+    _mutateChain = chainRelease.future;
     return result;
   }
 
   Future<LocalMutationResult> _mutateInternal(
     String name,
     Map<String, dynamic> normalizedArgs,
+    Completer<void> chainRelease,
+    int generation,
   ) async {
     _assertNotDisposed();
+    if (generation != _generation) {
+      return _discardedByReset(name);
+    }
+    var queuedAfterRetryableFailure = false;
     if (_networkMode == LocalNetworkMode.auto &&
         _lastRemoteConnectionState == LocalRemoteConnectionState.connected &&
         _pendingMutations.isEmpty &&
         !_isSyncing &&
-        _replayRetryTimer == null) {
+        _replayRetryTimer == null &&
+        _directInFlight == null) {
       _log('mutate', '$name — mode=auto, trying remote first');
+      final Map<String, dynamic> remoteArgs;
       try {
-        final value = await _remoteClient.mutate(name, normalizedArgs);
-        _log('mutate', '$name — remote succeeded');
-        return LocalMutationSuccess(value);
-      } on ConvexException catch (error) {
-        if (!error.retryable) {
-          _log('mutate', '$name — non-retryable: ${error.message}');
-          return LocalMutationFailed(error);
-        }
-        _log(
-          'mutate',
-          '$name — retryable error, falling through to queue: '
-              '${error.message}',
-        );
-      } catch (error) {
-        if (!_shouldQueueRemoteFailure(error)) {
-          _log('mutate', '$name — non-Convex error: $error');
-          return LocalMutationFailed(error);
-        }
-        _log('mutate', '$name — remote unavailable, falling through to queue');
+        // A local ID whose producer already synced must be sent as its server
+        // ID, exactly as replay would.
+        remoteArgs =
+            _remapIds(normalizedArgs, _idRemaps) as Map<String, dynamic>;
+      } on _LocalIdRemapCollision catch (error) {
+        return LocalMutationFailed(error);
       }
+      final direct = await _sendDirect(name, remoteArgs, chainRelease);
+      if (direct != null) {
+        return direct;
+      }
+      if (generation != _generation) {
+        return _discardedByReset(name);
+      }
+      queuedAfterRetryableFailure = true;
     } else if (_networkMode == LocalNetworkMode.auto &&
         _lastRemoteConnectionState == LocalRemoteConnectionState.connected) {
       _log(
         'mutate',
         '$name — queueing behind replay work '
             '(remote=$_lastRemoteConnectionState '
-            'syncing=$_isSyncing pending=${_pendingMutations.length})',
+            'syncing=$_isSyncing pending=${_pendingMutations.length} '
+            'direct=${_directInFlight != null})',
       );
     } else if (_networkMode == LocalNetworkMode.auto) {
       _log('mutate', '$name — remote not connected, queueing immediately');
@@ -789,26 +1048,47 @@ class ConvexLocalClient {
       queuedAt: DateTime.now().toUtc(),
     );
     final patches = _buildPatches(name, normalizedArgs, context);
-    final snapshots = await _snapshotOptimisticPatchTargets(patches);
-    final optimisticData = _optimisticMetadata(context, patches, snapshots);
-    final pendingMutation = await _mutationQueue.enqueue(
-      mutationName: name,
-      args: normalizedArgs,
-      optimisticData: optimisticData,
-      createdAt: context.queuedAt,
-    );
+    // Serialized with remote snapshot writes for the same keys, so a remote
+    // write cannot land between the snapshot read and the patched write.
+    final pendingMutation = await _runOnKeyChains(
+      patches.map((patch) => patch.target.key),
+      () async {
+        // A reset() that started while this call waited for the chains
+        // discarded the identity it was issued for.
+        if (generation != _generation) {
+          return null;
+        }
+        final snapshots = await _snapshotOptimisticPatchTargets(patches);
+        final optimisticData = _optimisticMetadata(context, patches, snapshots);
+        final pendingMutation = await _mutationQueue.enqueue(
+          mutationName: name,
+          args: normalizedArgs,
+          optimisticData: optimisticData,
+          createdAt: context.queuedAt,
+        );
 
-    try {
-      await _applyOptimisticPatches(patches, snapshots: snapshots);
-    } catch (_) {
-      await _mutationQueue.remove(pendingMutation.id);
-      rethrow;
+        try {
+          await _applyOptimisticPatches(patches, snapshots: snapshots);
+        } catch (_) {
+          await _mutationQueue.remove(pendingMutation.id);
+          rethrow;
+        }
+        _pendingMutations = await _mutationQueue.loadAll();
+        _rebuildPendingWriteCounts();
+        return pendingMutation;
+      },
+    );
+    if (pendingMutation == null) {
+      return _discardedByReset(name);
     }
-    _pendingMutations = await _mutationQueue.loadAll();
-    _rebuildPendingWriteCounts();
-    _pendingMutationsController.add(currentPendingMutations);
-    _emitPendingWriteUpdatesForTargets(patches);
-    _updateConnectionState();
+    if (!_disposed && generation == _generation) {
+      _pendingMutationsController.add(currentPendingMutations);
+      _emitPendingWriteUpdatesForTargets(patches, generation);
+      _updateConnectionState();
+      _ensureReplayScheduled(
+        afterRetryableFailure: queuedAfterRetryableFailure,
+      );
+    }
 
     _log(
       'mutate',
@@ -819,6 +1099,95 @@ class ConvexLocalClient {
       queuePosition: _pendingMutations.length,
       pendingMutation: pendingMutation,
     );
+  }
+
+  LocalMutationResult _discardedByReset(String name) {
+    _log('mutate', '$name — discarded: reset() ran before it was queued');
+    return LocalMutationFailed(
+      StateError('$name was discarded by reset() before it was queued'),
+    );
+  }
+
+  /// Sends [name] directly while holding the mutate chain.
+  ///
+  /// Returns the final result, or null when the mutation should fall through
+  /// to the queue (a retryable failure while the chain is still held).
+  Future<LocalMutationResult?> _sendDirect(
+    String name,
+    Map<String, dynamic> args,
+    Completer<void> chainRelease,
+  ) async {
+    final Future<dynamic> remote;
+    try {
+      remote = _remoteClient.mutate(name, args);
+    } catch (error) {
+      return _directFailure(name, error, chainRelease);
+    }
+    final settled = remote.then<void>((_) {}, onError: (Object _) {});
+    _directInFlight = settled;
+    _directChainRelease = chainRelease;
+    try {
+      final value = await remote;
+      _log('mutate', '$name — remote succeeded');
+      return LocalMutationSuccess(value);
+    } catch (error) {
+      return _directFailure(name, error, chainRelease);
+    } finally {
+      if (identical(_directInFlight, settled)) {
+        _directInFlight = null;
+      }
+      if (identical(_directChainRelease, chainRelease)) {
+        _directChainRelease = null;
+      }
+    }
+  }
+
+  LocalMutationResult? _directFailure(
+    String name,
+    Object error,
+    Completer<void> chainRelease,
+  ) {
+    final queueable = error is ConvexException
+        ? error.retryable
+        : _shouldQueueRemoteFailure(error);
+    if (!queueable) {
+      _log('mutate', '$name — not queueable: $error');
+      return LocalMutationFailed(error);
+    }
+    if (chainRelease.isCompleted) {
+      // Later mutate() calls may already be queued; queueing this one now
+      // would replay it after them.
+      _log('mutate', '$name — detached direct send failed: $error');
+      return LocalMutationFailed(error);
+    }
+    _log('mutate', '$name — retryable failure, falling through to queue');
+    return null;
+  }
+
+  /// Releases the mutate chain held by a direct send that is still in flight.
+  void _detachDirectMutation() {
+    final release = _directChainRelease;
+    if (release != null && !release.isCompleted) {
+      _log('mutate', 'detaching in-flight direct mutation from the chain');
+      release.complete();
+    }
+  }
+
+  /// Makes sure a mutation just queued in auto mode while connected is sent;
+  /// otherwise nothing would replay it until the next reconnect.
+  void _ensureReplayScheduled({required bool afterRetryableFailure}) {
+    if (_networkMode != LocalNetworkMode.auto ||
+        _lastRemoteConnectionState != LocalRemoteConnectionState.connected ||
+        _isSyncing ||
+        _replayRetryTimer != null) {
+      return;
+    }
+    if (afterRetryableFailure) {
+      // The direct send just failed; back off before replaying it.
+      _scheduleReplayRetry();
+    } else {
+      _runDetached(_startReplayIfPossible(), 'replay');
+    }
   }
 
   /// Executes an action against the remote backend.
@@ -861,6 +1230,7 @@ class ConvexLocalClient {
     _networkMode = mode;
     _networkModeController.add(mode);
     if (mode == LocalNetworkMode.offline) {
+      _detachDirectMutation();
       _replayRetryTimer?.cancel();
       _replayRetryTimer = null;
       _replayRetryCount = 0;
@@ -869,15 +1239,158 @@ class ConvexLocalClient {
     } else {
       _resumeRemoteSubscriptions();
       _log('mode', 'subscriptions resumed, starting replay…');
-      await _startReplayIfPossible();
+      // Not awaited: replay can block on a mutation that the remote keeps
+      // pending until it reconnects, and awaiting it here would hold the mode
+      // chain, so a later switch to offline could not take effect (or stop
+      // the replay loop) until then.
+      _runDetached(_startReplayIfPossible(), 'replay');
     }
     _updateConnectionState();
   }
 
   /// Clears all locally cached query results.
+  ///
+  /// Queued mutations keep their pending writes, but their rollback baselines
+  /// are cleared too: a later [clearQueue] or replay conflict removes the
+  /// affected cache entries instead of writing the cleared values back.
+  ///
+  /// To discard everything for the current user (for example on sign-out),
+  /// use [reset].
   Future<void> clearCache() async {
     _assertNotDisposed();
+    final generation = _generation;
     await _queryCache.clear();
+    if (generation != _generation) {
+      return;
+    }
+    await _neutralizeRollbackBaselines(generation);
+  }
+
+  /// Rewrites every queued mutation's persisted rollback snapshots as absent
+  /// baselines, so cleared cache values cannot be restored from them.
+  Future<void> _neutralizeRollbackBaselines(int generation) async {
+    for (final mutation in _pendingMutations) {
+      if (_disposed || generation != _generation) {
+        return;
+      }
+      await _updateOptimisticData(mutation.id, (current) {
+        var neutralized = current;
+        for (final snapshot in _rollbackSnapshotsFromOptimisticData(current)) {
+          if (snapshot.entry == null) {
+            continue;
+          }
+          neutralized = _withRollbackSnapshot(
+            neutralized,
+            _CacheSnapshot(target: snapshot.target, entry: null),
+          );
+        }
+        return neutralized;
+      });
+    }
+  }
+
+  /// Discards all local state of the current identity: queued mutations,
+  /// recorded ID remaps, the query cache, and what live queries last emitted.
+  ///
+  /// Call this on an explicit sign-out or user switch, so cached results and
+  /// queued mutations of one user are not shown to, or replayed for, the
+  /// next. The client is not reset automatically when the auth state changes.
+  ///
+  /// Work of the previous identity that is still in flight when [reset] is
+  /// called never lands afterwards:
+  ///
+  /// * cache writes and queue bookkeeping already under way are allowed to
+  ///   finish, and the purge runs after them;
+  /// * results that arrive later (a [query] or replayed mutation still
+  ///   awaiting the server, a live query event, a post-replay refresh) are
+  ///   neither cached nor emitted, a replayed mutation the server rejects
+  ///   later is not reported to [onConflict], and its optimistic patches are
+  ///   not rolled back into the purged cache; a [query] call made before
+  ///   [reset] still returns its result to its caller;
+  /// * a [mutate] call made before [reset] that was not queued yet is not
+  ///   queued: it resolves with [LocalMutationFailed];
+  /// * a [mutate] call made before [reset] whose direct send is still
+  ///   awaiting the server no longer blocks later [mutate] calls or replay;
+  ///   it resolves with the server's answer when one arrives (a retryable
+  ///   failure resolves it with [LocalMutationFailed]).
+  ///
+  /// Replay does not start while the purge runs. Calls made after [reset]
+  /// belong to the next identity: their storage writes and cache reads wait
+  /// for the purge to finish. Live subscriptions stay open; they emit again
+  /// when the remote delivers their next result. Events the remote client
+  /// delivers after [reset] is called are attributed to the next identity, so
+  /// apply the next identity's auth (or sign out) on the remote client before
+  /// calling [reset].
+  Future<void> reset() {
+    _assertNotDisposed();
+    _generation++;
+    _log('reset', 'generation $_generation');
+    // A direct send of the previous identity may never get an answer (auth
+    // changes do not reconnect, and mutationTimeout defaults to null). Stop
+    // it from blocking the next identity's mutate() calls and replay; its
+    // late result only reaches its own caller (a retryable failure resolves
+    // it with LocalMutationFailed, see _directFailure).
+    _detachDirectMutation();
+    _directInFlight = null;
+    _directChainRelease = null;
+    _replayRetryTimer?.cancel();
+    _replayRetryTimer = null;
+    _replayRetryCount = 0;
+    // Forget what live queries last emitted: it belongs to the previous
+    // identity and must not seed new subscribers or serve as an optimistic
+    // base. Later emissions of the previous identity are dropped.
+    for (final queryState in _queryStates.values) {
+      queryState
+        ..lastEvent = null
+        ..hasRemoteEvent = false;
+    }
+    // Writes already engaged on the per-key chains, or outside them, were
+    // started for the previous identity: purge after they land. Work queued
+    // after this point waits for the barrier instead.
+    final engaged = <Future<void>>[
+      ?_resetBarrier,
+      ..._snapshotChainsByKey.values,
+      ..._unchainedWrites,
+    ];
+    final barrier = Completer<void>();
+    _resetBarrier = barrier.future;
+    return () async {
+      try {
+        await Future.wait(engaged);
+        if (_disposed) {
+          return;
+        }
+        await _purgeLocalState();
+      } finally {
+        if (identical(_resetBarrier, barrier.future)) {
+          _resetBarrier = null;
+        }
+        barrier.complete();
+      }
+      if (!_disposed) {
+        _runDetached(_startReplayIfPossible(), 'replay');
+      }
+    }();
+  }
+
+  Future<void> _purgeLocalState() async {
+    await _mutationQueue.clear();
+    if (_disposed) {
+      return;
+    }
+    _pendingMutations = const <PendingMutation>[];
+    _pendingWritesByQueryKey.clear();
+    _idRemaps = <String, String>{};
+    _committedReplayResults.clear();
+    // A replay run of the previous identity stops at its next step without
+    // touching this flag; the next identity's replay may start right away.
+    _isSyncing = false;
+    _pendingMutationsController.add(currentPendingMutations);
+    await _queryCache.clear();
+    if (_disposed) {
+      return;
+    }
+    _updateConnectionState();
   }
 
   /// Clears the offline mutation queue and resets pending write state.
@@ -885,9 +1398,14 @@ class ConvexLocalClient {
   /// The discarded mutations' optimistic patches are rolled back as well:
   /// every affected cached query is restored to its oldest pending rollback
   /// baseline (the last server-confirmed value), so the cache no longer
-  /// presents writes that will never be sent as authoritative data.
+  /// presents writes that will never be sent as authoritative data. Recorded
+  /// local-to-server ID remaps are discarded too.
   Future<void> clearQueue() async {
     _assertNotDisposed();
+    final generation = _generation;
+    // Stops a replay run in flight before it records a remap or sends more
+    // of the queue being cleared (see _queueEpoch).
+    _queueEpoch++;
     // Capture the pre-optimistic baseline per target before discarding the
     // queue: the oldest pending mutation's rollback snapshot for a target is
     // the last server-confirmed value (snapshots are rebased on every remote
@@ -899,14 +1417,30 @@ class ConvexLocalClient {
       }
     }
     await _mutationQueue.clear();
+    // A reset() that started meanwhile discards everything itself; restoring
+    // the previous identity's baselines would repopulate its cache.
+    if (_disposed || generation != _generation) {
+      return;
+    }
     _pendingMutations = const <PendingMutation>[];
     _pendingWritesByQueryKey.clear();
+    _idRemaps = <String, String>{};
+    _committedReplayResults.clear();
     _pendingMutationsController.add(currentPendingMutations);
     if (baselinesByKey.isNotEmpty) {
       try {
-        await _restoreOptimisticPatchSnapshots(baselinesByKey.values);
+        await _runOnKeyChains(baselinesByKey.keys, () async {
+          if (generation != _generation) {
+            return;
+          }
+          await _restoreOptimisticPatchSnapshots(baselinesByKey.values);
+        });
       } catch (error, stackTrace) {
-        _log('clear-queue:rollback-error', '$error\n$stackTrace');
+        _log(
+          'clear-queue:rollback-error',
+          '$error\n$stackTrace',
+          level: DartvexLogLevel.warn,
+        );
       }
     }
     // Snapshot the query states: emitting below can synchronously cancel a
@@ -915,7 +1449,7 @@ class ConvexLocalClient {
     for (final queryState in _queryStates.values.toList(growable: false)) {
       // Re-checked around every await: a dispose() racing this loop closes
       // the storage and the subscription controllers mid-iteration.
-      if (_disposed) {
+      if (_disposed || generation != _generation) {
         return;
       }
       final cached = await _queryCache.read(
@@ -927,6 +1461,7 @@ class ConvexLocalClient {
       }
       if (cached != null) {
         _emitToQueryKey(
+          generation,
           queryState.descriptor.key,
           LocalQuerySuccess(
             cached.value,
@@ -939,6 +1474,7 @@ class ConvexLocalClient {
         // subscribers the value is gone instead of leaving the stale
         // optimistic emission as their latest event.
         _emitToQueryKey(
+          generation,
           queryState.descriptor.key,
           LocalQueryError(
             StateError(
@@ -962,8 +1498,11 @@ class ConvexLocalClient {
     if (queryState != null) {
       queryState.subscriberIds.remove(subscriptionId);
       if (queryState.subscriberIds.isEmpty) {
-        await _detachRemoteSubscription(queryState);
+        // Removed before detaching (which yields): a subscribe() for the same
+        // query in that gap must create a fresh state with its own remote
+        // subscription, not join this one and then lose it.
         _queryStates.remove(queryState.descriptor.key);
+        await _detachRemoteSubscription(queryState);
       }
     }
     // Yield before closing. cancel() may be invoked synchronously from a
@@ -975,6 +1514,10 @@ class ConvexLocalClient {
   }
 
   Future<void> _seedSubscriptionFromCache(_LocalSubscriptionState state) async {
+    if (_resetBarrier != null) {
+      await _waitForReset();
+    }
+    final generation = _generation;
     final cached = await _queryCache.read(
       state.descriptor.name,
       state.descriptor.args,
@@ -982,7 +1525,37 @@ class ConvexLocalClient {
     if (_disposed || !_subscriptionStates.containsKey(state.id)) {
       return;
     }
-    if (state.hasRemoteEvent) {
+    if (generation != _generation) {
+      // Read from the previous identity's cache: seed from the purged one.
+      return _seedSubscriptionFromCache(state);
+    }
+    if (state.skipSeed) {
+      return;
+    }
+    final key = state.descriptor.key;
+    // Other subscribers to this query may already have received remote
+    // events that the shared remote subscription will not repeat: an error
+    // (never cached), or a value whose cache entry has since expired, been
+    // pruned, or been cleared. Replay the latest event to this subscriber.
+    final queryState = _queryStates[key];
+    final lastEvent = queryState?.lastEvent;
+    if (queryState != null &&
+        queryState.hasRemoteEvent &&
+        lastEvent != null &&
+        (cached == null || lastEvent is LocalQueryError)) {
+      state.skipSeed = true;
+      state.controller.add(switch (lastEvent) {
+        LocalQuerySuccess(:final value, :final source) => LocalQuerySuccess(
+          value,
+          source: source,
+          hasPendingWrites: _hasPendingWrites(key),
+        ),
+        LocalQueryError(:final error, :final source) => LocalQueryError(
+          error,
+          source: source,
+          hasPendingWrites: _hasPendingWrites(key),
+        ),
+      });
       return;
     }
     if (cached != null) {
@@ -990,7 +1563,7 @@ class ConvexLocalClient {
         LocalQuerySuccess(
           cached.value,
           source: LocalQuerySource.cache,
-          hasPendingWrites: _hasPendingWrites(state.descriptor.key),
+          hasPendingWrites: _hasPendingWrites(key),
         ),
       );
       return;
@@ -1002,7 +1575,7 @@ class ConvexLocalClient {
             'No cached value available for ${state.descriptor.name} while offline',
           ),
           source: LocalQuerySource.cache,
-          hasPendingWrites: _hasPendingWrites(state.descriptor.key),
+          hasPendingWrites: _hasPendingWrites(key),
         ),
       );
     }
@@ -1015,6 +1588,9 @@ class ConvexLocalClient {
           '(mode=$_networkMode syncing=$_isSyncing)',
     );
     _lastRemoteConnectionState = state;
+    if (state != LocalRemoteConnectionState.connected) {
+      _detachDirectMutation();
+    }
     if (_networkMode == LocalNetworkMode.auto &&
         state == LocalRemoteConnectionState.connected) {
       _replayRetryCount = 0;
@@ -1027,6 +1603,18 @@ class ConvexLocalClient {
   void _handleRemoteConnectionError(Object error, StackTrace stackTrace) {
     _log('remote-conn:error', '$error\n$stackTrace');
     _lastRemoteConnectionState = LocalRemoteConnectionState.disconnected;
+    _detachDirectMutation();
+    _updateConnectionState();
+  }
+
+  /// Marks the remote as unusable after it reported a closed-client failure,
+  /// so replay and the direct path stop until it reports `connected` again.
+  void _markRemoteUnavailable() {
+    if (_lastRemoteConnectionState == LocalRemoteConnectionState.disconnected) {
+      return;
+    }
+    _lastRemoteConnectionState = LocalRemoteConnectionState.disconnected;
+    _detachDirectMutation();
     _updateConnectionState();
   }
 
@@ -1044,28 +1632,26 @@ class ConvexLocalClient {
     } catch (error, stackTrace) {
       _log('remote-subscribe:error', '$error\n$stackTrace');
       _runDetached(
-        _emitRemoteSubscribeError(queryState, error),
+        _emitRemoteSubscribeError(queryState, error, _generation),
         'remote-subscribe',
       );
       return;
     }
     queryState.remoteSubscription = subscription;
+    // Events are attributed to the identity generation current when they
+    // arrive: one still being written when reset() runs is purged, and one
+    // arriving afterwards belongs to the next identity.
     queryState.remoteEventSubscription = subscription.stream.listen(
       (event) {
         _runDetached(
-          _handleRemoteQueryEvent(queryState, event),
+          _handleRemoteQueryEvent(queryState, event, _generation),
           'remote-query',
         );
       },
       onError: (Object error, StackTrace stackTrace) {
-        _markRemoteEventSeen(queryState);
-        _emitToQueryKey(
-          queryState.descriptor.key,
-          LocalQueryError(
-            error,
-            source: LocalQuerySource.unknown,
-            hasPendingWrites: _hasPendingWrites(queryState.descriptor.key),
-          ),
+        _runDetached(
+          _emitRemoteQueryError(queryState, error, _generation),
+          'remote-query',
         );
       },
     );
@@ -1074,6 +1660,7 @@ class ConvexLocalClient {
   Future<void> _emitRemoteSubscribeError(
     _LocalQueryState queryState,
     Object error,
+    int generation,
   ) async {
     await Future<void>.value();
     if (_disposed ||
@@ -1081,6 +1668,7 @@ class ConvexLocalClient {
       return;
     }
     _emitToQueryKey(
+      generation,
       queryState.descriptor.key,
       LocalQueryError(
         error,
@@ -1093,6 +1681,7 @@ class ConvexLocalClient {
   Future<void> _handleRemoteQueryEvent(
     _LocalQueryState queryState,
     LocalRemoteQueryEvent event,
+    int generation,
   ) async {
     switch (event) {
       case LocalRemoteQuerySuccess(:final value):
@@ -1100,21 +1689,41 @@ class ConvexLocalClient {
         await _writeRemoteSnapshotAndRebasePending(
           queryState.descriptor,
           value,
+          generation: generation,
           emit: true,
         );
       case LocalRemoteQueryError(:final error):
-        _markRemoteEventSeen(queryState);
-        _emitToQueryKey(
-          queryState.descriptor.key,
-          LocalQueryError(
-            error,
-            source: LocalQuerySource.unknown,
-            hasPendingWrites: _hasPendingWrites(queryState.descriptor.key),
-          ),
-        );
+        await _emitRemoteQueryError(queryState, error, generation);
       case LocalRemoteQueryLoading():
         return;
     }
+  }
+
+  /// Emits a remote query error after any in-flight snapshot write for the
+  /// same query, so an older success cannot be emitted after it.
+  Future<void> _emitRemoteQueryError(
+    _LocalQueryState queryState,
+    Object error,
+    int generation,
+  ) {
+    // Marked synchronously: a cache seed that resolves while the emission
+    // waits its turn must not overwrite the error.
+    _markRemoteEventSeen(queryState);
+    final key = queryState.descriptor.key;
+    return _runOnKeyChains(<String>[key], () async {
+      if (_disposed) {
+        return;
+      }
+      _emitToQueryKey(
+        generation,
+        key,
+        LocalQueryError(
+          error,
+          source: LocalQuerySource.unknown,
+          hasPendingWrites: _hasPendingWrites(key),
+        ),
+      );
+    });
   }
 
   Future<void> _detachRemoteSubscription(_LocalQueryState queryState) async {
@@ -1141,6 +1750,10 @@ class ConvexLocalClient {
   }
 
   Future<void> _emitCachedSnapshotsForActiveQueries() async {
+    if (_resetBarrier != null) {
+      await _waitForReset();
+    }
+    final generation = _generation;
     // Snapshot: a synchronous cancel triggered by the emit below mutates
     // `_queryStates` while we iterate it.
     for (final queryState in _queryStates.values.toList(growable: false)) {
@@ -1160,6 +1773,7 @@ class ConvexLocalClient {
         continue;
       }
       _emitToQueryKey(
+        generation,
         queryState.descriptor.key,
         LocalQuerySuccess(
           cached.value,
@@ -1174,12 +1788,16 @@ class ConvexLocalClient {
     if (_disposed ||
         _networkMode == LocalNetworkMode.offline ||
         _isSyncing ||
+        // Parked while reset() purges: the in-memory queue still lists the
+        // previous identity's mutations. reset() restarts replay afterwards.
+        _resetBarrier != null ||
         _lastRemoteConnectionState != LocalRemoteConnectionState.connected ||
         _pendingMutations.isEmpty) {
       _log(
         'replay:skip',
         'disposed=$_disposed mode=$_networkMode '
-            'syncing=$_isSyncing remote=$_lastRemoteConnectionState '
+            'syncing=$_isSyncing resetting=${_resetBarrier != null} '
+            'remote=$_lastRemoteConnectionState '
             'pending=${_pendingMutations.length}',
       );
       _updateConnectionState();
@@ -1190,84 +1808,191 @@ class ConvexLocalClient {
     _replayRetryTimer = null;
     _isSyncing = true;
     _updateConnectionState();
-    var hitRetryableError = false;
+    // A reset() during this run discards the identity whose queue it sends:
+    // the run then stops at its next step without bookkeeping, conflicts,
+    // rollbacks, refreshes or retries, and leaves `_isSyncing` to reset().
+    // A clearQueue() during this run discards the queue (and the ID remaps)
+    // it works on: the run stops at its next step as well, without recording
+    // remaps, then hands over to a new run for whatever was queued since.
+    final generation = _generation;
+    final queueEpoch = _queueEpoch;
+    bool identityChanged() => generation != _generation;
+    bool stale() => identityChanged() || queueEpoch != _queueEpoch;
+    var scheduleRetry = false;
+    // Post-replay cache refreshes, coalesced to one per distinct target and
+    // run once the loop ends instead of once per replayed mutation.
+    final refreshTargets = <String, LocalQueryDescriptor>{};
     _log('replay:start', '${_pendingMutations.length} mutations to replay');
     try {
+      // A direct mutation still in flight was issued before everything in the
+      // queue; let it settle first so call order is kept.
+      final direct = _directInFlight;
+      if (direct != null) {
+        _log('replay:wait-direct', 'waiting for in-flight direct mutation');
+        await direct;
+      }
       // Recover any ID remaps persisted from a prior crash.
       final idRemaps = await _mutationQueue.loadIdRemaps();
       final failedLocalIds = await _mutationQueue.loadFailedLocalIds();
+      if (!stale()) {
+        _idRemaps = idRemaps;
+      }
       var iteration = 0;
       while (!_disposed &&
+          !stale() &&
           _pendingMutations.isNotEmpty &&
-          _networkMode == LocalNetworkMode.auto) {
+          _networkMode == LocalNetworkMode.auto &&
+          _lastRemoteConnectionState == LocalRemoteConnectionState.connected) {
         iteration++;
         final mutation = _pendingMutations.first;
-        _log(
-          'replay:mutation',
-          '[$iteration] id=${mutation.id} '
-              '${mutation.mutationName} — marking replaying',
-        );
-        await _mutationQueue.markStatus(
-          mutation.id,
-          PendingMutationStatus.replaying,
-        );
-        _pendingMutations = await _mutationQueue.loadAll();
-        _pendingMutationsController.add(currentPendingMutations);
-
-        // Remap any local IDs in args to server IDs.
-        late final Map<String, dynamic> remappedArgs;
-        try {
-          remappedArgs =
-              _remapIds(mutation.args, idRemaps) as Map<String, dynamic>;
-        } on _LocalIdRemapCollision catch (error) {
-          _log('replay:id-remap-collision', '[$iteration] ${error.message}');
-          final failedLocalId = await _dropFailedMutation(mutation, error);
-          if (failedLocalId != null) {
-            failedLocalIds.add(failedLocalId);
-          }
-          continue;
-        }
-        final unresolvedLocalIds = _unresolvedLocalIds(
-          remappedArgs,
-          idRemaps,
-          _knownGeneratedLocalIds(
-            _pendingMutations,
-            failedLocalIds,
-            beforeMutationId: mutation.id,
-          ),
-        );
-        if (unresolvedLocalIds.isNotEmpty) {
-          final error = StateError(
-            'Cannot replay ${mutation.mutationName} with unresolved local '
-            'ID(s): ${unresolvedLocalIds.join(', ')}',
+        final Object? result;
+        if (_committedReplayResults.containsKey(mutation.id)) {
+          // The server already committed this mutation; only its local
+          // bookkeeping failed. Do not send it again.
+          _log(
+            'replay:mutation',
+            '[$iteration] id=${mutation.id} already committed, '
+                'retrying local bookkeeping',
           );
-          _log('replay:unresolved-local-id', '[$iteration] ${error.message}');
-          final failedLocalId = await _dropFailedMutation(mutation, error);
-          if (failedLocalId != null) {
-            failedLocalIds.add(failedLocalId);
+          result = _committedReplayResults[mutation.id];
+        } else {
+          _log(
+            'replay:mutation',
+            '[$iteration] id=${mutation.id} '
+                '${mutation.mutationName} — marking replaying',
+          );
+          await _trackUnchainedWrite(
+            _mutationQueue.markStatus(
+              mutation.id,
+              PendingMutationStatus.replaying,
+            ),
+          );
+          if (stale()) {
+            break;
           }
-          continue;
-        }
-        if (!const DeepCollectionEquality().equals(
-          remappedArgs,
-          mutation.args,
-        )) {
-          _log('replay:remap', '[$iteration] remapped args');
-          await _mutationQueue.updateArgs(mutation.id, remappedArgs);
-        }
+          _updatePendingMutationInMemory(
+            mutation.id,
+            (current) =>
+                current.copyWith(status: PendingMutationStatus.replaying),
+          );
+          _pendingMutationsController.add(currentPendingMutations);
 
-        try {
-          _log('replay:mutate', '[$iteration] calling _remoteClient.mutate…');
-          final result = await _remoteClient.mutate(
-            mutation.mutationName,
+          // Remap any local IDs in args to server IDs.
+          late final Map<String, dynamic> remappedArgs;
+          try {
+            remappedArgs =
+                _remapIds(mutation.args, idRemaps) as Map<String, dynamic>;
+          } on _LocalIdRemapCollision catch (error) {
+            _log('replay:id-remap-collision', '[$iteration] ${error.message}');
+            final failedLocalId = await _dropFailedMutation(
+              mutation,
+              error,
+              generation,
+            );
+            if (failedLocalId != null) {
+              failedLocalIds.add(failedLocalId);
+            }
+            continue;
+          }
+          final unresolvedLocalIds = _unresolvedLocalIds(
             remappedArgs,
+            idRemaps,
+            _knownGeneratedLocalIds(
+              _pendingMutations,
+              failedLocalIds,
+              beforeMutationId: mutation.id,
+            ),
           );
-          if (_disposed) {
-            _log('replay:disposed', '[$iteration] stopping after mutate');
+          if (unresolvedLocalIds.isNotEmpty) {
+            final error = StateError(
+              'Cannot replay ${mutation.mutationName} with unresolved local '
+              'ID(s): ${unresolvedLocalIds.join(', ')}',
+            );
+            _log('replay:unresolved-local-id', '[$iteration] ${error.message}');
+            final failedLocalId = await _dropFailedMutation(
+              mutation,
+              error,
+              generation,
+            );
+            if (failedLocalId != null) {
+              failedLocalIds.add(failedLocalId);
+            }
+            continue;
+          }
+          if (!const DeepCollectionEquality().equals(
+            remappedArgs,
+            mutation.args,
+          )) {
+            _log('replay:remap', '[$iteration] remapped args');
+            await _trackUnchainedWrite(
+              _mutationQueue.updateArgs(mutation.id, remappedArgs),
+            );
+            if (stale()) {
+              break;
+            }
+          }
+
+          try {
+            _log('replay:mutate', '[$iteration] calling _remoteClient.mutate…');
+            result = await _remoteClient.mutate(
+              mutation.mutationName,
+              remappedArgs,
+            );
+          } catch (error, stack) {
+            if (_disposed || stale()) {
+              _log('replay:stopped', '[$iteration] stopping after error');
+              break;
+            }
+            _log('replay:error', '[$iteration] $error\n$stack');
+            if (isConvexClientClosedError(error)) {
+              // The remote client was closed or disposed: this is not a
+              // server rejection, and every later send would fail the same
+              // way. Keep the queue and stop until the remote reconnects.
+              _markRemoteUnavailable();
+            }
+            final queueable = error is ConvexException && error.retryable;
+            if (queueable ||
+                isConvexClientClosedError(error) ||
+                _shouldQueueRemoteFailure(error)) {
+              await _trackUnchainedWrite(
+                _mutationQueue.markStatus(
+                  mutation.id,
+                  PendingMutationStatus.pending,
+                  errorMessage: error is ConvexException
+                      ? error.message
+                      : error.toString(),
+                ),
+              );
+              final pending = await _mutationQueue.loadAll();
+              if (stale()) {
+                break;
+              }
+              _pendingMutations = pending;
+              _pendingMutationsController.add(currentPendingMutations);
+              scheduleRetry = true;
+              break;
+            }
+            final failedLocalId = await _dropFailedMutation(
+              mutation,
+              error,
+              generation,
+            );
+            if (failedLocalId != null) {
+              failedLocalIds.add(failedLocalId);
+            }
+            continue;
+          }
+          if (_disposed || stale()) {
+            _log('replay:stopped', '[$iteration] stopping after mutate');
             break;
           }
           _log('replay:mutate-ok', '[$iteration] remote mutate succeeded');
+        }
 
+        // The server committed the mutation. Local bookkeeping failures from
+        // here on must never roll it back, report a conflict, or re-send it.
+        _committedReplayResults[mutation.id] = result;
+        try {
           // Capture ID mapping: if this mutation produced a local operationId
           // and the server returned the real document ID, record it.
           final operationId = mutation.optimisticData?['operationId'];
@@ -1276,91 +2001,108 @@ class ConvexLocalClient {
               _isGeneratedLocalId(operationId) &&
               serverId != null) {
             idRemaps[operationId] = serverId;
-            await _mutationQueue.saveIdRemap(operationId, serverId);
+            await _trackUnchainedWrite(
+              _mutationQueue.saveIdRemap(operationId, serverId),
+            );
             _log('replay:id-remap', '[$iteration] $operationId → $serverId');
+            if (stale()) {
+              break;
+            }
           }
-
-          await _mutationQueue.remove(mutation.id);
-          _pendingMutations = await _mutationQueue.loadAll();
-          _rebuildPendingWriteCounts();
-          _pendingMutationsController.add(currentPendingMutations);
-          // Fire-and-forget: the widget tree subscriptions already receive
-          // live Transition updates, so blocking the replay loop for a cache
-          // refresh is unnecessary; the widget tree subscriptions already get
-          // live updates through the normal Transition flow.
-          _runDetached(_refreshTargetsFromMutation(mutation), 'refresh');
-          _replayRetryCount = 0;
-        } on ConvexException catch (error) {
-          if (_disposed) {
-            _log('replay:disposed', '[$iteration] stopping after error');
+          await _trackUnchainedWrite(_mutationQueue.remove(mutation.id));
+        } catch (error, stack) {
+          if (_disposed || stale()) {
             break;
           }
           _log(
-            'replay:convex-error',
-            '[$iteration] ${error.message} '
-                '(retryable=${error.retryable})',
+            'replay:post-commit-storage-error',
+            '[$iteration] $error\n$stack',
+            level: DartvexLogLevel.warn,
           );
-          if (error.retryable) {
-            await _mutationQueue.markStatus(
-              mutation.id,
-              PendingMutationStatus.pending,
-              errorMessage: error.message,
-            );
-            _pendingMutations = await _mutationQueue.loadAll();
-            _pendingMutationsController.add(currentPendingMutations);
-            hitRetryableError = true;
-            break;
-          }
-          final failedLocalId = await _dropFailedMutation(mutation, error);
-          if (failedLocalId != null) {
-            failedLocalIds.add(failedLocalId);
-          }
-        } catch (error, stack) {
-          if (_disposed) {
-            _log('replay:disposed', '[$iteration] stopping after error');
-            break;
-          }
-          _log('replay:error', '[$iteration] $error\n$stack');
-          if (_shouldQueueRemoteFailure(error)) {
-            await _mutationQueue.markStatus(
-              mutation.id,
-              PendingMutationStatus.pending,
-              errorMessage: error.toString(),
-            );
-            _pendingMutations = await _mutationQueue.loadAll();
-            _pendingMutationsController.add(currentPendingMutations);
-            hitRetryableError = true;
-            break;
-          }
-          final failedLocalId = await _dropFailedMutation(mutation, error);
-          if (failedLocalId != null) {
-            failedLocalIds.add(failedLocalId);
-          }
+          scheduleRetry = true;
+          break;
         }
+        if (_disposed || stale()) {
+          break;
+        }
+        _committedReplayResults.remove(mutation.id);
+        _removePendingMutationInMemory(mutation.id);
+        _rebuildPendingWriteCounts();
+        _pendingMutationsController.add(currentPendingMutations);
+        for (final target in _targetsFromMutation(mutation)) {
+          refreshTargets[target.key] = target;
+        }
+        _replayRetryCount = 0;
       }
-      // Clean up remap table when the queue is fully drained.
-      if (!_disposed && _pendingMutations.isEmpty) {
-        if (idRemaps.isNotEmpty) {
-          await _mutationQueue.clearIdRemaps();
-        }
-        if (failedLocalIds.isNotEmpty) {
-          await _mutationQueue.clearFailedLocalIds();
-        }
+      // Failed local IDs only matter while dependents may still be queued.
+      // ID remaps are kept: cached documents and app state can still carry
+      // the local IDs (see _idRemaps).
+      if (!_disposed &&
+          !stale() &&
+          _pendingMutations.isEmpty &&
+          failedLocalIds.isNotEmpty) {
+        await _trackUnchainedWrite(_mutationQueue.clearFailedLocalIds());
       }
       _log(
         'replay:end',
         'loop finished — ${_pendingMutations.length} '
-            'remaining, hitRetryable=$hitRetryableError',
+            'remaining, retry=$scheduleRetry',
       );
-    } finally {
-      _isSyncing = false;
+    } catch (error, stackTrace) {
+      // A storage failure outside the per-mutation handling (or inside it,
+      // while recording a failure) must not stall the queue until the next
+      // reconnect: retry with backoff.
       if (!_disposed) {
-        _updateConnectionState();
+        _log(
+          'replay:unexpected-error',
+          '$error\n$stackTrace',
+          level: DartvexLogLevel.warn,
+        );
+        scheduleRetry = true;
       }
-      if (!_disposed && hitRetryableError) {
-        _scheduleReplayRetry();
+    } finally {
+      if (!identityChanged()) {
+        _isSyncing = false;
+        if (!_disposed) {
+          _updateConnectionState();
+        }
+        if (!_disposed && scheduleRetry) {
+          _scheduleReplayRetry();
+        } else if (!_disposed && _pendingMutations.isNotEmpty) {
+          // A mutation queued while this run was finishing (for example while
+          // it cleared the failed local IDs), or after clearQueue() stopped
+          // it, found replay still running and did not schedule one itself.
+          _ensureReplayScheduled(afterRetryableFailure: false);
+        }
+        if (!_disposed && refreshTargets.isNotEmpty) {
+          // Fire-and-forget: live subscriptions already receive server
+          // updates; this refresh rewrites targets without the replayed
+          // patches, and covers targets nothing is subscribed to.
+          _runDetached(
+            _refreshTargets(refreshTargets.values, generation),
+            'refresh',
+          );
+        }
       }
     }
+  }
+
+  /// Replaces the in-memory queue entry [id] with [update] applied, without
+  /// reloading and decoding the whole persisted queue.
+  void _updatePendingMutationInMemory(
+    int id,
+    PendingMutation Function(PendingMutation current) update,
+  ) {
+    _pendingMutations = <PendingMutation>[
+      for (final mutation in _pendingMutations)
+        mutation.id == id ? update(mutation) : mutation,
+    ];
+  }
+
+  void _removePendingMutationInMemory(int id) {
+    _pendingMutations = _pendingMutations
+        .where((mutation) => mutation.id != id)
+        .toList(growable: false);
   }
 
   void _scheduleReplayRetry() {
@@ -1391,17 +2133,52 @@ class ConvexLocalClient {
   }
 
   Future<String?> _dropFailedMutation(
-    PendingMutation mutation,
+    PendingMutation capturedMutation,
     Object error,
+    int generation,
   ) async {
+    if (generation != _generation) {
+      return null;
+    }
+    // Use the current entry: remote snapshots that arrived while the mutation
+    // was in flight rebased its persisted rollback baseline.
+    final mutation = _pendingMutations.firstWhereOrNull(
+      (pending) => pending.id == capturedMutation.id,
+    );
+    if (mutation == null) {
+      // clearQueue() discarded it while it was in flight and already rolled
+      // back its patches. Restoring its (no longer rebased) baseline now
+      // would overwrite newer server data, and the app did not ask to hear
+      // about a mutation it cleared.
+      _log(
+        'replay:drop-cleared',
+        'id=${capturedMutation.id} was cleared while in flight',
+      );
+      return null;
+    }
     final failedLocalId = _generatedOperationId(mutation);
     if (failedLocalId != null) {
-      await _mutationQueue.saveFailedLocalId(failedLocalId);
+      await _trackUnchainedWrite(
+        _mutationQueue.saveFailedLocalId(failedLocalId),
+      );
     }
-    await _mutationQueue.remove(mutation.id);
-    _pendingMutations = await _mutationQueue.loadAll();
-    _rebuildPendingWriteCounts();
-    await _restoreMutationRollback(mutation);
+    final rollbackKeys = _rollbackSnapshotsFromMutation(
+      mutation,
+    ).map((snapshot) => snapshot.target.key);
+    await _runOnKeyChains(rollbackKeys, () async {
+      // After a reset() the rollback baselines belong to the previous
+      // identity: restoring them would repopulate the purged cache.
+      if (generation != _generation) {
+        return;
+      }
+      await _mutationQueue.remove(mutation.id);
+      _pendingMutations = await _mutationQueue.loadAll();
+      _rebuildPendingWriteCounts();
+      await _restoreMutationRollback(mutation, generation);
+    });
+    if (generation != _generation) {
+      return null;
+    }
     _pendingMutationsController.add(currentPendingMutations);
     try {
       onConflict?.call(
@@ -1410,84 +2187,185 @@ class ConvexLocalClient {
           args: mutation.args,
           error: error,
           queuedAt: mutation.createdAt,
+          pendingMutationId: mutation.id,
+          operationId: mutation.optimisticData?['operationId'] as String?,
         ),
       );
     } catch (callbackError, stackTrace) {
       _log('replay:on-conflict-error', '$callbackError\n$stackTrace');
     }
-    await _refreshTargetsFromMutation(mutation);
+    await _refreshTargets(_targetsFromMutation(mutation), generation);
     return failedLocalId;
   }
 
-  Future<void> _refreshTargetsFromMutation(PendingMutation mutation) async {
-    if (_networkMode == LocalNetworkMode.offline) {
+  Future<void> _refreshTargets(
+    Iterable<LocalQueryDescriptor> targets,
+    int generation,
+  ) async {
+    final targetList = targets.toList(growable: false);
+    if (_networkMode == LocalNetworkMode.offline || targetList.isEmpty) {
       return;
     }
-    final targets = _targetsFromMutation(mutation).toList();
     _log(
       'refresh:start',
-      '${mutation.mutationName} — '
-          '${targets.length} target(s): '
-          '${targets.map((t) => t.name).join(', ')}',
+      '${targetList.length} target(s): '
+          '${targetList.map((t) => t.name).join(', ')}',
     );
-    for (final target in targets) {
+    for (final target in targetList) {
+      if (_disposed || generation != _generation) {
+        return;
+      }
       try {
         _log('refresh:query', 'querying ${target.name}…');
+        // A seed from the remote client's local state can predate the
+        // mutation just replayed, unless the query is live (the remote then
+        // holds the current server value for it).
         final value = await _remoteQueryOnce(
           target,
           timeout: _config.refreshQueryTimeout,
+          acceptSeed: _queryStates[target.key]?.remoteSubscription != null,
         );
         _log('refresh:query-ok', '${target.name} returned');
-        await _writeRemoteSnapshotAndRebasePending(target, value, emit: true);
+        await _writeRemoteSnapshotAndRebasePending(
+          target,
+          value,
+          generation: generation,
+          emit: true,
+        );
       } catch (error) {
         _log('refresh:query-error', '${target.name}: $error');
       }
     }
-    _log('refresh:done', '${mutation.mutationName} targets refreshed');
+    _log('refresh:done', 'targets refreshed');
   }
 
   void _markRemoteEventSeen(_LocalQueryState queryState) {
+    queryState.hasRemoteEvent = true;
     for (final subscriptionId in queryState.subscriberIds) {
-      _subscriptionStates[subscriptionId]?.hasRemoteEvent = true;
+      _subscriptionStates[subscriptionId]?.skipSeed = true;
     }
   }
 
-  Future<dynamic> _writeRemoteSnapshotAndRebasePending(
-    LocalQueryDescriptor target,
-    dynamic value, {
-    bool emit = false,
-  }) {
-    final key = target.key;
-    final previous = _snapshotChainsByKey[key] ?? Future<void>.value();
-    final result = previous.then(
-      (_) => _writeRemoteSnapshotAndRebasePendingNow(target, value, emit: emit),
-    );
+  /// Runs [body] once every in-flight operation on any of [keys] has
+  /// finished, and makes later operations on those keys wait for it.
+  ///
+  /// Serializes read-modify-write sequences and emissions per query key: a
+  /// remote snapshot write and its pending-patch rebase span several awaits,
+  /// as do the optimistic snapshot/apply of a queued mutation and a rollback.
+  /// Interleaving two of them for the same key could leave a stale value in
+  /// the cache or as the subscribers' latest emission. Must not be nested for
+  /// the same key (the inner call would wait for the outer one).
+  Future<T> _runOnKeyChains<T>(
+    Iterable<String> keys,
+    Future<T> Function() body,
+  ) {
+    final keySet = keys.toSet();
+    final barrier = _resetBarrier;
+    if (keySet.isEmpty) {
+      return _trackUnchainedWrite(
+        barrier == null ? body() : barrier.then((_) => body()),
+      );
+    }
+    final previous = <Future<void>>[
+      ?barrier,
+      for (final key in keySet) ?_snapshotChainsByKey[key],
+    ];
+    final Future<void> ready = switch (previous.length) {
+      0 => Future<void>.value(),
+      1 => previous.single,
+      _ => Future.wait(previous),
+    };
+    final result = ready.then((_) => body());
     // Keep the chain alive across failures without leaking a prior call's
     // error to the next caller.
-    final guard = result.then((_) {}, onError: (_) {});
-    _snapshotChainsByKey[key] = guard;
+    final guard = result.then<void>((_) {}, onError: (Object _) {});
+    for (final key in keySet) {
+      _snapshotChainsByKey[key] = guard;
+    }
     unawaited(
       guard.whenComplete(() {
-        if (identical(_snapshotChainsByKey[key], guard)) {
-          _snapshotChainsByKey.remove(key);
+        for (final key in keySet) {
+          if (identical(_snapshotChainsByKey[key], guard)) {
+            _snapshotChainsByKey.remove(key);
+          }
         }
       }),
     );
     return result;
   }
 
+  /// Records [write], a storage write outside the per-key chains, so a
+  /// [reset] that starts while it is in flight purges after it lands.
+  Future<T> _trackUnchainedWrite<T>(Future<T> write) {
+    final settled = write.then<void>((_) {}, onError: (Object _) {});
+    _unchainedWrites.add(settled);
+    unawaited(settled.whenComplete(() => _unchainedWrites.remove(settled)));
+    return write;
+  }
+
+  /// Waits until no [reset] is purging local state.
+  Future<void> _waitForReset() async {
+    var barrier = _resetBarrier;
+    while (barrier != null) {
+      await barrier;
+      barrier = _resetBarrier;
+    }
+  }
+
+  /// Writes a remote [value] for [target] and rebases pending patches on it.
+  ///
+  /// [generation] is the identity generation the value was requested or
+  /// received under; a value from before a [reset] is returned as is, without
+  /// being cached or emitted.
+  Future<dynamic> _writeRemoteSnapshotAndRebasePending(
+    LocalQueryDescriptor target,
+    dynamic value, {
+    required int generation,
+    bool emit = false,
+  }) {
+    return _runOnKeyChains(<String>[target.key], () {
+      if (generation != _generation) {
+        return Future<dynamic>.value(value);
+      }
+      return _writeRemoteSnapshotAndRebasePendingNow(
+        target,
+        value,
+        emit: emit,
+        generation: generation,
+      );
+    });
+  }
+
   Future<dynamic> _writeRemoteSnapshotAndRebasePendingNow(
     LocalQueryDescriptor target,
     dynamic value, {
     required bool emit,
+    required int generation,
   }) async {
-    await _queryCache.write(name: target.name, args: target.args, value: value);
-    final effectiveValue = await _rebasePendingOptimisticPatchesForTarget(
-      target,
-      baseValue: value,
-    );
-    if (emit) {
+    dynamic effectiveValue;
+    try {
+      await _queryCache.write(
+        name: target.name,
+        args: target.args,
+        value: value,
+      );
+      effectiveValue = await _rebasePendingOptimisticPatchesForTarget(
+        target,
+        baseValue: value,
+      );
+    } catch (error, stackTrace) {
+      // The cache is best-effort on the remote path: a storage or codec
+      // failure must not swallow a value the server delivered.
+      _log(
+        'cache:write-error',
+        '${target.name}: $error\n$stackTrace',
+        level: DartvexLogLevel.warn,
+      );
+      effectiveValue = _applyPendingPatchesInMemory(target, value);
+    }
+    if (emit && !_disposed) {
       _emitToQueryKey(
+        generation,
         target.key,
         LocalQuerySuccess(
           effectiveValue,
@@ -1499,6 +2377,42 @@ class ConvexLocalClient {
     return effectiveValue;
   }
 
+  /// Applies the pending mutations' patches for [target] on top of
+  /// [baseValue] without touching storage.
+  dynamic _applyPendingPatchesInMemory(
+    LocalQueryDescriptor target,
+    dynamic baseValue,
+  ) {
+    if (!_hasPendingWrites(target.key)) {
+      return baseValue;
+    }
+    var currentValue = baseValue;
+    for (final pendingMutation in _pendingMutations) {
+      final operationId = pendingMutation.optimisticData?['operationId'];
+      if (operationId is! String) {
+        continue;
+      }
+      final context = LocalMutationContext(
+        operationId: operationId,
+        queuedAt: pendingMutation.createdAt,
+      );
+      try {
+        for (final patch in _buildPatches(
+          pendingMutation.mutationName,
+          pendingMutation.args,
+          context,
+        )) {
+          if (patch.target.key == target.key) {
+            currentValue = patch.apply(currentValue);
+          }
+        }
+      } catch (error, stackTrace) {
+        _log('remote:optimistic-rebase-error', '$error\n$stackTrace');
+      }
+    }
+    return currentValue;
+  }
+
   Future<dynamic> _rebasePendingOptimisticPatchesForTarget(
     LocalQueryDescriptor target, {
     required dynamic baseValue,
@@ -1508,7 +2422,6 @@ class ConvexLocalClient {
     }
 
     var currentValue = baseValue;
-    var updatedMutationMetadata = false;
     for (final pendingMutation in _pendingMutations) {
       final optimisticData = pendingMutation.optimisticData;
       final operationId = optimisticData?['operationId'];
@@ -1531,11 +2444,11 @@ class ConvexLocalClient {
         continue;
       }
 
-      await _mutationQueue.updateOptimisticData(
+      final baseline = currentValue;
+      await _updateOptimisticData(
         pendingMutation.id,
-        _replaceRollbackSnapshot(optimisticData, target, value: currentValue),
+        (current) => _replaceRollbackSnapshot(current, target, value: baseline),
       );
-      updatedMutationMetadata = true;
 
       try {
         var nextValue = currentValue;
@@ -1553,16 +2466,50 @@ class ConvexLocalClient {
       args: target.args,
       value: currentValue,
     );
-    if (updatedMutationMetadata) {
-      _pendingMutations = await _mutationQueue.loadAll();
-      _rebuildPendingWriteCounts();
-    }
     return currentValue;
+  }
+
+  /// Rewrites the optimistic metadata of queued mutation [id] with [update]
+  /// applied to its current in-memory value, then persists it.
+  ///
+  /// The in-memory entry is replaced synchronously, before the storage write:
+  /// rebases for different targets of one mutation run on different per-key
+  /// chains, and each rewrites the whole metadata. Building every rewrite on
+  /// the latest in-memory value keeps one target's rebased rollback baseline
+  /// from being overwritten by a stale copy written for another target.
+  Future<void> _updateOptimisticData(
+    int id,
+    Map<String, dynamic> Function(Map<String, dynamic> current) update,
+  ) {
+    final current = _pendingMutations
+        .firstWhereOrNull((mutation) => mutation.id == id)
+        ?.optimisticData;
+    if (current == null) {
+      return Future<void>.value();
+    }
+    final next = update(current);
+    if (identical(next, current)) {
+      return Future<void>.value();
+    }
+    _updatePendingMutationInMemory(
+      id,
+      (mutation) => PendingMutation(
+        id: mutation.id,
+        mutationName: mutation.mutationName,
+        args: mutation.args,
+        optimisticData: next,
+        createdAt: mutation.createdAt,
+        status: mutation.status,
+        errorMessage: mutation.errorMessage,
+      ),
+    );
+    return _mutationQueue.updateOptimisticData(id, next);
   }
 
   Future<dynamic> _remoteQueryOnce(
     LocalQueryDescriptor target, {
     required Duration timeout,
+    required bool acceptSeed,
   }) {
     final completer = Completer<dynamic>();
     final subscription = _remoteClient.subscribe(target.name, target.args);
@@ -1601,7 +2548,11 @@ class ConvexLocalClient {
         return;
       }
       switch (event) {
-        case LocalRemoteQuerySuccess(:final value):
+        case LocalRemoteQuerySuccess(:final value, :final isSeed):
+          if (isSeed && !acceptSeed) {
+            // Wait for the server's result for the new subscription.
+            break;
+          }
           cleanup();
           completer.complete(value);
         case LocalRemoteQueryError(:final error):
@@ -1619,11 +2570,17 @@ class ConvexLocalClient {
     Map<String, dynamic> args,
     LocalMutationContext context,
   ) {
-    final handler = _mutationHandlersByName[mutationName];
-    if (handler == null) {
+    final handlers =
+        _mutationHandlersByName[canonicalizeQueryName(mutationName)];
+    if (handlers == null) {
       return const <LocalMutationPatch>[];
     }
-    return handler.buildPatches(args, context);
+    if (handlers.length == 1) {
+      return handlers.single.buildPatches(args, context);
+    }
+    return <LocalMutationPatch>[
+      for (final handler in handlers) ...handler.buildPatches(args, context),
+    ];
   }
 
   Future<List<_CacheSnapshot>> _snapshotOptimisticPatchTargets(
@@ -1635,12 +2592,30 @@ class ConvexLocalClient {
       if (snapshots.containsKey(key)) {
         continue;
       }
-      snapshots[key] = _CacheSnapshot(
-        target: patch.target,
-        entry: await _queryCache.read(patch.target.name, patch.target.args),
-      );
+      final entry =
+          await _queryCache.read(patch.target.name, patch.target.args) ??
+          _lastEmittedEntry(patch.target);
+      snapshots[key] = _CacheSnapshot(target: patch.target, entry: entry);
     }
     return snapshots.values.toList(growable: false);
+  }
+
+  /// The value a live query last emitted, as a cache entry, when its cache
+  /// entry is gone (expired or pruned by the cache policy, or cleared) while
+  /// subscribers still show it. Used as the base for new optimistic patches,
+  /// which would otherwise replace the whole value.
+  CachedQueryEntry? _lastEmittedEntry(LocalQueryDescriptor target) {
+    final lastEvent = _queryStates[target.key]?.lastEvent;
+    if (lastEvent is! LocalQuerySuccess) {
+      return null;
+    }
+    return CachedQueryEntry(
+      key: target.key,
+      queryName: target.name,
+      args: target.args,
+      value: lastEvent.value,
+      updatedAt: DateTime.now().toUtc(),
+    );
   }
 
   Future<void> _applyOptimisticPatches(
@@ -1697,18 +2672,29 @@ class ConvexLocalClient {
     }
   }
 
-  void _emitPendingWriteUpdatesForTargets(List<LocalMutationPatch> patches) {
+  void _emitPendingWriteUpdatesForTargets(
+    List<LocalMutationPatch> patches,
+    int generation,
+  ) {
     final keys = patches.map((patch) => patch.target.key).toSet();
     for (final key in keys) {
       final queryState = _queryStates[key];
       if (queryState == null) {
         continue;
       }
-      _runDetached(_emitCachedSnapshot(queryState.descriptor), 'cache-emit');
+      _runDetached(
+        _runOnKeyChains(<String>[
+          key,
+        ], () => _emitCachedSnapshot(queryState.descriptor, generation)),
+        'cache-emit',
+      );
     }
   }
 
-  Future<void> _restoreMutationRollback(PendingMutation mutation) async {
+  Future<void> _restoreMutationRollback(
+    PendingMutation mutation,
+    int generation,
+  ) async {
     final snapshots = _rollbackSnapshotsFromMutation(mutation);
     if (snapshots.isEmpty) {
       return;
@@ -1730,10 +2716,10 @@ class ConvexLocalClient {
         .toSet();
     for (final snapshot in snapshots) {
       if (!reappliedKeys.contains(snapshot.target.key)) {
-        _emitRestoredSnapshot(snapshot);
+        _emitRestoredSnapshot(snapshot, generation);
       }
     }
-    _emitPendingWriteUpdatesForTargets(reappliedPatches);
+    _emitPendingWriteUpdatesForTargets(reappliedPatches, generation);
   }
 
   Future<List<LocalMutationPatch>> _reapplyPendingOptimisticPatchesForTargets(
@@ -1743,7 +2729,6 @@ class ConvexLocalClient {
       return const <LocalMutationPatch>[];
     }
     final reapplied = <LocalMutationPatch>[];
-    var rebasedRollbackMetadata = false;
     for (final pendingMutation in _pendingMutations) {
       final operationId = pendingMutation.optimisticData?['operationId'];
       if (operationId is! String) {
@@ -1770,9 +2755,7 @@ class ConvexLocalClient {
       // of this mutation would restore a baseline that still includes the
       // already-dropped one. The post-drop network refresh does the same
       // rebase, but it is best-effort and may fail.
-      if (await _rebaseRollbackSnapshotsForPatches(pendingMutation, patches)) {
-        rebasedRollbackMetadata = true;
-      }
+      await _rebaseRollbackSnapshotsForPatches(pendingMutation, patches);
       try {
         await _applyOptimisticPatches(patches);
         reapplied.addAll(patches);
@@ -1780,54 +2763,49 @@ class ConvexLocalClient {
         _log('replay:rollback-reapply-error', '$error\n$stackTrace');
       }
     }
-    if (rebasedRollbackMetadata) {
-      _pendingMutations = await _mutationQueue.loadAll();
-      _rebuildPendingWriteCounts();
-    }
     return reapplied;
   }
 
   /// Re-snapshots [mutation]'s persisted rollback baseline for every distinct
-  /// target in [patches] to the current cache value, returning whether the
-  /// metadata was rewritten.
+  /// target in [patches] to the current cache value.
   ///
   /// Used while reapplying surviving optimistic writes after an older mutation
   /// is rolled back, so a later rollback of [mutation] restores the
   /// post-rollback baseline rather than one that still includes the dropped
   /// mutation.
-  Future<bool> _rebaseRollbackSnapshotsForPatches(
+  Future<void> _rebaseRollbackSnapshotsForPatches(
     PendingMutation mutation,
     List<LocalMutationPatch> patches,
   ) async {
-    final optimisticData = mutation.optimisticData;
-    if (optimisticData == null) {
-      return false;
+    if (mutation.optimisticData == null) {
+      return;
     }
-    var updated = optimisticData;
-    final seenKeys = <String>{};
+    final snapshots = <String, _CacheSnapshot>{};
     for (final patch in patches) {
       final target = patch.target;
-      if (!seenKeys.add(target.key)) {
+      if (snapshots.containsKey(target.key)) {
         continue;
       }
-      final entry = await _queryCache.read(target.name, target.args);
-      updated = _withRollbackSnapshot(
-        updated,
-        _CacheSnapshot(target: target, entry: entry),
+      snapshots[target.key] = _CacheSnapshot(
+        target: target,
+        entry: await _queryCache.read(target.name, target.args),
       );
     }
-    if (identical(updated, optimisticData)) {
-      return false;
-    }
-    await _mutationQueue.updateOptimisticData(mutation.id, updated);
-    return true;
+    await _updateOptimisticData(mutation.id, (current) {
+      var updated = current;
+      for (final snapshot in snapshots.values) {
+        updated = _withRollbackSnapshot(updated, snapshot);
+      }
+      return updated;
+    });
   }
 
-  void _emitRestoredSnapshot(_CacheSnapshot snapshot) {
+  void _emitRestoredSnapshot(_CacheSnapshot snapshot, int generation) {
     final key = snapshot.target.key;
     final entry = snapshot.entry;
     if (entry == null) {
       _emitToQueryKey(
+        generation,
         key,
         LocalQueryError(
           StateError(
@@ -1840,6 +2818,7 @@ class ConvexLocalClient {
       return;
     }
     _emitToQueryKey(
+      generation,
       key,
       LocalQuerySuccess(
         entry.value,
@@ -1849,12 +2828,19 @@ class ConvexLocalClient {
     );
   }
 
-  Future<void> _emitCachedSnapshot(LocalQueryDescriptor descriptor) async {
+  Future<void> _emitCachedSnapshot(
+    LocalQueryDescriptor descriptor,
+    int generation,
+  ) async {
+    if (_disposed || generation != _generation) {
+      return;
+    }
     final cached = await _queryCache.read(descriptor.name, descriptor.args);
-    if (cached == null) {
+    if (cached == null || _disposed) {
       return;
     }
     _emitToQueryKey(
+      generation,
       descriptor.key,
       LocalQuerySuccess(
         cached.value,
@@ -1969,7 +2955,12 @@ class ConvexLocalClient {
   List<_CacheSnapshot> _rollbackSnapshotsFromMutation(
     PendingMutation mutation,
   ) {
-    final optimisticData = mutation.optimisticData;
+    return _rollbackSnapshotsFromOptimisticData(mutation.optimisticData);
+  }
+
+  List<_CacheSnapshot> _rollbackSnapshotsFromOptimisticData(
+    Map<String, dynamic>? optimisticData,
+  ) {
     if (optimisticData == null) {
       return const <_CacheSnapshot>[];
     }
@@ -2032,11 +3023,17 @@ class ConvexLocalClient {
     return _lastRemoteConnectionState != LocalRemoteConnectionState.connected;
   }
 
-  void _emitToQueryKey(String queryKey, LocalQueryEvent event) {
+  /// Emits [event] to [queryKey]'s subscribers, unless it was produced under
+  /// an identity [generation] that a [reset] has since discarded.
+  void _emitToQueryKey(int generation, String queryKey, LocalQueryEvent event) {
+    if (generation != _generation) {
+      return;
+    }
     final queryState = _queryStates[queryKey];
     if (queryState == null) {
       return;
     }
+    queryState.lastEvent = event;
     // Iterate a snapshot: the controllers are synchronous broadcast streams, so
     // a listener that cancels (or re-subscribes the same query) while receiving
     // this event would mutate `subscriberIds` mid-iteration and throw a
@@ -2045,7 +3042,14 @@ class ConvexLocalClient {
     for (final subscriptionId in queryState.subscriberIds.toList(
       growable: false,
     )) {
-      _subscriptionStates[subscriptionId]?.controller.add(event);
+      final subscription = _subscriptionStates[subscriptionId];
+      if (subscription == null) {
+        continue;
+      }
+      // Anything emitted here is at least as fresh as a cache read its seed
+      // may still be resolving, which must not overwrite it.
+      subscription.skipSeed = true;
+      subscription.controller.add(event);
     }
   }
 
@@ -2118,10 +3122,12 @@ class ConvexLocalClient {
       LocalNetworkMode.auto =>
         _isSyncing
             ? LocalConnectionState.syncing
-            : _lastRemoteConnectionState ==
-                  LocalRemoteConnectionState.disconnected
-            ? LocalConnectionState.offline
-            : LocalConnectionState.online,
+            // Only an established connection counts as online: the direct
+            // send path and replay both require it, so a connecting or
+            // reconnecting remote behaves as offline (mutations are queued).
+            : _lastRemoteConnectionState == LocalRemoteConnectionState.connected
+            ? LocalConnectionState.online
+            : LocalConnectionState.offline,
     };
 
     if (_currentConnectionState != nextState) {
@@ -2135,6 +3141,9 @@ class ConvexLocalClient {
   static dynamic _remapIds(dynamic value, Map<String, String> idMap) {
     if (idMap.isEmpty) return value;
     if (value is String) return idMap[value] ?? value;
+    // Convex bytes are a List too; rebuilding one as a List<dynamic> of ints
+    // would be sent as a number array instead of bytes.
+    if (value is Uint8List) return value;
     if (value is Map) {
       // Remap both keys and values: an offline mutation can reference a
       // freshly-created local ID as an object key (e.g. a per-document map),
@@ -2183,7 +3192,7 @@ class ConvexLocalClient {
         }
         return;
       }
-      if (item is Iterable) {
+      if (item is Iterable && item is! Uint8List) {
         for (final entry in item) {
           visit(entry);
         }
@@ -2194,21 +3203,19 @@ class ConvexLocalClient {
     return ids.toList(growable: false);
   }
 
-  void _log(String tag, String message) {
+  void _log(
+    String tag,
+    String message, {
+    DartvexLogLevel level = DartvexLogLevel.debug,
+  }) {
     final logger = _config.logger;
     if (logger == null || _config.logLevel == DartvexLogLevel.off) {
       return;
     }
-    if (DartvexLogLevel.debug.index > _config.logLevel.index) {
+    if (level.index > _config.logLevel.index) {
       return;
     }
-    logger(
-      DartvexLogEvent(
-        level: DartvexLogLevel.debug,
-        message: message,
-        tag: 'local.$tag',
-      ),
-    );
+    logger(DartvexLogEvent(level: level, message: message, tag: 'local.$tag'));
   }
 
   void _runDetached(Future<void> future, String tag) {
@@ -2228,7 +3235,14 @@ class ConvexLocalClient {
     }
   }
 
-  /// Disposes subscriptions, storage, and the remote client.
+  /// Disposes subscriptions and closes the configured storage.
+  ///
+  /// The cache and queue storage passed in [LocalClientConfig] are always
+  /// closed, even when the caller created them. The remote client is only
+  /// disposed when [LocalClientConfig.disposeRemoteClient] is true (with
+  /// [open], the internal adapter is always released, but the wrapped
+  /// [ConvexClient] is left running by default). A direct mutation still in
+  /// flight keeps its future pending until the remote client settles it.
   Future<void> dispose() async {
     if (_disposed) {
       return;
@@ -2292,6 +3306,13 @@ class _LocalQueryState {
   final Set<int> subscriberIds = <int>{};
   LocalRemoteSubscription? remoteSubscription;
   StreamSubscription<LocalRemoteQueryEvent>? remoteEventSubscription;
+
+  /// Latest event emitted to this query's subscribers.
+  LocalQueryEvent? lastEvent;
+
+  /// Whether a remote event (success or error) has been received for this
+  /// query.
+  bool hasRemoteEvent = false;
 }
 
 class _CacheSnapshot {
@@ -2318,5 +3339,8 @@ class _LocalSubscriptionState {
   final int id;
   final LocalQueryDescriptor descriptor;
   final StreamController<LocalQueryEvent> controller;
-  bool hasRemoteEvent = false;
+
+  /// Whether the cache seed must not be emitted any more: a remote event is
+  /// pending or was received, or a newer event was already delivered.
+  bool skipSeed = false;
 }

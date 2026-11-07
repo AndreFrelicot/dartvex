@@ -131,6 +131,148 @@ void main() {
       );
     });
 
+    test(r'$commitTs placeholder decodes to the exported singleton', () {
+      final decoded = jsonToConvex(<String, dynamic>{r'$commitTs': null});
+
+      expect(decoded, isA<dartvex.ConvexCommitTsPlaceholder>());
+      expect(identical(decoded, dartvex.ConvexCommitTsPlaceholder.instance),
+          isTrue);
+      expect(decoded.toString(), '[unresolved commit timestamp]');
+    });
+
+    test(r'$commitTs placeholder encodes back to its wire shape', () {
+      expect(
+        convexToJson(dartvex.ConvexCommitTsPlaceholder.instance),
+        <String, Object?>{r'$commitTs': null},
+      );
+      final nested = <String, dynamic>{
+        'doc': <String, dynamic>{
+          'ts': dartvex.ConvexCommitTsPlaceholder.instance,
+          'list': <dynamic>[dartvex.ConvexCommitTsPlaceholder.instance],
+        },
+      };
+      final wire = jsonDecode(jsonEncode(convexToJson(nested)));
+      expect(
+        (wire as Map<String, dynamic>)['doc'],
+        <String, dynamic>{
+          'list': <dynamic>[
+            <String, dynamic>{r'$commitTs': null},
+          ],
+          'ts': <String, dynamic>{r'$commitTs': null},
+        },
+      );
+      final roundTripped = jsonToConvex(wire) as Map<String, dynamic>;
+      final doc = roundTripped['doc'] as Map<String, dynamic>;
+      expect(
+        identical(doc['ts'], dartvex.ConvexCommitTsPlaceholder.instance),
+        isTrue,
+      );
+    });
+
+    test(r'canonicalizeConvexArgs keeps the $commitTs placeholder', () {
+      final canonical = canonicalizeConvexArgs(<String, dynamic>{
+        'ts': dartvex.ConvexCommitTsPlaceholder.instance,
+      });
+      expect(
+        identical(canonical['ts'], dartvex.ConvexCommitTsPlaceholder.instance),
+        isTrue,
+      );
+    });
+
+    test(r'malformed $commitTs throws FormatException', () {
+      expect(
+        () => jsonToConvex(<String, dynamic>{r'$commitTs': 0}),
+        throwsFormatException,
+      );
+      expect(
+        () => jsonToConvex(<String, dynamic>{r'$commitTs': 'x'}),
+        throwsFormatException,
+      );
+    });
+
+    test(r'$commitTs with sibling keys is still a reserved field name', () {
+      expect(
+        () => jsonToConvex(<String, dynamic>{r'$commitTs': null, 'a': 1}),
+        throwsArgumentError,
+      );
+    });
+
+    test('ints outside the exact float64 range are rejected', () {
+      // 2^53 + 1 has no exact float64 representation; the server would round
+      // it silently, so the encoder refuses it.
+      const unsafe = 9007199254740993;
+      expect(() => convexToJson(unsafe), throwsArgumentError);
+      expect(() => convexToJson(-unsafe), throwsArgumentError);
+      expect(
+        () => convexToJson(<String, dynamic>{'nanos': 1730800000123456789}),
+        throwsArgumentError,
+      );
+      // 9223372036854775807 rounds to 2^63 as a double.
+      expect(() => convexToJson(9223372036854775807), throwsArgumentError);
+    }, testOn: 'vm');
+
+    test('large ints that are exact float64 values still encode', () {
+      expect(convexToJson(9007199254740992), 9007199254740992);
+      expect(convexToJson(-9007199254740992), -9007199254740992);
+      // Large server floats are decoded as Dart ints on the VM; they must keep
+      // round-tripping (for example through query tokens and caches).
+      expect(convexToJson(100000000000000000), 100000000000000000);
+      expect(
+        canonicalizeConvexArgs(<String, dynamic>{'v': 100000000000000000}),
+        <String, dynamic>{'v': 100000000000000000},
+      );
+    });
+
+    test('convexToCanonicalJson normalizes integral doubles to ints', () {
+      final fromInt = dartvex.convexToCanonicalJson(<String, dynamic>{
+        'limit': 10,
+        'nested': <dynamic>[1, 2.0],
+      });
+      final fromDouble = dartvex.convexToCanonicalJson(<String, dynamic>{
+        'limit': 10.0,
+        'nested': <dynamic>[1.0, 2],
+      });
+      expect(jsonEncode(fromInt), jsonEncode(fromDouble));
+      // Non-integral and special doubles are untouched.
+      expect(dartvex.convexToCanonicalJson(1.5), 1.5);
+      expect(
+        dartvex.convexToCanonicalJson(-0.0),
+        convexToJson(-0.0),
+      );
+      expect(
+        dartvex.convexToCanonicalJson(BigInt.from(10)),
+        convexToJson(BigInt.from(10)),
+      );
+    });
+
+    test('convexToCanonicalJson maps large integral doubles to the same key',
+        () {
+      // 1e17 and 100000000000000000 are the same float64; 2^53 + 2 and
+      // -2^62 are exact float64 values beyond ±2^53 as well.
+      for (final (asInt, asDouble) in <(int, double)>[
+        (100000000000000000, 100000000000000000.0),
+        (-100000000000000000, -1e17),
+        (9007199254740994, 9007199254740994.0),
+        (-4611686018427387904, -4611686018427387904.0),
+      ]) {
+        expect(
+          jsonEncode(dartvex.convexToCanonicalJson(<String, dynamic>{
+            'v': asDouble,
+          })),
+          jsonEncode(dartvex.convexToCanonicalJson(<String, dynamic>{
+            'v': asInt,
+          })),
+          reason: '$asDouble and $asInt are the same Convex float64',
+        );
+        // The wire encoding is left alone.
+        expect(convexToJson(asDouble), same(asDouble));
+      }
+      // Integral doubles beyond the int64 range have no int counterpart and
+      // stay (finite) doubles instead of being clamped.
+      expect(dartvex.convexToCanonicalJson(1e19), 1e19);
+      expect(dartvex.convexToCanonicalJson(-1e300), -1e300);
+    });
+
     test(r'decoding $set and $map throws', () {
       expect(
         () => jsonToConvex(<String, dynamic>{r'$set': const <dynamic>[]}),

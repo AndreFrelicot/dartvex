@@ -4,7 +4,7 @@ description: Test Flutter widgets and app logic that use dartvex without a live 
 license: MIT
 metadata:
   author: AndreFrelicot
-  ecosystem-version: "0.2.0"
+  ecosystem-version: "0.3.0"
 ---
 
 # Test Dartvex Apps with FakeConvexClient
@@ -16,16 +16,19 @@ no network, no deployment.
 ## Setup
 
 ```yaml
+dependencies:
+  dartvex: ^0.3.0          # for ConvexException in error stubs
+  dartvex_flutter: ^0.3.0  # FakeConvexClient ships here
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
 ```
 
-(`FakeConvexClient` ships in `dartvex_flutter` itself — no extra package.)
-
 ## Widget test pattern
 
 ```dart
+import 'package:dartvex/dartvex.dart' show ConvexException;
 import 'package:dartvex_flutter/dartvex_flutter.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -36,7 +39,9 @@ void main() {
         {'_id': '1', 'body': 'Hello'},
         {'_id': '2', 'body': 'World'},
       ])
-      ..whenMutation('messages:send', returns: {'id': 'xxx'});
+      // The stub's value must fit the widget's type: ConvexMutation<String>
+      // for a mutation returning an ID.
+      ..whenMutation('messages:send', returns: 'msg_1');
 
     await tester.pumpWidget(
       ConvexProvider(client: client, child: const MyApp()),
@@ -49,7 +54,9 @@ void main() {
 ```
 
 The same `ConvexProvider` used in production takes the fake directly —
-widgets under test are unchanged.
+widgets under test are unchanged. Generated bindings work too:
+`ConvexApi(ConvexProvider.of(context).functionCaller)` is served by the same
+stubs (the fake's typed `paginatedQuery` is unsupported).
 
 ## Stubbing surface
 
@@ -57,18 +64,26 @@ widgets under test are unchanged.
 final client = FakeConvexClient()
   // Fixed results:
   ..whenQuery('messages:list', returns: [...])
-  ..whenMutation('messages:send', returns: {'id': 'xxx'})
+  ..whenMutation('messages:send', returns: 'msg_1')
   ..whenAction('emails:send', returns: null)
-  // Args-dependent results:
+  // Args-dependent results (throw from the handler to simulate a failure):
   ..whenQueryWith('messages:list', (args) => byChannel[args['channel']]);
+
+// Every call is recorded:
+expect(client.mutationCalls.single.args, {'channel': 'general', 'body': 'Hi'});
 ```
 
 Drive live behavior mid-test (then `await tester.pump()`):
 
 ```dart
 client.emitSubscription('messages:list', updatedMessages); // server push
-client.emitSubscriptionError('messages:list', ConvexException('boom'));
+client.emitSubscriptionError('messages:list', const ConvexException('boom'));
+client.emitSubscriptionLoading('messages:list');           // optimistic clear
 client.emitPaginated('messages:paginate', results: items, isDone: false);
+// Emissions reach every live subscription with that name; when the same
+// query is mounted with different args, target one with `args:`:
+client.emitSubscription('messages:list', general,
+    args: const {'channel': 'general'});
 client.emitConnectionState(ConvexConnectionState.disconnected);
 client.emitConnectionStatus(richStatus);   // ConvexConnectionStatusBuilder
 client.emitAuthRefreshing(true);           // ConvexAuthRefreshingBuilder
@@ -79,8 +94,20 @@ client.emitAuthRefreshing(true);           // ConvexAuthRefreshingBuilder
 - **Loading state**: before any result is stubbed/pushed, `ConvexQuery`
   renders its loading branch — assert the spinner.
 - **Error state**: `emitSubscriptionError` to assert the error branch.
-- **Mutations**: `whenMutation` + tap the button; assert the success path
-  and the `isLoading` button-disable behavior.
+- **Mutations**: `whenMutation` + tap the button; assert the success path.
+  A `whenMutation` stub resolves before the next frame, so to see the
+  in-flight (`isLoading`, button disabled) state, hold the mutation open:
+
+  ```dart
+  final pending = Completer<String>(); // import 'dart:async';
+  client.whenMutationWith('messages:send', (_) => pending.future);
+  await tester.tap(find.text('Send'));
+  await tester.pump();
+  expect(tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+      isNull);
+  pending.complete('msg_1');
+  await tester.pump();
+  ```
 - **Live updates**: `emitSubscription` with a new value and `pump()` — the
   widget must re-render (this is the core value of dartvex; test it).
 - **Connection/auth banners**: `emitConnectionStatus` /
@@ -103,3 +130,9 @@ client.emitAuthRefreshing(true);           // ConvexAuthRefreshingBuilder
   asynchronous.
 - Asserting on real-client behaviors (reconnect/backoff) through the fake —
   those are core-SDK concerns, already covered by the SDK's own test suite.
+  Optimistic updates passed to `mutate` are recorded
+  (`mutationCalls.last.optimisticUpdate`) but not applied.
+- Using the fake after `dispose()` — like the real client, every call then
+  throws `ConvexException('ConvexClient has been disposed')`.
+- Stubbing a value that does not fit the widget's type (a `Map` for a
+  `ConvexMutation<String>`) — the widget reports a `ConvexDecodeException`.

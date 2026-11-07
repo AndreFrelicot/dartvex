@@ -60,7 +60,8 @@ class _ConvexProviderState extends State<ConvexProvider>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       final client = widget.client;
-      if (client.currentConnectionState != ConvexConnectionState.connected) {
+      if (client.currentConnectionState != ConvexConnectionState.connected &&
+          !_isNotStartedYet(client)) {
         try {
           unawaited(
             _ignoreDisposedReconnect(client.reconnectNow('AppResumed')),
@@ -74,6 +75,17 @@ class _ConvexProviderState extends State<ConvexProvider>
         }
       }
     }
+  }
+
+  /// Whether [client] is a lazy client (`connectImmediately: false`) that has
+  /// not started yet: still disconnected, never connected, and no connection
+  /// attempt made. `reconnectNow` would start it and open a socket before the
+  /// first backend operation or auth update, contrary to its configuration.
+  static bool _isNotStartedYet(ConvexRuntimeClient client) {
+    final status = client.currentConnectionStatus;
+    return status.state == ConvexConnectionState.disconnected &&
+        !status.hasEverConnected &&
+        status.connectionRetries == 0;
   }
 
   Future<void> _ignoreDisposedReconnect(Future<void> reconnect) async {

@@ -94,7 +94,7 @@ void main() {
     test(
       'a failed connect rejects the future and stays disconnected',
       () async {
-        connectorOverride = (_, __) =>
+        connectorOverride = (_, _) =>
             Future<WebSocket>.error(StateError('refused'));
         await expectLater(
           adapter.connect('wss://example.convex.cloud/sync'),
@@ -257,7 +257,7 @@ void main() {
         final lateSocket = _FakeWebSocket();
         final gate = Completer<WebSocket>();
         final connectorStarted = Completer<void>();
-        connectorOverride = (_, __) {
+        connectorOverride = (_, _) {
           connectorStarted.complete();
           return gate.future;
         };

@@ -2,6 +2,7 @@
 // ignore_for_file: type=lint, unused_element, unused_import, unused_local_variable
 
 import './modules/admin.dart';
+import './modules/events.dart';
 import './modules/kv.dart';
 import './modules/messages.dart';
 import './runtime.dart';
@@ -17,6 +18,7 @@ class ConvexApi {
   final ConvexFunctionCaller _client;
 
   AdminApi get admin => AdminApi(_client);
+  EventsApi get events => EventsApi(_client);
   KvApi get kv => KvApi(_client);
   MessagesApi get messages => MessagesApi(_client);
 
@@ -30,23 +32,16 @@ class ConvexApi {
       'index:health',
       const <String, dynamic>{},
     );
-    final typedStream$ = subscription$.stream.map((event) {
-      switch (event) {
-        case QuerySuccess(:final value):
-          return TypedQuerySuccess<HealthResult>(_decodeHealthResult(value));
-        case QueryLoading(:final hasPendingWrites):
-          return TypedQueryLoading<HealthResult>(
-            hasPendingWrites: hasPendingWrites,
-          );
-        case QueryError(:final message, :final data, :final logLines):
-          return TypedQueryError<HealthResult>(
-            message,
-            data: data,
-            logLines: logLines,
-          );
-      }
-    });
-    return TypedConvexSubscription<HealthResult>(subscription$, typedStream$);
+    return TypedConvexSubscription<HealthResult>(
+      subscription$,
+      subscription$.stream.map(
+        (event$) => typedQueryResult<HealthResult>(
+          event$,
+          (raw$) => _decodeHealthResult(raw$),
+          'index:health',
+        ),
+      ),
+    );
   }
 }
 

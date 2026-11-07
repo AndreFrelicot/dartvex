@@ -138,6 +138,11 @@ class LocalSyncState {
   /// replayed together by [resume]. See [pause].
   bool get isPaused => _paused;
 
+  /// Whether [resume] will emit an [Authenticate] (advancing [authVersion])
+  /// for the auth captured while paused.
+  bool get willEmitAuthOnResume =>
+      _paused && (_pendingAuthModification || _authState != null);
+
   /// Whether every query and auth update that predates the most recent
   /// reconnect has been confirmed by the server.
   ///
@@ -576,10 +581,14 @@ class LocalSyncState {
   /// [udfPath] and JSON-encoded [args].
   ///
   /// Used as the key under which subscriptions to the same query are coalesced.
+  /// Numbers are normalized with [convexToCanonicalJson], so `{'limit': 10}`
+  /// and `{'limit': 10.0}` — the same Convex `float64` on the wire — map to the
+  /// same token on every platform (the Dart VM would otherwise encode them as
+  /// `10` and `10.0`).
   static String serializeQueryToken(String udfPath, Map<String, dynamic> args) {
     final normalized = <String, dynamic>{
       'udfPath': udfPath,
-      'args': convexToJson(args),
+      'args': convexToCanonicalJson(args),
     };
     return jsonEncode(normalized);
   }

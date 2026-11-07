@@ -1,10 +1,9 @@
-import 'dart:async';
-
 import 'package:dartvex/dartvex.dart' show OptimisticUpdate;
 import 'package:flutter/widgets.dart';
 
-import 'provider.dart';
+import 'request_state.dart';
 import 'runtime_client.dart';
+import 'safe_rebuild.dart';
 import 'snapshot.dart';
 
 /// Builder callback for [ConvexMutation].
@@ -16,6 +15,31 @@ typedef ConvexMutationBuilder<T> =
     );
 
 /// Widget that exposes an imperative Convex mutation and request snapshot.
+///
+/// The `mutate` executor is **single-flight**: while a call is in flight
+/// (`snapshot.isLoading`), another call is not sent and its future rejects
+/// with a [StateError] — unnoticed if the future is ignored. A mutation stays
+/// in flight until the server confirms it, which includes the whole time the
+/// client is offline and holds the mutation for the next reconnect. Disable
+/// the trigger while `snapshot.isLoading`, or call
+/// `ConvexProvider.of(context).mutate(...)` directly when several mutations
+/// must be queued concurrently (for example a chat composer that can send
+/// while offline):
+///
+/// ```dart
+/// ConvexMutation<String>(
+///   mutation: 'messages:send',
+///   builder: (context, mutate, snapshot) => FilledButton(
+///     onPressed: snapshot.isLoading ? null : () => mutate({'text': 'Hi'}),
+///     child: const Text('Send'),
+///   ),
+/// )
+/// ```
+///
+/// The executor may be called after the widget is unmounted (for example
+/// from an async callback that awaited an upload first): the mutation is still
+/// sent, only the snapshot is no longer updated. When [decode] throws, the
+/// error is a [ConvexDecodeException] — the mutation itself succeeded.
 class ConvexMutation<T> extends StatefulWidget {
   /// Creates a [ConvexMutation].
   const ConvexMutation({
@@ -49,140 +73,35 @@ class ConvexMutation<T> extends StatefulWidget {
   State<ConvexMutation<T>> createState() => _ConvexMutationState<T>();
 }
 
-class _ConvexMutationState<T> extends State<ConvexMutation<T>> {
-  ConvexRuntimeClient? _runtimeClient;
-  ConvexRequestSnapshot<T> _snapshot = ConvexRequestSnapshot<T>.initial();
-  Future<T>? _inFlight;
-  int _requestGeneration = 0;
+class _ConvexMutationState<T> extends State<ConvexMutation<T>>
+    with
+        ConvexSafeRebuild<ConvexMutation<T>>,
+        ConvexRequestState<ConvexMutation<T>, T> {
+  @override
+  ConvexRuntimeClient? get clientOverride => widget.client;
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final resolvedClient = widget.client ?? ConvexProvider.of(context);
-    if (_runtimeClient == null) {
-      _runtimeClient = resolvedClient;
-      return;
-    }
-    if (_runtimeClient != resolvedClient) {
-      _runtimeClient = resolvedClient;
-      _invalidateRequestState();
-    }
+  String get requestLabel => 'Mutation "${widget.mutation}"';
+
+  @override
+  ConvexDecoder<T>? get decoder => widget.decode;
+
+  @override
+  ConvexRequestCall captureRequest() {
+    final mutationName = widget.mutation;
+    final optimisticUpdate = widget.optimisticUpdate;
+    return (client, args) =>
+        client.mutate(mutationName, args, optimisticUpdate);
   }
 
   @override
   void didUpdateWidget(covariant ConvexMutation<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final resolvedClient = widget.client ?? ConvexProvider.of(context);
-    // decode and optimisticUpdate are captured per request, not part of the
-    // mutation identity — inline closures differ on every parent rebuild and
-    // must not wipe the snapshot or orphan an in-flight request.
-    final identityChanged =
-        oldWidget.mutation != widget.mutation ||
-        _runtimeClient != resolvedClient;
-    _runtimeClient = resolvedClient;
-    if (identityChanged) {
-      _invalidateRequestState();
-    }
-  }
-
-  @override
-  void dispose() {
-    _requestGeneration += 1;
-    super.dispose();
+    updateRequestIdentity(nameChanged: oldWidget.mutation != widget.mutation);
   }
 
   @override
   Widget build(BuildContext context) {
-    return widget.builder(context, _mutate, _snapshot);
-  }
-
-  T _decode(dynamic value, ConvexDecoder<T>? decoder) {
-    if (decoder != null) {
-      return decoder(value);
-    }
-    return value as T;
-  }
-
-  Future<T> _mutate([Map<String, dynamic> args = const <String, dynamic>{}]) {
-    final active = _inFlight;
-    if (active != null) {
-      // ignore() keeps an ignored return value (the normal builder pattern,
-      // where the snapshot carries the state) from surfacing as an unhandled
-      // zone error; awaiting callers still receive the StateError.
-      final rejection = Future<T>.error(
-        StateError('Mutation "${widget.mutation}" is already in progress.'),
-      );
-      rejection.ignore();
-      return rejection;
-    }
-    final completer = Completer<T>();
-    final future = completer.future;
-    // The builder API intentionally lets callers ignore the returned future
-    // and observe failures through the snapshot.
-    future.ignore();
-    _inFlight = future;
-    final generation = ++_requestGeneration;
-    final runtimeClient = _runtimeClient!;
-    final mutationName = widget.mutation;
-    final decoder = widget.decode;
-    final optimisticUpdate = widget.optimisticUpdate;
-    setState(() {
-      _snapshot = _snapshot.copyWith(
-        error: null,
-        isLoading: true,
-        hasError: false,
-      );
-    });
-
-    () async {
-      try {
-        final raw = await runtimeClient.mutate(
-          mutationName,
-          args,
-          optimisticUpdate,
-        );
-        final decoded = _decode(raw, decoder);
-        if (mounted && generation == _requestGeneration) {
-          setState(() {
-            _snapshot = ConvexRequestSnapshot<T>(
-              data: decoded,
-              error: null,
-              isLoading: false,
-              hasData: true,
-              hasError: false,
-            );
-          });
-        }
-        completer.complete(decoded);
-      } catch (error, stackTrace) {
-        if (mounted && generation == _requestGeneration) {
-          setState(() {
-            _snapshot = _snapshot.copyWith(
-              error: error,
-              isLoading: false,
-              hasError: true,
-            );
-          });
-        }
-        completer.completeError(error, stackTrace);
-      } finally {
-        if (generation == _requestGeneration) {
-          _inFlight = null;
-        }
-      }
-    }();
-
-    return future;
-  }
-
-  void _invalidateRequestState() {
-    _requestGeneration += 1;
-    _inFlight = null;
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _snapshot = ConvexRequestSnapshot<T>.initial();
-    });
+    return widget.builder(context, runRequest, requestSnapshot);
   }
 }
