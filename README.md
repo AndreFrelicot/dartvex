@@ -65,9 +65,10 @@ void main() async {
 | [`dartvex_codegen`](packages/dartvex_codegen/) | CLI code generator — type-safe Dart bindings from function validators | 0.3.0 |
 | [`dartvex_local`](packages/dartvex_local/) | Offline support — SQLite cache, mutation queue | 0.3.0 |
 | [`dartvex_auth_better`](packages/dartvex_auth_better/) | Better Auth adapter | 0.3.0 |
+| [`dartvex_auth_convex`](packages/dartvex_auth_convex/) | Convex Auth (`@convex-dev/auth` v2) adapter | 0.1.0 |
 
-Packages are versioned and released independently. Minimum SDKs: `dartvex`
-and `dartvex_auth_better` Dart 3.6, `dartvex_codegen` Dart 3.7,
+Packages are versioned and released independently. Minimum SDKs: `dartvex`,
+`dartvex_auth_better` and `dartvex_auth_convex` Dart 3.6, `dartvex_codegen` Dart 3.7,
 `dartvex_local` Dart 3.10, `dartvex_flutter` Dart 3.10 / Flutter 3.38.1
 (iOS 15 / macOS 12 on Apple platforms).
 
