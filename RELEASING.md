@@ -22,6 +22,7 @@ The release helper uses one git tag per package:
 - `dartvex_codegen-v0.3.0`
 - `dartvex_local-v0.3.0`
 - `dartvex_auth_better-v0.3.0`
+- `dartvex_auth_convex-v0.1.0` (once published)
 
 If older releases were published before tags existed, use `--since-ref=<git-ref>`
 for that release, then start tagging packages after the next publication.
@@ -124,7 +125,8 @@ Typical order:
 2. `dartvex_codegen`
 3. `dartvex_local`
 4. `dartvex_auth_better`
-5. `dartvex_flutter`
+5. `dartvex_auth_convex`
+6. `dartvex_flutter`
 
 The helper will compute the exact order for the selected release set.
 
