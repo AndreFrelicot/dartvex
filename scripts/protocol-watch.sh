@@ -434,8 +434,11 @@ echo "  Latest Rust SDK: $RS_LATEST"
 
 OUR_RS_VERSION="unknown"
 if [ -f "$CACHE_DIR/tracked-rs-version.txt" ]; then
-  OUR_RS_VERSION=$(cat "$CACHE_DIR/tracked-rs-version.txt")
+  OUR_RS_VERSION=$(tr -d '[:space:]' <"$CACHE_DIR/tracked-rs-version.txt")
 fi
+# Older versions of this script cached an empty value when the tags API
+# failed; treat it as "no previous run" rather than as a version change.
+OUR_RS_VERSION=${OUR_RS_VERSION:-unknown}
 echo "  Previous run:    $OUR_RS_VERSION"
 
 if [ "$RS_LATEST" = "unknown" ]; then
