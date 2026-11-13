@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `ConvexBetterAuthProvider.login()` clears `password` once it is used:
+  after signing in and after a failure that retrying cannot fix (wrong
+  credentials, a superseded sign-in). A retryable failure keeps it so the
+  same `login()` can be retried. Set `password` before every `login()`.
+
 ## [0.3.0] - 2026-11-05
 
 ### Fixed
