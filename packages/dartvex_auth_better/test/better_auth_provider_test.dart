@@ -118,6 +118,108 @@ void main() {
       expect(provider.cachedSession, isNotNull);
     });
 
+    group('password lifetime', () {
+      MockClient signInAnswering(http.Response Function() answer) =>
+          MockClient((request) async {
+            if (request.url.path == '/api/auth/sign-in/email') {
+              return answer();
+            }
+            return http.Response('{}', 404);
+          });
+
+      test('login forgets the password once signed in', () async {
+        final client =
+            BetterAuthClient(baseUrl: baseUrl, httpClient: buildMock());
+        final provider = ConvexBetterAuthProvider(client: client)
+          ..email = 'alice@example.com'
+          ..password = 'password123';
+
+        await provider.login(onIdToken: (_) {});
+
+        expect(provider.password, isNull);
+        expect(provider.email, 'alice@example.com');
+      });
+
+      test('login after signUp forgets the password', () async {
+        final client =
+            BetterAuthClient(baseUrl: baseUrl, httpClient: buildMock());
+        final provider = ConvexBetterAuthProvider(client: client);
+
+        await provider.signUp(
+          name: 'Alice',
+          email: 'alice@example.com',
+          password: 'password123',
+        );
+        await provider.login(onIdToken: (_) {});
+
+        expect(provider.password, isNull);
+      });
+
+      test('a rejected sign-in forgets the password', () async {
+        final client = BetterAuthClient(
+          baseUrl: baseUrl,
+          httpClient: signInAnswering(
+            () => http.Response('{"message":"Invalid password"}', 401),
+          ),
+        );
+        final provider = ConvexBetterAuthProvider(client: client)
+          ..email = 'alice@example.com'
+          ..password = 'wrong';
+
+        await expectLater(
+          provider.login(onIdToken: (_) {}),
+          throwsA(isA<BetterAuthException>()
+              .having((e) => e.retryable, 'retryable', isFalse)),
+        );
+        expect(provider.password, isNull);
+      });
+
+      test('a retryable failure keeps the password for a retry', () async {
+        final client = BetterAuthClient(
+          baseUrl: baseUrl,
+          httpClient: signInAnswering(() => http.Response('busy', 503)),
+        );
+        final provider = ConvexBetterAuthProvider(client: client)
+          ..email = 'alice@example.com'
+          ..password = 'password123';
+
+        await expectLater(
+          provider.login(onIdToken: (_) {}),
+          throwsA(isA<BetterAuthException>()
+              .having((e) => e.retryable, 'retryable', isTrue)),
+        );
+        expect(provider.password, 'password123');
+      });
+
+      test('a password set for a newer login is not cleared', () async {
+        final gate = Completer<void>();
+        final inner = buildMock();
+        final gated = BetterAuthClient(
+          baseUrl: baseUrl,
+          httpClient: MockClient((request) async {
+            if (request.url.path == '/api/auth/sign-in/email') {
+              await gate.future;
+            }
+            final copy = http.Request(request.method, request.url)
+              ..headers.addAll(request.headers)
+              ..bodyBytes = request.bodyBytes;
+            return http.Response.fromStream(await inner.send(copy));
+          }),
+        );
+        final provider = ConvexBetterAuthProvider(client: gated)
+          ..email = 'alice@example.com'
+          ..password = 'first';
+
+        final first = provider.login(onIdToken: (_) {});
+        await Future<void>.delayed(Duration.zero);
+        provider.password = 'second';
+        gate.complete();
+        await first;
+
+        expect(provider.password, 'second');
+      });
+    });
+
     test('login throws when credentials not set', () async {
       final mock = buildMock();
       final client = BetterAuthClient(baseUrl: baseUrl, httpClient: mock);

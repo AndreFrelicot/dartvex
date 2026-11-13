@@ -193,6 +193,7 @@ class QuerySuccess extends QueryResult {
     this.value, {
     this.logLines = const <String>[],
     this.hasPendingWrites = false,
+    this.fromCache = false,
   });
 
   /// Returned query value.
@@ -203,6 +204,16 @@ class QuerySuccess extends QueryResult {
 
   /// Whether optimistic writes are currently affecting this query result.
   final bool hasPendingWrites;
+
+  /// Whether this is the warm seed of a new subscription: the result cached
+  /// when an earlier subscription to the same query was cancelled.
+  ///
+  /// The server has not confirmed it for this subscription yet and it may be
+  /// stale; a server result (with `fromCache: false`) follows. Skip it when
+  /// you need a fresh value, for example with
+  /// `client.watch(name, args, skipCached: true)` or a one-shot
+  /// `ConvexClient.query`, which never reads this cache.
+  final bool fromCache;
 }
 
 /// Query result representing an intentionally cleared/loading value.
@@ -221,6 +232,7 @@ class QueryError extends QueryResult {
     this.message, {
     this.data,
     this.logLines = const <String>[],
+    this.fromCache = false,
   });
 
   /// Human-readable error message.
@@ -231,6 +243,11 @@ class QueryError extends QueryResult {
 
   /// Optional log lines attached to the query failure.
   final List<String> logLines;
+
+  /// Whether this error is the warm seed of a new subscription, cached when
+  /// an earlier subscription to the same query was cancelled. See
+  /// [QuerySuccess.fromCache].
+  final bool fromCache;
 }
 
 /// Handle for a live Convex query subscription.
@@ -858,7 +875,8 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   /// the best local result already known — an optimistic value, the live
   /// result of an identical active subscription, or the last result cached
   /// after an earlier subscription to the same query was cancelled (a warm
-  /// seed that the server then refreshes) — followed by live updates. Call
+  /// seed that the server then refreshes, marked with
+  /// [QuerySuccess.fromCache]) — followed by live updates. Call
   /// [ConvexSubscription.cancel] to unsubscribe.
   ConvexSubscription subscribe(
     String name, [
@@ -982,10 +1000,16 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       return QueryLoading(hasPendingWrites: hasPendingWrites);
     }
     final StoredQueryResult? initial;
+    var fromCache = false;
     if (seedFromCache) {
+      final current = _baseClient.currentResultForQuery(queryId);
       initial = _baseClient.optimisticResultForQuery(name, args) ??
-          _baseClient.currentResultForQuery(queryId) ??
+          current ??
           _baseClient.cachedResultForQuery(name, args);
+      // Neither the server's current result for this query nor an optimistic
+      // overlay: a result left over from an earlier subscription (the
+      // optimistic view and the seed cache both keep it after unsubscribe).
+      fromCache = initial != null && current == null && !hasPendingWrites;
     } else {
       initial = (hasPendingWrites
               ? _baseClient.optimisticResultForQuery(name, args)
@@ -995,7 +1019,11 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     if (initial == null) {
       return null;
     }
-    return _toPublicQueryResult(initial, hasPendingWrites: hasPendingWrites);
+    return _toPublicQueryResult(
+      initial,
+      hasPendingWrites: hasPendingWrites,
+      fromCache: fromCache,
+    );
   }
 
   @override
@@ -1600,6 +1628,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   QueryResult _toPublicQueryResult(
     StoredQueryResult result, {
     bool hasPendingWrites = false,
+    bool fromCache = false,
   }) {
     switch (result) {
       case StoredQuerySuccess():
@@ -1607,6 +1636,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
           result.value,
           logLines: result.logLines,
           hasPendingWrites: hasPendingWrites,
+          fromCache: fromCache,
         );
       case StoredQueryLoading():
         return QueryLoading(hasPendingWrites: hasPendingWrites);
@@ -1615,6 +1645,7 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
           result.message,
           data: result.data,
           logLines: result.logLines,
+          fromCache: fromCache,
         );
     }
   }

@@ -48,6 +48,48 @@ ConvexQuery<List<Message>>(
   changing them resubscribes; an inline `decode` closure does NOT — but a
   *changed* decoder re-decodes the latest data.
 
+### Cached seed of a new subscription
+
+When a query was subscribed earlier and then cancelled, the client keeps its
+last result. A new subscription to the same query (same name and args) first
+receives that result, then the server's. Until the server answers, the
+cached value can be stale: a list read this way can miss the item created
+just before.
+
+- `ConvexQuery` shows it as a fast first frame; `snapshot.source` is
+  `ConvexQuerySource.cache` for it (with `hasPendingWrites == false`).
+- In core Dart the result has `QuerySuccess.fromCache == true` (or
+  `QueryError.fromCache`).
+- For a value you act on (navigation, a decision), skip it: use
+  `watch(..., skipCached: true).first` below, or a one-shot
+  `client.query(...)`, which never reads this cache.
+
+## Outside widgets — watch
+
+For controllers, repositories and services, `watch` turns a live query into
+a decoded `Stream<T>`. It subscribes on listen and unsubscribes on cancel, so
+`first`, `take` and `await for` release the subscription. Errors arrive as
+stream errors (`ConvexException`) and loading events are skipped.
+
+```dart
+// ConvexProvider.of(context) (a ConvexRuntimeClient), a ConvexClient or a
+// ConvexClientWithAuth: same signature.
+final Stream<List<Message>> messages = client.watch(
+  'messages:list',
+  {'channel': 'general'},
+  decode: (value) => [
+    for (final m in value as List) Message.fromJson(m as Map<String, dynamic>),
+  ],
+);
+
+// The current server value, never the cached seed:
+final latest = await client.watch<List<dynamic>>(
+  'conversations:list',
+  const {},
+  skipCached: true,
+).first;
+```
+
 ## Writes — ConvexMutation / ConvexAction
 
 `T` must match what the function returns: the quickstart's `messages:send`
@@ -171,6 +213,9 @@ backoff), construct the client with
   state deliberately.
 - Doing writes in `decode`/`builder` — keep them pure; side effects belong
   in `mutate` callbacks.
+- Reading `.first` of a fresh subscription as the server's current value —
+  it can be the cached seed. Use `watch(..., skipCached: true).first` or
+  `client.query(...)`.
 - Showing "offline" from `status.isLoading` — it stays `false` while
   disconnected. Use `!status.isWebSocketConnected` (with `hasEverConnected`
   to tell "connecting" from "offline"), or `isConnected` for "online".

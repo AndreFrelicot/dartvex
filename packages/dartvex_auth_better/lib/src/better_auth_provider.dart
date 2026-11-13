@@ -68,9 +68,13 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
   /// Cleared by [logout].
   String? email;
 
-  /// Password paired with [email] for future [login] calls.
+  /// Password paired with [email] for the next [login] call.
   ///
-  /// Cleared by [logout].
+  /// Not kept in memory longer than needed: [login] clears it once it has
+  /// signed in, and after a failure that retrying cannot fix (wrong
+  /// credentials, a superseded sign-in). Only a retryable failure (network,
+  /// 5xx, …) keeps it, so the same `login()` can be retried. Set it again
+  /// before every [login]. Also cleared by [logout].
   String? password;
 
   @override
@@ -105,16 +109,34 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
       password: p,
     );
     if (pendingSession != null) {
+      _forgetPassword(p);
       _commitSession(pendingSession);
       onIdToken(pendingSession.token);
       return pendingSession;
     }
     final epoch = ++_sessionEpoch;
     _adoptedSession = null;
-    final session = await client.signIn(email: e, password: p);
-    _commitIfCurrent(epoch, session, operation: 'login()');
+    final BetterAuthSession session;
+    try {
+      session = await client.signIn(email: e, password: p);
+      _commitIfCurrent(epoch, session, operation: 'login()');
+    } catch (error) {
+      if (error is! BetterAuthException || !error.retryable) {
+        _forgetPassword(p);
+      }
+      rethrow;
+    }
+    _forgetPassword(p);
     onIdToken(session.token);
     return session;
+  }
+
+  /// Clears [password] unless the app already set a different one for a
+  /// newer [login].
+  void _forgetPassword(String used) {
+    if (password == used) {
+      password = null;
+    }
   }
 
   @override

@@ -1,12 +1,18 @@
 /// Flutter widgets and runtime adapters for building reactive Convex UIs.
 library;
 
-// Re-exported from the core package so optimistic updates, paginated query
-// results, and the transport override seams (the documented opt-out from the
+// Re-exported from the core package so auth states (for ConvexAuthBuilder),
+// optimistic updates, paginated query results, and the transport override seams (the documented opt-out from the
 // NSURLSession transports) can be used with a single `dartvex_flutter` import.
 export 'package:dartvex/dartvex.dart'
     show
+        AuthAuthenticated,
+        AuthLoading,
+        AuthSessionEndedError,
+        AuthState,
+        AuthUnauthenticated,
         ConnectionStatus,
+        ConvexAuthClient,
         ConvexPaginatedResult,
         ConvexPaginationStatus,
         ConvexStorageException,
@@ -65,6 +71,7 @@ export 'src/paginated_query_builder.dart'
         PaginationStatus;
 export 'src/provider.dart' show ConvexProvider;
 export 'src/query_builder.dart' show ConvexQuery, ConvexQueryWidgetBuilder;
+export 'src/runtime_watch.dart' show ConvexRuntimeWatch;
 export 'src/runtime_client.dart'
     show
         ConvexClientRuntime,
@@ -86,6 +93,7 @@ export 'src/snapshot.dart'
         ConvexQuerySource,
         ConvexRequestExecutor,
         ConvexRequestSnapshot;
+export 'src/testing/fake_convex_auth_client.dart' show FakeConvexAuthClient;
 export 'src/testing/fake_convex_client.dart'
     show
         FakeConvexCall,
