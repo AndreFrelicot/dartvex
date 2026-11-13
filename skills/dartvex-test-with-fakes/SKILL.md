@@ -30,6 +30,7 @@ dev_dependencies:
 ```dart
 import 'package:dartvex/dartvex.dart' show ConvexException;
 import 'package:dartvex_flutter/dartvex_flutter.dart';
+// dartvex_flutter also re-exports AuthState and its subclasses.
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -89,6 +90,41 @@ client.emitConnectionStatus(richStatus);   // ConvexConnectionStatusBuilder
 client.emitAuthRefreshing(true);           // ConvexAuthRefreshingBuilder
 ```
 
+## Auth flows — FakeConvexAuthClient
+
+`FakeConvexAuthClient<T>` stands in for `ConvexClientWithAuth<T>` (any
+`ConvexAuthClient<T>`): script each auth call, push states, count calls.
+Function calls and the connection state go to its `FakeConvexClient`.
+
+```dart
+final convex = FakeConvexClient()..whenQuery('users:me', returns: me);
+final auth = FakeConvexAuthClient<Session>(client: convex)
+  ..onLoginFromCache = () => session          // or throw to fail
+  ..onLogin = () => throw StateError('wrong password');
+
+await tester.pumpWidget(
+  ConvexProvider(
+    client: convex,
+    child: ConvexAuthProvider<Session>(client: auth, child: const MyApp()),
+  ),
+);
+
+await auth.loginFromCache();       // AuthLoading, then AuthAuthenticated
+await tester.pump();
+expect(auth.loginFromCacheCalls, 1);
+auth.emit(const AuthUnauthenticated<Session>()); // e.g. session revoked
+```
+
+It follows the real wrapper's rules: a failing `login`/`loginFromCache`
+keeps a previous `AuthAuthenticated` state unless the error implements
+`AuthSessionEndedError`; without `onLoginFromCache` it fails like a provider
+with no stored session; `logout()` and `clearAuth()` end signed out.
+
+To test code that consumes `watch(...)` streams, use the fake as is:
+`FakeConvexClient().watch(...)` emits what `emitSubscription` pushes. Push
+`source: ConvexQuerySource.cache` (without `hasPendingWrites`) to simulate
+the cached seed that `skipCached: true` drops.
+
 ## What to cover
 
 - **Loading state**: before any result is stubbed/pushed, `ConvexQuery`
@@ -110,6 +146,8 @@ client.emitAuthRefreshing(true);           // ConvexAuthRefreshingBuilder
   ```
 - **Live updates**: `emitSubscription` with a new value and `pump()` — the
   widget must re-render (this is the core value of dartvex; test it).
+- **Auth screens**: `FakeConvexAuthClient` for signed-out, loading,
+  failed-login and session-ended branches.
 - **Connection/auth banners**: `emitConnectionStatus` /
   `emitAuthRefreshing` drive the indicator widgets deterministically.
 
