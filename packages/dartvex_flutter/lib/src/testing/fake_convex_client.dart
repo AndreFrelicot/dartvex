@@ -620,22 +620,32 @@ class FakeConvexSubscription implements ConvexRuntimeSubscription {
 
   /// Delivers [event] to listeners unless the subscription is closed.
   void emit(ConvexRuntimeQueryEvent event) {
-    if (!_controller.isClosed) {
+    if (!_canceled && !_controller.isClosed) {
       _controller.add(event);
     }
   }
 
   /// Closes the stream without unregistering (used on client dispose).
-  void close() {
-    unawaited(_controller.close());
-  }
+  void close() => _closeSoon();
 
   @override
   void cancel() {
     if (_canceled) return;
     _canceled = true;
     _onCancel?.call();
-    unawaited(_controller.close());
+    _closeSoon();
+  }
+
+  /// Closes the controller once the event being delivered (if any) is done:
+  /// a listener of the synchronous controller may cancel from its callback,
+  /// for example the `await stream.first` continuation, and closing a
+  /// broadcast controller while it fires throws.
+  void _closeSoon() {
+    scheduleMicrotask(() {
+      if (!_controller.isClosed) {
+        unawaited(_controller.close());
+      }
+    });
   }
 }
 
@@ -685,6 +695,7 @@ class _FakeFunctionCaller implements ConvexFunctionCaller {
               value,
               logLines: logLines,
               hasPendingWrites: event.hasPendingWrites,
+              fromCache: _isCachedSeed(event),
             ),
           ConvexRuntimeQueryLoading() => QueryLoading(
             hasPendingWrites: event.hasPendingWrites,
@@ -692,6 +703,7 @@ class _FakeFunctionCaller implements ConvexFunctionCaller {
           ConvexRuntimeQueryError(:final error) => QueryError(
             error is ConvexException ? error.message : error.toString(),
             data: error is ConvexException ? error.data : null,
+            fromCache: _isCachedSeed(event),
           ),
         },
       ),
@@ -710,4 +722,9 @@ class _FakeFunctionCaller implements ConvexFunctionCaller {
       'use FakeConvexClient.paginatedQuery (PaginatedQueryBuilder) instead.',
     );
   }
+
+  /// A cache-sourced event without pending writes is a cached seed (see
+  /// [ConvexQuerySource]).
+  static bool _isCachedSeed(ConvexRuntimeQueryEvent event) =>
+      event.source == ConvexQuerySource.cache && !event.hasPendingWrites;
 }

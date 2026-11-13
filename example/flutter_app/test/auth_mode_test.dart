@@ -276,6 +276,9 @@ class _FakeDemoAuthClient implements convex.ConvexAuthClient<DemoUserSession> {
   Future<void> logout() async {}
 
   @override
+  Future<void> clearAuth() async {}
+
+  @override
   Future<dynamic> mutate(
     String name, [
     Map<String, dynamic> args = const <String, dynamic>{},
