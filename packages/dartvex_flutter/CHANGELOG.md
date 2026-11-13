@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `FakeConvexAuthClient<T>`: a scriptable `ConvexAuthClient` for tests
+  (`onLogin`, `onLoginFromCache`, `onLogout`, `emit`, call counters), with
+  function calls and connection state served by a `FakeConvexClient`.
+- `ConvexRuntimeWatch.watch<T>(name, args, {decode, skipCached})` on
+  `ConvexRuntimeClient` (`ConvexProvider.of(context)`, `FakeConvexClient`):
+  a decoded `Stream<T>` of a live query that unsubscribes on cancel.
+- Re-exports `AuthState`, `AuthLoading`, `AuthAuthenticated`,
+  `AuthUnauthenticated`, `AuthSessionEndedError` and `ConvexAuthClient`, so
+  a `ConvexAuthBuilder` switch compiles with the `dartvex_flutter` import
+  alone.
+
+### Changed
+
+- With `ConvexClientRuntime`, the warm seed of a new subscription (a result
+  kept after an earlier subscription to the same query was cancelled) is now
+  reported with `ConvexQuerySource.cache` instead of `remote`; the server's
+  result follows as `remote`.
+
+### Fixed
+
+- `FakeConvexSubscription.cancel()` called while the subscription delivers
+  an event (for example after `await subscription.stream.first` through
+  `functionCaller`) no longer throws "Cannot fire new event".
+
 ## [0.3.0] - 2026-11-05
 
 ### Added

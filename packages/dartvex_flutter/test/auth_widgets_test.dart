@@ -1,4 +1,3 @@
-import 'package:dartvex/dartvex.dart';
 import 'package:dartvex_flutter/dartvex_flutter.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';

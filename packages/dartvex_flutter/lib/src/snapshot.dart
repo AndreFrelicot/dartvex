@@ -7,19 +7,22 @@ typedef ConvexRequestExecutor<T> =
 
 /// Indicates where a query result originated.
 ///
-/// With `ConvexClientRuntime`, the source only reflects optimistic writes:
-/// a result that includes pending optimistic updates is [cache], and every
-/// other result is [remote]. That includes the value a new subscription is
-/// seeded with from the core client's recently-unsubscribed cache, which can
-/// be stale until the server's next result arrives; the core does not mark
-/// those values, so do not use [remote] as a freshness signal.
+/// With `ConvexClientRuntime`, a query value or error is [cache] in two cases:
+///
+/// - it includes pending optimistic updates (`hasPendingWrites` is `true`);
+/// - it is the warm seed of a new subscription: the result cached when an
+///   earlier subscription to the same query was cancelled
+///   (`QuerySuccess.fromCache` in the core). It can be stale until the
+///   server's next result, which arrives as [remote].
+///
+/// Every other value is [remote]. Use `hasPendingWrites` to tell the two
+/// [cache] cases apart, and `watch(..., skipCached: true)` to skip the seed.
 enum ConvexQuerySource {
-  /// The value came from the remote backend (see the type documentation for
-  /// the cached seed caveat).
+  /// The value came from the remote backend.
   remote,
 
-  /// The value came from local cache state (with `ConvexClientRuntime`: it
-  /// includes pending optimistic updates).
+  /// The value came from local state: an optimistic value or the cached seed
+  /// of a new subscription (see the type documentation).
   cache,
 
   /// The source could not be determined.
