@@ -45,6 +45,7 @@ export 'src/sync/remote_query_set.dart'
         StoredQueryResult,
         StoredQuerySuccess;
 export 'src/transport/connectivity.dart' show ConnectivitySignal;
+export 'src/watch.dart' show ConvexWatch;
 export 'src/transport/http_factory.dart'
     show createDefaultHttpClient, defaultHttpClientFactory;
 export 'src/transport/ws_factory.dart'
