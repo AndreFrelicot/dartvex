@@ -22,7 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     once the stored session was removed. `sessionSaved` completes when the
     queued saves are done. A save that failed is made again at the next
     change, and `logout()` throws when the stored session could not be
-    removed (calling it again retries the removal).
+    removed (calling it again retries the removal). Several `logout()` calls
+    made at once share one removal and get the same result.
   - A background refresh is tied to the session it refreshes: when the
     server reports that session gone, a `login()` to another one that is
     still in flight goes on.

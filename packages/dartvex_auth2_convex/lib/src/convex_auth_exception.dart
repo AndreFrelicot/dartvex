@@ -48,9 +48,15 @@ class ConvexAuthException extends ConvexException {
 /// `{error: "RATE_LIMITED", retryAfterMs: 30000}`; [code] is its `error`
 /// field. The codes are defined by each sign-in method of `@convex-dev/auth`.
 ///
-/// [message] and [toString] only name the function and the [code], so they
-/// are safe to log. Anything else the server answered, including an `error`
-/// that is free text instead of a code, is only in [userError].
+/// [message] and [toString] name the function and the [code], nothing else
+/// the server answered. With the sign-in methods of `@convex-dev/auth` the
+/// code is one of a fixed list of identifiers, so both are safe to log.
+///
+/// A sign-in function of your own decides what its `error` holds. The
+/// adapter cannot tell a code from another short word (a username, for
+/// example): any value shaped like a code is copied into [message] and
+/// [toString]. Only put fixed identifiers in `error`, and keep what the user
+/// typed in other fields of [userError], which are never logged.
 class ConvexAuthSignInException extends ConvexAuthException {
   /// Creates a sign-in rejection for [function] with the server's
   /// [userError].
@@ -75,7 +81,8 @@ class ConvexAuthSignInException extends ConvexAuthException {
   /// underscores, starting with a letter, 64 characters at most. A sign-in
   /// function of your own that puts a sentence in `error` gets `null` here,
   /// so that text (which may quote what the user typed) cannot reach a log
-  /// through [message]; read it from [userError].
+  /// through [message]; read it from [userError]. The shape is the only
+  /// check: a single word in `error` is returned, whatever it means.
   String? get code => _codeOf(data);
 
   /// How long to wait before trying again, when the server rate-limited the
