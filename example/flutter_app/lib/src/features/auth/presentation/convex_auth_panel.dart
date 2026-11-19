@@ -58,7 +58,9 @@ class _ConvexAuthPanelState extends State<ConvexAuthPanel>
     operation,
   ) async {
     final authClient = widget.authClient;
-    if (authClient == null) return;
+    // One operation at a time: the keyboard's submit action stays active
+    // while the buttons are disabled.
+    if (authClient == null || _isLoading) return;
 
     setState(() {
       _isLoading = true;
@@ -478,14 +480,25 @@ class ConvexAuthSetupPanel extends StatelessWidget {
           const SizedBox(height: 8),
           const _ChecklistItem(
             number: '2',
-            title: 'Deploy',
+            title: 'Set DEMO_JWKS (new deployment)',
             detail:
-                'npx convex dev   # or npx convex deploy\n'
-                'No secret to set: tokens are signed by the deployment.',
+                'npm run demo:key\n'
+                'npx convex dev   # configures the deployment, then stops\n'
+                'Run the printed "npx convex env set DEMO_JWKS ..." command.\n'
+                'Convex needs it to accept the backend, whatever the mode.',
           ),
           const SizedBox(height: 8),
           const _ChecklistItem(
             number: '3',
+            title: 'Deploy',
+            detail:
+                'npx convex dev   # or npx convex deploy\n'
+                'Convex Auth has no secret: tokens are signed by the '
+                'deployment.',
+          ),
+          const SizedBox(height: 8),
+          const _ChecklistItem(
+            number: '4',
             title: 'Run the demo',
             detail:
                 'flutter run '

@@ -435,6 +435,8 @@ await authedClient.logout(); // revokes the session, saves null
   refresh replaces the refresh token. Write `session.toJson()` to secure
   storage in `onSessionChanged` (it may be async; saves run in order) and
   delete it on `null`. A stored token two rotations old ends the session.
+  `logout()` throws the callback's error when the stored session could not
+  be removed (a restart would restore it): call `logout()` again to retry.
 - **Functions elsewhere than `convex/auth.ts`?** Pass their paths:
   `refreshSessionFunction`, `signOutFunction`, and `function:` on each
   `ConvexAuthSignIn`.

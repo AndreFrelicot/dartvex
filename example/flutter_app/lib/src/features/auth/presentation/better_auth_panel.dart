@@ -39,7 +39,9 @@ class _BetterAuthPanelState extends State<BetterAuthPanel>
 
   Future<void> _submit() async {
     final authClient = widget.authClient;
-    if (authClient == null) return;
+    // One request at a time: the keyboard's submit action stays active while
+    // the button is disabled.
+    if (authClient == null || _isLoading) return;
 
     setState(() {
       _isLoading = true;

@@ -45,9 +45,10 @@ npm install
 
 ## Convex Auth
 
-The Flutter app's Convex Auth mode needs no secret and no environment
-variable: access tokens are signed by the deployment itself. Deploying the
-backend (`npx convex dev`) is enough.
+The Flutter app's Convex Auth mode needs no secret and no variable of its
+own: access tokens are signed by the deployment itself. Once the backend is
+deployed (see [Run locally](#run-locally), which needs `DEMO_JWKS` set on a
+new deployment), the mode works.
 
 | File | Role |
 |------|------|
@@ -71,11 +72,14 @@ Two things differ from a backend that only uses Convex Auth:
   one-minute token is still valid. The demo JWT and Better Auth keep using
   `tokenIdentifier`, which is stable for them.
 
-## Optional demo JWT provider
+## Demo JWT provider
 
-Better Auth and Convex Auth work without this step. Use the custom JWT provider only when you
-want to run the Flutter app's Demo auth mode or the SDK auth integration tests
-with a static token.
+The custom JWT provider backs the Flutter app's Demo auth mode and the SDK
+auth integration tests. Better Auth and Convex Auth do not use it, but its
+public key set, `DEMO_JWKS`, has to be set before the backend can be deployed
+at all: `convex/auth.config.ts` reads the variable, and Convex refuses a
+config that reads an unset one (`Environment variable DEMO_JWKS is used in
+auth config file but its value was not set`).
 
 Generate local demo JWT material:
 
@@ -124,6 +128,10 @@ result still uses the placeholder URL before committing.
 ```bash
 npx convex dev
 ```
+
+On a new deployment, the first run configures it and then stops because
+`DEMO_JWKS` is not set. Set it as described in
+[Demo JWT provider](#demo-jwt-provider), then run `npx convex dev` again.
 
 ## Generate a demo JWT
 

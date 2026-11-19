@@ -180,6 +180,49 @@ void main() {
       expect(harness.store.session, isNull);
     });
 
+    testWidgets('submitting twice from the keyboard sends one request', (
+      tester,
+    ) async {
+      final gate = Completer<void>();
+      final harness = _Harness((path, args) async {
+        await gate.future;
+        return <String, Object?>{
+          'status': 'complete',
+          'tokens': _bundle('a', session: 's1'),
+        };
+      });
+      addTearDown(harness.dispose);
+      await tester.pumpWidget(harness.build());
+
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('convex-auth-username')),
+        'ada',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('convex-auth-password')),
+        'correct horse battery',
+      );
+      // The button is disabled while the request is in flight, but the
+      // keyboard's submit action is not.
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pump();
+      // Submitting drops the focus: go back to the field and submit again.
+      await tester.showKeyboard(
+        find.byKey(const ValueKey<String>('convex-auth-password')),
+      );
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(harness.calls, hasLength(1));
+
+      gate.complete();
+      await tester.pumpAndSettle();
+
+      expect(harness.calls, hasLength(1));
+      expect(find.text('Auth: Signed in'), findsOneWidget);
+      expect(find.text('Token rotations: 0'), findsOneWidget);
+    });
+
     testWidgets('offers to restore a saved session that is not live', (
       tester,
     ) async {
@@ -219,6 +262,7 @@ void main() {
       expect(find.text('Convex Auth Not Configured'), findsOneWidget);
       expect(find.text('Plain HTTP refused.'), findsOneWidget);
       expect(find.text('Install the backend'), findsOneWidget);
+      expect(find.text('Set DEMO_JWKS (new deployment)'), findsOneWidget);
       expect(find.text('Deploy'), findsOneWidget);
       expect(find.text('Run the demo'), findsOneWidget);
     });
@@ -271,7 +315,8 @@ typedef _Call = ({String path, Map<String, dynamic> args});
 /// auth client that drives the provider like `ConvexClientWithAuth` does.
 class _Harness {
   _Harness(
-    Object? Function(String path, Map<String, dynamic> args) handler, {
+    FutureOr<Object?> Function(String path, Map<String, dynamic> args)
+    handler, {
     ConvexAuthSession? initialSession,
   }) {
     if (initialSession != null) {
@@ -288,7 +333,7 @@ class _Harness {
           return http.Response(
             jsonEncode(<String, Object?>{
               'status': 'success',
-              'value': handler(path, args),
+              'value': await handler(path, args),
             }),
             200,
             headers: <String, String>{'content-type': 'application/json'},

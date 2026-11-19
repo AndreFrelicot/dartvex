@@ -42,24 +42,26 @@ committed `package-lock.json`.
 ```bash
 cd example/convex-backend
 npm install
+npm run demo:key   # prints an `npx convex env set DEMO_JWKS ...` command
 npx convex dev
 ```
+
+On a new deployment the first `npx convex dev` configures it, then stops with
+`Environment variable DEMO_JWKS is used in auth config file but its value was
+not set`: `convex/auth.config.ts` reads that variable for the Demo auth mode,
+and Convex refuses a config that reads an unset variable, whichever auth mode
+you intend to use. Run the command `npm run demo:key` printed, then
+`npx convex dev` again. This is needed once per deployment.
+
+`npm run demo:key` writes the private key to gitignored `.env` (it is never
+printed); only the public key set goes to Convex.
 
 ## Generate a demo JWT
 
 Demo auth uses a custom JWT provider. Better Auth, Convex Auth and the public
-screens work without this step, but the Flutter app's Demo auth mode needs a
-token generated from local key material.
-
-```bash
-cd example/convex-backend
-npm run demo:key
-```
-
-The script writes the private key to gitignored `.env` (it is never printed)
-and prints the matching `npx convex env set DEMO_JWKS ...` command. Run that
-command once for your deployment, then generate a token when launching
-Flutter. A token expires after 24 hours:
+screens need no token, but the Flutter app's Demo auth mode needs one,
+generated from the key material above when launching Flutter. A token expires
+after 24 hours:
 
 ```bash
 npm run -s token

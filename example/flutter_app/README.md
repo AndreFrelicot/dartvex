@@ -188,6 +188,9 @@ needed — credentials are stored in the Convex database.
    npx convex dev   # or npx convex deploy
    ```
 
+   A new deployment also needs `DEMO_JWKS` before it accepts the backend,
+   even for this mode: see steps 1 and 2 of [Demo mode](#demo-mode-default).
+
 5. Run the demo (no extra `--dart-define` needed beyond `CONVEX_DEMO_URL`):
 
    ```bash
@@ -207,14 +210,21 @@ is no email to verify.
 
 #### Setup
 
-Nothing beyond the backend itself: the committed `package-lock.json` pins
-`@convex-dev/auth` 2.0.0, and access tokens are signed by the deployment, so
-there is no secret to set.
+Convex Auth itself needs nothing beyond the backend: the committed
+`package-lock.json` pins `@convex-dev/auth` 2.0.0, and access tokens are
+signed by the deployment, so there is no secret to set for it.
+
+The backend as a whole needs one variable before a new deployment accepts
+it: `DEMO_JWKS`, the public key set of the Demo mode, which
+`convex/auth.config.ts` reads.
 
 ```bash
 cd example/convex-backend
 npm install
-npx convex dev   # or npx convex deploy
+npm run demo:key   # prints an `npx convex env set DEMO_JWKS ...` command
+npx convex dev     # new deployment: configures it, then stops on DEMO_JWKS
+# run the printed `npx convex env set DEMO_JWKS ...` command, then:
+npx convex dev     # or npx convex deploy
 
 cd ../flutter_app
 flutter run \
