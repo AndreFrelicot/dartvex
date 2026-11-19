@@ -114,6 +114,8 @@ sub.stream.listen((result) {
   }
 });
 // Later: sub.cancel();
+// result.fromCache is true for the cached seed a new subscription replays
+// first (it may be stale; the server's result follows).
 ```
 
 Optional arguments are `Optional<T>` (`Optional.of(v)` / omitted), so

@@ -37,6 +37,62 @@ void main() {
       );
     });
 
+    test('forwards fromCache on a cached seed', () {
+      final success = typedQueryResult<String>(
+        const QuerySuccess('sent', fromCache: true),
+        decodeStatus,
+        'messages:status',
+      );
+      final undecodable = typedQueryResult<String>(
+        const QuerySuccess('archived', fromCache: true),
+        decodeStatus,
+        'messages:status',
+      );
+      final error = typedQueryResult<String>(
+        const QueryError('boom', fromCache: true),
+        decodeStatus,
+        'messages:status',
+      );
+      final live = typedQueryResult<String>(
+        const QuerySuccess('sent'),
+        decodeStatus,
+        'messages:status',
+      );
+
+      expect(
+        success,
+        isA<TypedQuerySuccess<String>>().having(
+          (result) => result.fromCache,
+          'fromCache',
+          isTrue,
+        ),
+      );
+      expect(
+        undecodable,
+        isA<TypedQueryError<String>>().having(
+          (result) => result.fromCache,
+          'fromCache',
+          isTrue,
+        ),
+      );
+      expect(
+        error,
+        isA<TypedQueryError<String>>().having(
+          (result) => result.fromCache,
+          'fromCache',
+          isTrue,
+        ),
+      );
+      expect(
+        live,
+        isA<TypedQuerySuccess<String>>().having(
+          (result) => result.fromCache,
+          'fromCache',
+          isFalse,
+        ),
+      );
+    });
+
     test('turns a decode failure into a TypedQueryError', () {
       final result = typedQueryResult<String>(
         const QuerySuccess('archived', logLines: <String>['log']),

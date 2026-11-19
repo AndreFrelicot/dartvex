@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Generated `TypedQuerySuccess` and `TypedQueryError` carry `fromCache`,
+  forwarded from the core `QuerySuccess.fromCache` / `QueryError.fromCache`:
+  the cached seed a new subscription replays before the server answers. A
+  value the bindings fail to decode keeps the flag of the result it came
+  from. **Breaking (regenerated bindings):** they require `dartvex` `^0.4.0`,
+  which adds those fields.
+
 ## [0.3.0] - 2026-11-05
 
 ### Added
