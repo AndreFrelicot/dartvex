@@ -1,11 +1,13 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND.
 // ignore_for_file: type=lint, unused_element, unused_import, unused_local_variable
 
+import './modules/convexAuth.dart';
 import './modules/demo.dart';
 import './modules/files.dart';
 import './modules/messages.dart';
 import './modules/tasks.dart';
 import './modules/testing.dart';
+import './modules/users.dart';
 import './runtime.dart';
 import './schema.dart';
 import 'package:dartvex/dartvex.dart';
@@ -18,9 +20,11 @@ class ConvexApi {
 
   final ConvexFunctionCaller _client;
 
+  ConvexAuthApi get convexAuth => ConvexAuthApi(_client);
   DemoApi get demo => DemoApi(_client);
   FilesApi get files => FilesApi(_client);
   MessagesApi get messages => MessagesApi(_client);
   TasksApi get tasks => TasksApi(_client);
   TestingApi get testing => TestingApi(_client);
+  UsersApi get users => UsersApi(_client);
 }

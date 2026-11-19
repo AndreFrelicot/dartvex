@@ -1,5 +1,6 @@
 import type { AuthConfig } from "convex/server";
 import { getAuthConfigProvider } from "@convex-dev/better-auth/auth-config";
+import { convexAuthProvider } from "@convex-dev/auth/server";
 
 type AuthProvider = NonNullable<AuthConfig["providers"]>[number];
 
@@ -19,5 +20,7 @@ export default {
     ...(demoJwtProvider ? [demoJwtProvider] : []),
     // Better Auth (self-hosted in Convex, RS256 JWTs).
     getAuthConfigProvider(),
+    // Convex Auth v2 (access tokens signed with the deployment's own key).
+    convexAuthProvider(),
   ],
 } satisfies AuthConfig;

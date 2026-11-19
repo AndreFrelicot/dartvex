@@ -13,6 +13,7 @@
     "node": ">=22.9.0"
   },
   "dependencies": {
+    "@convex-dev/auth": "2.0.0",
     "@convex-dev/better-auth": "^0.13.0",
     "better-auth": "1.7.17",
     "convex": "^1.49.0"

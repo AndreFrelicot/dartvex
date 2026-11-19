@@ -83,6 +83,7 @@ class TypedQuerySuccess<T> extends TypedQueryResult<T> {
     this.value, {
     this.logLines = const <String>[],
     this.hasPendingWrites = false,
+    this.fromCache = false,
   });
 
   final T value;
@@ -90,6 +91,11 @@ class TypedQuerySuccess<T> extends TypedQueryResult<T> {
 
   /// Whether optimistic updates currently affect [value].
   final bool hasPendingWrites;
+
+  /// Whether [value] is the cached seed of a new subscription: the result
+  /// kept after an earlier subscription to the same query was cancelled. It
+  /// may be stale; a result confirmed by the server follows.
+  final bool fromCache;
 }
 
 class TypedQueryLoading<T> extends TypedQueryResult<T> {
@@ -103,11 +109,17 @@ class TypedQueryError<T> extends TypedQueryResult<T> {
     this.message, {
     this.data,
     this.logLines = const <String>[],
+    this.fromCache = false,
   });
 
   final String message;
   final Object? data;
   final List<String> logLines;
+
+  /// Whether this error is the cached seed of a new subscription (see
+  /// [TypedQuerySuccess.fromCache]). A value the bindings fail to decode
+  /// keeps the flag of the result it came from.
+  final bool fromCache;
 }
 
 /// Converts a raw query [event] into a typed result.
@@ -122,7 +134,12 @@ TypedQueryResult<T> typedQueryResult<T>(
   String functionName,
 ) {
   switch (event) {
-    case QuerySuccess(:final value, :final logLines, :final hasPendingWrites):
+    case QuerySuccess(
+      :final value,
+      :final logLines,
+      :final hasPendingWrites,
+      :final fromCache,
+    ):
       final T decoded;
       try {
         decoded = decode(value);
@@ -131,17 +148,29 @@ TypedQueryResult<T> typedQueryResult<T>(
           'Failed to decode $functionName result: $error',
           data: error,
           logLines: logLines,
+          fromCache: fromCache,
         );
       }
       return TypedQuerySuccess<T>(
         decoded,
         logLines: logLines,
         hasPendingWrites: hasPendingWrites,
+        fromCache: fromCache,
       );
     case QueryLoading(:final hasPendingWrites):
       return TypedQueryLoading<T>(hasPendingWrites: hasPendingWrites);
-    case QueryError(:final message, :final data, :final logLines):
-      return TypedQueryError<T>(message, data: data, logLines: logLines);
+    case QueryError(
+      :final message,
+      :final data,
+      :final logLines,
+      :final fromCache,
+    ):
+      return TypedQueryError<T>(
+        message,
+        data: data,
+        logLines: logLines,
+        fromCache: fromCache,
+      );
   }
 }
 
@@ -162,12 +191,16 @@ class TypedConvexPaginatedResult<T> {
     required this.status,
     required this.isDone,
     this.error,
+    this.hasPendingWrites = false,
   });
 
   final List<T> items;
   final ConvexPaginationStatus status;
   final bool isDone;
   final Object? error;
+
+  /// Whether optimistic writes currently affect any loaded page in [items].
+  final bool hasPendingWrites;
 }
 
 class TypedConvexPaginatedQuery<T> {
@@ -213,6 +246,7 @@ class TypedConvexPaginatedQuery<T> {
         status: result.status,
         isDone: result.isDone,
         error: result.error,
+        hasPendingWrites: result.hasPendingWrites,
       );
     } catch (error) {
       // An item the bindings cannot decode is reported like a failed page
@@ -222,6 +256,7 @@ class TypedConvexPaginatedQuery<T> {
         status: ConvexPaginationStatus.error,
         isDone: result.isDone,
         error: error,
+        hasPendingWrites: result.hasPendingWrites,
       );
     }
     _lastRaw = result;
@@ -287,6 +322,21 @@ BigInt expectBigInt(dynamic value, {String? label}) {
   }
   throw FormatException(
     'Expected ${label ?? 'bigint'}, got ${describeType(value)}',
+  );
+}
+
+/// Decodes a `v.commitTs()` value: a [BigInt] commit timestamp, or
+/// [ConvexCommitTsPlaceholder.instance] when the mutation that wrote the field
+/// reads it back before committing.
+Object expectCommitTs(dynamic value, {String? label}) {
+  if (value is BigInt) {
+    return value;
+  }
+  if (value is ConvexCommitTsPlaceholder) {
+    return value;
+  }
+  throw FormatException(
+    'Expected ${label ?? 'commitTs'}, got ${describeType(value)}',
   );
 }
 

@@ -2,6 +2,12 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 export default defineSchema({
+  // App users of the Convex Auth mode. Convex Auth keeps credentials and
+  // sessions in its own components and only stores this table's ids.
+  users: defineTable({
+    createdVia: v.string(),
+  }),
+
   public_messages: defineTable({
     author: v.string(),
     text: v.string(),
