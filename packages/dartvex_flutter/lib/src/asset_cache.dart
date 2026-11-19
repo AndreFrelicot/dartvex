@@ -23,6 +23,12 @@ import 'media_types.dart';
 /// store once every instance using it has been disposed. Use a distinct
 /// `cacheKey` for a separate cache.
 ///
+/// Entries are not tied to a user: a file stays readable from the cache
+/// after its owner signed out or lost access to it on the server. For private
+/// files on a device several accounts may use, call [clear] when the
+/// signed-in user changes, or give each user their own store with a
+/// per-user `cacheKey`.
+///
 /// Native-only: this cache uses `dart:io` and `flutter_cache_manager`, so it is
 /// not available on Flutter web. Web apps should resolve signed storage URLs
 /// and render them directly, for example with `Image.network`. On web, every
@@ -65,6 +71,11 @@ class ConvexAssetCache {
   /// refreshes of one entry never interleave (and never orphan a file).
   static final Expando<Map<String, Future<void>>> _commits =
       Expando<Map<String, Future<void>>>();
+
+  /// Downloads in flight per cache manager, so [clear] can remove what they
+  /// store after the purge.
+  static final Expando<Set<_PendingDownload>> _downloads =
+      Expando<Set<_PendingDownload>>();
 
   static final Random _random = Random.secure();
 
@@ -138,10 +149,22 @@ class ConvexAssetCache {
   ///
   /// Errors never carry [url] beyond its origin (see
   /// [ConvexFileDownloader.download]).
-  Future<File> prefetch(
+  Future<File> prefetch(String cacheKey, String url, {bool force = false}) {
+    final downloads = _downloads[_cacheManager] ??= <_PendingDownload>{};
+    final result = _prefetch(cacheKey, url, force: force);
+    final pending = _PendingDownload(
+      cacheKey,
+      result.then<void>((_) {}, onError: (Object _) {}),
+    );
+    downloads.add(pending);
+    unawaited(pending.settled.whenComplete(() => downloads.remove(pending)));
+    return result;
+  }
+
+  Future<File> _prefetch(
     String cacheKey,
     String url, {
-    bool force = false,
+    required bool force,
   }) async {
     try {
       if (force) {
@@ -322,8 +345,29 @@ class ConvexAssetCache {
   }
 
   /// Clears all cached assets.
-  Future<void> clear() {
-    return _cacheManager.emptyCache();
+  ///
+  /// Call it when the signed-in user changes (sign-out, account switch) if
+  /// the cache holds private files: entries are keyed by `cacheKey` alone, so
+  /// the next user of the device would otherwise be served the previous
+  /// user's copy of a file with the same key. A [prefetch] still downloading
+  /// when this is called is waited for and its file removed too, so it cannot
+  /// reappear after the purge; the future completes once that is done.
+  /// (Alternatively give each user a store of their own, for example
+  /// `ConvexAssetCache(cacheKey: 'assets-$userId')`.)
+  Future<void> clear() async {
+    final inFlight =
+        _downloads[_cacheManager]?.toList(growable: false) ??
+        const <_PendingDownload>[];
+    await _cacheManager.emptyCache();
+    if (inFlight.isEmpty) {
+      return;
+    }
+    await Future.wait(inFlight.map((download) => download.settled));
+    for (final cacheKey in <String>{
+      for (final download in inFlight) download.cacheKey,
+    }) {
+      await _cacheManager.removeFile(cacheKey);
+    }
   }
 
   /// Returns the total size, in bytes, of the cached assets.
@@ -379,6 +423,17 @@ class ConvexAssetCache {
       }
     }
   }
+}
+
+/// A [ConvexAssetCache.prefetch] that has not settled yet.
+class _PendingDownload {
+  _PendingDownload(this.cacheKey, this.settled);
+
+  final String cacheKey;
+
+  /// Completes, never with an error, once the download stored its file or
+  /// failed.
+  final Future<void> settled;
 }
 
 /// One [CacheManager] (and its HTTP client) per cache key.

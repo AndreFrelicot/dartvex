@@ -125,7 +125,11 @@ retry button; without `errorBuilder`/`errorWidget`, failures are reported to
 `ConvexAssetCache` add offline-fallback binary caching; `ConvexAssetCache()`
 instances with the same `cacheKey` share one store. Cache entries are keyed by
 `storageId` only, so apps mixing deployments should give each deployment its
-own cache (`cache: ConvexAssetCache(cacheKey: 'deploymentA')`).
+own cache (`cache: ConvexAssetCache(cacheKey: 'deploymentA')`). Entries are
+not tied to a user and are shown without asking the server again: for
+private files, `await ConvexAssetCache.shared.clear()` on sign-out or account
+switch (or pass a per-user cache), otherwise the next user of the device can
+see the previous user's copy.
 
 ### Flutter web caveat
 

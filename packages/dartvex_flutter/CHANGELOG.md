@@ -29,6 +29,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `ConvexAssetCache.clear()` also removes the files of downloads that were
+  still in flight when it was called (it waits for them), so a file of the
+  previous user can no longer land in the cache after a sign-out purge. The
+  docs of `ConvexAssetCache` and `ConvexCachedImage` now say that entries are
+  not tied to a user and how to isolate private files (clear on user change,
+  or a per-user `cacheKey`).
 - `FakeConvexSubscription.cancel()` called while the subscription delivers
   an event (for example after `await subscription.stream.first` through
   `functionCaller`) no longer throws "Cannot fire new event".

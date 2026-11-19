@@ -172,6 +172,59 @@ void main() {
       expect(fakeCacheManager.emptyCacheCalled, isTrue);
     });
 
+    test('clear also removes a download that was still in flight', () async {
+      const url = 'https://example.com/private.png';
+      final gate = Completer<void>();
+      fakeCacheManager.urlGates[url] = gate;
+      fakeCacheManager.putInCache('other');
+
+      final download = cache.prefetch('private', url);
+      await pumpEventQueue();
+      var cleared = false;
+      final clearing = cache.clear().then((_) => cleared = true);
+      await pumpEventQueue();
+      // The purge waits for the download instead of letting it land later.
+      expect(cleared, isFalse);
+      expect(await cache.contains('other'), isFalse);
+
+      gate.complete();
+      await download;
+      await clearing;
+
+      expect(fakeCacheManager.writtenUrls, <String>[url]);
+      expect(await cache.contains('private'), isFalse);
+      expect(fakeCacheManager.removedKeys, <String>['private']);
+    });
+
+    test('clear does not wait for downloads started after it', () async {
+      await cache.clear();
+      final file = await cache.prefetch(
+        'next-user',
+        'https://example.com/next.png',
+      );
+
+      expect(file, isNotNull);
+      expect(await cache.contains('next-user'), isTrue);
+      expect(fakeCacheManager.removedKeys, isEmpty);
+    });
+
+    test('clear completes when the in-flight download fails', () async {
+      const url = 'https://example.com/broken.png';
+      final gate = Completer<void>();
+      fakeCacheManager.urlGates[url] = gate;
+
+      final download = cache.prefetch('broken', url);
+      final failed = expectLater(download, throwsA(isA<StateError>()));
+      await pumpEventQueue();
+      final clearing = cache.clear();
+      fakeCacheManager.downloadError = StateError('network down');
+      gate.complete();
+
+      await failed;
+      await clearing;
+      expect(await cache.contains('broken'), isFalse);
+    });
+
     test(
       'getSizeBytes returns cache size from metrics-aware managers',
       () async {
