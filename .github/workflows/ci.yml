@@ -199,6 +199,12 @@ jobs:
       # rejects, so 3.38.1 is the first usable 3.38 release.
       - uses: subosito/flutter-action@v2
         with: { flutter-version: '3.38.1', channel: stable }
+      # The example app uses material_ui, which needs a newer Flutter than the
+      # package floor, and `flutter pub` resolves `example/` even with
+      # `--no-example`. "Analyze (Flutter)" and "Package Flutter Example" cover
+      # it on the latest stable.
+      - name: Set the example app aside
+        run: mv packages/dartvex_flutter/example "$RUNNER_TEMP/dartvex_flutter_example"
       - name: Use local dartvex dependency
         run: bash scripts/ci-local-dependency-overrides.sh packages/dartvex_flutter
       - name: Analyze with the lowest allowed dependencies

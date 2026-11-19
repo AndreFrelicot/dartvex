@@ -6,7 +6,7 @@ import 'package:dartvex/dartvex.dart'
         DartvexLogEvent,
         DartvexLogLevel;
 import 'package:dartvex_flutter/dartvex_flutter.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../../../convex_api/api.dart';
 import '../../auth/data/demo_auth_provider.dart' show DemoUserSession;

@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:dartvex_flutter/dartvex_flutter.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:dartvex/dartvex.dart' as convex;
 

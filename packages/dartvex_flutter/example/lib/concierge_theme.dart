@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// The "concierge" dark palette shared with the Dartvex end-to-end demo app:
 /// a deep navy canvas with a cyan accent and mint/amber/coral semantics.

@@ -1,7 +1,7 @@
 import 'package:dartvex_auth_better/dartvex_auth_better.dart';
 import 'package:dartvex/dartvex.dart';
 import 'package:dartvex_flutter/dartvex_flutter.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../shared/presentation/conversation_widgets.dart';
 import '../../shared/presentation/concierge_design.dart';

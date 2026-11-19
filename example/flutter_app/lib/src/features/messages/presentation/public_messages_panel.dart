@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../../../convex_api/api.dart';
 import '../../../../convex_api/modules/messages.dart' as messages_api;

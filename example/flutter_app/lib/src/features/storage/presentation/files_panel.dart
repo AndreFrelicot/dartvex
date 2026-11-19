@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:dartvex/dartvex.dart' show ConvexClient, ConvexStorage;
 import 'package:dartvex_flutter/dartvex_flutter.dart'
     show ConvexQuery, ConvexQuerySnapshot;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' show rootBundle;
 
 import '../../shared/presentation/concierge_design.dart';
