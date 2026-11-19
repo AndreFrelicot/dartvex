@@ -202,7 +202,8 @@ void main() {
         expect(provider.password, isNull);
         expect(provider.email, 'alice@example.com');
         expect(signInToken, 'jwt_signin');
-        expect(provider.cachedSession, same(signedIn));
+        // Staged only: it becomes the provider's session with login().
+        expect(provider.cachedSession, isNull);
 
         // login() hands the same session over without another sign-in.
         String? loginToken;
@@ -210,6 +211,7 @@ void main() {
           onIdToken: (token) => loginToken = token,
         );
         expect(session, same(signedIn));
+        expect(provider.cachedSession, same(signedIn));
         expect(loginToken, 'jwt_signin');
         expect(
           requests.where((path) => path == '/api/auth/sign-in/email'),
@@ -632,7 +634,8 @@ void main() {
       expect(receivedToken, 'jwt_signup');
       expect(provider.email, 'alice@example.com');
       expect(provider.password, isNull);
-      expect(provider.cachedSession, isNotNull);
+      // Staged only: it becomes the provider's session with login().
+      expect(provider.cachedSession, isNull);
     });
 
     test('login reuses session created by signUp', () async {
@@ -714,6 +717,8 @@ void main() {
         password: 'password123',
       );
 
+      expect(provider.cachedSession, isNull);
+      expect(await provider.login(onIdToken: (_) {}), same(session));
       expect(provider.cachedSession, same(session));
     });
 
@@ -774,9 +779,13 @@ void main() {
         MockClient mock,
         Map<String, Completer<void>> getSessionGates,
         Map<String, Completer<void>> signInGates,
+        Map<String, int> signInStatus,
+        List<Map<String, dynamic>> signIns,
         Map<String, int> getSessionStatus,
         List<String> signedOut,
       }) gatedMock({Completer<void>? signOutGate}) {
+        final signInStatus = <String, int>{};
+        final signIns = <Map<String, dynamic>>[];
         final getSessionStatus = <String, int>{};
         final getSessionGates = <String, Completer<void>>{};
         final signInGates = <String, Completer<void>>{};
@@ -785,10 +794,27 @@ void main() {
           final path = request.url.path;
           final auth = request.headers['Authorization'] ?? '';
           final bearer = auth.startsWith('Bearer ') ? auth.substring(7) : '';
+          if (path == '/api/auth/sign-up/email') {
+            final body = jsonDecode(request.body) as Map<String, dynamic>;
+            final email = body['email'] as String;
+            return http.Response(
+              jsonEncode({
+                'user': {'id': email, 'email': email},
+                'session': {'id': 's', 'userId': email},
+              }),
+              200,
+              headers: {'set-auth-token': 'ses_$email'},
+            );
+          }
           if (path == '/api/auth/sign-in/email') {
             final body = jsonDecode(request.body) as Map<String, dynamic>;
             final email = body['email'] as String;
+            signIns.add(body);
             await signInGates[email]?.future;
+            final status = signInStatus[email];
+            if (status != null) {
+              return http.Response('{"message":"unavailable"}', status);
+            }
             return http.Response(
               jsonEncode({
                 'user': {'id': email, 'email': email},
@@ -826,6 +852,8 @@ void main() {
           mock: mock,
           getSessionGates: getSessionGates,
           signInGates: signInGates,
+          signInStatus: signInStatus,
+          signIns: signIns,
           getSessionStatus: getSessionStatus,
           signedOut: signedOut,
         );
@@ -900,6 +928,198 @@ void main() {
         expect(provider.cachedSession, same(session));
         await pumpEventQueue();
         expect(setup.signedOut, isEmpty);
+      });
+
+      test(
+          'signIn for another account leaves the current session in place '
+          'until login()', () async {
+        final setup = gatedMock();
+        final provider = await signedInAsA(setup.mock);
+
+        final staged = await provider.signIn(email: 'b', password: 'pw-b');
+        expect(staged.sessionToken, 'ses_b');
+        // The client is still signed in as A: the provider must not switch
+        // under it.
+        expect(provider.cachedSession?.sessionToken, 'ses_a');
+
+        // A background refresh serves A's token, not B's...
+        String? refreshedToken;
+        final refreshed = await asRefresh(
+          () => provider.loginFromCache(
+            onIdToken: (token) => refreshedToken = token,
+          ),
+        );
+        expect(refreshed.sessionToken, 'ses_a');
+        expect(refreshedToken, 'jwt_ses_a');
+        expect(provider.cachedSession?.sessionToken, 'ses_a');
+
+        // ...and leaves B staged: login() hands it over without credentials.
+        String? loginToken;
+        final session = await provider.login(
+          onIdToken: (token) => loginToken = token,
+        );
+        expect(session, same(staged));
+        expect(loginToken, 'jwt_ses_b');
+        expect(provider.cachedSession, same(staged));
+        expect(setup.signIns.map((body) => body['email']), ['a', 'b']);
+        await pumpEventQueue();
+        expect(setup.signedOut, isEmpty);
+      });
+
+      test('signUp for another account is staged the same way', () async {
+        final setup = gatedMock();
+        final provider = await signedInAsA(setup.mock);
+
+        final staged = await provider.signUp(
+          name: 'B',
+          email: 'b',
+          password: 'pw-b',
+        );
+        expect(provider.cachedSession?.sessionToken, 'ses_a');
+        final refreshed = await asRefresh(
+          () => provider.loginFromCache(onIdToken: (_) {}),
+        );
+        expect(refreshed.sessionToken, 'ses_a');
+
+        expect(await provider.login(onIdToken: (_) {}), same(staged));
+        expect(provider.cachedSession, same(staged));
+      });
+
+      test('the current session expiring keeps a staged sign-in', () async {
+        final setup = gatedMock();
+        final provider = await signedInAsA(setup.mock);
+        final staged = await provider.signIn(email: 'b', password: 'pw-b');
+
+        // A ends on the server: the background refresh reports it...
+        setup.getSessionStatus['ses_a'] = 401;
+        await expectLater(
+          asRefresh(() => provider.loginFromCache(onIdToken: (_) {})),
+          throwsA(isA<AuthSessionEndedError>()),
+        );
+        expect(provider.cachedSession, isNull);
+
+        // ...and B, which is another session, is still there for login().
+        expect(await provider.login(onIdToken: (_) {}), same(staged));
+        expect(provider.cachedSession, same(staged));
+        await pumpEventQueue();
+        expect(setup.signedOut, isEmpty);
+      });
+
+      test('the current session expiring does not cancel a login in flight',
+          () async {
+        final setup = gatedMock();
+        final provider = await signedInAsA(setup.mock);
+        final gate = setup.signInGates['b'] = Completer<void>();
+        provider
+          ..email = 'b'
+          ..password = 'pw';
+        final login = provider.login(onIdToken: (_) {});
+
+        setup.getSessionStatus['ses_a'] = 401;
+        await expectLater(
+          asRefresh(() => provider.loginFromCache(onIdToken: (_) {})),
+          throwsA(isA<AuthSessionEndedError>()),
+        );
+        gate.complete();
+
+        final session = await login;
+        expect(session.sessionToken, 'ses_b');
+        expect(provider.cachedSession, same(session));
+        await pumpEventQueue();
+        expect(setup.signedOut, isEmpty);
+      });
+
+      test(
+          'a password kept after a retryable failure is never sent with '
+          'another account', () async {
+        final setup = gatedMock();
+        final provider = ConvexBetterAuthProvider(
+          client: BetterAuthClient(baseUrl: baseUrl, httpClient: setup.mock),
+        );
+        setup.signInStatus['a'] = 503;
+        provider
+          ..email = 'a'
+          ..password = 'pw-a';
+        await expectLater(
+          provider.login(onIdToken: (_) {}),
+          throwsA(isA<BetterAuthException>()
+              .having((e) => e.retryable, 'retryable', isTrue)),
+        );
+        // Kept, so the same login() can be retried.
+        expect(provider.password, 'pw-a');
+
+        // The app signs in to another account instead.
+        final staged = await provider.signIn(email: 'b', password: 'pw-b');
+        expect(provider.password, isNull);
+        expect(await provider.login(onIdToken: (_) {}), same(staged));
+        expect(setup.signIns, [
+          {'email': 'a', 'password': 'pw-a'},
+          {'email': 'b', 'password': 'pw-b'},
+        ]);
+      });
+
+      test('a staged session nobody uses is signed out', () async {
+        final setup = gatedMock();
+        final provider = await signedInAsA(setup.mock);
+
+        // Replaced by a newer signIn.
+        await provider.signIn(email: 'b', password: 'pw');
+        final kept = await provider.signIn(email: 'c', password: 'pw');
+        await pumpEventQueue();
+        expect(setup.signedOut, ['ses_b']);
+
+        // Dropped by credentials staged for login().
+        provider
+          ..email = 'd'
+          ..password = 'pw';
+        final session = await provider.login(onIdToken: (_) {});
+        expect(session.sessionToken, 'ses_d');
+        expect(session, isNot(same(kept)));
+        await pumpEventQueue();
+        expect(setup.signedOut, ['ses_b', 'ses_c']);
+
+        // Dropped by logout, with the current session.
+        await provider.signIn(email: 'e', password: 'pw');
+        await provider.logout();
+        await pumpEventQueue();
+        expect(
+            setup.signedOut,
+            unorderedEquals(
+              <String>['ses_b', 'ses_c', 'ses_d', 'ses_e'],
+            ));
+        expect(provider.cachedSession, isNull);
+        await expectLater(
+          provider.login(onIdToken: (_) {}),
+          throwsStateError,
+        );
+      });
+
+      test('logout without a current session ends the staged one', () async {
+        final setup = gatedMock();
+        final provider = ConvexBetterAuthProvider(
+          client: BetterAuthClient(baseUrl: baseUrl, httpClient: setup.mock),
+        );
+        await provider.signIn(email: 'b', password: 'pw');
+
+        await provider.logout();
+
+        expect(setup.signedOut, ['ses_b']);
+      });
+
+      test('an explicit loginFromCache makes a staged sign-in current',
+          () async {
+        final setup = gatedMock();
+        final provider = await signedInAsA(setup.mock);
+        await provider.signIn(email: 'b', password: 'pw');
+
+        final restored = await provider.loginFromCache(onIdToken: (_) {});
+
+        expect(restored.sessionToken, 'ses_b');
+        expect(provider.cachedSession?.sessionToken, 'ses_b');
+        final next = await asRefresh(
+          () => provider.loginFromCache(onIdToken: (_) {}),
+        );
+        expect(next.sessionToken, 'ses_b');
       });
 
       test(
