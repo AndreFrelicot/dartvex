@@ -77,6 +77,12 @@ class ConvexAssetCache {
   static final Expando<Set<_PendingDownload>> _downloads =
       Expando<Set<_PendingDownload>>();
 
+  /// The [clear] calls running per cache manager. Each one is the set of
+  /// cache keys it still has to remove: those of the downloads in flight
+  /// when it started and of every download started since, whether or not
+  /// they have finished by the time it looks.
+  static final Expando<Set<Set<String>>> _purges = Expando<Set<Set<String>>>();
+
   static final Random _random = Random.secure();
 
   /// Creates an asset cache backed by the [CacheManager] for [cacheKey].
@@ -151,6 +157,9 @@ class ConvexAssetCache {
   /// [ConvexFileDownloader.download]).
   Future<File> prefetch(String cacheKey, String url, {bool force = false}) {
     final downloads = _downloads[_cacheManager] ??= <_PendingDownload>{};
+    for (final purge in _purges[_cacheManager] ?? const <Set<String>>{}) {
+      purge.add(cacheKey);
+    }
     final result = _prefetch(cacheKey, url, force: force);
     final pending = _PendingDownload(
       cacheKey,
@@ -360,23 +369,33 @@ class ConvexAssetCache {
   /// their own, for example `ConvexAssetCache(cacheKey: 'assets-$userId')`,
   /// which rules out any collision.)
   Future<void> clear() async {
-    await _cacheManager.emptyCache();
-    final handled = <_PendingDownload>{};
-    while (true) {
-      final inFlight = <_PendingDownload>[
-        for (final download
-            in _downloads[_cacheManager] ?? const <_PendingDownload>{})
-          if (handled.add(download)) download,
-      ];
-      if (inFlight.isEmpty) {
-        return;
+    final downloads = _downloads[_cacheManager] ??= <_PendingDownload>{};
+    // The keys are recorded here, not read from the downloads later: one
+    // that finishes while the store is being emptied has left [downloads]
+    // by the time the purge looks again, and its file may have been written
+    // after the store listed what to delete.
+    final purge = <String>{for (final download in downloads) download.cacheKey};
+    final purges = _purges[_cacheManager] ??= <Set<String>>{};
+    purges.add(purge);
+    try {
+      await _cacheManager.emptyCache();
+      while (downloads.isNotEmpty || purge.isNotEmpty) {
+        await Future.wait(
+          downloads.map((download) => download.settled).toList(),
+        );
+        // A key whose download is still running stays for the next round:
+        // its file is not there yet.
+        final running = <String>{
+          for (final download in downloads) download.cacheKey,
+        };
+        final settled = purge.difference(running);
+        purge.removeAll(settled);
+        for (final cacheKey in settled) {
+          await _cacheManager.removeFile(cacheKey);
+        }
       }
-      await Future.wait(inFlight.map((download) => download.settled));
-      for (final cacheKey in <String>{
-        for (final download in inFlight) download.cacheKey,
-      }) {
-        await _cacheManager.removeFile(cacheKey);
-      }
+    } finally {
+      purges.remove(purge);
     }
   }
 
