@@ -39,7 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A session that `signIn()` or `signUp()` created and that is never used
   (replaced by a newer one, dropped for staged credentials, or pending at
   `logout()`) is signed out on the server. Passing that same session to
-  `adoptSession()` keeps it.
+  `adoptSession()` keeps it, and it is still signed out when it is dropped
+  before `loginFromCache()` installed it.
 - `signIn()` and `signUp()` clear a staged `password`, whatever its value: it
   can no longer be sent with the email of the account they signed in.
 
