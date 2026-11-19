@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:dartvex_auth_convex/dartvex_auth_convex.dart';
+import 'package:dartvex_auth2_convex/dartvex_auth2_convex.dart';
 import 'package:http/http.dart' as http;
 import 'package:test/test.dart';
 

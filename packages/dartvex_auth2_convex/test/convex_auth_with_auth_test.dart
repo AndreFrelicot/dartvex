@@ -1,5 +1,5 @@
 import 'package:dartvex/dartvex.dart';
-import 'package:dartvex_auth_convex/dartvex_auth_convex.dart';
+import 'package:dartvex_auth2_convex/dartvex_auth2_convex.dart';
 import 'package:test/test.dart';
 
 import 'support.dart';

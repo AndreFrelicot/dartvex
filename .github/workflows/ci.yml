@@ -58,7 +58,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        package: [dartvex, dartvex_codegen, dartvex_local, dartvex_auth_better, dartvex_auth_convex]
+        package: [dartvex, dartvex_codegen, dartvex_local, dartvex_auth_better, dartvex_auth2_convex]
     steps:
       - uses: actions/checkout@v7
       - uses: dart-lang/setup-dart@v1
@@ -87,7 +87,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        package: [dartvex, dartvex_codegen, dartvex_local, dartvex_auth_better, dartvex_auth_convex]
+        package: [dartvex, dartvex_codegen, dartvex_local, dartvex_auth_better, dartvex_auth2_convex]
     steps:
       - uses: actions/checkout@v7
       - uses: dart-lang/setup-dart@v1
@@ -170,7 +170,7 @@ jobs:
             sdk: '3.6.0'
           - package: dartvex_auth_better
             sdk: '3.6.0'
-          - package: dartvex_auth_convex
+          - package: dartvex_auth2_convex
             sdk: '3.6.0'
           - package: dartvex_codegen
             sdk: '3.7.0'
@@ -256,7 +256,7 @@ jobs:
             tool: flutter
           - package: dartvex_auth_better
             tool: dart
-          - package: dartvex_auth_convex
+          - package: dartvex_auth2_convex
             tool: dart
     steps:
       - uses: actions/checkout@v7

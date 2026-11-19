@@ -1,9 +1,12 @@
-# dartvex_auth_convex
+# dartvex_auth2_convex
 
 [Convex Auth](https://docs.convex.dev/auth/convex-auth) (`@convex-dev/auth`
 v2) adapter for [Dartvex](https://github.com/AndreFrelicot/dartvex). It signs
 in with Convex Auth methods and keeps the rotating session in sync with the
 Convex client.
+
+The `auth2` in the package name is the Convex Auth major version: this adapter
+targets the v2 protocol.
 
 ## How it works
 

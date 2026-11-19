@@ -1,5 +1,5 @@
 import 'package:dartvex/dartvex.dart';
-import 'package:dartvex_auth_convex/dartvex_auth_convex.dart';
+import 'package:dartvex_auth2_convex/dartvex_auth2_convex.dart';
 
 /// Example: sign in with Convex Auth (`@convex-dev/auth` v2) and connect to
 /// Convex. The backend re-exports the core and username/password functions
