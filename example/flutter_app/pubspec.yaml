@@ -19,6 +19,8 @@ dependencies:
     path: ../../packages/dartvex_local
   dartvex_auth_better:
     path: ../../packages/dartvex_auth_better
+  dartvex_auth2_convex:
+    path: ../../packages/dartvex_auth2_convex
   cupertino_icons: ^2.0.0
   flutter_svg: ^2.3.0
   path_provider: ^2.1.5
@@ -29,6 +31,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  http: ^1.5.0
   flutter_launcher_icons: ^0.14.0
 
 dependency_overrides:

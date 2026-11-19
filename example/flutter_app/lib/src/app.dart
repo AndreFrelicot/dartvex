@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dartvex_auth2_convex/dartvex_auth2_convex.dart';
 import 'package:dartvex_auth_better/dartvex_auth_better.dart';
 import 'package:dartvex/dartvex.dart';
 import 'package:dartvex_flutter/dartvex_flutter.dart';
@@ -14,9 +15,11 @@ import 'core/local_runtime_client.dart';
 import 'core/unavailable_runtime_client.dart';
 import 'features/actions/presentation/action_panel.dart';
 import 'features/auth/data/auth_mode.dart';
+import 'features/auth/data/convex_auth_demo.dart';
 import 'features/auth/data/demo_auth_provider.dart';
 import 'features/auth/presentation/auth_panel.dart';
 import 'features/auth/presentation/better_auth_panel.dart';
+import 'features/auth/presentation/convex_auth_panel.dart';
 import 'features/local_first/data/local_first_support.dart';
 import 'features/local_first/presentation/local_first_panel.dart';
 import 'features/messages/presentation/private_messages_panel.dart';
@@ -76,6 +79,16 @@ class _DartvexDemoAppState extends State<DartvexDemoApp> {
 
   ConvexBetterAuthProvider? _betterAuthProvider;
   ConvexClientWithAuth<BetterAuthSession>? _betterAuthClient;
+
+  /// The Convex Auth session outlives the Convex client: the provider saves
+  /// it here on every change, and the next client restores it.
+  final ConvexAuthSessionStore _convexAuthStore = ConvexAuthSessionStore();
+  ConvexAuthSessionProvider? _convexAuthProvider;
+  ConvexClientWithAuth<ConvexAuthSession>? _convexAuthClient;
+
+  /// Why the auth client of the selected mode could not be created (the
+  /// adapters refuse a plain-HTTP deployment that is not the local machine).
+  String? _authSetupError;
 
   AuthMode _authMode = AuthMode.demo;
   ConvexClient? _client;
@@ -144,6 +157,7 @@ class _DartvexDemoAppState extends State<DartvexDemoApp> {
     _betterAuthNameController.dispose();
     _betterAuthEmailController.dispose();
     _betterAuthPasswordController.dispose();
+    _convexAuthStore.dispose();
     super.dispose();
   }
 
@@ -362,14 +376,42 @@ class _DartvexDemoAppState extends State<DartvexDemoApp> {
         ? client.withAuth<DemoUserSession>(_demoAuthProvider)
         : null;
 
-    // Better Auth: create provider and auth client.
+    // Better Auth and Convex Auth: create the provider and the auth client.
+    // Their HTTP clients carry credentials, so they throw an ArgumentError
+    // for a URL they refuse (plain HTTP outside the local machine); the rest
+    // of the demo still works without auth.
     ConvexBetterAuthProvider? betterAuthProvider;
     ConvexClientWithAuth<BetterAuthSession>? betterAuthClient;
-    if (_authMode == AuthMode.betterAuth) {
-      betterAuthProvider = ConvexBetterAuthProvider(
-        client: BetterAuthClient(baseUrl: url),
-      );
-      betterAuthClient = client.withAuth<BetterAuthSession>(betterAuthProvider);
+    ConvexAuthSessionProvider? convexAuthProvider;
+    ConvexClientWithAuth<ConvexAuthSession>? convexAuthClient;
+    String? authSetupError;
+    try {
+      if (_authMode == AuthMode.betterAuth) {
+        betterAuthProvider = ConvexBetterAuthProvider(
+          client: BetterAuthClient(baseUrl: url),
+        );
+        betterAuthClient = client.withAuth<BetterAuthSession>(
+          betterAuthProvider,
+        );
+      }
+      if (_authMode == AuthMode.convexAuth) {
+        convexAuthProvider = ConvexAuthSessionProvider(
+          client: ConvexAuthHttpClient(deploymentUrl: url),
+          // The session saved by a previous client, restored below.
+          initialSession: _convexAuthStore.session,
+          onSessionChanged: _convexAuthStore.save,
+          onBackgroundError: (error, _) {
+            debugPrint('Convex Auth background error: $error');
+          },
+          refreshSessionFunction: ConvexAuthDemoFunctions.refreshSession,
+          signOutFunction: ConvexAuthDemoFunctions.signOut,
+        );
+        convexAuthClient = client.withAuth<ConvexAuthSession>(
+          convexAuthProvider,
+        );
+      }
+    } on ArgumentError catch (error) {
+      authSetupError = error.message?.toString() ?? error.toString();
     }
     final runtime = ConvexClientRuntime(client, disposeClient: false);
     final api = ConvexApi(client);
@@ -398,6 +440,8 @@ class _DartvexDemoAppState extends State<DartvexDemoApp> {
       runtime.dispose();
       betterAuthClient?.dispose();
       betterAuthProvider?.client.close();
+      convexAuthClient?.dispose();
+      convexAuthProvider?.client.close();
       authClient?.dispose();
       // The demo owns the client: every wrapper above was created with
       // disposeClient: false, so close it here or its socket keeps running.
@@ -410,6 +454,9 @@ class _DartvexDemoAppState extends State<DartvexDemoApp> {
       _authClient = authClient;
       _betterAuthProvider = betterAuthProvider;
       _betterAuthClient = betterAuthClient;
+      _convexAuthProvider = convexAuthProvider;
+      _convexAuthClient = convexAuthClient;
+      _authSetupError = authSetupError;
       _runtime = runtime;
       _api = api;
       _localClient = localClient;
@@ -417,6 +464,24 @@ class _DartvexDemoAppState extends State<DartvexDemoApp> {
       _authStatus = _authMode == AuthMode.demo ? _demoAuthReadyMessage : null;
       _localAvailabilityError = localAvailabilityError;
     });
+
+    if (convexAuthClient != null && _convexAuthStore.session != null) {
+      unawaited(_restoreConvexAuthSession(convexAuthClient));
+    }
+  }
+
+  /// Signs back in with the saved Convex Auth session, as an app does at
+  /// startup. A session the server no longer accepts is cleared by the
+  /// provider (the store then forgets it); after any other failure the Auth
+  /// tab offers Restore Session.
+  Future<void> _restoreConvexAuthSession(
+    ConvexClientWithAuth<ConvexAuthSession> authClient,
+  ) async {
+    try {
+      await authClient.loginFromCache();
+    } catch (error) {
+      debugPrint('Convex Auth session not restored: $error');
+    }
   }
 
   void _disposeClient() {
@@ -432,6 +497,11 @@ class _DartvexDemoAppState extends State<DartvexDemoApp> {
     _betterAuthClient = null;
     _betterAuthProvider?.client.close();
     _betterAuthProvider = null;
+    _convexAuthClient?.dispose();
+    _convexAuthClient = null;
+    _convexAuthProvider?.client.close();
+    _convexAuthProvider = null;
+    _authSetupError = null;
     _authClient?.dispose();
     _authClient = null;
     _client = null;
@@ -455,6 +525,10 @@ class _DartvexDemoAppState extends State<DartvexDemoApp> {
       authClient: _authClient,
       betterAuthProvider: _betterAuthProvider,
       betterAuthClient: _betterAuthClient,
+      convexAuthProvider: _convexAuthProvider,
+      convexAuthClient: _convexAuthClient,
+      convexAuthStore: _convexAuthStore,
+      authSetupError: _authSetupError,
       demoAuthProvider: _demoAuthProvider,
       localClient: _localClient,
       localRuntime: _localRuntime,
@@ -510,6 +584,12 @@ class _DartvexDemoAppState extends State<DartvexDemoApp> {
         child: app,
       );
     }
+    if (_authMode == AuthMode.convexAuth && _convexAuthClient != null) {
+      app = ConvexAuthProvider<ConvexAuthSession>(
+        client: _convexAuthClient!,
+        child: app,
+      );
+    }
     app = ConvexProvider(client: runtime, child: app);
     return app;
   }
@@ -523,6 +603,10 @@ class DemoHomePage extends StatefulWidget {
     required this.authClient,
     required this.betterAuthProvider,
     required this.betterAuthClient,
+    required this.convexAuthProvider,
+    required this.convexAuthClient,
+    required this.convexAuthStore,
+    required this.authSetupError,
     required this.demoAuthProvider,
     required this.localClient,
     required this.localRuntime,
@@ -554,6 +638,10 @@ class DemoHomePage extends StatefulWidget {
   final ConvexClientWithAuth<DemoUserSession>? authClient;
   final ConvexBetterAuthProvider? betterAuthProvider;
   final ConvexClientWithAuth<BetterAuthSession>? betterAuthClient;
+  final ConvexAuthSessionProvider? convexAuthProvider;
+  final ConvexClientWithAuth<ConvexAuthSession>? convexAuthClient;
+  final ConvexAuthSessionStore convexAuthStore;
+  final String? authSetupError;
   final DemoAuthProvider demoAuthProvider;
   final ConvexLocalClient? localClient;
   final LocalConvexRuntimeClient? localRuntime;
@@ -667,6 +755,10 @@ class _DemoHomePageState extends State<DemoHomePage> {
         authClient: widget.authClient,
         betterAuthProvider: widget.betterAuthProvider,
         betterAuthClient: widget.betterAuthClient,
+        convexAuthProvider: widget.convexAuthProvider,
+        convexAuthClient: widget.convexAuthClient,
+        convexAuthStore: widget.convexAuthStore,
+        authSetupError: widget.authSetupError,
         demoAuthProvider: widget.demoAuthProvider,
         deploymentUrl: widget.deploymentUrl,
         authStatus: widget.authStatus,
@@ -760,6 +852,7 @@ class _DemoHomePageState extends State<DemoHomePage> {
     return switch (widget.authMode) {
       AuthMode.demo => widget.authClient != null,
       AuthMode.betterAuth => widget.betterAuthClient != null,
+      AuthMode.convexAuth => widget.convexAuthClient != null,
     };
   }
 }
@@ -953,6 +1046,10 @@ class _SessionScreen extends StatelessWidget {
     required this.authClient,
     required this.betterAuthProvider,
     required this.betterAuthClient,
+    required this.convexAuthProvider,
+    required this.convexAuthClient,
+    required this.convexAuthStore,
+    required this.authSetupError,
     required this.demoAuthProvider,
     required this.deploymentUrl,
     required this.authStatus,
@@ -973,6 +1070,10 @@ class _SessionScreen extends StatelessWidget {
   final ConvexClientWithAuth<DemoUserSession>? authClient;
   final ConvexBetterAuthProvider? betterAuthProvider;
   final ConvexClientWithAuth<BetterAuthSession>? betterAuthClient;
+  final ConvexAuthSessionProvider? convexAuthProvider;
+  final ConvexClientWithAuth<ConvexAuthSession>? convexAuthClient;
+  final ConvexAuthSessionStore convexAuthStore;
+  final String? authSetupError;
   final DemoAuthProvider demoAuthProvider;
   final String deploymentUrl;
   final String? authStatus;
@@ -1001,6 +1102,18 @@ class _SessionScreen extends StatelessWidget {
         );
       }
       return const BetterAuthSetupPanel();
+    }
+    if (authMode == AuthMode.convexAuth) {
+      final provider = convexAuthProvider;
+      if (provider != null && deploymentUrl.isNotEmpty) {
+        return ConvexAuthPanel(
+          provider: provider,
+          authClient: convexAuthClient,
+          store: convexAuthStore,
+          api: api,
+        );
+      }
+      return ConvexAuthSetupPanel(error: authSetupError);
     }
     return AuthPanel(
       api: api,
@@ -1591,6 +1704,15 @@ class _AuthHeaderPill extends StatelessWidget {
           borderColor: _compactAuthStateColor(state).withValues(alpha: 0.22),
         ),
       ),
+      AuthMode.convexAuth => ConvexAuthBuilder<ConvexAuthSession>(
+        builder: (context, state) => _HeaderStatusPill(
+          icon: Icons.verified_user_outlined,
+          label: 'Convex Auth: ${_compactAuthStateLabel(state)}',
+          color: _compactAuthStateColor(state),
+          backgroundColor: _compactAuthStateBackground(state),
+          borderColor: _compactAuthStateColor(state).withValues(alpha: 0.22),
+        ),
+      ),
     };
   }
 }
@@ -1760,6 +1882,7 @@ String _authMechanismLabel(AuthMode mode) {
   return switch (mode) {
     AuthMode.demo => 'Demo',
     AuthMode.betterAuth => 'Better Auth',
+    AuthMode.convexAuth => 'Convex Auth',
   };
 }
 
@@ -1877,27 +2000,44 @@ class _AuthModeSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: <Widget>[
-        Expanded(
-          child: SegmentedButton<AuthMode>(
-            segments: <ButtonSegment<AuthMode>>[
-              const ButtonSegment<AuthMode>(
-                value: AuthMode.demo,
-                label: Text('Demo'),
-                icon: Icon(Icons.science_outlined),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Three labels with their icons do not fit a phone on one line.
+        final showIcons = constraints.maxWidth >= 520;
+        ButtonSegment<AuthMode> segment(
+          AuthMode value,
+          String label,
+          IconData icon,
+        ) => ButtonSegment<AuthMode>(
+          value: value,
+          label: Text(label, maxLines: 1, softWrap: false),
+          icon: showIcons ? Icon(icon) : null,
+        );
+        return Row(
+          children: <Widget>[
+            Expanded(
+              child: SegmentedButton<AuthMode>(
+                segments: <ButtonSegment<AuthMode>>[
+                  segment(AuthMode.demo, 'Demo', Icons.science_outlined),
+                  segment(
+                    AuthMode.betterAuth,
+                    'Better Auth',
+                    Icons.lock_outlined,
+                  ),
+                  segment(
+                    AuthMode.convexAuth,
+                    'Convex Auth',
+                    Icons.autorenew_rounded,
+                  ),
+                ],
+                showSelectedIcon: showIcons,
+                selected: <AuthMode>{mode},
+                onSelectionChanged: (selected) => onChanged(selected.first),
               ),
-              const ButtonSegment<AuthMode>(
-                value: AuthMode.betterAuth,
-                label: Text('Better Auth'),
-                icon: Icon(Icons.lock_outlined),
-              ),
-            ],
-            selected: <AuthMode>{mode},
-            onSelectionChanged: (selected) => onChanged(selected.first),
-          ),
-        ),
-      ],
+            ),
+          ],
+        );
+      },
     );
   }
 }
