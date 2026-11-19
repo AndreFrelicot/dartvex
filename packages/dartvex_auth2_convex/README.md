@@ -214,10 +214,13 @@ revocation is reported to `onBackgroundError`.
 status, an error code), so they can be logged. What the server wrote is kept
 apart, in `serverMessage` and `logLines`, because it can quote arguments:
 print it while debugging (for example a missing `auth:refreshSession`
-export), but do not send it to telemetry. The same goes for a sign-in
-function of your own: `code` is only set when `userError.error` is shaped
-like a code (letters, digits, underscores), and any other text stays in
-`userError`.
+export), but do not send it to telemetry.
+
+A sign-in function of your own decides what its `userError.error` holds. A
+sentence stays in `userError`: `code` is only set when the value is shaped
+like a code (letters, digits, underscores). That shape is the only check, so
+a single word is copied into `message` whatever it means. Put fixed
+identifiers in `error`, never something the user typed.
 
 ## Security notes
 

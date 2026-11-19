@@ -736,6 +736,96 @@ void main() {
       expect(stored, <ConvexAuthSession?>[null]);
     });
 
+    test('logouts made at once share the removal and its result', () async {
+      final errors = <Object>[];
+      final stored = <ConvexAuthSession?>[];
+      final removalStarted = Completer<void>();
+      final removalGate = Completer<void>();
+      var removals = 0;
+      var failRemoval = true;
+      final provider = ConvexAuthSessionProvider(
+        client: client,
+        initialSession: ConvexAuthSession.fromJson(bundle('a')),
+        onSessionChanged: (session) async {
+          if (session == null) {
+            removals++;
+            if (failRemoval) {
+              removalStarted.complete();
+              await removalGate.future;
+              throw StateError('keychain locked');
+            }
+          }
+          stored.add(session);
+        },
+        onBackgroundError: (error, _) => errors.add(error),
+      );
+
+      // The second call finds the session already cleared: it has nothing
+      // to send to the server, but the removal is still running.
+      final results = <String>[];
+      Future<void> track(String name, Future<void> logout) => logout.then(
+            (_) => results.add('$name: done'),
+            onError: (Object error) => results.add('$name: $error'),
+          );
+      final first = track('first', provider.logout());
+      await removalStarted.future;
+      final second = track('second', provider.logout());
+      await pumpEventQueue();
+      expect(results, isEmpty);
+
+      removalGate.complete();
+      await Future.wait(<Future<void>>[first, second]);
+      expect(
+        results,
+        unorderedEquals(<String>[
+          'first: Bad state: keychain locked',
+          'second: Bad state: keychain locked',
+        ]),
+      );
+      expect(removals, 1);
+      expect(server.callsTo('auth:signOut'), hasLength(1));
+      expect(errors, isEmpty);
+
+      // The removal is owed once, whoever asks for it next.
+      failRemoval = false;
+      await Future.wait(<Future<void>>[provider.logout(), provider.logout()]);
+      expect(removals, 2);
+      expect(stored, <ConvexAuthSession?>[null]);
+      expect(server.callsTo('auth:signOut'), hasLength(1));
+    });
+
+    test(
+        'a logout that joins a removal queued in the background reports '
+        'its failure itself', () async {
+      server.handlers['auth:refreshSession'] = (_) => noSession;
+      final errors = <Object>[];
+      final removalStarted = Completer<void>();
+      final removalGate = Completer<void>();
+      final provider = ConvexAuthSessionProvider(
+        client: client,
+        initialSession: ConvexAuthSession.fromJson(bundle('a')),
+        onSessionChanged: (session) async {
+          removalStarted.complete();
+          await removalGate.future;
+          throw StateError('keychain locked');
+        },
+        onBackgroundError: (error, _) => errors.add(error),
+      );
+
+      // The server reports the session gone: the provider queues the
+      // removal on its own, then the app logs out while it runs.
+      final restore = expectLater(
+        provider.loginFromCache(onIdToken: (_) {}),
+        throwsA(isA<ConvexAuthSessionEndedException>()),
+      );
+      await removalStarted.future;
+      final logout = expectLater(provider.logout(), throwsA(isA<StateError>()));
+      removalGate.complete();
+      await logout;
+      await restore;
+      expect(errors, isEmpty);
+    });
+
     test(
         'logout reports the failed removal in the background when the '
         'request failed too', () async {

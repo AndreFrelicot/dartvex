@@ -129,10 +129,14 @@ class ConvexAuthSessionProvider implements AuthProvider<ConvexAuthSession> {
   /// cannot cancel a sign-in to another one that is still in flight.
   int _epoch = 0;
 
-  /// Whether the last [onSessionChanged] call failed: the app's storage does
-  /// not hold [_session], and the next change (or [logout]) must write it
-  /// again even when the session itself is unchanged.
-  bool _saveFailed = false;
+  /// The latest queued [onSessionChanged] call, the one that writes
+  /// [_session]; `null` when [_session] was never handed to the callback.
+  ///
+  /// When it failed, the app's storage does not hold [_session]: the next
+  /// change (or [logout]) writes it again even when the session itself is
+  /// unchanged. Until then, callers that ask for the same value share this
+  /// write, so every [logout] waiting for one removal sees the same result.
+  _SaveOutcome? _lastSave;
 
   _InFlightRefresh? _refreshing;
 
@@ -238,8 +242,6 @@ class ConvexAuthSessionProvider implements AuthProvider<ConvexAuthSession> {
     return refreshed;
   }
 
-  @override
-
   /// Clears the session locally, then revokes it on the server.
   ///
   /// Local state ([session], [signIn], an adopted session) is cleared before
@@ -255,6 +257,10 @@ class ConvexAuthSessionProvider implements AuthProvider<ConvexAuthSession> {
   /// [onBackgroundError]: the session is still in the app's storage, and a
   /// restart would restore it. In both cases the removal stays owed: call
   /// `logout()` again to retry it (nothing is sent to the server then).
+  ///
+  /// Calls made while the removal is still running share it: each of them
+  /// completes when it is done and throws when it failed.
+  @override
   Future<void> logout() async {
     final current = _session;
     final staged = _adoptedSession;
@@ -262,8 +268,10 @@ class ConvexAuthSessionProvider implements AuthProvider<ConvexAuthSession> {
     signIn = null;
     _adoptedSession = null;
     _refreshing = null;
-    final removal = _SaveOutcome();
-    final saved = _setSession(null, outcome: removal);
+    // Another logout() may have queued this removal already: both then wait
+    // for the same write and report the same result.
+    final saved = _setSession(null, reportedByCaller: true);
+    final removal = _lastSave;
     try {
       // The sign-out of the current session ends every bundle of that
       // session; a staged bundle with another refresh token may be another
@@ -281,16 +289,16 @@ class ConvexAuthSessionProvider implements AuthProvider<ConvexAuthSession> {
       // The caller gets the error of the request; the failed removal, if
       // any, goes where failed saves go.
       await saved;
-      final error = removal.error;
+      final error = removal?.error;
       if (error != null) {
-        _reportBackgroundError(error, removal.stackTrace!, isSave: true);
+        _reportBackgroundError(error, removal!.stackTrace!, isSave: true);
       }
       rethrow;
     }
     await saved;
-    final error = removal.error;
+    final error = removal?.error;
     if (error != null) {
-      Error.throwWithStackTrace(error, removal.stackTrace!);
+      Error.throwWithStackTrace(error, removal!.stackTrace!);
     }
   }
 
@@ -468,28 +476,36 @@ class ConvexAuthSessionProvider implements AuthProvider<ConvexAuthSession> {
   ///
   /// An unchanged session is saved again when the last save failed, so the
   /// storage is not left out of date. A failed save is passed to
-  /// [onBackgroundError], or recorded in [outcome] when the caller reports
-  /// it itself.
-  Future<void> _setSession(ConvexAuthSession? next, {_SaveOutcome? outcome}) {
-    if (identical(_session, next) && !_saveFailed) {
+  /// [onBackgroundError], unless [reportedByCaller]: the caller then reads
+  /// the failure from [_lastSave] and reports it itself.
+  Future<void> _setSession(
+    ConvexAuthSession? next, {
+    bool reportedByCaller = false,
+  }) {
+    if (identical(_session, next) && _lastSave?.error == null) {
+      // The write of this value is queued, running or done. A caller that
+      // reports its failure takes it over from the background handler.
+      if (reportedByCaller) {
+        _lastSave?.reportedByCaller = true;
+      }
       return _saves;
     }
     _session = next;
     final callback = onSessionChanged;
     if (callback == null) {
+      _lastSave = null;
       return _saves;
     }
+    final outcome =
+        _lastSave = _SaveOutcome()..reportedByCaller = reportedByCaller;
     return _saves = _saves.then((_) async {
       try {
         await callback(next);
-        _saveFailed = false;
       } catch (error, stackTrace) {
-        _saveFailed = true;
-        if (outcome != null) {
-          outcome
-            ..error = error
-            ..stackTrace = stackTrace;
-        } else {
+        outcome
+          ..error = error
+          ..stackTrace = stackTrace;
+        if (!outcome.reportedByCaller) {
           _reportBackgroundError(error, stackTrace, isSave: true);
         }
       }
@@ -553,16 +569,18 @@ class ConvexAuthSessionProvider implements AuthProvider<ConvexAuthSession> {
   }
 }
 
-final
-
-    /// The failure, if any, of one [ConvexAuthSessionProvider.onSessionChanged]
-    /// call whose caller reports it itself.
-    class _SaveOutcome {
+/// The failure, if any, of one [ConvexAuthSessionProvider.onSessionChanged]
+/// call.
+final class _SaveOutcome {
   Object? error;
   StackTrace? stackTrace;
+
+  /// Whether a caller (logout) throws the failure itself, instead of it
+  /// going to the background handler.
+  bool reportedByCaller = false;
 }
 
-class _InFlightRefresh {
+final class _InFlightRefresh {
   _InFlightRefresh(this.refreshToken, this.future);
 
   final String refreshToken;
