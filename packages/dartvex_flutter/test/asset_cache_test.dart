@@ -226,6 +226,53 @@ void main() {
       expect(fakeCacheManager.removedKeys, <String>['first', 'late']);
     });
 
+    test(
+      'clear removes a download that finishes while the store is emptied',
+      () async {
+        const url = 'https://example.com/private.png';
+        final downloadGate = Completer<void>();
+        final emptyGate = Completer<void>();
+        fakeCacheManager.urlGates[url] = downloadGate;
+        fakeCacheManager.emptyCacheGate = emptyGate;
+
+        final download = cache.prefetch('private', url);
+        await pumpEventQueue();
+        final clearing = cache.clear();
+        await pumpEventQueue();
+
+        // The file lands after the store listed what to delete, and the
+        // download is over before the purge looks at the downloads again.
+        downloadGate.complete();
+        await download;
+        await pumpEventQueue();
+        expect(await cache.contains('private'), isTrue);
+
+        emptyGate.complete();
+        await clearing;
+
+        expect(await cache.contains('private'), isFalse);
+        expect(fakeCacheManager.removedKeys, <String>['private']);
+      },
+    );
+
+    test(
+      'clear removes a download that starts and ends while it is running',
+      () async {
+        final emptyGate = Completer<void>();
+        fakeCacheManager.emptyCacheGate = emptyGate;
+
+        final clearing = cache.clear();
+        await pumpEventQueue();
+        await cache.prefetch('quick', 'https://example.com/quick.png');
+        expect(await cache.contains('quick'), isTrue);
+
+        emptyGate.complete();
+        await clearing;
+
+        expect(await cache.contains('quick'), isFalse);
+      },
+    );
+
     test('clear does not wait for downloads started after it', () async {
       await cache.clear();
       final file = await cache.prefetch(
@@ -1427,6 +1474,9 @@ class FakeCacheManager implements BaseCacheManager, ConvexAssetCacheMetrics {
   final List<GetSingleFileCall> downloadFileCalls = [];
   final List<String> removedKeys = [];
   bool emptyCacheCalled = false;
+
+  /// Holds back the return of [emptyCache] after it emptied the store.
+  Completer<void>? emptyCacheGate;
   Object? downloadError;
 
   /// Downloads of these URLs wait for their completer before writing.
@@ -1534,6 +1584,9 @@ class FakeCacheManager implements BaseCacheManager, ConvexAssetCacheMetrics {
   Future<void> emptyCache() async {
     emptyCacheCalled = true;
     _cache.clear();
+    // Like a real store: the files to delete are listed first, the call
+    // returns later.
+    await emptyCacheGate?.future;
   }
 
   @override

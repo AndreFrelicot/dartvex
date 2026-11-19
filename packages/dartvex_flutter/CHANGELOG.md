@@ -31,8 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `ConvexAssetCache.clear()` also removes the files of downloads that were
   still in flight when it was called, or that started while it was running
-  (it waits for them), so a file of the previous user can no longer land in
-  the cache after a sign-out purge. Await it before the next user's screens
+  (it waits for them), whenever they finish, so a file of the previous user
+  can no longer land in the cache after a sign-out purge. Await it before the next user's screens
   load: a file they download during the purge is removed with the rest. The
   docs of `ConvexAssetCache` and `ConvexCachedImage` now say that entries are
   not tied to a user and how to isolate private files (clear on user change,
