@@ -293,8 +293,10 @@ await secureStorage.write(key: 'session_token', value: session.sessionToken);
 (and `provider.cachedSession`) once that `loginFromCache()` succeeds. If the
 restore fails, the session that was signed in before stays current in both
 the provider and the Convex client; after a transient failure, calling
-`loginFromCache()` again retries the staged session. A `login()`, `logout()`
-or another `adoptSession()` discards it.
+`loginFromCache()` again retries the staged session. A `login()`, `signIn()`,
+`signUp()`, `logout()` or another `adoptSession()` discards it. A discarded
+session is only forgotten, unless it is one `signIn()` or `signUp()` returned:
+the provider created that one and signs it out.
 
 Custom schemes used for `redirectTo` or `callbackURL` must be listed in the
 server's `trustedOrigins`. An invalid, expired or reused magic-link token
