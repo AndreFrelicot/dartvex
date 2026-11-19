@@ -246,6 +246,88 @@ void main() {
       );
     });
 
+    test('flattens unions nested in a union', () {
+      final context = TypeRenderContext();
+      final mapper = TypeMapper();
+
+      ConvexObjectType error(String code) =>
+          ConvexObjectType(<String, ConvexField>{
+            'error': ConvexField(
+              fieldType: ConvexLiteralType(code),
+              optional: false,
+            ),
+          });
+
+      // Two nested unions: as members they share the runtime shape "union",
+      // but their leaves are told apart by the `error` literal.
+      final mapped = mapper.mapType(
+        ConvexUnionType(<ConvexType>[
+          ConvexUnionType(<ConvexType>[
+            ConvexUnionType(<ConvexType>[
+              error('TOO_SHORT'),
+              error('TOO_LONG'),
+            ]),
+            error('TOO_COMMON'),
+          ]),
+          ConvexUnionType(<ConvexType>[error('TAKEN'), error('INVALID')]),
+          error('RATE_LIMITED'),
+        ]),
+        suggestedName: 'SignUpError',
+        context: context,
+      );
+
+      final definitions = context.renderDefinitions();
+      expect(mapped.annotation, 'SignUpError');
+      expect(definitions, contains('sealed class SignUpError'));
+      // One case per leaf, in declaration order, and no intermediate union.
+      expect(
+        RegExp(
+          r'class (SignUpError\w+) extends SignUpError',
+        ).allMatches(definitions).length,
+        6,
+      );
+      expect(definitions, isNot(contains('sealed class SignUpError1')));
+      for (final code in <String>[
+        'TOO_SHORT',
+        'TOO_LONG',
+        'TOO_COMMON',
+        'TAKEN',
+        'INVALID',
+        'RATE_LIMITED',
+      ]) {
+        expect(definitions, contains("'$code'"));
+      }
+    });
+
+    test('flattened nested unions keep the ambiguity check', () {
+      final context = TypeRenderContext();
+      final mapper = TypeMapper();
+
+      expect(
+        () => mapper.mapType(
+          const ConvexUnionType(<ConvexType>[
+            ConvexUnionType(<ConvexType>[
+              ConvexArrayType(ConvexStringType()),
+              ConvexStringType(),
+            ]),
+            ConvexUnionType(<ConvexType>[
+              ConvexArrayType(ConvexNumberType()),
+              ConvexNumberType(),
+            ]),
+          ]),
+          suggestedName: 'NestedAmbiguous',
+          context: context,
+        ),
+        throwsA(
+          isA<TypeMapperException>().having(
+            (e) => e.message,
+            'message',
+            contains('Ambiguous union "NestedAmbiguous"'),
+          ),
+        ),
+      );
+    });
+
     test('throws on object unions without a discriminator', () {
       final context = TypeRenderContext();
       final mapper = TypeMapper();
