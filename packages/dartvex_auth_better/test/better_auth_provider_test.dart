@@ -1138,6 +1138,115 @@ void main() {
         expect(restored.sessionToken, 'ses_c');
       });
 
+      test(
+          'logout before the restore signs out the adopted session signIn '
+          'created, once', () async {
+        final setup = gatedMock();
+        final provider = await signedInAsA(setup.mock);
+        final staged = await provider.signIn(email: 'b', password: 'pw');
+        provider.adoptSession(staged);
+
+        // Another account is still the current one.
+        await provider.logout();
+        await pumpEventQueue();
+
+        expect(setup.signedOut, unorderedEquals(<String>['ses_a', 'ses_b']));
+        expect(provider.cachedSession, isNull);
+        await expectLater(
+          provider.loginFromCache(onIdToken: (_) {}),
+          throwsStateError,
+        );
+      });
+
+      test(
+          'logout before the restore signs out the adopted session signUp '
+          'created, without a current session', () async {
+        final setup = gatedMock();
+        final provider = ConvexBetterAuthProvider(
+          client: BetterAuthClient(baseUrl: baseUrl, httpClient: setup.mock),
+        );
+        final staged = await provider.signUp(
+          name: 'B',
+          email: 'b',
+          password: 'pw',
+        );
+        // Adopted twice: it stays one session to end.
+        provider
+          ..adoptSession(staged)
+          ..adoptSession(staged);
+
+        await provider.logout();
+        await pumpEventQueue();
+
+        expect(setup.signedOut, ['ses_b']);
+      });
+
+      test('logout after the restore signs out the adopted session once',
+          () async {
+        final setup = gatedMock();
+        final provider = await signedInAsA(setup.mock);
+        final staged = await provider.signIn(email: 'b', password: 'pw');
+        provider.adoptSession(staged);
+        await provider.loginFromCache(onIdToken: (_) {});
+        expect(setup.signedOut, isEmpty);
+
+        await provider.logout();
+        await pumpEventQueue();
+
+        expect(setup.signedOut, ['ses_b']);
+      });
+
+      test(
+          'an adopted session signIn created is signed out when another '
+          'session or sign-in replaces it', () async {
+        final setup = gatedMock();
+        final provider = await signedInAsA(setup.mock);
+        provider.adoptSession(
+          await provider.signIn(email: 'b', password: 'pw'),
+        );
+
+        provider.adoptSession(
+          const BetterAuthSession(
+            token: 'jwt_magic',
+            sessionToken: 'ses_magic',
+            userId: 'm',
+            email: 'm',
+          ),
+        );
+        await pumpEventQueue();
+        expect(setup.signedOut, ['ses_b']);
+
+        // The session the app obtained by itself is only forgotten.
+        provider.adoptSession(
+          await provider.signIn(email: 'c', password: 'pw'),
+        );
+        await pumpEventQueue();
+        expect(setup.signedOut, ['ses_b']);
+
+        await provider.signIn(email: 'd', password: 'pw');
+        await pumpEventQueue();
+        expect(setup.signedOut, ['ses_b', 'ses_c']);
+      });
+
+      test('logout only forgets an adopted session the app obtained itself',
+          () async {
+        final setup = gatedMock();
+        final provider = await signedInAsA(setup.mock);
+        provider.adoptSession(
+          const BetterAuthSession(
+            token: 'jwt_magic',
+            sessionToken: 'ses_magic',
+            userId: 'm',
+            email: 'm',
+          ),
+        );
+
+        await provider.logout();
+        await pumpEventQueue();
+
+        expect(setup.signedOut, ['ses_a']);
+      });
+
       test('logout without a current session ends the staged one', () async {
         final setup = gatedMock();
         final provider = ConvexBetterAuthProvider(

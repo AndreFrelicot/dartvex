@@ -59,6 +59,12 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
   /// successful explicit [loginFromCache].
   BetterAuthSession? _adoptedSession;
 
+  /// Whether [_adoptedSession] is a session this provider created, in
+  /// [signIn] or [signUp], and the app then handed to [adoptSession]. The
+  /// provider is still the one to sign it out when it is dropped before a
+  /// restore installed it; a session the app obtained by itself is not.
+  bool _adoptedSessionIsOwn = false;
+
   /// Incremented by every user-started call (login, signIn, signUp,
   /// adoptSession, an explicit loginFromCache, logout). Those operations
   /// capture it before awaiting and drop their result when it changed, so a
@@ -125,7 +131,7 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
       );
     }
     final epoch = ++_sessionEpoch;
-    _adoptedSession = null;
+    _discardAdoptedSession();
     final BetterAuthSession session;
     try {
       session = await client.signIn(email: e, password: p);
@@ -215,7 +221,7 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
         // Only the staged session is gone; it never was the current one, so
         // this is not an AuthSessionEndedError.
         final kind = identical(staged, _adoptedSession) ? 'adopted' : 'staged';
-        _adoptedSession = null;
+        _clearAdoptedSession();
         _clearPendingLoginSession();
         throw BetterAuthException(
           'The $kind Better Auth session is no longer valid'
@@ -234,7 +240,7 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
       throw _SessionEndedStateError('Better Auth session expired.');
     }
     if (staged != null) {
-      _adoptedSession = null;
+      _clearAdoptedSession();
       _clearPendingLoginSession();
     }
     _cachedSession = refreshed;
@@ -250,16 +256,21 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
   /// Local state (session, [email] and [password]) is cleared before the
   /// sign-out request is sent, so it is cleared even when that request fails,
   /// and a [login] started while the request is in flight is not wiped when
-  /// it completes. A session that [signIn] or [signUp] created and no [login]
-  /// used yet is signed out too.
+  /// it completes. A session that [signIn] or [signUp] created and that is
+  /// not the current one yet is signed out too, whether it waits for [login]
+  /// or was passed to [adoptSession]. A session the app obtained by itself
+  /// and staged with [adoptSession] is only forgotten.
   Future<void> logout() async {
     final sessionToken = _sessionToken;
-    final staged = _pendingLoginSession?.sessionToken;
+    // At most one of the two exists: adoptSession takes over the session
+    // staged for login(), and signIn / signUp drop an adopted one.
+    final staged = _pendingLoginSession?.sessionToken ??
+        (_adoptedSessionIsOwn ? _adoptedSession?.sessionToken : null);
     _clearSession();
     email = null;
     password = null;
     if (sessionToken == null) {
-      // Only a session staged by signIn or signUp: it is the one to end.
+      // Only a session created by signIn or signUp: it is the one to end.
       if (staged != null) {
         await client.signOut(sessionToken: staged);
       }
@@ -336,7 +347,7 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
   /// the email of this one.
   int _startStagedSignIn() {
     final epoch = ++_sessionEpoch;
-    _adoptedSession = null;
+    _discardAdoptedSession();
     _discardPendingLoginSession();
     password = null;
     return epoch;
@@ -376,6 +387,23 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
     }
   }
 
+  /// Drops the session staged by [adoptSession]. One this provider created
+  /// is signed out in the background, as [_discardPendingLoginSession] would
+  /// have done before the app adopted it, unless it is the current session
+  /// or [keep].
+  void _discardAdoptedSession({String? keep}) {
+    final own = _adoptedSessionIsOwn ? _adoptedSession?.sessionToken : null;
+    _clearAdoptedSession();
+    if (own != null && own != _sessionToken && own != keep) {
+      _signOutInBackground(own);
+    }
+  }
+
+  void _clearAdoptedSession() {
+    _adoptedSession = null;
+    _adoptedSessionIsOwn = false;
+  }
+
   void _signOutInBackground(String sessionToken) {
     client
         .signOut(sessionToken: sessionToken)
@@ -390,17 +418,28 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
   /// [cachedSession]) only when that restore succeeds. Until then — and if
   /// the restore fails — the current session is kept, so background token
   /// refreshes keep serving it. After a transient failure the session stays
-  /// staged and the next `loginFromCache()` retries it; a [login], [signUp],
-  /// [logout] or another [adoptSession] discards it. Persist
+  /// staged and the next `loginFromCache()` retries it; a [login], [signIn],
+  /// [signUp], [logout] or another [adoptSession] discards it. Persist
   /// `session.sessionToken` once the restore succeeded.
+  ///
+  /// A discarded session is only forgotten, with one exception: the session
+  /// [signIn] or [signUp] returned, which this provider created. It may be
+  /// adopted like any other, and is signed out when it is discarded before
+  /// a restore installed it.
   ///
   /// Like [login], this supersedes a [login], [signUp] or explicit
   /// [loginFromCache] that is still in flight.
   void adoptSession(BetterAuthSession session) {
     _sessionEpoch++;
-    // The app may adopt the very session signIn() or signUp() returned.
-    _discardPendingLoginSession(keep: session.sessionToken);
+    // The app may adopt the very session signIn() or signUp() returned, or
+    // adopt it again: it stays the provider's to sign out if dropped.
+    final token = session.sessionToken;
+    final own = _pendingLoginSession?.sessionToken == token ||
+        (_adoptedSessionIsOwn && _adoptedSession?.sessionToken == token);
+    _discardPendingLoginSession(keep: token);
+    _discardAdoptedSession(keep: token);
     _adoptedSession = session;
+    _adoptedSessionIsOwn = own;
   }
 
   /// The currently cached session, if any.
@@ -413,7 +452,7 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
   void _commitSession(BetterAuthSession session) {
     _sessionEpoch++;
     _clearPendingLoginSession();
-    _adoptedSession = null;
+    _discardAdoptedSession(keep: session.sessionToken);
     _cachedSession = session;
     _sessionToken = session.sessionToken;
   }
@@ -439,7 +478,7 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
     _sessionEpoch++;
     _cachedSession = null;
     _sessionToken = null;
-    _adoptedSession = null;
+    _clearAdoptedSession();
     _clearPendingLoginSession();
   }
 
