@@ -52,15 +52,17 @@ cd example/convex-backend
 npm run demo:key
 ```
 
-The script writes the private key to gitignored `.env` and prints the matching
-`npx convex env set DEMO_JWKS ...` command. Run that command once for your
-deployment, then generate a token when launching Flutter:
+The script writes the private key to gitignored `.env` (it is never printed)
+and prints the matching `npx convex env set DEMO_JWKS ...` command. Run that
+command once for your deployment, then generate a token when launching
+Flutter. A token expires after 24 hours:
 
 ```bash
 npm run -s token
 ```
 
-Do not commit `.env`, generated JWTs, or real deployment URLs.
+Do not commit `.env`, generated JWTs, or real deployment URLs, and do not
+distribute a build that was given a token with `--dart-define`.
 
 ## Run the Flutter app
 

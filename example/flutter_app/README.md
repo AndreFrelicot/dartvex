@@ -110,7 +110,8 @@ npm run demo:key
    only the public JWKS to Convex. The private key remains in gitignored `.env`.
 
 3. Run Flutter with a freshly generated token (capture it in a shell variable —
-   see [Troubleshooting](#troubleshooting)):
+   see [Troubleshooting](#troubleshooting)). The token expires after 24 hours
+   and is compiled into the app, so use it for local runs only:
 
 ```bash
 cd ../flutter_app
@@ -235,6 +236,9 @@ native-only, so the extra image-widget/cache variants are hidden on web.
   turns it into a positional argument that the shell or Flutter then misreads.
   Fix: put the token in a variable first (`TOKEN="$(…)"`) and pass `"$TOKEN"`, or
   run the whole command on a single line.
+- **Demo login stops working after a day** — the demo JWT expired (24 hours
+  by default). Generate a new one and launch again; `DEMO_TOKEN_TTL_SECONDS`
+  sets another lifetime for `npm run token`.
 - **Auth tab shows "Demo token missing"** — `CONVEX_DEMO_AUTH_TOKEN` did not reach
   the build (usually the issue above). Public tabs and Better Auth do not need it.
 - **`./generate_bindings.sh: permission denied`** — run it via

@@ -51,9 +51,10 @@ Generate local demo JWT material:
 npm run demo:key
 ```
 
-The script writes `.env` if it does not already exist and prints the matching
-Convex command. Run that command to configure the public JWKS in your dev
-deployment:
+The script writes `.env` if it does not already exist, readable by your user
+only, and prints the matching Convex command. The private key is written to
+that file and never printed. Run the command to configure the public JWKS in
+your dev deployment:
 
 ```bash
 npx convex env set DEMO_JWKS '<value printed by npm run demo:key>'
@@ -99,9 +100,17 @@ npm run token
 ```
 
 The generated token is valid for the custom JWT provider configured in
-`convex/auth.config.ts` when `DEMO_JWKS` is configured in Convex.
+`convex/auth.config.ts` when `DEMO_JWKS` is configured in Convex. It expires
+after 24 hours; set `DEMO_TOKEN_TTL_SECONDS` for another lifetime (30 days at
+most), and run `npm run token` again when it has expired.
 
-Pass it to the Flutter demo with:
+Anyone holding the token is the demo user on that deployment until it
+expires. Passing it with `--dart-define` compiles it into the app, where it
+can be read back: do that for local runs only, never for a build you
+distribute. If a token or the private key leaked, replace the keypair
+(`npm run demo:key -- --force`) and set the new `DEMO_JWKS`.
+
+Pass it to a local run of the Flutter demo with:
 
 ```bash
 cd ../flutter_app
