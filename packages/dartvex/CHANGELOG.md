@@ -43,7 +43,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   kept showing the user as signed in until the server rejected the current
   token. Any other refresh error is still treated as transient and keeps the
   session. A reauth after a server rejection no longer retries such an
-  error.
+  error. A refresh that fails after a newer token fetch started is ignored,
+  like a refresh that succeeds late: it cannot end a session that fetch
+  renewed.
 
 ## [0.3.0] - 2026-11-05
 

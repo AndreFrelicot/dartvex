@@ -845,7 +845,10 @@ class AuthManager {
           );
         }
       } catch (error, stackTrace) {
-        if (!_isCurrentFlow(generation, fetchToken)) {
+        // Like a late token, a late failure belongs to the past once a newer
+        // fetch started: that one decides, not this one.
+        if (!_isCurrentFlow(generation, fetchToken) ||
+            sequence != _tokenFetchSequence) {
           return;
         }
         if (error is AuthSessionEndedError) {
@@ -905,7 +908,10 @@ class AuthManager {
       );
       await sendAuth(freshToken);
     } catch (error, stackTrace) {
-      if (!_isCurrentFlow(generation, fetchToken)) {
+      // Like a late token, a late failure belongs to the past once a newer
+      // fetch started: that one decides, not this one.
+      if (!_isCurrentFlow(generation, fetchToken) ||
+          sequence != _tokenFetchSequence) {
         return;
       }
       if (error is AuthSessionEndedError) {

@@ -158,6 +158,12 @@ final session = await authedClient.login();
 // session.token         — the Convex JWT at login time (a snapshot)
 ```
 
+`signIn()` (like `signUp()`) only stages the new session: it becomes the
+provider's session, and `provider.cachedSession`, when `login()` hands it to
+the Convex client. A client that is still signed in with another account
+keeps running as that account until then, so switching accounts needs no
+`logout()` first.
+
 The wrapper keeps the Convex JWT fresh by calling the provider again before
 it expires. `session.token` (like `AuthAuthenticated.userInfo.token`) is not
 updated by those refreshes: read `authedClient.currentAuthToken` when you
