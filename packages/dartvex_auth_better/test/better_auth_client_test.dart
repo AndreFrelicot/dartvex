@@ -1424,6 +1424,60 @@ void main() {
       });
     });
 
+    test('plain http is only accepted for the local machine', () {
+      for (final origin in <String>[
+        'http://localhost:3210',
+        'http://app.localhost:3210',
+        'http://127.0.0.1:3210',
+        'http://127.1.2.3:3210',
+        'http://[::1]:3210',
+        'http://10.0.2.2:3210',
+      ]) {
+        expect(
+          BetterAuthClient(
+              baseUrl: origin,
+              httpClient: MockClient(
+                (_) async => http.Response('', 200),
+              )).baseUrl,
+          origin,
+          reason: origin,
+        );
+      }
+
+      for (final origin in <String>[
+        'http://192.168.1.20:3210',
+        'http://my-app.convex.cloud',
+        'http://localhost.example.com',
+        'http://127.0.0.1.example.com',
+      ]) {
+        expect(
+          () => BetterAuthClient(baseUrl: origin),
+          throwsA(
+            isA<ArgumentError>().having(
+              (error) => error.message,
+              'message',
+              contains('allowInsecureHttp'),
+            ),
+          ),
+          reason: origin,
+        );
+        expect(
+          () => BetterAuthClient(
+            baseUrl: 'https://my-app.convex.cloud',
+            siteUrl: origin,
+          ),
+          throwsArgumentError,
+          reason: 'siteUrl $origin',
+        );
+        final client = BetterAuthClient(
+          baseUrl: origin,
+          allowInsecureHttp: true,
+          httpClient: MockClient((_) async => http.Response('', 200)),
+        );
+        expect(client.baseUrl, origin, reason: origin);
+      }
+    });
+
     test('siteUrl overrides the derived HTTP-actions origin', () async {
       final requested = <Uri>[];
       final mock = MockClient((request) async {
