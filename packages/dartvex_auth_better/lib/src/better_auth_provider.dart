@@ -364,10 +364,14 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
 
   /// Drops the session staged by [signIn] or [signUp] and signs it out in
   /// the background: nobody else holds it.
-  void _discardPendingLoginSession() {
+  ///
+  /// It is not signed out when it is the current session or [keep], the
+  /// session token the caller is handing over at the same time: signing out
+  /// a token ends its session for whoever holds it.
+  void _discardPendingLoginSession({String? keep}) {
     final staged = _pendingLoginSession?.sessionToken;
     _clearPendingLoginSession();
-    if (staged != null && staged != _sessionToken) {
+    if (staged != null && staged != _sessionToken && staged != keep) {
       _signOutInBackground(staged);
     }
   }
@@ -394,7 +398,8 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
   /// [loginFromCache] that is still in flight.
   void adoptSession(BetterAuthSession session) {
     _sessionEpoch++;
-    _discardPendingLoginSession();
+    // The app may adopt the very session signIn() or signUp() returned.
+    _discardPendingLoginSession(keep: session.sessionToken);
     _adoptedSession = session;
   }
 

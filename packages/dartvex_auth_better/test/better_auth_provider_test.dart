@@ -1094,6 +1094,50 @@ void main() {
         );
       });
 
+      test('adopting the session signIn staged does not sign it out', () async {
+        final setup = gatedMock();
+        final provider = await signedInAsA(setup.mock);
+        final staged = await provider.signIn(email: 'b', password: 'pw');
+
+        // The same server session, handed back as another Dart object.
+        provider.adoptSession(
+          BetterAuthSession(
+            token: staged.token,
+            sessionToken: staged.sessionToken,
+            userId: staged.userId,
+            email: staged.email,
+          ),
+        );
+        await pumpEventQueue();
+        expect(setup.signedOut, isEmpty);
+
+        final restored = await provider.loginFromCache(onIdToken: (_) {});
+        expect(restored.sessionToken, 'ses_b');
+        expect(provider.cachedSession?.sessionToken, 'ses_b');
+        await pumpEventQueue();
+        expect(setup.signedOut, isEmpty);
+      });
+
+      test('adopting another session signs out the staged one', () async {
+        final setup = gatedMock();
+        final provider = await signedInAsA(setup.mock);
+        await provider.signIn(email: 'b', password: 'pw');
+
+        provider.adoptSession(
+          const BetterAuthSession(
+            token: 'jwt_magic',
+            sessionToken: 'ses_c',
+            userId: 'c',
+            email: 'c',
+          ),
+        );
+        await pumpEventQueue();
+        expect(setup.signedOut, ['ses_b']);
+
+        final restored = await provider.loginFromCache(onIdToken: (_) {});
+        expect(restored.sessionToken, 'ses_c');
+      });
+
       test('logout without a current session ends the staged one', () async {
         final setup = gatedMock();
         final provider = ConvexBetterAuthProvider(
