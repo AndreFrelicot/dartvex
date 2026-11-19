@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:dartvex_flutter/dartvex_flutter.dart';
 import 'package:dartvex_local/dartvex_local.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../../../convex_api/modules/messages.dart' as messages_api;
 import '../../../../convex_api/modules/tasks.dart' as tasks_api;

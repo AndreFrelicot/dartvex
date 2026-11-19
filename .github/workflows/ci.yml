@@ -201,10 +201,13 @@ jobs:
         with: { flutter-version: '3.38.1', channel: stable }
       - name: Use local dartvex dependency
         run: bash scripts/ci-local-dependency-overrides.sh packages/dartvex_flutter
+      # The example app is left out: it uses material_ui, which needs a newer
+      # Flutter than the package floor. "Analyze (Flutter)" and "Package
+      # Flutter Example" cover it on the latest stable.
       - name: Analyze with the lowest allowed dependencies
-        run: cd packages/dartvex_flutter && flutter pub downgrade && flutter analyze
+        run: cd packages/dartvex_flutter && flutter pub downgrade --no-example && flutter analyze lib test
       - name: Test on the floor SDK
-        run: cd packages/dartvex_flutter && flutter pub upgrade && flutter test
+        run: cd packages/dartvex_flutter && flutter pub upgrade --no-example && flutter test
 
   protocol-watch:
     name: Protocol Watch
