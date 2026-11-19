@@ -43,7 +43,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one, and made that `login()` fail.
 - A session that `signIn()` or `signUp()` created and that is never used
   (replaced by a newer one, dropped for staged credentials, or pending at
-  `logout()`) is signed out on the server.
+  `logout()`) is signed out on the server. Passing that same session to
+  `adoptSession()` keeps it.
 - `signIn()` and `signUp()` clear a staged `password`, whatever its value: it
   can no longer be sent with the email of the account they signed in.
 
