@@ -135,8 +135,13 @@ class ConvexAuthSessionProvider implements AuthProvider<ConvexAuthSession> {
   /// When it failed, the app's storage does not hold [_session]: the next
   /// change (or [logout]) writes it again even when the session itself is
   /// unchanged. Until then, callers that ask for the same value share this
-  /// write, so every [logout] waiting for one removal sees the same result.
+  /// write: a [logout] that finds the removal already queued by the provider
+  /// waits for it and reports its result.
   _SaveOutcome? _lastSave;
+
+  /// The [logout] that is still running, shared by the calls that find
+  /// nothing more to sign out.
+  Future<void>? _loggingOut;
 
   _InFlightRefresh? _refreshing;
 
@@ -258,27 +263,45 @@ class ConvexAuthSessionProvider implements AuthProvider<ConvexAuthSession> {
   /// restart would restore it. In both cases the removal stays owed: call
   /// `logout()` again to retry it (nothing is sent to the server then).
   ///
-  /// Calls made while the removal is still running share it: each of them
-  /// completes when it is done and throws when it failed.
+  /// A call made while another `logout()` is still running, with no session
+  /// installed since, joins it: nothing is left for it to sign out, so it
+  /// completes with the same result, the error of the sign-out request
+  /// included.
   @override
-  Future<void> logout() async {
+  Future<void> logout() {
     final current = _session;
     final staged = _adoptedSession;
     _epoch++;
     signIn = null;
     _adoptedSession = null;
     _refreshing = null;
-    // Another logout() may have queued this removal already: both then wait
-    // for the same write and report the same result.
+    // The sign-out of the current session ends every bundle of that
+    // session; a staged bundle with another refresh token may be another
+    // session, and nobody would end it.
+    if (staged != null && staged.refreshToken != current?.refreshToken) {
+      _revokeInBackground(staged);
+    }
+    final running = _loggingOut;
+    if (current == null && running != null) {
+      return running;
+    }
+    late final Future<void> operation;
+    operation = _signOut(current).whenComplete(() {
+      if (identical(_loggingOut, operation)) {
+        _loggingOut = null;
+      }
+    });
+    return _loggingOut = operation;
+  }
+
+  /// Removes the stored session and revokes [current] on the server.
+  Future<void> _signOut(ConvexAuthSession? current) async {
+    // The provider may have queued this removal already, when the server
+    // reported the session gone: this call waits for that write and reports
+    // its result.
     final saved = _setSession(null, reportedByCaller: true);
     final removal = _lastSave;
     try {
-      // The sign-out of the current session ends every bundle of that
-      // session; a staged bundle with another refresh token may be another
-      // session, and nobody would end it.
-      if (staged != null && staged.refreshToken != current?.refreshToken) {
-        _revokeInBackground(staged);
-      }
       if (current != null) {
         await client.mutation(
           signOutFunction,
