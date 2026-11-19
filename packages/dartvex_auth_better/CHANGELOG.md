@@ -40,7 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (replaced by a newer one, dropped for staged credentials, or pending at
   `logout()`) is signed out on the server. Passing that same session to
   `adoptSession()` keeps it, and it is still signed out when it is dropped
-  before `loginFromCache()` installed it.
+  before `loginFromCache()` installed it. A `logout()` that ends two sessions
+  (the current one and such a pending one) waits for both sign-out requests
+  and throws when either failed.
 - `signIn()` and `signUp()` clear a staged `password`, whatever its value: it
   can no longer be sent with the email of the account they signed in.
 
