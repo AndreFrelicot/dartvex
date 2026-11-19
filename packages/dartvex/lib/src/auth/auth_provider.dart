@@ -14,8 +14,10 @@
 /// * To report that the session is gone (revoked, signed out elsewhere),
 ///   throw from [loginFromCache]. A throw during a background refresh is
 ///   treated as transient (logged; the session is kept until the server
-///   rejects the token); a throw while recovering from a server rejection is
-///   retried briefly and then signs the user out.
+///   rejects the token), unless the error implements
+///   [AuthSessionEndedError], which signs the user out at once; a throw
+///   while recovering from a server rejection is retried briefly and then
+///   signs the user out.
 /// * The `onIdToken` callback passed to [login] / [loginFromCache] may be
 ///   invoked later to push a rotated token (or `null` to sign out) for the
 ///   session that call started. Tokens pushed while that call is still
@@ -65,8 +67,10 @@ abstract class AuthProvider<TUser> {
 ///
 /// `ConvexClientWithAuth` signs out when a replacement login or restore fails
 /// with such an error, instead of keeping the previous session as
-/// authenticated. Implement it on the error types your provider throws in
-/// that case, for example
+/// authenticated, and when a background token refresh fails with it (a
+/// session revoked elsewhere), instead of staying signed in until the server
+/// rejects the current token. Implement it on the error types your provider
+/// throws in that case, for example
 /// `class SessionGone extends StateError implements AuthSessionEndedError`.
 abstract interface class AuthSessionEndedError {}
 

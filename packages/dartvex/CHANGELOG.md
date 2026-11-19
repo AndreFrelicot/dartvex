@@ -26,6 +26,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **Breaking for implementors:** classes that `implement ConvexAuthClient`
   must add `Future<void> clearAuth()`.
 
+### Fixed
+
+- A background token refresh that fails with an `AuthSessionEndedError` (the
+  provider reports the session as revoked or expired) now signs the client
+  out at once: the transport auth is cleared and `ConvexClientWithAuth` emits
+  `AuthUnauthenticated`. Before, the error was only logged and the client
+  kept showing the user as signed in until the server rejected the current
+  token. Any other refresh error is still treated as transient and keeps the
+  session. A reauth after a server rejection no longer retries such an
+  error.
+
 ## [0.3.0] - 2026-11-05
 
 ### Added

@@ -49,7 +49,9 @@ final class AuthTokenBridge<TUser> {
     // try/catch, so a throw cannot crash the client, and each path handles it:
     // a scheduled refresh (or the refetch after a cached token is confirmed)
     // logs and keeps the session, mirroring the official client where a
-    // throwing token fetcher does not by itself log the user out; a reauth
+    // throwing token fetcher does not by itself log the user out — except
+    // for an AuthSessionEndedError, the provider's word that the session is
+    // definitively gone, which signs the user out at once; a reauth
     // after a server `AuthError` — whose token the server has already
     // rejected — retries the fetch a bounded number of times and then signs
     // the user out. The cached token is left intact on failure so a transient

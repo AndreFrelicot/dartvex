@@ -6,6 +6,7 @@ import 'package:meta/meta.dart';
 import '../config.dart';
 import '../logging.dart';
 import '../protocol/messages.dart';
+import 'auth_provider.dart';
 import 'jwt_utils.dart';
 
 /// Handle returned by [AuthManager.setAuthWithRefresh] to stop token refreshes.
@@ -609,7 +610,9 @@ class AuthManager {
       try {
         return await fetchToken(forceRefresh: true);
       } catch (error, stackTrace) {
-        if (attempt >= _reauthFetchRetryDelays.length ||
+        // A definitively ended session cannot come back: do not retry it.
+        if (error is AuthSessionEndedError ||
+            attempt >= _reauthFetchRetryDelays.length ||
             !_isCurrentFlow(generation, fetchToken)) {
           rethrow;
         }
@@ -845,6 +848,14 @@ class AuthManager {
         if (!_isCurrentFlow(generation, fetchToken)) {
           return;
         }
+        if (error is AuthSessionEndedError) {
+          await _endFlowForEndedSession(
+            'Scheduled auth refresh',
+            error,
+            stackTrace,
+          );
+          return;
+        }
         _log(
           DartvexLogLevel.error,
           'Scheduled auth refresh failed',
@@ -897,6 +908,14 @@ class AuthManager {
       if (!_isCurrentFlow(generation, fetchToken)) {
         return;
       }
+      if (error is AuthSessionEndedError) {
+        await _endFlowForEndedSession(
+          'Cached auth confirmation refresh',
+          error,
+          stackTrace,
+        );
+        return;
+      }
       _log(
         DartvexLogLevel.error,
         'Cached auth confirmation refresh failed',
@@ -904,6 +923,25 @@ class AuthManager {
         stackTrace: stackTrace,
       );
     }
+  }
+
+  /// Ends the flow when a background token fetch failed with an
+  /// [AuthSessionEndedError]: the provider says its session is definitively
+  /// gone, so keeping the client authenticated until the server rejects the
+  /// current token would only show a signed-in state for a dead session.
+  /// Any other fetch error is transient and keeps the session.
+  Future<void> _endFlowForEndedSession(
+    String operation,
+    Object error,
+    StackTrace stackTrace,
+  ) async {
+    _log(
+      DartvexLogLevel.warn,
+      '$operation reported the session as ended; signing out',
+      error: error,
+      stackTrace: stackTrace,
+    );
+    await _failAuthFlow();
   }
 
   void _clearFailedAuthFlow() {
