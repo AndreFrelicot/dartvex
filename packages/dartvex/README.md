@@ -48,7 +48,7 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
   auth-refreshing signal for "authenticating…" indicators
 - Native and browser WebSocket adapters (conditional import)
 - Structured opt-in logging for transport, auth, and storage diagnostics
-- Tracks the official Convex JavaScript client **1.49.0** (see
+- Tracks the official Convex JavaScript client **1.51.0** (see
   [Compatibility](#compatibility))
 
 ## Platform Support
@@ -79,8 +79,8 @@ Requires Dart `^3.6.0`.
 
 ## Compatibility
 
-Dartvex 0.3.0 implements the sync protocol, auth flow, and value encoding of
-the official Convex JavaScript client **1.49.0** (`convex` on npm). Behavior
+Dartvex 0.4.0 implements the sync protocol, auth flow, and value encoding of
+the official Convex JavaScript client **1.51.0** (`convex` on npm). Behavior
 described in these docs and the CHANGELOG as matching "the official client"
 refers to that release. The version is exported as `convexSyncApiVersion`
 and sent as the default `ConvexClientConfig.apiVersion` (the

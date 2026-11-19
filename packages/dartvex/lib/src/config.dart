@@ -18,7 +18,7 @@ const String dartvexVersion = '0.3.0';
 /// sync protocol (`protocol.ts`, `web_socket_manager.ts`) and value encoding
 /// Dartvex implements, and is bumped deliberately as part of a release after
 /// diffing those sources against the targeted Convex release.
-const String convexSyncApiVersion = '1.49.0';
+const String convexSyncApiVersion = '1.51.0';
 
 /// Factory for creating a platform-specific [WebSocketAdapter].
 typedef WebSocketAdapterFactory = WebSocketAdapter Function(String clientId);

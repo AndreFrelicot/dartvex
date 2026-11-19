@@ -8,8 +8,8 @@ The minimum Convex semantics needed to use dartvex. For *authoring* backends
 
 A Convex backend is a *deployment* reachable at
 `https://<name>.convex.cloud`. dartvex talks to it over a WebSocket sync
-protocol (the one the official JS client uses; Dartvex 0.3.0 tracks
-`convex` 1.49.0, see `convexSyncApiVersion`). The URL identifies the
+protocol (the one the official JS client uses; Dartvex 0.4.0 tracks
+`convex` 1.51.0, see `convexSyncApiVersion`). The URL identifies the
 environment (dev/prod are separate deployments) — treat it like
 configuration, not code.
 
