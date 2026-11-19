@@ -128,7 +128,9 @@ final messages = client.watch(
   {'channel': 'general'},
   decode: (value) => (value as List).cast<Map<String, dynamic>>(),
 );
-// The server's current value, never the cached seed:
+// Never the cached seed. An optimistic value, or the value of another live
+// subscription to the same query, can still come first; use client.query()
+// for a result the server sent after the call.
 final latest = await client
     .watch<List<dynamic>>('messages:list', {'channel': 'general'},
         skipCached: true)

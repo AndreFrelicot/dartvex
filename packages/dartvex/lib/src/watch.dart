@@ -25,9 +25,11 @@ extension ConvexWatch on ConvexFunctionCaller {
   /// A new subscription may first replay the result cached after an earlier
   /// subscription to the same query was cancelled ([QuerySuccess.fromCache]),
   /// which can be stale until the server answers. Pass `skipCached: true` to drop
-  /// that seed, so `first` waits for a value confirmed by the server. A value
-  /// already maintained by another live subscription of the same query, and
-  /// optimistic values, are always delivered.
+  /// that seed. A value already maintained by another live subscription of the
+  /// same query, and optimistic values, are still delivered, so `first` is
+  /// then never a stale leftover, but it is not always a result the server
+  /// sent after this call: use `ConvexClient.query` when you need exactly
+  /// that.
   ///
   /// ```dart
   /// final messages = client.watch(

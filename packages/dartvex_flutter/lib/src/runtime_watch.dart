@@ -23,8 +23,15 @@ extension ConvexRuntimeWatch on ConvexRuntimeClient {
   /// A new subscription may first replay the result cached after an earlier
   /// subscription to the same query was cancelled (a [ConvexQuerySource.cache]
   /// event without pending writes), which can be stale until the server
-  /// answers. Pass `skipCached: true` to drop that seed, so `first` waits for
-  /// a value confirmed by the server. Optimistic values are always delivered.
+  /// answers. Pass `skipCached: true` to drop that seed. Optimistic values and
+  /// the value of another live subscription to the same query are still
+  /// delivered, so `first` is then never a stale leftover, but it is not
+  /// always a result the server sent after this call.
+  ///
+  /// The seed is recognized as a [ConvexQuerySource.cache] event without
+  /// pending writes. A local-first runtime that reports values read from its
+  /// own store that way has them dropped too, so `skipCached` emits nothing
+  /// while such a client is offline.
   ///
   /// ```dart
   /// final messages = ConvexProvider.of(context).watch(
