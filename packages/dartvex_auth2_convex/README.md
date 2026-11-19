@@ -117,7 +117,13 @@ A write that never completes therefore blocks sign-in, refresh and
 sign-out: bound it with a timeout. An error thrown by the callback does not
 interrupt the auth flow; it goes to `onBackgroundError` (or to the current
 zone when that is not set). The stored session is then out of date, and the
-next start may restore a refresh token the server no longer accepts.
+next start may restore a refresh token the server no longer accepts. The
+provider writes the session again at its next change.
+
+`logout()` is the exception: when the session was signed out but could not
+be removed from your storage, it throws the error of the callback, because a
+restart would restore that session. Call `logout()` again to retry the
+removal; nothing is sent to the server the second time.
 
 `await provider.sessionSaved` completes when every save queued so far is
 done, for example before the app exits.
@@ -198,7 +204,10 @@ revocation is reported to `onBackgroundError`.
 status, an error code), so they can be logged. What the server wrote is kept
 apart, in `serverMessage` and `logLines`, because it can quote arguments:
 print it while debugging (for example a missing `auth:refreshSession`
-export), but do not send it to telemetry.
+export), but do not send it to telemetry. The same goes for a sign-in
+function of your own: `code` is only set when `userError.error` is shaped
+like a code (letters, digits, underscores), and any other text stays in
+`userError`.
 
 ## Security notes
 

@@ -47,6 +47,10 @@ class ConvexAuthException extends ConvexException {
 /// `{error: "INVALID_CREDENTIALS"}` or
 /// `{error: "RATE_LIMITED", retryAfterMs: 30000}`; [code] is its `error`
 /// field. The codes are defined by each sign-in method of `@convex-dev/auth`.
+///
+/// [message] and [toString] only name the function and the [code], so they
+/// are safe to log. Anything else the server answered, including an `error`
+/// that is free text instead of a code, is only in [userError].
 class ConvexAuthSignInException extends ConvexAuthException {
   /// Creates a sign-in rejection for [function] with the server's
   /// [userError].
@@ -66,6 +70,12 @@ class ConvexAuthSignInException extends ConvexAuthException {
   /// The `error` code of [userError] (for example `INVALID_CREDENTIALS`,
   /// `USER_NOT_FOUND`, `USERNAME_TAKEN`, `RATE_LIMITED`), or `null` when the
   /// server returned none.
+  ///
+  /// Only a value shaped like a code is returned: letters, digits and
+  /// underscores, starting with a letter, 64 characters at most. A sign-in
+  /// function of your own that puts a sentence in `error` gets `null` here,
+  /// so that text (which may quote what the user typed) cannot reach a log
+  /// through [message]; read it from [userError].
   String? get code => _codeOf(data);
 
   /// How long to wait before trying again, when the server rate-limited the
@@ -84,12 +94,14 @@ class ConvexAuthSignInException extends ConvexAuthException {
   static String? _codeOf(Object? userError) {
     if (userError is Map) {
       final value = userError['error'];
-      if (value is String && value.isNotEmpty) {
+      if (value is String && _codeShape.hasMatch(value)) {
         return value;
       }
     }
     return null;
   }
+
+  static final RegExp _codeShape = RegExp(r'^[A-Za-z][A-Za-z0-9_]{0,63}$');
 
   @override
   String get _typeName => 'ConvexAuthSignInException';

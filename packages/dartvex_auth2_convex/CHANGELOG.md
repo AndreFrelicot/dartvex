@@ -20,7 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     may be asynchronous: saves run one at a time, in order; a new session is
     handed to the Convex client only once saved, and `logout()` completes
     once the stored session was removed. `sessionSaved` completes when the
-    queued saves are done.
+    queued saves are done. A save that failed is made again at the next
+    change, and `logout()` throws when the stored session could not be
+    removed (calling it again retries the removal).
+  - A background refresh is tied to the session it refreshes: when the
+    server reports that session gone, a `login()` to another one that is
+    still in flight goes on.
   - The provider revokes a session only when it is another server session
     than the one in use (`ConvexAuthSession.sessionId`), so adopting a later
     rotation of the current session keeps it alive. A staged session that
@@ -39,4 +44,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `userError` code) and `ConvexAuthSessionEndedException` (implements
   `AuthSessionEndedError`). Their `message` and `toString()` never contain
   text written by the server (a response body, a function's error message);
-  that text is available as `serverMessage` and `logLines`.
+  that text is available as `serverMessage` and `logLines`. The `code` of a
+  `ConvexAuthSignInException` is only set for a code-shaped `userError.error`;
+  free text stays in `userError`.
