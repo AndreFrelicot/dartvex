@@ -196,6 +196,36 @@ void main() {
       expect(fakeCacheManager.removedKeys, <String>['private']);
     });
 
+    test('clear also removes a download started while it is running', () async {
+      const firstUrl = 'https://example.com/first.png';
+      const lateUrl = 'https://example.com/late.png';
+      final firstGate = Completer<void>();
+      final lateGate = Completer<void>();
+      fakeCacheManager.urlGates[firstUrl] = firstGate;
+      fakeCacheManager.urlGates[lateUrl] = lateGate;
+
+      final first = cache.prefetch('first', firstUrl);
+      await pumpEventQueue();
+      var cleared = false;
+      final clearing = cache.clear().then((_) => cleared = true);
+      await pumpEventQueue();
+
+      // Still the previous user's code, started after the purge began.
+      final late = cache.prefetch('late', lateUrl);
+      firstGate.complete();
+      await first;
+      await pumpEventQueue();
+      expect(cleared, isFalse);
+
+      lateGate.complete();
+      await late;
+      await clearing;
+
+      expect(await cache.contains('first'), isFalse);
+      expect(await cache.contains('late'), isFalse);
+      expect(fakeCacheManager.removedKeys, <String>['first', 'late']);
+    });
+
     test('clear does not wait for downloads started after it', () async {
       await cache.clear();
       final file = await cache.prefetch(

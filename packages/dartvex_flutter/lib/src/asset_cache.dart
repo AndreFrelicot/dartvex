@@ -351,22 +351,32 @@ class ConvexAssetCache {
   /// the next user of the device would otherwise be served the previous
   /// user's copy of a file with the same key. A [prefetch] still downloading
   /// when this is called is waited for and its file removed too, so it cannot
-  /// reappear after the purge; the future completes once that is done.
-  /// (Alternatively give each user a store of their own, for example
-  /// `ConvexAssetCache(cacheKey: 'assets-$userId')`.)
+  /// reappear after the purge, and so is one that starts while the purge is
+  /// running; the future completes once no download is left.
+  ///
+  /// Await it before the next user's screens start loading: a file they
+  /// download while the purge is still running is removed with the rest and
+  /// has to be downloaded again. (Alternatively give each user a store of
+  /// their own, for example `ConvexAssetCache(cacheKey: 'assets-$userId')`,
+  /// which rules out any collision.)
   Future<void> clear() async {
-    final inFlight =
-        _downloads[_cacheManager]?.toList(growable: false) ??
-        const <_PendingDownload>[];
     await _cacheManager.emptyCache();
-    if (inFlight.isEmpty) {
-      return;
-    }
-    await Future.wait(inFlight.map((download) => download.settled));
-    for (final cacheKey in <String>{
-      for (final download in inFlight) download.cacheKey,
-    }) {
-      await _cacheManager.removeFile(cacheKey);
+    final handled = <_PendingDownload>{};
+    while (true) {
+      final inFlight = <_PendingDownload>[
+        for (final download
+            in _downloads[_cacheManager] ?? const <_PendingDownload>{})
+          if (handled.add(download)) download,
+      ];
+      if (inFlight.isEmpty) {
+        return;
+      }
+      await Future.wait(inFlight.map((download) => download.settled));
+      for (final cacheKey in <String>{
+        for (final download in inFlight) download.cacheKey,
+      }) {
+        await _cacheManager.removeFile(cacheKey);
+      }
     }
   }
 

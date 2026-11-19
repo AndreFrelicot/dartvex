@@ -430,6 +430,87 @@ void main() {
       await manager.stopRefreshing();
     });
 
+    test(
+        'a scheduled refresh that fails late does not end the session a '
+        'reauth renewed meanwhile', () async {
+      final recorder = _Recorder();
+      final manager = _manager(recorder);
+      final now = _nowSeconds();
+      // Leeway >= lifetime: the refresh timer fires immediately.
+      final t1 = _jwt(subject: 't1', iat: now, exp: now + 5);
+      final t2 = _jwt(subject: 't2', iat: now, exp: now + 3600);
+      final scheduled = Completer<String?>();
+      var forcedCalls = 0;
+      final authChanges = <bool>[];
+
+      await manager.setAuthWithRefresh(
+        // Each forced fetch is independent, as with a provider of your own.
+        fetchToken: ({required bool forceRefresh}) {
+          if (!forceRefresh) {
+            return Future<String?>.value(null);
+          }
+          forcedCalls += 1;
+          return switch (forcedCalls) {
+            1 => Future<String?>.value(t1),
+            2 => scheduled.future,
+            _ => Future<String?>.value(t2),
+          };
+        },
+        onAuthChange: authChanges.add,
+      );
+      manager.handleAuthConfirmed();
+      await _until(() => forcedCalls == 2); // the scheduled refresh started
+
+      await manager.handleAuthError(_expired, currentAuthVersion: 1);
+      expect(manager.currentToken, t2);
+
+      // The older fetch only answers now, with a definitive failure.
+      scheduled.completeError(_SessionEnded());
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(manager.currentToken, t2);
+      expect(recorder.sends, isNot(contains('send:null')));
+      expect(authChanges, <bool>[true]);
+      await manager.stopRefreshing();
+    });
+
+    test(
+        'a post-confirmation refetch that fails late does not end the '
+        'session a reauth renewed meanwhile', () async {
+      final recorder = _Recorder();
+      final manager = _manager(recorder);
+      final now = _nowSeconds();
+      final cached = _jwt(subject: 'cached', iat: now, exp: now + 3600);
+      final t2 = _jwt(subject: 't2', iat: now, exp: now + 3600);
+      final refetch = Completer<String?>();
+      var forcedCalls = 0;
+      final authChanges = <bool>[];
+
+      await manager.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) {
+          if (!forceRefresh) {
+            return Future<String?>.value(cached);
+          }
+          forcedCalls += 1;
+          return forcedCalls == 1 ? refetch.future : Future<String?>.value(t2);
+        },
+        onAuthChange: authChanges.add,
+      );
+      manager.handleAuthConfirmed();
+      await _until(() => forcedCalls == 1); // the refetch started
+
+      await manager.handleAuthError(_expired, currentAuthVersion: 1);
+      expect(manager.currentToken, t2);
+
+      refetch.completeError(_SessionEnded());
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(manager.currentToken, t2);
+      expect(recorder.sends, isNot(contains('send:null')));
+      expect(authChanges, <bool>[true]);
+      await manager.stopRefreshing();
+    });
+
     test('is not retried by a reauth', () async {
       final recorder = _Recorder();
       final manager = _manager(
