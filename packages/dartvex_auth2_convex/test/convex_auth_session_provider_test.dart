@@ -81,6 +81,42 @@ void main() {
       expect(changes, isEmpty);
     });
 
+    test('free text in userError.error stays out of the diagnostics', () async {
+      const text = 'No account for alice@example.com with password hunter2';
+      server.handlers['auth:signInCustom'] = (_) => {
+            'status': 'error',
+            'userError': {'error': text},
+          };
+      final provider = newProvider()
+        ..signIn = const ConvexAuthSignIn('auth:signInCustom');
+
+      await expectLater(
+        provider.login(onIdToken: onIdToken),
+        throwsA(isA<ConvexAuthSignInException>()
+            .having((e) => e.code, 'code', isNull)
+            .having((e) => e.message, 'message', isNot(contains('alice')))
+            .having((e) => e.toString(), 'toString', isNot(contains('alice')))
+            // Still there for the app that reads it on purpose.
+            .having((e) => e.userError, 'userError', {'error': text})),
+      );
+    });
+
+    test('a lower-case code of a custom function is still a code', () async {
+      server.handlers['auth:signInCustom'] = (_) => {
+            'status': 'error',
+            'userError': {'error': 'invite_required'},
+          };
+      final provider = newProvider()
+        ..signIn = const ConvexAuthSignIn('auth:signInCustom');
+
+      await expectLater(
+        provider.login(onIdToken: onIdToken),
+        throwsA(isA<ConvexAuthSignInException>()
+            .having((e) => e.code, 'code', 'invite_required')
+            .having((e) => e.message, 'message', contains('invite_required'))),
+      );
+    });
+
     test('keeps the sign-in request after a retryable failure', () async {
       var attempts = 0;
       server.handlers['auth:signInAnonymously'] = (_) {
@@ -206,17 +242,12 @@ void main() {
       final background = asBackgroundRefresh(
           () => provider.loginFromCache(onIdToken: onIdToken));
       final explicit = provider.loginFromCache(onIdToken: onIdToken);
-      // The explicit restore supersedes the background refresh.
-      final backgroundSuperseded = expectLater(
-        background,
-        throwsA(isA<ConvexAuthException>()
-            .having((e) => e.retryable, 'retryable', isTrue)),
-      );
       await waitUntil(() => server.calls.isNotEmpty, reason: 'refresh call');
       gate.complete(rotated('new'));
 
+      // Both refresh the same session: they get the same rotation.
       expect((await explicit).refreshToken, 'rt_new');
-      await backgroundSuperseded;
+      expect((await background).refreshToken, 'rt_new');
       expect(server.callsTo('auth:refreshSession'), hasLength(1));
 
       // The next refresh sends the rotated token.
@@ -287,6 +318,79 @@ void main() {
 
       expect((await login).refreshToken, 'rt_login');
       expect(provider.session?.refreshToken, 'rt_login');
+    });
+
+    for (final loginFirst in <bool>[true, false]) {
+      test(
+          'the current session ending does not cancel a pending login '
+          '(${loginFirst ? 'login' : 'noSession'} answers first)', () async {
+        final signInGate = Completer<Object?>();
+        final refreshGate = Completer<Object?>();
+        server.handlers['auth:signInAnonymously'] = (_) => signInGate.future;
+        server.handlers['auth:refreshSession'] = (_) => refreshGate.future;
+        final provider = newProvider(
+            initial: ConvexAuthSession.fromJson(bundle('a', session: 'sa')))
+          ..signIn = const ConvexAuthSignIn.anonymous();
+
+        final login = provider.login(onIdToken: onIdToken);
+        final refresh = asBackgroundRefresh(
+            () => provider.loginFromCache(onIdToken: onIdToken));
+        await waitUntil(() => server.calls.length == 2, reason: 'both calls');
+
+        if (loginFirst) {
+          signInGate.complete(complete('b', session: 'sb'));
+          expect((await login).refreshToken, 'rt_b');
+          refreshGate.complete(noSession);
+          // The late answer is about A, which B already replaced.
+          await expectLater(
+            refresh,
+            throwsA(isA<ConvexAuthException>()
+                .having((e) => e.retryable, 'retryable', isTrue)),
+          );
+        } else {
+          refreshGate.complete(noSession);
+          await expectLater(
+            refresh,
+            throwsA(isA<ConvexAuthSessionEndedException>()),
+          );
+          signInGate.complete(complete('b', session: 'sb'));
+          expect((await login).refreshToken, 'rt_b');
+        }
+
+        await provider.sessionSaved;
+        expect(provider.session?.refreshToken, 'rt_b');
+        expect(changes.last?.refreshToken, 'rt_b');
+        expect(pushed.last, isNotNull);
+        // B was never revoked.
+        expect(
+          server.callsTo('auth:signOut').map((call) => call.args),
+          isNot(contains({'refreshToken': 'rt_b'})),
+        );
+      });
+    }
+
+    test('a background refresh in flight when a login starts still succeeds',
+        () async {
+      final signInGate = Completer<Object?>();
+      final refreshGate = Completer<Object?>();
+      server.handlers['auth:signInAnonymously'] = (_) => signInGate.future;
+      server.handlers['auth:refreshSession'] = (_) => refreshGate.future;
+      final provider = newProvider(
+          initial: ConvexAuthSession.fromJson(bundle('a', session: 'sa')))
+        ..signIn = const ConvexAuthSignIn.anonymous();
+
+      final refresh = asBackgroundRefresh(
+          () => provider.loginFromCache(onIdToken: onIdToken));
+      final login = provider.login(onIdToken: onIdToken);
+      await waitUntil(() => server.calls.length == 2, reason: 'both calls');
+
+      // The client is still signed in with A: its refresh must go through.
+      refreshGate.complete(rotated('a2', session: 'sa'));
+      expect((await refresh).refreshToken, 'rt_a2');
+
+      signInGate.complete(complete('b', session: 'sb'));
+      expect((await login).refreshToken, 'rt_b');
+      expect(provider.session?.refreshToken, 'rt_b');
     });
 
     test('an onSessionChanged error does not break the refresh', () async {
@@ -589,6 +693,146 @@ void main() {
 
       expect(session.refreshToken, 'rt_new');
       expect(errors.single, isA<StateError>());
+    });
+
+    test('logout throws when the stored session could not be removed',
+        () async {
+      final errors = <Object>[];
+      final stored = <ConvexAuthSession?>[];
+      var failRemoval = true;
+      final provider = ConvexAuthSessionProvider(
+        client: client,
+        initialSession: ConvexAuthSession.fromJson(bundle('a')),
+        onSessionChanged: (session) async {
+          if (session == null && failRemoval) {
+            throw StateError('keychain locked');
+          }
+          stored.add(session);
+        },
+        onBackgroundError: (error, _) => errors.add(error),
+      );
+
+      await expectLater(
+        provider.logout(),
+        throwsA(isA<StateError>()
+            .having((e) => e.message, 'message', 'keychain locked')),
+      );
+      // Signed out everywhere but in the app's storage; the caller was
+      // told, so the background handler is not.
+      expect(provider.session, isNull);
+      expect(server.callsTo('auth:signOut'), hasLength(1));
+      expect(errors, isEmpty);
+      expect(stored, isEmpty);
+
+      // The removal stays owed: logout() retries it, without the server.
+      await expectLater(provider.logout(), throwsA(isA<StateError>()));
+      failRemoval = false;
+      await provider.logout();
+      expect(stored, <ConvexAuthSession?>[null]);
+      expect(server.callsTo('auth:signOut'), hasLength(1));
+
+      // Nothing is owed any more.
+      await provider.logout();
+      expect(stored, <ConvexAuthSession?>[null]);
+    });
+
+    test(
+        'logout reports the failed removal in the background when the '
+        'request failed too', () async {
+      server.handlers['auth:signOut'] =
+          (_) => throw http.Response('unavailable', 503);
+      final errors = <Object>[];
+      final stored = <ConvexAuthSession?>[];
+      var failRemoval = true;
+      final provider = ConvexAuthSessionProvider(
+        client: client,
+        initialSession: ConvexAuthSession.fromJson(bundle('a')),
+        onSessionChanged: (session) async {
+          if (failRemoval) {
+            throw StateError('keychain locked');
+          }
+          stored.add(session);
+        },
+        onBackgroundError: (error, _) => errors.add(error),
+      );
+
+      // The session is still alive on the server and still in the storage.
+      await expectLater(
+        provider.logout(),
+        throwsA(isA<ConvexAuthException>()
+            .having((e) => e.retryable, 'retryable', isTrue)),
+      );
+      expect(errors.single, isA<StateError>());
+
+      failRemoval = false;
+      await provider.logout();
+      expect(stored, <ConvexAuthSession?>[null]);
+    });
+
+    test('a failed save is written again at the next change', () async {
+      server.handlers['auth:refreshSession'] = (_) => noSession;
+      final errors = <Object>[];
+      final stored = <ConvexAuthSession?>[];
+      var failing = true;
+      final provider = ConvexAuthSessionProvider(
+        client: client,
+        initialSession: ConvexAuthSession.fromJson(bundle('a')),
+        onSessionChanged: (session) async {
+          if (failing) {
+            throw StateError('disk full');
+          }
+          stored.add(session);
+        },
+        onBackgroundError: (error, _) => errors.add(error),
+      );
+
+      // The server ends the session; removing it from the storage fails.
+      await expectLater(
+        asBackgroundRefresh(
+            () => provider.loginFromCache(onIdToken: onIdToken)),
+        throwsA(isA<ConvexAuthSessionEndedException>()),
+      );
+      await provider.sessionSaved;
+      expect(errors.single, isA<StateError>());
+
+      failing = false;
+      await provider.logout();
+      expect(stored, <ConvexAuthSession?>[null]);
+      expect(server.callsTo('auth:signOut'), isEmpty);
+    });
+
+    test('a new session that ends while it is saved fails the login', () async {
+      server.handlers['auth:signInAnonymously'] = (_) => complete('a');
+      server.handlers['auth:refreshSession'] = (_) => noSession;
+      final gate = Completer<void>();
+      var saves = 0;
+      final provider = ConvexAuthSessionProvider(
+        client: client,
+        onSessionChanged: (_) => ++saves == 1 ? gate.future : null,
+      )..signIn = const ConvexAuthSignIn.anonymous();
+
+      final login = provider.login(onIdToken: onIdToken);
+      final loginEnded = expectLater(
+        login,
+        throwsA(isA<ConvexAuthSessionEndedException>()),
+      );
+      await waitUntil(() => provider.session != null, reason: 'sign-in');
+      final refresh = asBackgroundRefresh(
+          () => provider.loginFromCache(onIdToken: onIdToken));
+      final refreshEnded = expectLater(
+        refresh,
+        throwsA(isA<ConvexAuthSessionEndedException>()),
+      );
+      await waitUntil(
+        () => server.callsTo('auth:refreshSession').isNotEmpty,
+        reason: 'refresh call',
+      );
+      gate.complete();
+
+      await refreshEnded;
+      await loginEnded;
+      expect(provider.session, isNull);
+      expect(pushed, isEmpty);
     });
 
     test('a login superseded while its session is saved does not complete',
