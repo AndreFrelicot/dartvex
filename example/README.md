@@ -3,8 +3,12 @@
 This directory contains the end-to-end example for the repo:
 
 - `convex-backend/` — Convex TypeScript backend
-- `flutter_app/` — Flutter app using `dartvex`, `dartvex_codegen`, and
-  `dartvex_flutter`
+- `flutter_app/` — Flutter app using `dartvex`, `dartvex_codegen`,
+  `dartvex_flutter`, `dartvex_local` and the two auth adapters
+  (`dartvex_auth_better`, `dartvex_auth2_convex`)
+
+The app's `Auth` tab switches between three auth modes: a demo JWT, Better
+Auth, and Convex Auth v2. The backend serves all three from one deployment.
 
 ## Why the backend includes `function_spec.json`
 
@@ -43,9 +47,9 @@ npx convex dev
 
 ## Generate a demo JWT
 
-Demo auth uses a custom JWT provider. Better Auth and the public screens work
-without this step, but the Flutter app's Demo auth mode needs a token generated
-from local key material.
+Demo auth uses a custom JWT provider. Better Auth, Convex Auth and the public
+screens work without this step, but the Flutter app's Demo auth mode needs a
+token generated from local key material.
 
 ```bash
 cd example/convex-backend

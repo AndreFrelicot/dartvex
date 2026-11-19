@@ -1,6 +1,6 @@
 ---
 name: dartvex-setup-auth
-description: Add authentication to a Dart/Flutter app on Convex - Better Auth email/password and magic links via dartvex_auth_better, session persistence across restarts, deployment-issued JWTs (ctx.auth.signJwt), or manual JWT auth for any OIDC provider. Use when the user wants login/signup, session restore, sign-out, Better Auth, or to authenticate the dartvex Convex client.
+description: Add authentication to a Dart/Flutter app on Convex - Better Auth email/password and magic links via dartvex_auth_better, Convex Auth v2 (@convex-dev/auth) via dartvex_auth2_convex, session persistence across restarts, deployment-issued JWTs (ctx.auth.signJwt), or manual JWT auth for any OIDC provider. Use when the user wants login/signup, session restore, sign-out, Better Auth, Convex Auth, or to authenticate the dartvex Convex client.
 license: MIT
 metadata:
   author: AndreFrelicot
@@ -9,7 +9,7 @@ metadata:
 
 # Authenticate a Dartvex App
 
-Three paths:
+Four paths:
 
 - **A. Better Auth** (self-hosted, email/password, magic links) via
   `dartvex_auth_better` — full flow below.
@@ -18,6 +18,8 @@ Three paths:
 - **C. Deployment-issued JWTs** — a Convex mutation verifies your own
   credential and mints a short-lived token with `ctx.auth.signJwt`; no
   external identity provider.
+- **D. Convex Auth v2** (`@convex-dev/auth` 2.x components: username or
+  email with password, …) via `dartvex_auth2_convex`.
 
 Whatever the path, sign in, restore and sign out through one wrapper
 (`ConvexClientWithAuth`, or `setAuthWithRefresh` for B/C) so the Convex
@@ -382,6 +384,71 @@ await client.setAuthWithRefresh(
 
 Tokens cannot be revoked individually — keep lifetimes short and make
 `issueToken` refuse revoked credentials.
+
+## D. Convex Auth v2 (`@convex-dev/auth`)
+
+`dartvex_auth2_convex` targets the **v2** protocol of `@convex-dev/auth`
+(components, `refreshSession`, rotating refresh tokens); it does not speak
+v1. Backend setup (components, `setupConvexAuth`, sign-in methods) → the
+Convex Auth docs; the client needs these two things from it:
+
+```typescript
+// convex/auth.config.ts
+import { convexAuthProvider } from "@convex-dev/auth/server";
+export default { providers: [convexAuthProvider()] };
+
+// convex/auth.ts — the adapter calls these as `auth:<name>`
+const auth = setupConvexAuth({ component: components.auth });
+export const { signOut, refreshSession, isAuthenticated } = auth;
+export const { signUpWithUsernamePassword, signInWithUsernamePassword } =
+  setupUsernamePassword(auth, { /* ... */ }).attachUserCallbacks({ /* ... */ });
+```
+
+```dart
+import 'package:dartvex_auth2_convex/dartvex_auth2_convex.dart';
+
+final provider = ConvexAuthSessionProvider(
+  client: ConvexAuthHttpClient(deploymentUrl: deploymentUrl), // sync URL
+  initialSession: await loadSession(), // null on first start
+  onSessionChanged: saveSession,       // every rotation, and null at the end
+);
+final authedClient = convexClient.withAuth<ConvexAuthSession>(provider);
+
+// Restore at startup (when a session was stored):
+await authedClient.loginFromCache();
+
+// Sign in (or ConvexAuthSignIn.usernamePasswordSignUp, .emailPassword, ...):
+provider.signIn = ConvexAuthSignIn.usernamePassword(
+  username: username,
+  password: password,
+);
+try {
+  await authedClient.login();
+} on ConvexAuthSignInException catch (e) {
+  // e.code: INVALID_CREDENTIALS, USERNAME_TAKEN, RATE_LIMITED (e.retryAfter)...
+}
+
+await authedClient.logout(); // revokes the session, saves null
+```
+
+- **Persist every rotation.** The access token lives one minute and each
+  refresh replaces the refresh token. Write `session.toJson()` to secure
+  storage in `onSessionChanged` (it may be async; saves run in order) and
+  delete it on `null`. A stored token two rotations old ends the session.
+- **Functions elsewhere than `convex/auth.ts`?** Pass their paths:
+  `refreshSessionFunction`, `signOutFunction`, and `function:` on each
+  `ConvexAuthSignIn`.
+- **The token names a session, not a user.** `identity.subject` and
+  `tokenIdentifier` change at every sign-in: key user data on
+  `getAuthUserId(ctx)`, not on `tokenIdentifier`.
+- `ConvexAuthSessionEndedException` implements `AuthSessionEndedError`
+  (sign in again); any other `ConvexAuthException` keeps the session, and
+  `retryable` tells whether to try again.
+- A session obtained elsewhere (OAuth deep link, typed bindings):
+  `provider.adoptSession(session)` then `authedClient.login()`.
+
+Working example: `example/flutter_app` (Convex Auth mode) and
+`example/convex-backend/convex/convexAuth.ts`.
 
 ## Common mistakes
 

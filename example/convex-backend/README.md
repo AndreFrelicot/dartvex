@@ -8,6 +8,7 @@ It exposes:
 - authenticated queries and mutations
 - a simple action
 - Better Auth backed by Convex
+- Convex Auth v2 (`@convex-dev/auth`) with the username/password method
 - an optional custom JWT auth provider for the Flutter Demo auth mode and
   integration tests
 
@@ -34,14 +35,45 @@ requires `better-auth` >=1.7.16 <1.8.0; keep the two in step when upgrading.
 expired cookie that component 0.12.7+ sends on sign-in, so pair this backend
 with a current `dartvex_auth_better`.
 
+`@convex-dev/auth` is pinned to 2.0.0 (exact): `dartvex_auth2_convex` targets
+the v2 protocol, whose functions and token rotation differ from v1.
+
 ```bash
 cd example/convex-backend
 npm install
 ```
 
+## Convex Auth
+
+The Flutter app's Convex Auth mode needs no secret and no environment
+variable: access tokens are signed by the deployment itself. Deploying the
+backend (`npx convex dev`) is enough.
+
+| File | Role |
+|------|------|
+| `convex/convex.config.ts` | Mounts the `auth`, `authPassword` and `authUsername` components. |
+| `convex/auth.config.ts` | Accepts Convex Auth access tokens with `convexAuthProvider()`, next to the Better Auth and demo JWT providers. |
+| `convex/convexAuth.ts` | Re-exports `signOut`, `refreshSession`, `isAuthenticated` and the username/password sign-up and sign-in mutations. |
+| `convex/users.ts` | The app's `users` table callback (`createUserPassword`) and `users:viewer`, which resolves the caller with `getAuthUserId`. |
+| `convex/identity.ts` | `requireOwner`, the key that scopes private data per user for every auth mode. |
+
+Two things differ from a backend that only uses Convex Auth:
+
+- The functions live in `convex/convexAuth.ts`, not `convex/auth.ts`, because
+  Better Auth already uses that file. Their paths are `convexAuth:<name>`
+  instead of the default `auth:<name>`, so the Flutter app passes them to the
+  adapter (`refreshSessionFunction`, `signOutFunction`, and the `function` of
+  each `ConvexAuthSignIn`).
+- A Convex Auth access token names a **session**, not a user: its `subject`
+  and `tokenIdentifier` change at every sign-in. Private messages are
+  therefore keyed with `requireOwner`, which resolves the session to its user
+  (`getAuthUserId`) and rejects a session that was revoked, even while its
+  one-minute token is still valid. The demo JWT and Better Auth keep using
+  `tokenIdentifier`, which is stable for them.
+
 ## Optional demo JWT provider
 
-Better Auth works without this step. Use the custom JWT provider only when you
+Better Auth and Convex Auth work without this step. Use the custom JWT provider only when you
 want to run the Flutter app's Demo auth mode or the SDK auth integration tests
 with a static token.
 
