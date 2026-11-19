@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from. **Breaking (regenerated bindings):** they require `dartvex` `^0.4.0`,
   which adds those fields.
 
+### Fixed
+
+- The generator checks that every file it reads, writes or deletes is really
+  inside the output directory once symbolic links are followed. A manifest,
+  a generated file or a parent directory that is a symbolic link leading
+  elsewhere is refused before anything is modified; the path check was
+  textual only. The output directory itself may still be a link.
+
 ## [0.3.0] - 2026-11-05
 
 ### Added
