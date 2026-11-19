@@ -247,6 +247,43 @@ void main() {
     }
 
     test(
+        'signIn for another account does not switch the client before '
+        'login()', () async {
+      await signInA();
+
+      final staged = await provider.signIn(email: 'b', password: 'pw');
+
+      // The app still shows A, and A is who the client keeps running as:
+      // the token it fetches after a server rejection is A's, not B's.
+      expect(authenticatedSessionToken(), 'ses_a');
+      expect(await refreshedToken(), _jwtOf('ses_a'));
+      adapter.confirmAuth();
+      await pumpEventQueue();
+      expect(authed.currentAuthToken, _jwtOf('ses_a'));
+      expect(authenticatedSessionToken(), 'ses_a');
+      expect(provider.cachedSession?.sessionToken, 'ses_a');
+
+      // login() then hands B over, without asking for the credentials again.
+      final mark = adapter.sentCount;
+      final session = await authed.login();
+      expect(session, same(staged));
+      await adapter.waitForAuthenticate(
+        (m) => _isJwtOf(m['value'], 'ses_b'),
+        after: mark,
+      );
+      adapter.confirmAuth();
+      await _waitUntil(
+        () => authenticatedSessionToken() == 'ses_b',
+        reason: 'B authenticated',
+      );
+      expect(authed.currentAuthToken, _jwtOf('ses_b'));
+      expect(
+        server.requests.where((r) => r == 'POST /api/auth/sign-in/email b'),
+        hasLength(1),
+      );
+    });
+
+    test(
         'an explicit loginFromCache started after a pending login wins on '
         'both sides', () async {
       await signInA();
