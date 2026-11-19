@@ -222,9 +222,10 @@ it: `DEMO_JWKS`, the public key set of the Demo mode, which
 cd example/convex-backend
 npm install
 npm run demo:key   # prints an `npx convex env set DEMO_JWKS ...` command
-npx convex dev     # new deployment: configures it, then stops on DEMO_JWKS
-# run the printed `npx convex env set DEMO_JWKS ...` command, then:
-npx convex dev     # or npx convex deploy
+npx convex dev     # new deployment: configures it, then waits for DEMO_JWKS
+# keep it running; from a second terminal, in example/convex-backend, run
+# the printed `npx convex env set DEMO_JWKS ...` command: the first
+# terminal then deploys the backend by itself
 
 cd ../flutter_app
 flutter run \

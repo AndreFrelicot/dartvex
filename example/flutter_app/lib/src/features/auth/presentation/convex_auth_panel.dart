@@ -483,8 +483,10 @@ class ConvexAuthSetupPanel extends StatelessWidget {
             title: 'Set DEMO_JWKS (new deployment)',
             detail:
                 'npm run demo:key\n'
-                'npx convex dev   # configures the deployment, then stops\n'
-                'Run the printed "npx convex env set DEMO_JWKS ..." command.\n'
+                'npx convex dev   # configures the deployment, then waits\n'
+                'Keep it running. In a second terminal, run the printed '
+                '"npx convex env set DEMO_JWKS ..." command: the first one '
+                'then deploys the backend.\n'
                 'Convex needs it to accept the backend, whatever the mode.',
           ),
           const SizedBox(height: 8),

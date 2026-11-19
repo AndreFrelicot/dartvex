@@ -129,9 +129,13 @@ result still uses the placeholder URL before committing.
 npx convex dev
 ```
 
-On a new deployment, the first run configures it and then stops because
-`DEMO_JWKS` is not set. Set it as described in
-[Demo JWT provider](#demo-jwt-provider), then run `npx convex dev` again.
+On a new deployment, the first run configures it and then reports that
+`DEMO_JWKS` is not set. It keeps running: leave it open, set the variable
+from a second terminal as described in
+[Demo JWT provider](#demo-jwt-provider), and the first terminal deploys the
+backend by itself. A one-shot run (`npx convex dev --once`,
+`npx convex deploy`) exits on that error instead: start it again once the
+variable is set.
 
 ## Generate a demo JWT
 

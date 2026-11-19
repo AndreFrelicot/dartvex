@@ -46,12 +46,15 @@ npm run demo:key   # prints an `npx convex env set DEMO_JWKS ...` command
 npx convex dev
 ```
 
-On a new deployment the first `npx convex dev` configures it, then stops with
+On a new deployment the first `npx convex dev` configures it, then reports
 `Environment variable DEMO_JWKS is used in auth config file but its value was
 not set`: `convex/auth.config.ts` reads that variable for the Demo auth mode,
 and Convex refuses a config that reads an unset variable, whichever auth mode
-you intend to use. Run the command `npm run demo:key` printed, then
-`npx convex dev` again. This is needed once per deployment.
+you intend to use. `npx convex dev` keeps running: leave that terminal open
+and run the command `npm run demo:key` printed from a second one. The first
+terminal then deploys the backend by itself. Only a one-shot run
+(`npx convex dev --once`, `npx convex deploy`) exits on the error and has to
+be started again. This is needed once per deployment.
 
 `npm run demo:key` writes the private key to gitignored `.env` (it is never
 printed); only the public key set goes to Convex.
