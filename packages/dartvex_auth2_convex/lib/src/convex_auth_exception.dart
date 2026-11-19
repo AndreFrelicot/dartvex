@@ -8,6 +8,12 @@ import 'package:dartvex/dartvex.dart'
 /// function that threw on the server (for example a mutation that does not
 /// exist, or an argument validation error) is not retryable; its
 /// `ConvexError` payload, if any, is available as [data].
+///
+/// [message] and [toString] only describe what failed (the operation, the
+/// HTTP status, an error code, whether it is retryable), so they are safe to
+/// log. Text written by the server is kept apart in [serverMessage] and
+/// `logLines`: it may quote arguments or other sensitive values, so read it
+/// on purpose and do not send it to telemetry.
 class ConvexAuthException extends ConvexException {
   /// Creates a Convex Auth exception.
   const ConvexAuthException(
@@ -15,7 +21,16 @@ class ConvexAuthException extends ConvexException {
     super.data,
     super.logLines,
     super.retryable,
+    this.statusCode,
+    this.serverMessage,
   });
+
+  /// The HTTP status of the response, when the failure is one.
+  final int? statusCode;
+
+  /// The error message the server wrote, when a function threw. Not part of
+  /// [message] or [toString]: it may contain sensitive values.
+  final String? serverMessage;
 
   /// Name printed by [toString]; overridden by subclasses.
   String get _typeName => 'ConvexAuthException';
@@ -86,8 +101,8 @@ class ConvexAuthSignInException extends ConvexAuthException {
 
 /// The provider has no live Convex Auth session: none was ever started or
 /// restored, or the server reported it gone (`refreshSession` answered
-/// `noSession` because the session expired, was revoked, or its refresh
-/// token was replayed). Sign in again.
+/// `noSession` because the session expired, was revoked, or was ended after
+/// an outdated refresh token was presented). Sign in again.
 ///
 /// Implements [AuthSessionEndedError], so a `ConvexClientWithAuth` restore
 /// that fails with it signs out instead of keeping the dead session.

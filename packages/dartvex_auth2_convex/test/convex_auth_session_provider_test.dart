@@ -125,8 +125,9 @@ void main() {
     });
 
     test('a new login revokes the previous session', () async {
-      server.handlers['auth:signInAnonymously'] = (_) => complete('second');
-      final first = ConvexAuthSession.fromJson(bundle('first'));
+      server.handlers['auth:signInAnonymously'] =
+          (_) => complete('second', session: 's2');
+      final first = ConvexAuthSession.fromJson(bundle('first', session: 's1'));
       final provider = newProvider(initial: first)
         ..signIn = const ConvexAuthSignIn.anonymous();
 
@@ -326,6 +327,291 @@ void main() {
       await newProvider().logout();
       expect(server.calls, isEmpty);
       expect(changes, isEmpty);
+    });
+
+    test('revokes a staged session that was never installed', () async {
+      final provider = newProvider(
+        initial: ConvexAuthSession.fromJson(bundle('old', session: 's1')),
+      )..adoptSession(
+          ConvexAuthSession.fromJson(bundle('staged', session: 's2')),
+        );
+
+      await provider.logout();
+      await waitUntil(() => server.callsTo('auth:signOut').length == 2,
+          reason: 'both revocations');
+
+      expect(
+        server.callsTo('auth:signOut').map((call) => call.args['refreshToken']),
+        unorderedEquals(<String>['rt_old', 'rt_staged']),
+      );
+    });
+
+    test(
+        'completes once the stored session was removed, even when the '
+        'request fails', () async {
+      server.handlers['auth:signOut'] = (_) => throw http.Response('down', 503);
+      final removed = Completer<void>();
+      final saves = <ConvexAuthSession?>[];
+      final provider = ConvexAuthSessionProvider(
+        client: client,
+        initialSession: ConvexAuthSession.fromJson(bundle('old')),
+        onSessionChanged: (session) async {
+          await removed.future;
+          saves.add(session);
+        },
+      );
+
+      var done = false;
+      final logout = provider.logout().then<void>(
+            (_) => done = true,
+            onError: (Object _) => done = true,
+          );
+      await waitUntil(() => server.callsTo('auth:signOut').isNotEmpty,
+          reason: 'sign-out request');
+      await pumpEventQueue();
+      expect(done, isFalse);
+
+      removed.complete();
+      await logout;
+      expect(saves, <ConvexAuthSession?>[null]);
+    });
+  });
+
+  group('session ownership', () {
+    ConvexAuthSession of(String id, String? session) =>
+        ConvexAuthSession.fromJson(bundle(id, session: session));
+
+    test('adopting a later rotation of the same session does not revoke it',
+        () async {
+      final provider = newProvider(initial: of('old', 's1'))
+        ..adoptSession(of('rotated', 's1'));
+
+      final session = await provider.login(onIdToken: onIdToken);
+      await pumpEventQueue();
+
+      expect(session.refreshToken, 'rt_rotated');
+      expect(provider.session, session);
+      // signOut ends a session for any of its refresh tokens: revoking the
+      // previous bundle would have ended the adopted one.
+      expect(server.callsTo('auth:signOut'), isEmpty);
+    });
+
+    test('adopting another session revokes the previous one', () async {
+      final provider = newProvider(initial: of('old', 's1'))
+        ..adoptSession(of('new', 's2'));
+
+      await provider.login(onIdToken: onIdToken);
+      await waitUntil(() => server.callsTo('auth:signOut').isNotEmpty,
+          reason: 'revocation of the previous session');
+
+      expect(server.callsTo('auth:signOut').single.args,
+          {'refreshToken': 'rt_old'});
+    });
+
+    test(
+        'a bundle whose session cannot be read is never revoked on '
+        'replacement', () async {
+      final provider = newProvider(initial: of('old', null))
+        ..adoptSession(of('new', 's2'));
+
+      await provider.login(onIdToken: onIdToken);
+      await pumpEventQueue();
+
+      expect(server.callsTo('auth:signOut'), isEmpty);
+    });
+
+    test('a staged session replaced before login is revoked', () async {
+      final provider = newProvider(initial: of('current', 's1'))
+        ..adoptSession(of('first', 's2'))
+        ..adoptSession(of('second', 's3'));
+      await waitUntil(() => server.callsTo('auth:signOut').isNotEmpty,
+          reason: 'revocation of the abandoned staged session');
+
+      expect(server.callsTo('auth:signOut').single.args,
+          {'refreshToken': 'rt_first'});
+
+      final session = await provider.login(onIdToken: onIdToken);
+      expect(session.refreshToken, 'rt_second');
+    });
+
+    test('a staged bundle of the current or the new session is not revoked',
+        () async {
+      newProvider(initial: of('current', 's1'))
+        // Same session as the current one.
+        ..adoptSession(of('current-rotated', 's1'))
+        // Replaced by a bundle of another session: the abandoned bundle
+        // still belongs to the current session.
+        ..adoptSession(of('other', 's2'))
+        // Replaced by a later rotation of itself.
+        ..adoptSession(of('other-rotated', 's2'));
+      await pumpEventQueue();
+
+      expect(server.callsTo('auth:signOut'), isEmpty);
+    });
+
+    test('a refresh finishing after a same-session adoption keeps the session',
+        () async {
+      final gate = Completer<Object?>();
+      server.handlers['auth:refreshSession'] = (_) => gate.future;
+      final provider = newProvider(initial: of('old', 's1'));
+
+      final refresh = asBackgroundRefresh(
+        () => provider.loginFromCache(onIdToken: onIdToken),
+      );
+      await waitUntil(() => server.calls.isNotEmpty, reason: 'refresh call');
+      provider.adoptSession(of('adopted', 's1'));
+      await provider.login(onIdToken: onIdToken);
+      gate.complete(rotated('late', session: 's1'));
+
+      await expectLater(refresh, throwsA(isA<ConvexAuthException>()));
+      await pumpEventQueue();
+      expect(provider.session?.refreshToken, 'rt_adopted');
+      expect(server.callsTo('auth:signOut'), isEmpty);
+    });
+
+    test('a session that ended keeps a staged session of another one',
+        () async {
+      server.handlers['auth:refreshSession'] = (_) => noSession;
+      server.handlers['auth:signOut'] = (_) => null;
+      final provider = newProvider(initial: of('old', 's1'))
+        ..adoptSession(of('staged', 's2'));
+
+      // A background refresh leaves the staged session alone.
+      await expectLater(
+        asBackgroundRefresh(
+          () => provider.loginFromCache(onIdToken: onIdToken),
+        ),
+        throwsA(isA<ConvexAuthSessionEndedException>()),
+      );
+      expect(provider.session, isNull);
+
+      final session = await provider.login(onIdToken: onIdToken);
+      expect(session.refreshToken, 'rt_staged');
+    });
+
+    test('a failed background revocation reaches onBackgroundError', () async {
+      server.handlers['auth:signOut'] =
+          (_) => throw http.Response('rt_old leaked?', 503);
+      final errors = <Object>[];
+      final provider = ConvexAuthSessionProvider(
+        client: client,
+        initialSession: of('old', 's1'),
+        onBackgroundError: (error, _) => errors.add(error),
+      )..adoptSession(of('new', 's2'));
+
+      await provider.login(onIdToken: onIdToken);
+      await waitUntil(() => errors.isNotEmpty, reason: 'revocation failure');
+
+      final error = errors.single as ConvexAuthException;
+      expect(error.statusCode, 503);
+      expect(error.toString(), isNot(contains('rt_old')));
+    });
+  });
+
+  group('saving the session', () {
+    test('saves never overlap and keep the order of the changes', () async {
+      var next = 0;
+      server.handlers['auth:refreshSession'] = (_) => rotated('r${++next}');
+      final log = <String>[];
+      final gates = <Completer<void>>[];
+      final provider = ConvexAuthSessionProvider(
+        client: client,
+        initialSession: ConvexAuthSession.fromJson(bundle('old')),
+        onSessionChanged: (session) async {
+          final name = session?.refreshToken ?? 'removed';
+          log.add('start $name');
+          final gate = Completer<void>();
+          gates.add(gate);
+          await gate.future;
+          log.add('end $name');
+        },
+      );
+
+      final refreshFails = expectLater(
+        provider.loginFromCache(onIdToken: onIdToken),
+        throwsA(isA<ConvexAuthException>()),
+      );
+      await waitUntil(() => gates.length == 1, reason: 'first save');
+      // The refresh has not handed its session out yet.
+      expect(pushed, isEmpty);
+      // A logout while the first save is still writing.
+      final logout = provider.logout();
+      await pumpEventQueue();
+      expect(log, <String>['start rt_r1']);
+
+      gates[0].complete();
+      await waitUntil(() => gates.length == 2, reason: 'second save');
+      gates[1].complete();
+      await logout;
+      await refreshFails;
+
+      expect(log, <String>[
+        'start rt_r1',
+        'end rt_r1',
+        'start removed',
+        'end removed',
+      ]);
+      expect(pushed, isEmpty);
+    });
+
+    test('a rotated session is handed out only once it was saved', () async {
+      server.handlers['auth:refreshSession'] = (_) => rotated('new');
+      final gate = Completer<void>();
+      final provider = ConvexAuthSessionProvider(
+        client: client,
+        initialSession: ConvexAuthSession.fromJson(bundle('old')),
+        onSessionChanged: (_) => gate.future,
+      );
+
+      final refresh = provider.loginFromCache(onIdToken: onIdToken);
+      await waitUntil(() => provider.session?.refreshToken == 'rt_new',
+          reason: 'rotation');
+      await pumpEventQueue();
+      expect(pushed, isEmpty);
+
+      gate.complete();
+      expect((await refresh).refreshToken, 'rt_new');
+      expect(pushed, <String?>['jwt_new']);
+    });
+
+    test('a save error reaches onBackgroundError and keeps the flow', () async {
+      server.handlers['auth:refreshSession'] = (_) => rotated('new');
+      final errors = <Object>[];
+      final provider = ConvexAuthSessionProvider(
+        client: client,
+        initialSession: ConvexAuthSession.fromJson(bundle('old')),
+        onSessionChanged: (_) async => throw StateError('disk full'),
+        onBackgroundError: (error, _) => errors.add(error),
+      );
+
+      final session = await provider.loginFromCache(onIdToken: onIdToken);
+      await provider.sessionSaved;
+
+      expect(session.refreshToken, 'rt_new');
+      expect(errors.single, isA<StateError>());
+    });
+
+    test('a login superseded while its session is saved does not complete',
+        () async {
+      server.handlers['auth:signInAnonymously'] = (_) => complete('a');
+      final gate = Completer<void>();
+      var saves = 0;
+      final provider = ConvexAuthSessionProvider(
+        client: client,
+        onSessionChanged: (_) => ++saves == 1 ? gate.future : null,
+      )..signIn = const ConvexAuthSignIn.anonymous();
+
+      final login = provider.login(onIdToken: onIdToken);
+      await waitUntil(() => provider.session != null, reason: 'sign-in');
+      final logout = provider.logout();
+      gate.complete();
+
+      await expectLater(login, throwsA(isA<ConvexAuthException>()));
+      await logout;
+      expect(provider.session, isNull);
+      expect(pushed, isEmpty);
+      expect(
+          server.callsTo('auth:signOut').single.args, {'refreshToken': 'rt_a'});
     });
   });
 }

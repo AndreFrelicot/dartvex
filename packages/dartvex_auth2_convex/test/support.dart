@@ -8,20 +8,36 @@ import 'package:test/test.dart';
 
 const deploymentUrl = 'https://test-app.convex.cloud';
 
-/// A token bundle as returned by Convex Auth.
-Map<String, Object> bundle(String id, {String userId = 'u1'}) =>
+/// An unsigned JWT whose `sub` is the server session id, like the access
+/// tokens of Convex Auth. [id] keeps tokens of one session distinct.
+String sessionJwt(String id, String session) {
+  String encode(Map<String, Object?> json) =>
+      base64Url.encode(utf8.encode(jsonEncode(json))).replaceAll('=', '');
+  return '${encode(<String, Object?>{'alg': 'none'})}.'
+      '${encode(<String, Object?>{'sub': session, 'jti': id})}.sig';
+}
+
+/// A token bundle as returned by Convex Auth. With [session], the access
+/// token is a JWT naming that server session; without it, the session of the
+/// bundle cannot be read.
+Map<String, Object> bundle(String id,
+        {String userId = 'u1', String? session}) =>
     <String, Object>{
-      'accessToken': 'jwt_$id',
+      'accessToken': session == null ? 'jwt_$id' : sessionJwt(id, session),
       'refreshToken': 'rt_$id',
       'refreshTokenExpiresAt': 1893456000000,
       'userId': userId,
     };
 
-Map<String, Object> complete(String id) =>
-    <String, Object>{'status': 'complete', 'tokens': bundle(id)};
+Map<String, Object> complete(String id, {String? session}) => <String, Object>{
+      'status': 'complete',
+      'tokens': bundle(id, session: session),
+    };
 
-Map<String, Object> rotated(String id) =>
-    <String, Object>{'kind': 'rotated', 'tokens': bundle(id)};
+Map<String, Object> rotated(String id, {String? session}) => <String, Object>{
+      'kind': 'rotated',
+      'tokens': bundle(id, session: session),
+    };
 
 const Map<String, Object> noSession = <String, Object>{'kind': 'noSession'};
 

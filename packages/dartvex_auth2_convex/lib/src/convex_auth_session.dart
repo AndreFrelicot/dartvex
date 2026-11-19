@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 /// A Convex Auth session: the token bundle minted by `@convex-dev/auth` when a
 /// sign-in completes or a session is refreshed.
 ///
@@ -71,6 +73,29 @@ class ConvexAuthSession {
 
   /// The app's user id (an `Id<"users">` of the app's users table).
   final String userId;
+
+  /// The id of the server session these tokens belong to: the `sub` claim of
+  /// [accessToken]. It stays the same across refreshes, while both tokens
+  /// change. `null` when [accessToken] is not a JWT with a string `sub`.
+  ///
+  /// Read from the token without verifying its signature: use it to tell
+  /// two bundles of the same session apart from two sessions, not as proof
+  /// of anything.
+  String? get sessionId {
+    final parts = accessToken.split('.');
+    if (parts.length != 3) {
+      return null;
+    }
+    try {
+      final claims = jsonDecode(
+        utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))),
+      );
+      final subject = claims is Map ? claims['sub'] : null;
+      return subject is String && subject.isNotEmpty ? subject : null;
+    } on FormatException {
+      return null;
+    }
+  }
 
   /// The token bundle as JSON, in the shape [ConvexAuthSession.fromJson]
   /// reads (and Convex Auth returns).

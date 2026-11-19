@@ -17,10 +17,14 @@ Future<void> main() async {
   final provider = ConvexAuthSessionProvider(
     client: authClient,
     initialSession: savedSession,
-    onSessionChanged: (session) {
+    // Return the future of the write: saves then run in order, and a new
+    // session is only used once it has been stored.
+    onSessionChanged: (session) async {
       // Write session?.toJson() to secure storage, or delete it when null.
       savedSession = session;
     },
+    // Storage failures and failed background revocations end up here.
+    onBackgroundError: (error, stackTrace) => print('Auth: $error'),
   );
 
   // disposeClient: true lets the wrapper close the ConvexClient on dispose.

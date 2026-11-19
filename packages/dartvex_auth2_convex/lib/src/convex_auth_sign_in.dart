@@ -74,8 +74,11 @@ class ConvexAuthSignIn {
           'newPassword': newPassword,
         });
 
-  /// Signs in as a new anonymous user with `setupAnonymous`'s
-  /// `signInAnonymously`.
+  /// Signs in as a new anonymous user with a `signInAnonymously` mutation.
+  ///
+  /// `@convex-dev/auth` 2.0.0 has an anonymous method but does not export it
+  /// publicly, so this needs a mutation of your own at [function] that
+  /// returns the sign-in envelope.
   const ConvexAuthSignIn.anonymous({
     String function = 'auth:signInAnonymously',
   }) : this(function);
