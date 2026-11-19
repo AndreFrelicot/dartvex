@@ -300,6 +300,21 @@ void main() {
         expect(secondEvents.last.value, <dynamic>['new']);
         expect(secondEvents.last.isSeed, isFalse);
 
+        // A third subscription while the second is live shares its current
+        // server value: not a seed.
+        final third = adapter.subscribe('messages:list');
+        final thirdEvents = <LocalRemoteQuerySuccess>[];
+        final thirdListener = third.stream
+            .where((event) => event is LocalRemoteQuerySuccess)
+            .cast<LocalRemoteQuerySuccess>()
+            .listen(thirdEvents.add);
+        await settle();
+        expect(thirdEvents, hasLength(1));
+        expect(thirdEvents.single.value, <dynamic>['new']);
+        expect(thirdEvents.single.isSeed, isFalse);
+
+        await thirdListener.cancel();
+        third.cancel();
         await secondListener.cancel();
         second.cancel();
       },

@@ -464,6 +464,49 @@ void main() {
       sub.cancel();
     });
 
+    test('subscribe ignores the cached seed of the remote client', () async {
+      // The local cache holds the value the app last saw.
+      remoteClient.queryResults['tasks:list'] = <dynamic>['current'];
+      await localClient.query('tasks:list');
+      final remoteEvents = StreamController<LocalRemoteQueryEvent>.broadcast();
+      addTearDown(remoteEvents.close);
+      remoteClient.subscriptionStreams['tasks:list'] = remoteEvents.stream;
+
+      final events = <LocalQueryEvent>[];
+      final sub = localClient.subscribe('tasks:list');
+      final listener = sub.stream.listen(events.add);
+      await pumpEventQueue();
+      // The remote client replays what it kept from an earlier subscription.
+      remoteEvents
+        ..add(
+          const LocalRemoteQuerySuccess(<dynamic>['leftover'], isSeed: true),
+        )
+        ..add(LocalRemoteQueryError(StateError('old failure'), isSeed: true));
+      await pumpEventQueue();
+
+      expect(events.whereType<LocalQueryError>(), isEmpty);
+      final seeded = events.whereType<LocalQuerySuccess>().toList();
+      expect(seeded, hasLength(1));
+      expect(seeded.single.value, <dynamic>['current']);
+      expect(seeded.single.source, LocalQuerySource.cache);
+
+      // The leftover was not written over the cached value either.
+      await localClient.setNetworkMode(LocalNetworkMode.offline);
+      expect(await localClient.query('tasks:list'), <dynamic>['current']);
+      await localClient.setNetworkMode(LocalNetworkMode.auto);
+      await pumpEventQueue();
+
+      remoteEvents.add(const LocalRemoteQuerySuccess(<dynamic>['fresh']));
+      await pumpEventQueue();
+
+      final last = events.whereType<LocalQuerySuccess>().last;
+      expect(last.value, <dynamic>['fresh']);
+      expect(last.source, LocalQuerySource.remote);
+
+      await listener.cancel();
+      sub.cancel();
+    });
+
     test('subscribe ignores stale cache seed after remote event', () async {
       await localClient.dispose();
       final cacheStore = await SqliteLocalStore.openInMemory();

@@ -102,14 +102,17 @@ class LocalRemoteQuerySuccess extends LocalRemoteQueryEvent {
   /// The returned query value.
   final dynamic value;
 
-  /// Whether the remote client delivered this value from its own local state
-  /// when the subscription started, instead of as a server result received
-  /// after subscribing.
+  /// Whether the remote client replayed this value from a cache of its own
+  /// when the subscription started (the core client's `fromCache`: the last
+  /// value it knew for a query that was unsubscribed earlier), instead of
+  /// delivering a result the server currently maintains.
   ///
-  /// Such a seed (for example the core client's last known value for a query
-  /// that was unsubscribed earlier) can predate recent writes. The local
-  /// client does not treat seeds as confirmation of a just-replayed mutation.
-  /// Custom [LocalRemoteClient] implementations may leave this `false`.
+  /// Such a seed can predate recent writes and belong to an earlier
+  /// identity. The local client ignores it: it is neither written to the
+  /// local cache, nor emitted as a remote value, nor taken as confirmation
+  /// of a just-replayed mutation. The server's result for the new
+  /// subscription follows. Custom [LocalRemoteClient] implementations may
+  /// leave this `false`.
   final bool isSeed;
 }
 
@@ -125,10 +128,14 @@ class LocalRemoteQueryLoading extends LocalRemoteQueryEvent {
 /// Remote query event containing a query error.
 class LocalRemoteQueryError extends LocalRemoteQueryEvent {
   /// Creates a failed remote query event.
-  const LocalRemoteQueryError(this.error);
+  const LocalRemoteQueryError(this.error, {this.isSeed = false});
 
   /// The reported error.
   final Object error;
+
+  /// Whether the remote client replayed this error from a cache of its own
+  /// when the subscription started. See [LocalRemoteQuerySuccess.isSeed].
+  final bool isSeed;
 }
 
 /// Handle for a subscription maintained by a [LocalRemoteClient].
@@ -1684,6 +1691,13 @@ class ConvexLocalClient {
     int generation,
   ) async {
     switch (event) {
+      case LocalRemoteQuerySuccess(isSeed: true):
+      case LocalRemoteQueryError(isSeed: true):
+        // The remote client's own leftover from an earlier subscription: not
+        // a server result for this one. Caching it would stamp a stale value
+        // (possibly of an earlier identity) as fresh and emit it as remote;
+        // the local cache already serves the first frame.
+        return;
       case LocalRemoteQuerySuccess(:final value):
         _markRemoteEventSeen(queryState);
         await _writeRemoteSnapshotAndRebasePending(
@@ -2555,7 +2569,10 @@ class ConvexLocalClient {
           }
           cleanup();
           completer.complete(value);
-        case LocalRemoteQueryError(:final error):
+        case LocalRemoteQueryError(:final error, :final isSeed):
+          if (isSeed && !acceptSeed) {
+            break;
+          }
           completeError(error);
         case LocalRemoteQueryLoading():
           break;
