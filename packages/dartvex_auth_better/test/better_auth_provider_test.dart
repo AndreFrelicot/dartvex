@@ -140,7 +140,7 @@ void main() {
         expect(provider.email, 'alice@example.com');
       });
 
-      test('login after signUp forgets the password', () async {
+      test('signUp never stores the password', () async {
         final client =
             BetterAuthClient(baseUrl: baseUrl, httpClient: buildMock());
         final provider = ConvexBetterAuthProvider(client: client);
@@ -150,9 +150,138 @@ void main() {
           email: 'alice@example.com',
           password: 'password123',
         );
+        expect(provider.password, isNull);
+
         await provider.login(onIdToken: (_) {});
+        expect(provider.password, isNull);
+      });
+
+      test('signUp clears the same password staged before it', () async {
+        final requests = <String>[];
+        final client = BetterAuthClient(
+          baseUrl: baseUrl,
+          httpClient: buildMock(
+            onRequest: (request) => requests.add(request.url.path),
+          ),
+        );
+        final provider = ConvexBetterAuthProvider(client: client)
+          ..email = 'alice@example.com'
+          ..password = 'password123';
+
+        final signedUp = await provider.signUp(
+          name: 'Alice',
+          email: 'alice@example.com',
+          password: 'password123',
+        );
+        expect(provider.password, isNull);
+
+        // Nothing is staged any more, so login() reuses the sign-up session.
+        final session = await provider.login(onIdToken: (_) {});
+        expect(session, same(signedUp));
+        expect(requests, isNot(contains('/api/auth/sign-in/email')));
+      });
+
+      test('signIn never stores the password', () async {
+        final requests = <String>[];
+        final client = BetterAuthClient(
+          baseUrl: baseUrl,
+          httpClient: buildMock(
+            convexToken: 'jwt_signin',
+            onRequest: (request) => requests.add(request.url.path),
+          ),
+        );
+        final provider = ConvexBetterAuthProvider(client: client);
+
+        String? signInToken;
+        final signedIn = await provider.signIn(
+          email: 'alice@example.com',
+          password: 'password123',
+          onIdToken: (token) => signInToken = token,
+        );
 
         expect(provider.password, isNull);
+        expect(provider.email, 'alice@example.com');
+        expect(signInToken, 'jwt_signin');
+        expect(provider.cachedSession, same(signedIn));
+
+        // login() hands the same session over without another sign-in.
+        String? loginToken;
+        final session = await provider.login(
+          onIdToken: (token) => loginToken = token,
+        );
+        expect(session, same(signedIn));
+        expect(loginToken, 'jwt_signin');
+        expect(
+          requests.where((path) => path == '/api/auth/sign-in/email'),
+          hasLength(1),
+        );
+      });
+
+      test('a failed signIn stages nothing', () async {
+        final client = BetterAuthClient(
+          baseUrl: baseUrl,
+          httpClient: signInAnswering(
+            () => http.Response(
+              jsonEncode({'message': 'Invalid email or password'}),
+              401,
+            ),
+          ),
+        );
+        final provider = ConvexBetterAuthProvider(client: client);
+
+        await expectLater(
+          provider.signIn(email: 'alice@example.com', password: 'wrong'),
+          throwsA(isA<BetterAuthException>()),
+        );
+
+        expect(provider.password, isNull);
+        expect(provider.cachedSession, isNull);
+        await expectLater(
+          provider.login(onIdToken: (_) {}),
+          throwsStateError,
+        );
+      });
+
+      test('a password staged after signIn is a new sign-in', () async {
+        final requests = <String>[];
+        final client = BetterAuthClient(
+          baseUrl: baseUrl,
+          httpClient: buildMock(
+            onRequest: (request) => requests.add(request.url.path),
+          ),
+        );
+        final provider = ConvexBetterAuthProvider(client: client);
+
+        final first = await provider.signIn(
+          email: 'alice@example.com',
+          password: 'password123',
+        );
+        provider.password = 'password456';
+        final second = await provider.login(onIdToken: (_) {});
+
+        expect(second, isNot(same(first)));
+        expect(provider.password, isNull);
+        expect(
+          requests.where((path) => path == '/api/auth/sign-in/email'),
+          hasLength(2),
+        );
+      });
+
+      test('the signIn session is used once', () async {
+        final client =
+            BetterAuthClient(baseUrl: baseUrl, httpClient: buildMock());
+        final provider = ConvexBetterAuthProvider(client: client);
+
+        await provider.signIn(
+          email: 'alice@example.com',
+          password: 'password123',
+        );
+        await provider.login(onIdToken: (_) {});
+
+        await expectLater(
+          provider.login(onIdToken: (_) {}),
+          throwsStateError,
+        );
       });
 
       test('a rejected sign-in forgets the password', () async {
@@ -230,7 +359,7 @@ void main() {
         throwsA(isA<StateError>().having(
           (e) => e.message,
           'message',
-          contains('Set email and password'),
+          contains('signIn(email:, password:)'),
         )),
       );
     });
@@ -485,7 +614,7 @@ void main() {
       expect(provider.cachedSession, isNull);
     });
 
-    test('signUp registers and caches credentials', () async {
+    test('signUp registers and keeps the email, not the password', () async {
       final mock = buildMock(convexToken: 'jwt_signup');
       final client = BetterAuthClient(baseUrl: baseUrl, httpClient: mock);
       final provider = ConvexBetterAuthProvider(client: client);
@@ -502,7 +631,7 @@ void main() {
       expect(session.name, 'Alice');
       expect(receivedToken, 'jwt_signup');
       expect(provider.email, 'alice@example.com');
-      expect(provider.password, 'password123');
+      expect(provider.password, isNull);
       expect(provider.cachedSession, isNotNull);
     });
 

@@ -50,7 +50,6 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
   String? _sessionToken;
   BetterAuthSession? _pendingLoginSession;
   String? _pendingLoginEmail;
-  String? _pendingLoginPassword;
 
   /// Session handed over by [adoptSession], made current by the next
   /// successful explicit [loginFromCache].
@@ -63,18 +62,22 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
   /// changed, so a stale response can never resurrect an older session.
   int _sessionEpoch = 0;
 
-  /// Set credentials before calling [login].
+  /// Email of the account [login] signs in. Set by [signIn] and [signUp];
+  /// set it yourself, with [password], only for the staged-credentials flow.
   ///
   /// Cleared by [logout].
   String? email;
 
   /// Password paired with [email] for the next [login] call.
   ///
-  /// Not kept in memory longer than needed: [login] clears it once it has
-  /// signed in, and after a failure that retrying cannot fix (wrong
-  /// credentials, a superseded sign-in). Only a retryable failure (network,
-  /// 5xx, …) keeps it, so the same `login()` can be retried. Set it again
-  /// before every [login]. Also cleared by [logout].
+  /// Prefer [signIn], which takes the password as an argument and never
+  /// stores it. This field is the older flow, where [login] itself sends the
+  /// credentials: [login] clears it once it has signed in, and after a
+  /// failure that retrying cannot fix (wrong credentials, a superseded
+  /// sign-in). Only a retryable failure (network, 5xx, …) keeps it, so the
+  /// same `login()` can be retried. Set it again before every [login]. Also
+  /// cleared by [logout], and by [signIn] and [signUp] when it is the
+  /// password they were given.
   String? password;
 
   @override
@@ -84,10 +87,13 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
 
   @override
 
-  /// Signs in with the configured [email] and [password].
+  /// Makes the session created by [signIn] or [signUp] the provider's
+  /// session, or signs in with the staged [email] and [password].
   ///
-  /// Reuses the session created by [signUp] when the credentials still match,
-  /// instead of signing in a second time.
+  /// The session of [signIn] / [signUp] is reused, without another request,
+  /// when [email] is still theirs and no [password] was staged since. Staging
+  /// a [password] is a new sign-in: that session is dropped and the staged
+  /// credentials are sent.
   ///
   /// Throws a [BetterAuthException] when a newer [login], [signUp],
   /// [adoptSession], explicit [loginFromCache] or [logout] started while the
@@ -99,20 +105,17 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
   }) async {
     final e = email;
     final p = password;
-    if (e == null || p == null) {
-      throw StateError(
-        'Set email and password on ConvexBetterAuthProvider before login().',
-      );
-    }
-    final pendingSession = _takePendingLoginSession(
-      email: e,
-      password: p,
-    );
+    final pendingSession = _takePendingLoginSession(email: e, password: p);
     if (pendingSession != null) {
-      _forgetPassword(p);
       _commitSession(pendingSession);
       onIdToken(pendingSession.token);
       return pendingSession;
+    }
+    if (e == null || p == null) {
+      throw StateError(
+        'Call signIn(email:, password:) or signUp(...) on '
+        'ConvexBetterAuthProvider before login() (or set email and password).',
+      );
     }
     final epoch = ++_sessionEpoch;
     _adoptedSession = null;
@@ -239,7 +242,36 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
     }
   }
 
-  /// Sign up a new user. Sets credentials for future [login] calls.
+  /// Signs in with [email] and [password] without keeping the password.
+  ///
+  /// This does not authenticate the Convex client. Call
+  /// `authedClient.login()` afterwards: it makes the session created here the
+  /// provider's session without another request. [onIdToken] is optional and
+  /// only receives the new session's Convex JWT.
+  ///
+  /// The password is sent once and not stored: when the request fails, call
+  /// `signIn` again with the credentials (for a retryable
+  /// [BetterAuthException], the same ones).
+  ///
+  /// Like [login], this supersedes a [login], [signUp] or explicit
+  /// [loginFromCache] that is still in flight, and throws a
+  /// [BetterAuthException] when a newer one superseded it.
+  Future<BetterAuthSession> signIn({
+    required String email,
+    required String password,
+    void Function(String? token)? onIdToken,
+  }) async {
+    final epoch = ++_sessionEpoch;
+    _adoptedSession = null;
+    final session = await client.signIn(email: email, password: password);
+    _commitIfCurrent(epoch, session, operation: 'signIn()');
+    _forgetPassword(password);
+    _stagePendingLogin(session, email);
+    onIdToken?.call(session.token);
+    return session;
+  }
+
+  /// Signs up a new user without keeping the password.
   ///
   /// This does not authenticate the Convex client. Call
   /// `authedClient.login()` afterwards; it reuses the session created here
@@ -262,13 +294,18 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
       password: password,
     );
     _commitIfCurrent(epoch, session, operation: 'signUp()');
-    _pendingLoginSession = session;
-    _pendingLoginEmail = email;
-    _pendingLoginPassword = password;
-    this.email = email;
-    this.password = password;
+    _forgetPassword(password);
+    _stagePendingLogin(session, email);
     onIdToken?.call(session.token);
     return session;
+  }
+
+  /// Stages [session], created for [email] by [signIn] or [signUp], for the
+  /// next [login].
+  void _stagePendingLogin(BetterAuthSession session, String email) {
+    _pendingLoginSession = session;
+    _pendingLoginEmail = email;
+    this.email = email;
   }
 
   /// Stages [session], obtained outside [login] (for example from
@@ -332,26 +369,22 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
     _clearPendingLoginSession();
   }
 
+  /// The session staged by [signIn] or [signUp], when [login] should use it:
+  /// [email] is still the one it was created for and no [password] was staged
+  /// for a new sign-in. The staged session is cleared either way.
   BetterAuthSession? _takePendingLoginSession({
-    required String email,
-    required String password,
+    required String? email,
+    required String? password,
   }) {
     final session = _pendingLoginSession;
-    if (session == null) {
-      return null;
-    }
-    if (_pendingLoginEmail == email && _pendingLoginPassword == password) {
-      _clearPendingLoginSession();
-      return session;
-    }
+    final matches = _pendingLoginEmail == email && password == null;
     _clearPendingLoginSession();
-    return null;
+    return matches ? session : null;
   }
 
   void _clearPendingLoginSession() {
     _pendingLoginSession = null;
     _pendingLoginEmail = null;
-    _pendingLoginPassword = null;
   }
 }
 

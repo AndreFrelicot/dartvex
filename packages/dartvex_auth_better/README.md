@@ -144,8 +144,9 @@ final convexClient = ConvexClient('https://your-deployment.convex.cloud');
 final provider = ConvexBetterAuthProvider(client: authClient);
 final authedClient = convexClient.withAuth(provider);
 
-provider.email = 'user@example.com';
-provider.password = 'securePassword';
+// signIn() sends the credentials once and does not keep the password;
+// login() then authenticates the Convex client with the session it created.
+await provider.signIn(email: 'user@example.com', password: 'securePassword');
 final session = await authedClient.login();
 
 // session.sessionToken  — Better Auth token (for session persistence)
@@ -340,7 +341,11 @@ Implements `AuthProvider<BetterAuthSession>` from `dartvex`:
 
 - `ConvexBetterAuthProvider({client, initialSessionToken?})` — pass a
   persisted session token to restore the session across app restarts
-- `login()` — sign in with stored email/password
+- `signIn({email, password, onIdToken?})` — sign in without keeping the
+  password; call `authedClient.login()` afterwards to authenticate the
+  Convex client (it reuses the session)
+- `login()` — hand the session of `signIn()` / `signUp()` to the Convex
+  client, or sign in with a staged `email` / `password`
 - `loginFromCache()` — restore session from the cached (or seeded) token, or
   finish an `adoptSession()`. Through `authedClient.loginFromCache()` this
   is a new user intent: a `login()` still in flight is superseded (it throws

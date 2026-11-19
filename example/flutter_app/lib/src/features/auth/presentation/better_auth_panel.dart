@@ -49,15 +49,15 @@ class _BetterAuthPanelState extends State<BetterAuthPanel>
     try {
       final email = widget.emailController.text.trim();
       final password = widget.passwordController.text;
-      widget.provider.email = email;
-      widget.provider.password = password;
+      // Neither call keeps the password; login() reuses the session created.
       if (_isSignUp) {
         await widget.provider.signUp(
           name: widget.nameController.text.trim(),
           email: email,
           password: password,
-          onIdToken: (_) {},
         );
+      } else {
+        await widget.provider.signIn(email: email, password: password);
       }
       await authClient.login();
     } catch (error) {

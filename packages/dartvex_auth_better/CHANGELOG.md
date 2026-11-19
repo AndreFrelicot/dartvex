@@ -7,7 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `ConvexBetterAuthProvider.signIn({email, password})` signs in without
+  keeping the password: it stages the session for the next
+  `authedClient.login()`, which makes it the provider's session without
+  another request. It replaces setting `email` / `password` before `login()`,
+  which still works.
+
 ### Changed
+
+- `ConvexBetterAuthProvider.signUp()` no longer stores the password (in
+  `password` or internally). `login()` reuses the sign-up session when
+  `email` is still the sign-up email and no `password` was staged since;
+  staging a `password` now always sends a new sign-in, even with the same
+  password.
 
 - `ConvexBetterAuthProvider.login()` clears `password` once it is used:
   after signing in and after a failure that retrying cannot fix (wrong

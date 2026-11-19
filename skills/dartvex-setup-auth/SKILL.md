@@ -100,16 +100,18 @@ final convexClient = ConvexClient(deploymentUrl);
 final provider = ConvexBetterAuthProvider(client: authClient);
 final authedClient = convexClient.withAuth(provider);
 
-provider.email = email;
-provider.password = password;
+await provider.signIn(email: email, password: password);
 final session = await authedClient.login();
 // session.sessionToken — Better Auth token (persist this one)
 // session.token        — the Convex JWT at login time (a snapshot)
 ```
 
-`login()` clears `provider.password` once it is used (signed in, or
-rejected), so the password does not stay in memory: set it before every
-`login()`. Only a retryable failure (offline, 5xx) keeps it for a retry.
+`provider.signIn(...)` sends the credentials once and never stores the
+password; `authedClient.login()` then authenticates the Convex client with
+the session it created, without a second request. When `signIn` fails, call
+it again with the credentials. (The older flow, setting `provider.email` /
+`provider.password` before `login()`, still works: `login()` clears the
+password once it is used, and only a retryable failure keeps it.)
 
 The wrapper refreshes the Convex JWT by itself before it expires, but
 `session.token` (and `AuthAuthenticated.userInfo.token`) keep the login-time
@@ -117,7 +119,7 @@ value. When you need the JWT currently in use — for example
 `Authorization: Bearer ...` on a Convex HTTP action — read
 `authedClient.currentAuthToken`.
 
-Do not also call `authClient.signIn(...)`: the raw `BetterAuthClient`
+Call `signIn` on the provider, not `authClient.signIn(...)`: the raw `BetterAuthClient`
 session APIs (`signIn`, `signUp`, `getSession`, `signOut`) are only for
 sessions never attached to a Convex client, and mixing them with
 `authedClient.login()` creates two server sessions.
@@ -182,8 +184,9 @@ await secureStorage.delete(key: 'session_token');
 ```
 
 `authedClient.logout()` revokes the provider's Better Auth session, clears
-the provider's cached session **and its email/password** (set them again
-before the next `login()`), and clears the Convex client's auth. Never sign
+the provider's cached session **and its email/password** (call
+`provider.signIn(...)` again before the next `login()`), and clears the
+Convex client's auth. Never sign
 out with `authClient.signOut(...)` for a session the wrapper uses: the
 Convex client would stay authenticated until its JWT expires.
 
