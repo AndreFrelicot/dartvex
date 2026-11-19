@@ -135,6 +135,10 @@ be removed from your storage, it throws the error of the callback, because a
 restart would restore that session. Call `logout()` again to retry the
 removal; nothing is sent to the server the second time.
 
+`logout()` calls made while one is still running (a double tap, for example)
+join it: one sign-out request is sent, and every caller gets its result, the
+error of that request or of the removal included.
+
 `await provider.sessionSaved` completes when every save queued so far is
 done, for example before the app exits.
 

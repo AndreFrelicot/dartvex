@@ -794,6 +794,46 @@ void main() {
       expect(server.callsTo('auth:signOut'), hasLength(1));
     });
 
+    test('logouts made at once share the failure of the sign-out request',
+        () async {
+      final requestGate = Completer<void>();
+      server.handlers['auth:signOut'] = (_) async {
+        await requestGate.future;
+        throw http.Response('unavailable', 503);
+      };
+      final stored = <ConvexAuthSession?>[];
+      final provider = ConvexAuthSessionProvider(
+        client: client,
+        initialSession: ConvexAuthSession.fromJson(bundle('a')),
+        onSessionChanged: stored.add,
+      );
+
+      final results = <String>[];
+      Future<void> track(String name, Future<void> logout) => logout.then(
+            (_) => results.add('$name: done'),
+            onError: (Object error) => results.add(
+              '$name: ${error is ConvexAuthException && error.retryable}',
+            ),
+          );
+      final first = track('first', provider.logout());
+      await pumpEventQueue();
+      // The stored session is removed already; the request is not answered.
+      expect(stored, <ConvexAuthSession?>[null]);
+      final second = track('second', provider.logout());
+      await pumpEventQueue();
+      expect(results, isEmpty);
+
+      requestGate.complete();
+      await Future.wait(<Future<void>>[first, second]);
+      expect(results, unorderedEquals(<String>['first: true', 'second: true']));
+      expect(server.callsTo('auth:signOut'), hasLength(1));
+
+      // Nothing is running any more: a later call has nothing to do.
+      await provider.logout();
+      expect(server.callsTo('auth:signOut'), hasLength(1));
+      expect(stored, <ConvexAuthSession?>[null]);
+    });
+
     test(
         'a logout that joins a removal queued in the background reports '
         'its failure itself', () async {
