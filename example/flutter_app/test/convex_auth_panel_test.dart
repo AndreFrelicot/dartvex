@@ -262,8 +262,13 @@ void main() {
       expect(find.text('Convex Auth Not Configured'), findsOneWidget);
       expect(find.text('Plain HTTP refused.'), findsOneWidget);
       expect(find.text('Install the backend'), findsOneWidget);
-      expect(find.text('Set DEMO_JWKS (new deployment)'), findsOneWidget);
-      expect(find.text('Deploy'), findsOneWidget);
+      expect(find.text('Start the backend'), findsOneWidget);
+      expect(
+        find.text('Set DEMO_JWKS (new deployment only)'),
+        findsOneWidget,
+      );
+      // The backend is started once: no step asks to launch it again.
+      expect(find.textContaining('npx convex dev'), findsOneWidget);
       expect(find.text('Run the demo'), findsOneWidget);
     });
   });

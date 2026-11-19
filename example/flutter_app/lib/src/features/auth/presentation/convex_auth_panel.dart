@@ -480,23 +480,25 @@ class ConvexAuthSetupPanel extends StatelessWidget {
           const SizedBox(height: 8),
           const _ChecklistItem(
             number: '2',
-            title: 'Set DEMO_JWKS (new deployment)',
+            title: 'Start the backend',
             detail:
                 'npm run demo:key\n'
-                'npx convex dev   # configures the deployment, then waits\n'
-                'Keep it running. In a second terminal, run the printed '
-                '"npx convex env set DEMO_JWKS ..." command: the first one '
-                'then deploys the backend.\n'
-                'Convex needs it to accept the backend, whatever the mode.',
+                'npx convex dev   # keep it running\n'
+                'Convex Auth has no secret: tokens are signed by the '
+                'deployment.',
           ),
           const SizedBox(height: 8),
           const _ChecklistItem(
             number: '3',
-            title: 'Deploy',
+            title: 'Set DEMO_JWKS (new deployment only)',
             detail:
-                'npx convex dev   # or npx convex deploy\n'
-                'Convex Auth has no secret: tokens are signed by the '
-                'deployment.',
+                'A new deployment reports that DEMO_JWKS is not set, and '
+                'waits. In a second terminal, run the '
+                '"npx convex env set DEMO_JWKS ..." command that '
+                'npm run demo:key printed.\n'
+                'The first terminal then deploys by itself: wait for '
+                '"Convex functions ready!". Convex needs the variable to '
+                'accept the backend, whatever the mode.',
           ),
           const SizedBox(height: 8),
           const _ChecklistItem(
