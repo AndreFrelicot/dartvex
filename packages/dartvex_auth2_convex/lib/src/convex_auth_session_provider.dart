@@ -140,7 +140,8 @@ class ConvexAuthSessionProvider implements AuthProvider<ConvexAuthSession> {
   _SaveOutcome? _lastSave;
 
   /// The [logout] that is still running, shared by the calls that find
-  /// nothing more to sign out.
+  /// nothing more to sign out. Forgotten when a session is installed: what
+  /// happens to that session is not part of this logout.
   Future<void>? _loggingOut;
 
   _InFlightRefresh? _refreshing;
@@ -514,6 +515,11 @@ class ConvexAuthSessionProvider implements AuthProvider<ConvexAuthSession> {
       return _saves;
     }
     _session = next;
+    if (next != null) {
+      // A logout still running ended an earlier session. A later logout()
+      // is about this one: it must not join that operation.
+      _loggingOut = null;
+    }
     final callback = onSessionChanged;
     if (callback == null) {
       _lastSave = null;
