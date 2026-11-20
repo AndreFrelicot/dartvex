@@ -782,8 +782,12 @@ void main() {
         Map<String, int> signInStatus,
         List<Map<String, dynamic>> signIns,
         Map<String, int> getSessionStatus,
+        Map<String, int> signOutStatus,
+        Map<String, Completer<void>> signOutGates,
         List<String> signedOut,
       }) gatedMock({Completer<void>? signOutGate}) {
+        final signOutStatus = <String, int>{};
+        final signOutGates = <String, Completer<void>>{};
         final signInStatus = <String, int>{};
         final signIns = <Map<String, dynamic>>[];
         final getSessionStatus = <String, int>{};
@@ -843,6 +847,11 @@ void main() {
           }
           if (path == '/api/auth/sign-out') {
             await signOutGate?.future;
+            await signOutGates[bearer]?.future;
+            final status = signOutStatus[bearer];
+            if (status != null) {
+              return http.Response('{"message":"unavailable"}', status);
+            }
             signedOut.add(bearer);
             return http.Response(jsonEncode({'success': true}), 200);
           }
@@ -855,6 +864,8 @@ void main() {
           signInStatus: signInStatus,
           signIns: signIns,
           getSessionStatus: getSessionStatus,
+          signOutStatus: signOutStatus,
+          signOutGates: signOutGates,
           signedOut: signedOut,
         );
       }
@@ -1179,6 +1190,74 @@ void main() {
         await pumpEventQueue();
 
         expect(setup.signedOut, ['ses_b']);
+      });
+
+      test(
+          'logout fails when the sign-out of the other session failed, '
+          'staged or adopted', () async {
+        for (final adopt in <bool>[false, true]) {
+          final setup = gatedMock();
+          final provider = await signedInAsA(setup.mock);
+          final staged = await provider.signIn(email: 'b', password: 'pw');
+          if (adopt) {
+            provider.adoptSession(staged);
+          }
+          setup.signOutStatus['ses_b'] = 503;
+
+          // The current session is signed out; the other one is not.
+          await expectLater(
+            provider.logout(),
+            throwsA(isA<BetterAuthException>()
+                .having((e) => e.retryable, 'retryable', isTrue)),
+            reason: 'adopt: $adopt',
+          );
+          expect(setup.signedOut, ['ses_a'], reason: 'adopt: $adopt');
+          expect(provider.cachedSession, isNull);
+        }
+      });
+
+      test('logout waits for the sign-out of both sessions', () async {
+        final setup = gatedMock();
+        final provider = await signedInAsA(setup.mock);
+        await provider.signIn(email: 'b', password: 'pw');
+        final gate = setup.signOutGates['ses_b'] = Completer<void>();
+
+        var done = false;
+        final logout = provider.logout().then((_) => done = true);
+        await pumpEventQueue();
+        expect(setup.signedOut, ['ses_a']);
+        expect(done, isFalse);
+
+        gate.complete();
+        await logout;
+        expect(setup.signedOut, ['ses_a', 'ses_b']);
+      });
+
+      test(
+          'logout throws the error of the current session when both '
+          'sign-outs failed, after both were answered', () async {
+        final setup = gatedMock();
+        final provider = await signedInAsA(setup.mock);
+        await provider.signIn(email: 'b', password: 'pw');
+        setup.signOutStatus['ses_a'] = 400;
+        setup.signOutStatus['ses_b'] = 503;
+        final gate = setup.signOutGates['ses_b'] = Completer<void>();
+
+        Object? failure;
+        final logout = provider.logout().then<void>(
+              (_) {},
+              onError: (Object error) => failure = error,
+            );
+        await pumpEventQueue();
+        expect(failure, isNull);
+
+        gate.complete();
+        await logout;
+        expect(
+          failure,
+          isA<BetterAuthException>()
+              .having((e) => e.retryable, 'retryable', isFalse),
+        );
       });
 
       test('logout after the restore signs out the adopted session once',

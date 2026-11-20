@@ -260,6 +260,11 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
   /// not the current one yet is signed out too, whether it waits for [login]
   /// or was passed to [adoptSession]. A session the app obtained by itself
   /// and staged with [adoptSession] is only forgotten.
+  ///
+  /// Completes once every sign-out request it sent was answered, and throws
+  /// when one of them failed: the error of the current session's sign-out,
+  /// or else the error of the other session's. That session then stays
+  /// valid on the server until it expires.
   Future<void> logout() async {
     final sessionToken = _sessionToken;
     // At most one of the two exists: adoptSession takes over the session
@@ -276,10 +281,31 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
       }
       return;
     }
-    if (staged != null && staged != sessionToken) {
-      _signOutInBackground(staged);
+    if (staged == null || staged == sessionToken) {
+      await client.signOut(sessionToken: sessionToken);
+      return;
     }
-    await client.signOut(sessionToken: sessionToken);
+    // Two sessions to end. Both requests are sent at once and both are
+    // awaited: the caller must not be told that the user is signed out
+    // while one of the two sessions may still be valid.
+    Object? stagedError;
+    StackTrace? stagedStackTrace;
+    final stagedSignOut = client.signOut(sessionToken: staged).then<void>(
+      (_) {},
+      onError: (Object error, StackTrace stackTrace) {
+        stagedError = error;
+        stagedStackTrace = stackTrace;
+      },
+    );
+    try {
+      await client.signOut(sessionToken: sessionToken);
+    } finally {
+      await stagedSignOut;
+    }
+    final error = stagedError;
+    if (error != null) {
+      Error.throwWithStackTrace(error, stagedStackTrace!);
+    }
   }
 
   /// Signs in with [email] and [password] without keeping the password.
