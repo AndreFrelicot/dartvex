@@ -474,6 +474,15 @@ client.authRefreshing.listen((isRefreshing) {
 });
 ```
 
+A token fetch that fails with a transient error (a `ConvexException` with
+`retryable: true`, as the auth providers throw for network errors, timeouts and
+HTTP 5xx/429) keeps the session: the client retries with a growing delay (1 s,
+2 s, 5 s, 10 s, then every 30 s) and stays authenticated, reporting
+`isAuthRefreshing` while the token is being recovered. It retries at once when
+the network comes back (`ConvexClientConfig.connectivitySignal`) and on
+`reconnectNow()`. Only a session the provider reports as ended
+(`AuthSessionEndedError`) or a non-retryable error signs the user out.
+
 Flutter apps can use `ConvexAuthRefreshingBuilder` and
 `ConvexConnectionStatusBuilder` from
 [`dartvex_flutter`](https://pub.dev/packages/dartvex_flutter).

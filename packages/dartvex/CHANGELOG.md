@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-20
+
+### Fixed
+
+- A transient network outage no longer signs the user out. When a token
+  fetch fails with a transient error (a `ConvexException` with
+  `retryable: true`, a `TimeoutException` or an `http` `ClientException`),
+  the client keeps the session and retries with a growing delay (1 s, 2 s,
+  5 s, 10 s, then every 30 s) instead of giving up:
+  - the scheduled refresh, and the refetch after a cached token is
+    confirmed, were not retried at all: the token expired silently;
+  - after the server rejected an expired token, the reauth gave up after its
+    two short retries (2.5 s) and signed the user out, although the session
+    was still valid and the auth provider still held it.
+
+  The client stays authenticated and reports `isAuthRefreshing` meanwhile
+  (the socket stays stopped during a reauth, as before). It retries at once
+  when `ConvexClientConfig.connectivitySignal` reports the network back and
+  on `reconnectNow()` (which `dartvex_flutter` calls when the app resumes).
+  An `AuthSessionEndedError`, a non-retryable error or a fetch returning no
+  token still signs out. This departs from the official client, which gives
+  up after the short retries: Convex Auth access tokens live one minute, so
+  short outages on mobile would otherwise sign users out often. Found while
+  validating `dartvex_auth2_convex` on a device.
+
 ## [0.4.0] - 2026-11-20
 
 ### Added

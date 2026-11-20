@@ -2329,6 +2329,74 @@ void main() {
       signal.dispose();
     });
 
+    for (final trigger in <String>['connectivity restored', 'reconnectNow']) {
+      test(
+          '$trigger retries a token fetch that failed while offline, keeping '
+          'the session', () async {
+        final adapter = MockWebSocketAdapter();
+        final signal = _FakeConnectivitySignal();
+        final client = ConvexClient(
+          'https://demo.convex.cloud',
+          config: ConvexClientConfig(
+            adapterFactory: (_) => adapter,
+            connectivitySignal: signal,
+            reconnectBackoff: const <Duration>[Duration.zero],
+          ),
+        );
+        await settle();
+        final states = <bool>[];
+        final stateSubscription = client.authState.listen(states.add);
+
+        var online = true;
+        var forced = 0;
+        await client.setAuthWithRefresh(
+          fetchToken: ({required bool forceRefresh}) async {
+            if (!forceRefresh) {
+              return 'cached';
+            }
+            forced += 1;
+            if (!online) {
+              throw const ConvexException('offline', retryable: true);
+            }
+            return 'fresh-$forced';
+          },
+        );
+        await settle();
+
+        // The token expires while the device is offline: the server rejects
+        // it and every fetch of the reauth fails.
+        online = false;
+        adapter.pushServerMessage(
+          const AuthError(
+            error: 'Convex token identity expired',
+            baseVersion: 0,
+            authUpdateAttempted: true,
+          ).toJson(),
+        );
+        await settle();
+        expect(forced, greaterThanOrEqualTo(1));
+        expect(client.isAuthRefreshing, isTrue);
+        expect(states, isNot(contains(false)));
+
+        online = true;
+        final before = forced;
+        if (trigger == 'reconnectNow') {
+          unawaited(client.reconnectNow('AppResumed'));
+        } else {
+          signal.restore();
+        }
+        await settle();
+
+        expect(forced, before + 1);
+        expect(client.currentAuthToken, 'fresh-${before + 1}');
+        expect(states, isNot(contains(false)));
+
+        await stateSubscription.cancel();
+        client.dispose();
+        signal.dispose();
+      });
+    }
+
     test(
         'connectivity signal errors are swallowed and the restore '
         'subscription survives them', () async {

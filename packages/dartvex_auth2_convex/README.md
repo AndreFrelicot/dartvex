@@ -42,7 +42,7 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 
 ```yaml
 dependencies:
-  dartvex: ^0.4.0
+  dartvex: ^0.4.1
   dartvex_auth2_convex: ^0.1.0
 ```
 
@@ -271,6 +271,11 @@ identifiers in `error`, never something the user typed.
 - A session that the server reports gone during a background refresh signs
   the Convex client out with `dartvex` 0.4.0 or later. Earlier versions keep
   showing the user as signed in until the server rejects the access token.
+- A refresh that fails while the network is down (a retryable
+  `ConvexAuthException`) keeps the session with `dartvex` 0.4.1 or later: the
+  client retries with a growing delay, and at once when the network comes
+  back, instead of signing the user out once the one-minute access token has
+  expired.
 - `ConvexAuthSession.toString()` and `ConvexAuthSignIn.toString()` omit
   tokens and arguments.
 

@@ -448,7 +448,12 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
       );
     };
     _connectivitySubscription = _config.connectivitySignal?.onRestored.listen(
-      (_) => _wsManager.reconnectImmediatelyIfWaiting(),
+      (_) {
+        _wsManager.reconnectImmediatelyIfWaiting();
+        // A token fetch that failed while offline retries now rather than
+        // after its backoff.
+        _authManager.retryRefreshNow();
+      },
       onError: (Object error, StackTrace stackTrace) {
         // A failing connectivity signal (a platform channel error, or any
         // user-supplied implementation that throws) must not surface as an
@@ -1364,9 +1369,10 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
   /// client-initiated backoff (a 100ms base, mirroring the official client)
   /// rather than the longer server-disconnect backoff, so it does not wait out a
   /// full server/network retry delay. If already connected, this closes and
-  /// re-establishes the connection. After a fatal server error the connection
-  /// is terminated for good and this does nothing. On a disposed client the
-  /// returned future fails with a [ConvexException].
+  /// re-establishes the connection. An auth token fetch waiting to be retried
+  /// after a transient failure is retried at once. After a fatal server error
+  /// the connection is terminated for good and this does nothing. On a
+  /// disposed client the returned future fails with a [ConvexException].
   Future<void> reconnectNow(String reason) {
     if (_disposed) {
       return _disposedFuture();
@@ -1374,6 +1380,9 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
     if (_startFuture == null) {
       return _ensureStarted();
     }
+    // A token fetch waiting to be retried (say, it failed while the app was in
+    // the background) is retried now too.
+    _authManager.retryRefreshNow();
     return _wsManager.reconnectNow(reason);
   }
 

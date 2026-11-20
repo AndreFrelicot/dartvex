@@ -49,3 +49,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that text is available as `serverMessage` and `logLines`. The `code` of a
   `ConvexAuthSignInException` is only set for a code-shaped `userError.error`;
   free text stays in `userError`.
+- Requires `dartvex` 0.4.1, which keeps the session through a network outage
+  (a retryable `ConvexAuthException` during a refresh) instead of signing the
+  user out once the one-minute access token has expired. Validated on an
+  Android device (Pixel 7 Pro): sign-up and sign-in errors, rotation,
+  background, network loss, app killed during a session write, logout,
+  revocation by another client and refresh token replay.
