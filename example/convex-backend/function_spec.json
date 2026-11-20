@@ -1048,6 +1048,634 @@
       "visibility": {
         "kind": "public"
       }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Query",
+      "identifier": "convexAuth.js:isAuthenticated",
+      "returns": {
+        "type": "boolean"
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "refreshToken": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "convexAuth.js:refreshSession",
+      "returns": {
+        "type": "union",
+        "value": [
+          {
+            "type": "object",
+            "value": {
+              "kind": {
+                "fieldType": {
+                  "type": "literal",
+                  "value": "rotated"
+                },
+                "optional": false
+              },
+              "tokens": {
+                "fieldType": {
+                  "type": "object",
+                  "value": {
+                    "accessToken": {
+                      "fieldType": {
+                        "type": "string"
+                      },
+                      "optional": false
+                    },
+                    "refreshToken": {
+                      "fieldType": {
+                        "type": "string"
+                      },
+                      "optional": false
+                    },
+                    "refreshTokenExpiresAt": {
+                      "fieldType": {
+                        "type": "number"
+                      },
+                      "optional": false
+                    },
+                    "userId": {
+                      "fieldType": {
+                        "type": "string"
+                      },
+                      "optional": false
+                    }
+                  }
+                },
+                "optional": false
+              }
+            }
+          },
+          {
+            "type": "object",
+            "value": {
+              "kind": {
+                "fieldType": {
+                  "type": "literal",
+                  "value": "noSession"
+                },
+                "optional": false
+              }
+            }
+          }
+        ]
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "password": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "username": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "convexAuth.js:signInWithUsernamePassword",
+      "returns": {
+        "type": "union",
+        "value": [
+          {
+            "type": "object",
+            "value": {
+              "status": {
+                "fieldType": {
+                  "type": "literal",
+                  "value": "complete"
+                },
+                "optional": false
+              },
+              "tokens": {
+                "fieldType": {
+                  "type": "object",
+                  "value": {
+                    "accessToken": {
+                      "fieldType": {
+                        "type": "string"
+                      },
+                      "optional": false
+                    },
+                    "refreshToken": {
+                      "fieldType": {
+                        "type": "string"
+                      },
+                      "optional": false
+                    },
+                    "refreshTokenExpiresAt": {
+                      "fieldType": {
+                        "type": "number"
+                      },
+                      "optional": false
+                    },
+                    "userId": {
+                      "fieldType": {
+                        "type": "string"
+                      },
+                      "optional": false
+                    }
+                  }
+                },
+                "optional": false
+              }
+            }
+          },
+          {
+            "type": "object",
+            "value": {
+              "status": {
+                "fieldType": {
+                  "type": "literal",
+                  "value": "error"
+                },
+                "optional": false
+              },
+              "userError": {
+                "fieldType": {
+                  "type": "union",
+                  "value": [
+                    {
+                      "type": "union",
+                      "value": [
+                        {
+                          "type": "union",
+                          "value": [
+                            {
+                              "type": "object",
+                              "value": {
+                                "error": {
+                                  "fieldType": {
+                                    "type": "literal",
+                                    "value": "PASSWORD_TOO_SHORT"
+                                  },
+                                  "optional": false
+                                },
+                                "minimumLength": {
+                                  "fieldType": {
+                                    "type": "number"
+                                  },
+                                  "optional": false
+                                }
+                              }
+                            },
+                            {
+                              "type": "object",
+                              "value": {
+                                "error": {
+                                  "fieldType": {
+                                    "type": "literal",
+                                    "value": "PASSWORD_TOO_LONG"
+                                  },
+                                  "optional": false
+                                },
+                                "maximumLength": {
+                                  "fieldType": {
+                                    "type": "number"
+                                  },
+                                  "optional": false
+                                }
+                              }
+                            },
+                            {
+                              "type": "object",
+                              "value": {
+                                "error": {
+                                  "fieldType": {
+                                    "type": "literal",
+                                    "value": "PASSWORD_HAS_SURROUNDING_WHITESPACE"
+                                  },
+                                  "optional": false
+                                }
+                              }
+                            }
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "value": {
+                            "error": {
+                              "fieldType": {
+                                "type": "literal",
+                                "value": "INVALID_CREDENTIALS"
+                              },
+                              "optional": false
+                            }
+                          }
+                        },
+                        {
+                          "type": "object",
+                          "value": {
+                            "error": {
+                              "fieldType": {
+                                "type": "literal",
+                                "value": "RATE_LIMITED"
+                              },
+                              "optional": false
+                            },
+                            "retryAfterMs": {
+                              "fieldType": {
+                                "type": "number"
+                              },
+                              "optional": false
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "value": {
+                        "error": {
+                          "fieldType": {
+                            "type": "literal",
+                            "value": "USER_NOT_FOUND"
+                          },
+                          "optional": false
+                        }
+                      }
+                    }
+                  ]
+                },
+                "optional": false
+              }
+            }
+          }
+        ]
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "refreshToken": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "convexAuth.js:signOut",
+      "returns": {
+        "type": "null"
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "password": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "username": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "convexAuth.js:signUpWithUsernamePassword",
+      "returns": {
+        "type": "union",
+        "value": [
+          {
+            "type": "object",
+            "value": {
+              "status": {
+                "fieldType": {
+                  "type": "literal",
+                  "value": "complete"
+                },
+                "optional": false
+              },
+              "tokens": {
+                "fieldType": {
+                  "type": "object",
+                  "value": {
+                    "accessToken": {
+                      "fieldType": {
+                        "type": "string"
+                      },
+                      "optional": false
+                    },
+                    "refreshToken": {
+                      "fieldType": {
+                        "type": "string"
+                      },
+                      "optional": false
+                    },
+                    "refreshTokenExpiresAt": {
+                      "fieldType": {
+                        "type": "number"
+                      },
+                      "optional": false
+                    },
+                    "userId": {
+                      "fieldType": {
+                        "type": "string"
+                      },
+                      "optional": false
+                    }
+                  }
+                },
+                "optional": false
+              }
+            }
+          },
+          {
+            "type": "object",
+            "value": {
+              "status": {
+                "fieldType": {
+                  "type": "literal",
+                  "value": "error"
+                },
+                "optional": false
+              },
+              "userError": {
+                "fieldType": {
+                  "type": "union",
+                  "value": [
+                    {
+                      "type": "union",
+                      "value": [
+                        {
+                          "type": "union",
+                          "value": [
+                            {
+                              "type": "object",
+                              "value": {
+                                "error": {
+                                  "fieldType": {
+                                    "type": "literal",
+                                    "value": "PASSWORD_TOO_SHORT"
+                                  },
+                                  "optional": false
+                                },
+                                "minimumLength": {
+                                  "fieldType": {
+                                    "type": "number"
+                                  },
+                                  "optional": false
+                                }
+                              }
+                            },
+                            {
+                              "type": "object",
+                              "value": {
+                                "error": {
+                                  "fieldType": {
+                                    "type": "literal",
+                                    "value": "PASSWORD_TOO_LONG"
+                                  },
+                                  "optional": false
+                                },
+                                "maximumLength": {
+                                  "fieldType": {
+                                    "type": "number"
+                                  },
+                                  "optional": false
+                                }
+                              }
+                            },
+                            {
+                              "type": "object",
+                              "value": {
+                                "error": {
+                                  "fieldType": {
+                                    "type": "literal",
+                                    "value": "PASSWORD_HAS_SURROUNDING_WHITESPACE"
+                                  },
+                                  "optional": false
+                                }
+                              }
+                            }
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "value": {
+                            "error": {
+                              "fieldType": {
+                                "type": "literal",
+                                "value": "PASSWORD_TOO_COMMON"
+                              },
+                              "optional": false
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "type": "union",
+                      "value": [
+                        {
+                          "type": "object",
+                          "value": {
+                            "error": {
+                              "fieldType": {
+                                "type": "literal",
+                                "value": "USERNAME_TOO_SHORT"
+                              },
+                              "optional": false
+                            },
+                            "minimumLength": {
+                              "fieldType": {
+                                "type": "number"
+                              },
+                              "optional": false
+                            }
+                          }
+                        },
+                        {
+                          "type": "object",
+                          "value": {
+                            "error": {
+                              "fieldType": {
+                                "type": "literal",
+                                "value": "USERNAME_TOO_LONG"
+                              },
+                              "optional": false
+                            },
+                            "maximumLength": {
+                              "fieldType": {
+                                "type": "number"
+                              },
+                              "optional": false
+                            }
+                          }
+                        },
+                        {
+                          "type": "object",
+                          "value": {
+                            "error": {
+                              "fieldType": {
+                                "type": "literal",
+                                "value": "USERNAME_HAS_SURROUNDING_WHITESPACE"
+                              },
+                              "optional": false
+                            }
+                          }
+                        },
+                        {
+                          "type": "object",
+                          "value": {
+                            "error": {
+                              "fieldType": {
+                                "type": "literal",
+                                "value": "USERNAME_HAS_INVALID_CHARACTERS"
+                              },
+                              "optional": false
+                            }
+                          }
+                        },
+                        {
+                          "type": "object",
+                          "value": {
+                            "error": {
+                              "fieldType": {
+                                "type": "literal",
+                                "value": "USERNAME_TAKEN"
+                              },
+                              "optional": false
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "optional": false
+              }
+            }
+          }
+        ]
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "method": {
+            "fieldType": {
+              "type": "object",
+              "value": {
+                "name": {
+                  "fieldType": {
+                    "type": "literal",
+                    "value": "usernamePassword"
+                  },
+                  "optional": false
+                },
+                "profile": {
+                  "fieldType": {
+                    "type": "object",
+                    "value": {}
+                  },
+                  "optional": false
+                }
+              }
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "users.js:createUserPassword",
+      "returns": {
+        "tableName": "users",
+        "type": "id"
+      },
+      "visibility": {
+        "kind": "internal"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Query",
+      "identifier": "users.js:viewer",
+      "returns": {
+        "type": "union",
+        "value": [
+          {
+            "type": "object",
+            "value": {
+              "_creationTime": {
+                "fieldType": {
+                  "type": "number"
+                },
+                "optional": false
+              },
+              "createdVia": {
+                "fieldType": {
+                  "type": "string"
+                },
+                "optional": false
+              },
+              "userId": {
+                "fieldType": {
+                  "tableName": "users",
+                  "type": "id"
+                },
+                "optional": false
+              }
+            }
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "visibility": {
+        "kind": "public"
+      }
     }
   ]
 }

@@ -7,6 +7,8 @@ This Flutter app demonstrates the packages in this repo working together:
 - `dartvex_flutter` for runtime-aware Flutter widgets
 - `dartvex_local` for local-first cache, offline queueing, and replay
 - `dartvex_auth_better` for optional Better Auth (self-hosted) authentication
+- `dartvex_auth2_convex` for optional Convex Auth v2 (`@convex-dev/auth`)
+  authentication
 
 ## Run
 
@@ -68,12 +70,15 @@ flutter run --release -d <device-id> \
 - current viewer state
 - connection state via `dartvex_flutter`
 - action invocation via the generated API
-- an `Auth` tab with a **Demo / Better Auth mode selector**:
+- an `Auth` tab with a **Demo / Better Auth / Convex Auth mode selector**:
   - **Demo mode**: deterministic `DemoAuthProvider` with login, cache restore,
     logout, forced reconnect, and provider diagnostics
   - **Better Auth mode**: self-hosted authentication running inside your Convex
     backend via `ConvexBetterAuthProvider` from `dartvex_auth_better`
     (requires `@convex-dev/better-auth` component; shows setup checklist if not configured)
+  - **Convex Auth mode**: username/password sign-up and sign-in with
+    `@convex-dev/auth` v2 via `ConvexAuthSessionProvider` from
+    `dartvex_auth2_convex`, with a live view of the rotating session
 - a dedicated `Local` tab showing:
   - cached query fallback
   - forced offline mode
@@ -86,15 +91,15 @@ flutter run --release -d <device-id> \
 
 ## Auth modes
 
-The `Auth` tab includes a segmented button to switch between two auth modes.
-Both modes drive the same `ConvexClientWithAuth` wrapper — only the
+The `Auth` tab includes a segmented button to switch between three auth modes.
+All of them drive the same `ConvexClientWithAuth` wrapper — only the
 provider implementation differs.
 
 ### Demo mode (default)
 
 Uses `DemoAuthProvider`, a deterministic in-memory provider with no external
-service. Public screens and Better Auth work without this provider, but Demo
-mode requires a JWT generated locally from the example backend key material.
+service. Public screens, Better Auth and Convex Auth work without this
+provider, but Demo mode requires a JWT generated locally from the example backend key material.
 The backend example requires Node.js 22.9 or newer and uses npm with the
 committed `package-lock.json` (run `npm install` in `../convex-backend`
 first).
@@ -183,6 +188,9 @@ needed — credentials are stored in the Convex database.
    npx convex dev   # or npx convex deploy
    ```
 
+   A new deployment also needs `DEMO_JWKS` before it accepts the backend,
+   even for this mode: see steps 1 and 2 of [Demo mode](#demo-mode-default).
+
 5. Run the demo (no extra `--dart-define` needed beyond `CONVEX_DEMO_URL`):
 
    ```bash
@@ -193,12 +201,95 @@ needed — credentials are stored in the Convex database.
 If the Convex backend does not have the Better Auth component installed, the
 app shows a setup checklist with the steps above.
 
+### Convex Auth mode
+
+Uses `ConvexAuthSessionProvider` from the `dartvex_auth2_convex` package with
+[Convex Auth](https://docs.convex.dev/auth/convex-auth) v2 running inside the
+Convex backend as components. Accounts are a username and a password; there
+is no email to verify.
+
+#### Setup
+
+Convex Auth itself needs nothing beyond the backend: the committed
+`package-lock.json` pins `@convex-dev/auth` 2.0.0, and access tokens are
+signed by the deployment, so there is no secret to set for it.
+
+The backend as a whole needs one variable before a new deployment accepts
+it: `DEMO_JWKS`, the public key set of the Demo mode, which
+`convex/auth.config.ts` reads.
+
+```bash
+cd example/convex-backend
+npm install
+npm run demo:key   # prints an `npx convex env set DEMO_JWKS ...` command
+npx convex dev     # new deployment: configures it, then waits for DEMO_JWKS
+# keep it running; from a second terminal, in example/convex-backend, run
+# the printed `npx convex env set DEMO_JWKS ...` command: the first
+# terminal then deploys the backend by itself
+
+cd ../flutter_app
+flutter run \
+  --dart-define=CONVEX_DEMO_URL=https://your-deployment.convex.cloud
+```
+
+Without a deployment URL, the app shows a setup checklist with these steps.
+
+#### What it shows
+
+- **Sign up / sign in**: the panel sets `provider.signIn` to a
+  `ConvexAuthSignIn` and calls `authClient.login()`. A rejected request is a
+  `ConvexAuthSignInException`, whose `code` (`INVALID_CREDENTIALS`,
+  `USERNAME_TAKEN`, `PASSWORD_TOO_SHORT`, …) the demo maps to a message in
+  `describeConvexAuthError`.
+- **A rotating session**: the access token lives one minute. The client
+  refreshes the session before it expires, and every refresh replaces both
+  the access token and the refresh token. The panel counts these rotations.
+- **Persistence**: the provider hands every new session to
+  `onSessionChanged`. The demo saves it in `ConvexAuthSessionStore`, an
+  in-memory stand-in for the secure storage a real app would use, and passes
+  it back as `initialSession` to the next client.
+- **The backend's view**: `users:viewer` resolves the session to its user
+  with `getAuthUserId`. The private feed on the `Chats` tab follows the user,
+  not the session, so it survives a sign-out and a new sign-in.
+
+The backend's functions are in `convex/convexAuth.ts` (Better Auth owns
+`convex/auth.ts`), so the demo passes their paths to the adapter instead of
+relying on the default `auth:<name>`: see `ConvexAuthDemoFunctions` in
+`lib/src/features/auth/data/convex_auth_demo.dart`.
+
+Suggested manual flow:
+
+1. Open `Auth` and select `Convex Auth`.
+2. Enter a username and a password of at least 10 characters, then tap
+   `Sign Up`.
+3. Confirm the header chip turns to `Convex Auth: signed in`, the session
+   card shows a `userId` and a `sessionId`, and the backend line resolves the
+   session to the same user. `Token rotations` reads 1 almost at once: like
+   the official client, Dartvex fetches a fresh token as soon as the server
+   has confirmed the first one.
+4. Wait a minute: `Token rotations` goes up while the session stays
+   authenticated, with the same `sessionId`.
+5. Open `Chats` and send a private message.
+6. Back on `Auth`, select `Demo`, then `Convex Auth` again. Switching modes
+   rebuilds the Convex client: the session is restored from the store, as an
+   app restores it at startup, without asking for the password.
+7. Tap `Sign Out`. The session is revoked on the server and removed from the
+   store.
+8. Tap `Already have an account? Sign in`, try a wrong password (the panel
+   shows `Wrong username or password.`), then the right one. The session card
+   shows a new `sessionId` for the same `userId`, and the private message is
+   still in `Chats`.
+
+The session is kept in memory only: restarting the app signs you out. A real
+app writes `session.toJson()` to secure storage in `onSessionChanged`; see
+the `dartvex_auth2_convex` README.
+
 #### `--dart-define` reference
 
 | Key | Required | Description |
 |-----|----------|-------------|
 | `CONVEX_DEMO_URL` | Yes | Convex deployment URL |
-| `CONVEX_DEMO_AUTH_TOKEN` | Demo mode only | JWT generated by `example/convex-backend`; not needed for public screens or Better Auth |
+| `CONVEX_DEMO_AUTH_TOKEN` | Demo mode only | JWT generated by `example/convex-backend`; not needed for public screens, Better Auth or Convex Auth |
 
 ## Local-first demo notes
 
@@ -240,7 +331,8 @@ native-only, so the extra image-widget/cache variants are hidden on web.
   by default). Generate a new one and launch again; `DEMO_TOKEN_TTL_SECONDS`
   sets another lifetime for `npm run token`.
 - **Auth tab shows "Demo token missing"** — `CONVEX_DEMO_AUTH_TOKEN` did not reach
-  the build (usually the issue above). Public tabs and Better Auth do not need it.
+  the build (usually the issue above). Public tabs, Better Auth and Convex Auth do
+  not need it.
 - **`./generate_bindings.sh: permission denied`** — run it via
   `bash example/generate_bindings.sh`, which works regardless of the file's
   executable bit.

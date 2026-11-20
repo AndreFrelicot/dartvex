@@ -2,6 +2,7 @@ import { ConvexError, v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 
 import { mutation, query } from "./_generated/server";
+import { requireOwner } from "./identity";
 
 const publicMessageValidator = v.object({
   _id: v.id("public_messages"),
@@ -44,15 +45,12 @@ export const listPrivate = query({
   args: {},
   returns: v.array(privateMessageValidator),
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (identity === null) {
-      throw new ConvexError("Authentication required");
-    }
+    const { ownerKey } = await requireOwner(ctx);
 
     const messages = await ctx.db
       .query("private_messages")
       .withIndex("by_token_identifier", (q) =>
-        q.eq("tokenIdentifier", identity.tokenIdentifier),
+        q.eq("tokenIdentifier", ownerKey),
       )
       .order("desc")
       .collect();
@@ -78,38 +76,34 @@ export const sendPrivate = mutation({
   },
   returns: v.id("private_messages"),
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (identity === null) {
-      throw new ConvexError("Authentication required");
-    }
+    const { identity, ownerKey } = await requireOwner(ctx);
 
     return await ctx.db.insert("private_messages", {
       author:
         args.author ?? identity.name ?? identity.email ?? identity.subject,
       text: args.text,
-      tokenIdentifier: identity.tokenIdentifier,
+      // The owner key: the token identifier, or a per-user key for Convex
+      // Auth sessions (see requireOwner).
+      tokenIdentifier: ownerKey,
       subject: identity.subject,
       issuer: identity.issuer,
     });
   },
 });
 
-// Clears only the calling identity's private messages (scoped by
-// tokenIdentifier, exactly like listPrivate). A signed-in viewer can wipe their
+// Clears only the calling identity's private messages (scoped by the owner
+// key, exactly like listPrivate). A signed-in viewer can wipe their
 // own private thread without touching anyone else's.
 export const clearPrivate = mutation({
   args: {},
   returns: v.number(),
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (identity === null) {
-      throw new ConvexError("Authentication required");
-    }
+    const { ownerKey } = await requireOwner(ctx);
 
     const mine = await ctx.db
       .query("private_messages")
       .withIndex("by_token_identifier", (q) =>
-        q.eq("tokenIdentifier", identity.tokenIdentifier),
+        q.eq("tokenIdentifier", ownerKey),
       )
       .collect();
     await Promise.all(mine.map((doc) => ctx.db.delete(doc._id)));

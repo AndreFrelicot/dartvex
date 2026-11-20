@@ -501,8 +501,9 @@ class TypeMapper {
     bool isNullMember(ConvexType type) =>
         type is ConvexNullType ||
         (type is ConvexLiteralType && type.value == null);
-    final nullable = union.value.any(isNullMember);
-    final nonNull = union.value.where((type) => !isNullMember(type)).toList();
+    final members = _flattenUnionMembers(union.value);
+    final nullable = members.any(isNullMember);
+    final nonNull = members.where((type) => !isNullMember(type)).toList();
 
     if (nonNull.isEmpty) {
       // A union of only null members (v.union(v.null(), v.null())) is just
@@ -775,6 +776,27 @@ class TypeMapper {
       )
       ..write('}');
     return buffer.toString();
+  }
+
+  /// Replaces every member that is itself a union by its own members, at any
+  /// depth: `v.union(v.union(a, b), c)` admits exactly the values of
+  /// `v.union(a, b, c)`.
+  ///
+  /// Validators composed from shared pieces nest this way (an error union
+  /// built from the error unions of several steps). Without flattening, two
+  /// nested unions are two members with the same runtime shape and the union
+  /// is rejected as ambiguous, although its leaves can be told apart.
+  List<ConvexType> _flattenUnionMembers(List<ConvexType> members) {
+    if (!members.any((type) => type is ConvexUnionType)) {
+      return members;
+    }
+    return <ConvexType>[
+      for (final member in members)
+        if (member is ConvexUnionType)
+          ..._flattenUnionMembers(member.value)
+        else
+          member,
+    ];
   }
 
   List<ConvexType> _removeRedundantLiteralMembers(List<ConvexType> members) {

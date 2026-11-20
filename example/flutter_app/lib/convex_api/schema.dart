@@ -32,3 +32,9 @@ class TasksId extends ConvexTableId {
 
   static const String tableName = 'tasks';
 }
+
+class UsersId extends ConvexTableId {
+  const UsersId(super.value);
+
+  static const String tableName = 'users';
+}

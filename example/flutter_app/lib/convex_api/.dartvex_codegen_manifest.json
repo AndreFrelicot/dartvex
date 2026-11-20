@@ -1,11 +1,13 @@
 {
   "files": [
     "api.dart",
+    "modules/convexAuth.dart",
     "modules/demo.dart",
     "modules/files.dart",
     "modules/messages.dart",
     "modules/tasks.dart",
     "modules/testing.dart",
+    "modules/users.dart",
     "runtime.dart",
     "schema.dart"
   ]

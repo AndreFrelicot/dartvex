@@ -7,4 +7,7 @@ enum AuthMode {
 
   /// Better Auth (self-hosted in Convex) using dartvex_auth_better.
   betterAuth,
+
+  /// Convex Auth v2 (`@convex-dev/auth`) using dartvex_auth2_convex.
+  convexAuth,
 }

@@ -163,7 +163,8 @@ Regenerate whenever backend functions or validators change:
   can be told apart at runtime. Members with the same runtime shape (e.g.
   `v.string()` and `v.id(...)`, or objects without a distinct literal
   discriminator) **abort generation** with an "Ambiguous union" error — add a
-  literal discriminator field.
+  literal discriminator field. A union nested in a union is flattened first
+  (`v.union(v.union(a, b), c)` = `v.union(a, b, c)`).
 - Records with string, id, or literal-union keys → `Map<String, V>`.
 - Only unknown/future validator kinds and non-scalar literals fall back to
   `dynamic`, with a warning.

@@ -198,6 +198,8 @@ await api.messages.send(
   apart at runtime. Members with the same runtime shape (for example
   `v.string()` and `v.id("users")`, or objects without a distinct literal
   discriminator field) make generation fail with an "Ambiguous union" error.
+  A union nested in a union is flattened first: its members become members of
+  the outer union.
 - Records with string, id, or literal-union keys become `Map<String, V>`.
 - Field names are converted to camelCase. If a system field collides with a
   user field (`_id` next to `id`), the system field is renamed (`systemId`,

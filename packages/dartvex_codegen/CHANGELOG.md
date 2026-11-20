@@ -16,6 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from. **Breaking (regenerated bindings):** they require `dartvex` `^0.4.0`,
   which adds those fields.
 
+### Changed
+
+- A union nested in a union is flattened: `v.union(v.union(a, b), c)`
+  generates the same type as `v.union(a, b, c)`, with one case per leaf
+  instead of an intermediate union type. Two nested unions in the same union
+  used to be rejected as an ambiguous union, which made generation fail on
+  validators composed from shared pieces, such as the sign-in results of
+  `@convex-dev/auth` v2. **Breaking (regenerated bindings):** a union with a
+  single nested union, which already generated, loses its intermediate type.
+
 ### Fixed
 
 - The generator checks that every file it reads, writes or deletes is really

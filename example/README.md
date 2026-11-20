@@ -3,8 +3,12 @@
 This directory contains the end-to-end example for the repo:
 
 - `convex-backend/` — Convex TypeScript backend
-- `flutter_app/` — Flutter app using `dartvex`, `dartvex_codegen`, and
-  `dartvex_flutter`
+- `flutter_app/` — Flutter app using `dartvex`, `dartvex_codegen`,
+  `dartvex_flutter`, `dartvex_local` and the two auth adapters
+  (`dartvex_auth_better`, `dartvex_auth2_convex`)
+
+The app's `Auth` tab switches between three auth modes: a demo JWT, Better
+Auth, and Convex Auth v2. The backend serves all three from one deployment.
 
 ## Why the backend includes `function_spec.json`
 
@@ -38,24 +42,29 @@ committed `package-lock.json`.
 ```bash
 cd example/convex-backend
 npm install
+npm run demo:key   # prints an `npx convex env set DEMO_JWKS ...` command
 npx convex dev
 ```
 
+On a new deployment the first `npx convex dev` configures it, then reports
+`Environment variable DEMO_JWKS is used in auth config file but its value was
+not set`: `convex/auth.config.ts` reads that variable for the Demo auth mode,
+and Convex refuses a config that reads an unset variable, whichever auth mode
+you intend to use. `npx convex dev` keeps running: leave that terminal open
+and run the command `npm run demo:key` printed from a second one. The first
+terminal then deploys the backend by itself. Only a one-shot run
+(`npx convex dev --once`, `npx convex deploy`) exits on the error and has to
+be started again. This is needed once per deployment.
+
+`npm run demo:key` writes the private key to gitignored `.env` (it is never
+printed); only the public key set goes to Convex.
+
 ## Generate a demo JWT
 
-Demo auth uses a custom JWT provider. Better Auth and the public screens work
-without this step, but the Flutter app's Demo auth mode needs a token generated
-from local key material.
-
-```bash
-cd example/convex-backend
-npm run demo:key
-```
-
-The script writes the private key to gitignored `.env` (it is never printed)
-and prints the matching `npx convex env set DEMO_JWKS ...` command. Run that
-command once for your deployment, then generate a token when launching
-Flutter. A token expires after 24 hours:
+Demo auth uses a custom JWT provider. Better Auth, Convex Auth and the public
+screens need no token, but the Flutter app's Demo auth mode needs one,
+generated from the key material above when launching Flutter. A token expires
+after 24 hours:
 
 ```bash
 npm run -s token

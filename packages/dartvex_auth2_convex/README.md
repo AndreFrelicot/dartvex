@@ -8,6 +8,11 @@ Convex client.
 The `auth2` in the package name is the Convex Auth major version: this adapter
 targets the v2 protocol.
 
+A working example is the Convex Auth mode of the
+[demo app](https://github.com/AndreFrelicot/dartvex/tree/main/example/flutter_app)
+and its
+[backend](https://github.com/AndreFrelicot/dartvex/tree/main/example/convex-backend).
+
 ## How it works
 
 Convex Auth v2 runs inside your deployment as Convex components:
@@ -59,6 +64,11 @@ export const { signOut, refreshSession, isAuthenticated } = auth;
 export const { signUpWithUsernamePassword, signInWithUsernamePassword } =
   setupUsernamePassword(auth, { /* ... */ }).attachUserCallbacks({ /* ... */ });
 ```
+
+In your functions, identify the caller with `getAuthUserId(ctx)`. A Convex
+Auth access token names a session, not a user: `identity.subject` and
+`identity.tokenIdentifier` change at every sign-in, so data keyed on them
+would be lost to the user the next time they sign in.
 
 ## Usage
 
