@@ -2329,6 +2329,50 @@ void main() {
       signal.dispose();
     });
 
+    test('a FatalError stops retrying a failing token fetch', () async {
+      final adapter = MockWebSocketAdapter();
+      final client = ConvexClient(
+        'https://demo.convex.cloud',
+        config: ConvexClientConfig(
+          adapterFactory: (_) => adapter,
+          reconnectBackoff: const <Duration>[Duration.zero],
+        ),
+      );
+      await settle();
+      var forced = 0;
+      await client.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) async {
+          if (!forceRefresh) {
+            return 'cached';
+          }
+          forced += 1;
+          throw const ConvexException('offline', retryable: true);
+        },
+      );
+      await settle();
+
+      // A reauth starts retrying (next attempt after 500 ms), then the server
+      // terminates the connection for good.
+      adapter.pushServerMessage(
+        const AuthError(
+          error: 'Convex token identity expired',
+          baseVersion: 0,
+          authUpdateAttempted: true,
+        ).toJson(),
+      );
+      await settle();
+      expect(forced, 1);
+      adapter.pushServerMessage(
+        const FatalError(error: 'deployment is broken').toJson(),
+      );
+      await settle();
+
+      await Future<void>.delayed(const Duration(milliseconds: 1500));
+      expect(forced, 1);
+      expect(client.isAuthRefreshing, isFalse);
+      client.dispose();
+    });
+
     for (final trigger in <String>['connectivity restored', 'reconnectNow']) {
       test(
           '$trigger retries a token fetch that failed while offline, keeping '

@@ -474,14 +474,30 @@ client.authRefreshing.listen((isRefreshing) {
 });
 ```
 
-A token fetch that fails with a transient error (a `ConvexException` with
-`retryable: true`, as the auth providers throw for network errors, timeouts and
-HTTP 5xx/429) keeps the session: the client retries with a growing delay (1 s,
-2 s, 5 s, 10 s, then every 30 s) and stays authenticated, reporting
-`isAuthRefreshing` while the token is being recovered. It retries at once when
-the network comes back (`ConvexClientConfig.connectivitySignal`) and on
-`reconnectNow()`. Only a session the provider reports as ended
-(`AuthSessionEndedError`) or a non-retryable error signs the user out.
+### Network outages
+
+A token fetch that fails with a **transient** error keeps the session: a
+`ConvexException` with `retryable: true` (what the Dartvex auth providers throw
+for network errors, timeouts and HTTP 5xx/429), a `TimeoutException`, an `http`
+`ClientException`, or on native platforms a `dart:io` `SocketException`,
+`HttpException` or `HandshakeException`. A token fetcher built on another HTTP
+stack should wrap its network errors in `ConvexException(..., retryable: true)`.
+The fetch is retried with a growing delay (1 s, 2 s, 5 s, 10 s, then every
+30 s), and at once when the network comes back
+(`ConvexClientConfig.connectivitySignal`) or on `reconnectNow()`:
+
+- **Background refresh** (before the token expires): the current token stays
+  in use and `isAuthRefreshing` stays `false`.
+- **Recovery after the server rejected the token** (it expired meanwhile): the
+  socket stays stopped and `isAuthRefreshing` is `true` until a new token is
+  accepted. No query or mutation reaches the server meanwhile, public ones
+  included: they resume once the token is back. The client stays
+  authenticated, so do not take `isAuthRefreshing` as "signed out".
+
+An `AuthSessionEndedError` signs the user out at once. Any other error keeps
+the current token without retrying during a background refresh, and signs the
+user out after two short retries (500 ms, 2 s) during a recovery. A
+`FatalError` from the server stops the refresh for good.
 
 Flutter apps can use `ConvexAuthRefreshingBuilder` and
 `ConvexConnectionStatusBuilder` from

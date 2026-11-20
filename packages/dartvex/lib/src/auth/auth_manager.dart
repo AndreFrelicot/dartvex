@@ -9,6 +9,8 @@ import '../exceptions.dart';
 import '../logging.dart';
 import '../protocol/messages.dart';
 import 'auth_provider.dart';
+import 'io_network_error_stub.dart'
+    if (dart.library.io) 'io_network_error_io.dart';
 import 'jwt_utils.dart';
 
 /// Handle returned by [AuthManager.setAuthWithRefresh] to stop token refreshes.
@@ -145,6 +147,14 @@ class AuthManager {
   /// Runs the pending retry of a failed background refresh right away; set
   /// while one is scheduled on [_refreshTimer].
   void Function()? _runBackgroundRetryNow;
+
+  /// Forced token fetches of a reauth or a background refresh in flight.
+  int _forcedFetchesInFlight = 0;
+
+  /// Set by [retryRefreshNow] while a fetch is in flight: if that fetch fails
+  /// transiently, the next attempt starts at once instead of after its delay
+  /// (the network may have come back during the attempt).
+  bool _retryNowRequested = false;
 
   bool _isRefreshing = false;
 
@@ -387,6 +397,9 @@ class AuthManager {
   void retryRefreshNow() {
     final retry = _wakeReauthRetry ?? _runBackgroundRetryNow;
     if (retry == null) {
+      if (_forcedFetchesInFlight > 0) {
+        _retryNowRequested = true;
+      }
       return;
     }
     _log(DartvexLogLevel.debug, 'Retrying the auth token fetch now');
@@ -398,8 +411,11 @@ class AuthManager {
   ///
   /// True for a [ConvexException] marked `retryable` (the auth providers of
   /// the Dartvex packages throw these for network errors, timeouts, HTTP 5xx
-  /// and 429), a [TimeoutException] and an `http` [http.ClientException]. An
-  /// [AuthSessionEndedError], and any other error, is not transient.
+  /// and 429), a [TimeoutException], an `http` [http.ClientException], and on
+  /// native platforms a `dart:io` `SocketException`, `HttpException` or
+  /// `HandshakeException`. An [AuthSessionEndedError], and any other error,
+  /// is not transient: a token fetcher built on another HTTP stack should
+  /// wrap its network errors in a `ConvexException(retryable: true)`.
   @visibleForTesting
   static bool isTransientFetchError(Object error) {
     if (error is AuthSessionEndedError) {
@@ -408,15 +424,33 @@ class AuthManager {
     if (error is ConvexException) {
       return error.retryable;
     }
-    return error is TimeoutException || error is http.ClientException;
+    return error is TimeoutException ||
+        error is http.ClientException ||
+        isIoNetworkError(error);
   }
 
+  /// The delay before transient retry number [attempt], or `null` when such
+  /// retries are disabled. Zero once if [retryRefreshNow] was called while
+  /// the failed attempt was in flight.
   Duration? _transientRetryDelay(int attempt) {
     final delays = _transientRefreshRetryDelays;
     if (delays.isEmpty) {
       return null;
     }
+    if (_retryNowRequested) {
+      _retryNowRequested = false;
+      return Duration.zero;
+    }
     return delays[math.min(attempt, delays.length - 1)];
+  }
+
+  Future<String?> _forcedFetch(AuthTokenFetcher fetchToken) async {
+    _forcedFetchesInFlight += 1;
+    try {
+      return await fetchToken(forceRefresh: true);
+    } finally {
+      _forcedFetchesInFlight -= 1;
+    }
   }
 
   /// Waits [delay], or less if [retryRefreshNow] is called or the flow is
@@ -707,7 +741,7 @@ class AuthManager {
       // refetch: the reauth's result is the one to apply.
       ++_tokenFetchSequence;
       try {
-        return await fetchToken(forceRefresh: true);
+        return await _forcedFetch(fetchToken);
       } catch (error, stackTrace) {
         // A definitively ended session cannot come back: do not retry it.
         if (error is AuthSessionEndedError ||
@@ -716,7 +750,10 @@ class AuthManager {
         }
         final Duration delay;
         if (attempt < _reauthFetchRetryDelays.length) {
-          delay = _reauthFetchRetryDelays[attempt];
+          delay = _retryNowRequested
+              ? Duration.zero
+              : _reauthFetchRetryDelays[attempt];
+          _retryNowRequested = false;
         } else {
           // Past the short retries, a transient failure (the network is down)
           // keeps the session and goes on retrying with a longer backoff: the
@@ -949,7 +986,7 @@ class AuthManager {
     }
     final sequence = ++_tokenFetchSequence;
     try {
-      final freshToken = await fetchToken(forceRefresh: true);
+      final freshToken = await _forcedFetch(fetchToken);
       if (!_isCurrentFlow(generation, fetchToken) ||
           sequence != _tokenFetchSequence) {
         return;
@@ -1200,6 +1237,7 @@ class AuthManager {
     // to retry wakes up: it then gives up if its flow was replaced, or tries
     // again at once.
     _runBackgroundRetryNow = null;
+    _retryNowRequested = false;
     _wakeReauthRetry?.call();
   }
 

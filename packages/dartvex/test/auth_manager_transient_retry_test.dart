@@ -5,6 +5,7 @@
 // retries and signed the user out, although the session was still valid.
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:dartvex/src/auth/auth_manager.dart';
 import 'package:dartvex/src/auth/auth_provider.dart';
@@ -104,6 +105,21 @@ void main() {
       );
       expect(
         AuthManager.isTransientFetchError(http.ClientException('no route')),
+        isTrue,
+      );
+    });
+
+    test('accepts dart:io network errors on native platforms', () {
+      expect(
+        AuthManager.isTransientFetchError(
+          const SocketException('Failed host lookup'),
+        ),
+        isTrue,
+      );
+      expect(
+        AuthManager.isTransientFetchError(
+          const HttpException('Connection closed'),
+        ),
         isTrue,
       );
     });
@@ -211,6 +227,34 @@ void main() {
       await _until(() => forced == 1);
       online = true;
       manager.retryRefreshNow();
+      await reauth.timeout(const Duration(seconds: 2));
+
+      expect(forced, 2);
+      expect(manager.currentToken, 'fresh');
+      await manager.stopRefreshing();
+    });
+
+    test('retryRefreshNow during an attempt retries at once if it fails',
+        () async {
+      final recorder = _Recorder();
+      final manager = _manager(
+        recorder,
+        transientRefreshRetryDelays: const <Duration>[Duration(hours: 1)],
+      );
+      var forced = 0;
+      final firstAttempt = Completer<String?>();
+      await _signedIn(manager, recorder, () {
+        forced += 1;
+        return forced == 1
+            ? firstAttempt.future
+            : Future<String?>.value('fresh');
+      });
+
+      final reauth = manager.handleAuthError(_expired, currentAuthVersion: 1);
+      await _until(() => forced == 1);
+      // The network comes back while the first attempt is still failing.
+      manager.retryRefreshNow();
+      firstAttempt.completeError(_offline);
       await reauth.timeout(const Duration(seconds: 2));
 
       expect(forced, 2);

@@ -1581,6 +1581,11 @@ class ConvexClient implements ConvexFunctionCaller, DartvexLogSource {
             data: <String, Object?>{'error': event.error},
           );
           await _wsManager.terminate();
+          // The connection never comes back: stop the auth refresh flow (its
+          // scheduled refresh and any retry of a failed token fetch), which
+          // would otherwise keep calling the auth provider. The current token
+          // and auth state are kept; restarting the socket is a no-op now.
+          await _authManager.stopRefreshing();
           // Failing the pending mutations also rolls back their optimistic
           // layers, as the mutate() contract promises on failure.
           _dispatchOptimisticEvents(

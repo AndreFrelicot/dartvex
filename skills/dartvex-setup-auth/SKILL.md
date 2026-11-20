@@ -328,7 +328,12 @@ When the session no longer exists, throw an error implementing
 `AuthSessionEndedError` (for example
 `class SessionGone extends StateError implements AuthSessionEndedError`):
 a failed re-login or restore then signs out instead of keeping the previous
-session as authenticated. Any other error is treated as transient. Each
+session as authenticated. For a network outage, throw
+`ConvexException(..., retryable: true)` (or let a `TimeoutException`, an
+`http` `ClientException` or a `dart:io` `SocketException` through): with
+`dartvex` 0.4.1 or later the session is kept and the refresh retried until
+the network is back. Any other error is retried briefly when the server has
+rejected the token, then signs out. Each
 `authedClient.login()`/`loginFromCache()` is a new user intent that
 supersedes the pending ones; the wrapper's background refresh calls run with
 `Zone.current[#dartvex.authTokenRefresh] == true`, so a provider that keeps
@@ -394,7 +399,7 @@ Tokens cannot be revoked individually — keep lifetimes short and make
 
 > The adapter is not on pub.dev yet (0.1.0 is pending). Until it is, depend
 > on it from git: `git: {url: https://github.com/AndreFrelicot/dartvex.git,
-> path: packages/dartvex_auth2_convex}`. It needs `dartvex: ^0.4.0`.
+> path: packages/dartvex_auth2_convex}`. It needs `dartvex: ^0.4.1`.
 
 `dartvex_auth2_convex` targets the **v2** protocol of `@convex-dev/auth`
 (components, `refreshSession`, rotating refresh tokens); it does not speak

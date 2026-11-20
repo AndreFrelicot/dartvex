@@ -22,12 +22,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     two short retries (2.5 s) and signed the user out, although the session
     was still valid and the auth provider still held it.
 
-  The client stays authenticated and reports `isAuthRefreshing` meanwhile
-  (the socket stays stopped during a reauth, as before). It retries at once
-  when `ConvexClientConfig.connectivitySignal` reports the network back and
-  on `reconnectNow()` (which `dartvex_flutter` calls when the app resumes).
-  An `AuthSessionEndedError`, a non-retryable error or a fetch returning no
-  token still signs out. This departs from the official client, which gives
+  The client stays authenticated. During a background refresh the current
+  token stays in use; during a reauth the socket stays stopped (no query or
+  mutation reaches the server, public ones included) and `isAuthRefreshing`
+  is `true` until a new token is accepted. The fetch is retried at once when
+  `ConvexClientConfig.connectivitySignal` reports the network back and on
+  `reconnectNow()` (which `dartvex_flutter` calls when the app resumes),
+  including when the signal arrives while an attempt is still in flight. On
+  native platforms, `dart:io` `SocketException`, `HttpException` and
+  `HandshakeException` count as transient too; a fetcher built on another
+  HTTP stack should wrap its network errors in
+  `ConvexException(..., retryable: true)`. An `AuthSessionEndedError` or a
+  fetch returning no token still signs out; any other error still keeps the
+  token without retrying during a background refresh, and signs out after
+  the two short retries during a reauth.
+- A `FatalError` from the server now stops the auth refresh flow: the
+  scheduled refresh (and its retries) no longer call the auth provider once
+  the connection is terminated for good. This departs from the official client, which gives
   up after the short retries: Convex Auth access tokens live one minute, so
   short outages on mobile would otherwise sign users out often. Found while
   validating `dartvex_auth2_convex` on a device.
