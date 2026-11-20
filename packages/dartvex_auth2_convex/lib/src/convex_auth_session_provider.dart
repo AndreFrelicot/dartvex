@@ -94,8 +94,8 @@ class ConvexAuthSessionProvider implements AuthProvider<ConvexAuthSession> {
 
   /// Called with failures the provider cannot report to a caller: an error
   /// thrown by [onSessionChanged], and a failed background revocation of a
-  /// session nobody uses any more (it then stays alive on the server until
-  /// it expires).
+  /// session nobody uses any more (it may then still be alive on the
+  /// server, until it expires).
   ///
   /// The errors of the adapter are [ConvexAuthException]s, which carry no
   /// token.
@@ -257,11 +257,12 @@ class ConvexAuthSessionProvider implements AuthProvider<ConvexAuthSession> {
   /// [adoptSession] and not installed yet is revoked too, in the background.
   ///
   /// Throws the [ConvexAuthException] of the sign-out request when it failed
-  /// (the session then stays alive on the server until it expires). When the
-  /// request went through but [onSessionChanged] threw while removing the
-  /// stored session, throws that error instead of passing it to
-  /// [onBackgroundError]: the session is still in the app's storage, and a
-  /// restart would restore it. In both cases the removal stays owed: call
+  /// (the session may then still be alive on the server, until it expires:
+  /// the request may also have been processed before its answer was lost).
+  /// When the request went through but [onSessionChanged] threw while
+  /// removing the stored session, throws that error instead of passing it
+  /// to [onBackgroundError]: the session is still in the app's storage, and
+  /// a restart would restore it. In both cases the removal stays owed: call
   /// `logout()` again to retry it (nothing is sent to the server then).
   ///
   /// A call made while another `logout()` is still running, with no session
