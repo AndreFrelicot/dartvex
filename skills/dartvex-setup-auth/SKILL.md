@@ -4,7 +4,7 @@ description: Add authentication to a Dart/Flutter app on Convex - Better Auth em
 license: MIT
 metadata:
   author: AndreFrelicot
-  ecosystem-version: "0.4.0"
+  ecosystem-version: "0.4.2"
 ---
 
 # Authenticate a Dartvex App
@@ -31,8 +31,8 @@ client's auth state never diverges from the provider's.
 
 ```yaml
 dependencies:
-  dartvex: ^0.4.0
-  dartvex_auth_better: ^0.4.0
+  dartvex: ^0.4.2
+  dartvex_auth_better: ^0.4.2
 ```
 
 The example backend pins `better-auth` 1.7.17, `@convex-dev/better-auth`
@@ -399,8 +399,8 @@ Tokens cannot be revoked individually — keep lifetimes short and make
 
 ```yaml
 dependencies:
-  dartvex: ^0.4.1
-  dartvex_auth2_convex: ^0.1.0
+  dartvex: ^0.4.2
+  dartvex_auth2_convex: ^0.1.1
 ```
 
 `dartvex_auth2_convex` targets the **v2** protocol of `@convex-dev/auth`

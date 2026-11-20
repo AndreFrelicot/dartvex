@@ -22,7 +22,7 @@ The release helper uses one git tag per package:
 - `dartvex_codegen-v0.3.0`
 - `dartvex_local-v0.3.0`
 - `dartvex_auth_better-v0.3.0`
-- `dartvex_auth2_convex-v0.1.0` (once published)
+- `dartvex_auth2_convex-v0.1.0`
 
 If older releases were published before tags existed, use `--since-ref=<git-ref>`
 for that release, then start tagging packages after the next publication.
@@ -135,7 +135,7 @@ Before committing, verify package docs:
 - each package README starts with the Dartvex logo from
   `https://raw.githubusercontent.com/AndreFrelicot/dartvex/main/assets/dartvex-logo-512.png`
 - each package README includes the "The Dartvex ecosystem" table linking the
-  five public packages
+  six public packages
 - examples use current public APIs (`mutate`, `ConvexQuery`,
   `ConvexLocalClient.open`, and `dartvex_codegen generate --spec-file`)
 

@@ -37,8 +37,8 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 
 ```yaml
 dependencies:
-  dartvex: ^0.4.0
-  dartvex_auth_better: ^0.4.0
+  dartvex: ^0.4.2
+  dartvex_auth_better: ^0.4.2
 ```
 
 ## Supported versions

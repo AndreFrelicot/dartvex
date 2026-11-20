@@ -87,8 +87,8 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 
 ```yaml
 dependencies:
-  dartvex: ^0.4.0
-  dartvex_local: ^0.4.0
+  dartvex: ^0.4.2
+  dartvex_local: ^0.4.2
 ```
 
 ## Quick Start

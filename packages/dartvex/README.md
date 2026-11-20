@@ -73,14 +73,14 @@ always takes precedence.
 
 ```yaml
 dependencies:
-  dartvex: ^0.4.0
+  dartvex: ^0.4.2
 ```
 
 Requires Dart `^3.6.0`.
 
 ## Compatibility
 
-Dartvex 0.4.0 implements the sync protocol, auth flow, and value encoding of
+Dartvex 0.4.2 implements the sync protocol, auth flow, and value encoding of
 the official Convex JavaScript client **1.51.0** (`convex` on npm). Behavior
 described in these docs and the CHANGELOG as matching "the official client"
 refers to that release. The version is exported as `convexSyncApiVersion`
