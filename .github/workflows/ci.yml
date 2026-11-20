@@ -156,7 +156,7 @@ jobs:
       # Builds the Android app too, so a Gradle or Android Gradle Plugin
       # version that the current Flutter no longer supports fails here
       # instead of on a developer's machine.
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with: { distribution: temurin, java-version: '17' }
       - run: cd example/flutter_app && flutter build apk --debug
 
