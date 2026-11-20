@@ -60,7 +60,7 @@ void main() async {
 
 | Package | Description | Version |
 |---------|-------------|---------|
-| [`dartvex`](packages/dartvex/) | Core client — WebSocket sync, subscriptions, auth | 0.4.0 |
+| [`dartvex`](packages/dartvex/) | Core client — WebSocket sync, subscriptions, auth | 0.4.1 |
 | [`dartvex_flutter`](packages/dartvex_flutter/) | Flutter widgets — Provider, Query, Mutation | 0.4.0 |
 | [`dartvex_codegen`](packages/dartvex_codegen/) | CLI code generator — type-safe Dart bindings from function validators | 0.4.0 |
 | [`dartvex_local`](packages/dartvex_local/) | Offline support — SQLite cache, mutation queue | 0.4.0 |

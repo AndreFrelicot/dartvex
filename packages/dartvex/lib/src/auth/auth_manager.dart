@@ -1,12 +1,16 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:http/http.dart' as http show ClientException;
 import 'package:meta/meta.dart';
 
 import '../config.dart';
+import '../exceptions.dart';
 import '../logging.dart';
 import '../protocol/messages.dart';
 import 'auth_provider.dart';
+import 'io_network_error_stub.dart'
+    if (dart.library.io) 'io_network_error_io.dart';
 import 'jwt_utils.dart';
 
 /// Handle returned by [AuthManager.setAuthWithRefresh] to stop token refreshes.
@@ -62,6 +66,10 @@ class AuthManager {
   /// current time. Defaults to the device wall clock.
   /// [reauthFetchRetryDelays] spaces the retries of a token fetch that throws
   /// during a reauth; an empty list gives up after the first failure.
+  /// [transientRefreshRetryDelays] spaces the further retries of a token fetch
+  /// that keeps failing with a transient error (see [isTransientFetchError]),
+  /// whether in a reauth or in a background refresh; its last delay repeats.
+  /// An empty list disables them.
   AuthManager({
     required this.config,
     required this.sendAuth,
@@ -73,6 +81,8 @@ class AuthManager {
     void Function(bool isRefreshing)? onRefreshingChange,
     int Function()? clientNowMillis,
     List<Duration> reauthFetchRetryDelays = defaultReauthFetchRetryDelays,
+    List<Duration> transientRefreshRetryDelays =
+        defaultTransientRefreshRetryDelays,
   })  : _pauseSocket = pauseSocket,
         _resumeSocket = resumeSocket,
         _stopSocket = stopSocket,
@@ -80,7 +90,9 @@ class AuthManager {
         _onRefreshingChange = onRefreshingChange,
         _clientNowMillis = clientNowMillis,
         _reauthFetchRetryDelays =
-            List<Duration>.unmodifiable(reauthFetchRetryDelays);
+            List<Duration>.unmodifiable(reauthFetchRetryDelays),
+        _transientRefreshRetryDelays =
+            List<Duration>.unmodifiable(transientRefreshRetryDelays);
 
   /// Delays between the attempts of a reauth token fetch that throws.
   ///
@@ -90,6 +102,24 @@ class AuthManager {
   static const List<Duration> defaultReauthFetchRetryDelays = <Duration>[
     Duration(milliseconds: 500),
     Duration(seconds: 2),
+  ];
+
+  /// Delays between the further attempts of a token fetch that keeps failing
+  /// with a transient error; the last one repeats until the fetch succeeds,
+  /// the provider reports the session as ended, or the flow is replaced.
+  ///
+  /// Tokens are short-lived (one minute for Convex Auth), so an outage longer
+  /// than [defaultReauthFetchRetryDelays] is common on mobile: a tunnel, a
+  /// lift, a radio handover. The session is still valid on the server and the
+  /// provider still holds it, so the client keeps it and retries instead of
+  /// signing the user out (the official client gives up after the short
+  /// retries). [retryRefreshNow] skips the wait when the network comes back.
+  static const List<Duration> defaultTransientRefreshRetryDelays = <Duration>[
+    Duration(seconds: 1),
+    Duration(seconds: 2),
+    Duration(seconds: 5),
+    Duration(seconds: 10),
+    Duration(seconds: 30),
   ];
 
   /// Client configuration used for logging and token metadata.
@@ -108,6 +138,23 @@ class AuthManager {
   final void Function(bool isRefreshing)? _onRefreshingChange;
   final int Function()? _clientNowMillis;
   final List<Duration> _reauthFetchRetryDelays;
+  final List<Duration> _transientRefreshRetryDelays;
+
+  /// Ends the wait of a reauth before the next attempt of its failing token
+  /// fetch; set while it waits.
+  void Function()? _wakeReauthRetry;
+
+  /// Runs the pending retry of a failed background refresh right away; set
+  /// while one is scheduled on [_refreshTimer].
+  void Function()? _runBackgroundRetryNow;
+
+  /// Forced token fetches of a reauth or a background refresh in flight.
+  int _forcedFetchesInFlight = 0;
+
+  /// Set by [retryRefreshNow] while a fetch is in flight: if that fetch fails
+  /// transiently, the next attempt starts at once instead of after its delay
+  /// (the network may have come back during the attempt).
+  bool _retryNowRequested = false;
 
   bool _isRefreshing = false;
 
@@ -340,6 +387,91 @@ class AuthManager {
   /// transition. Surfaced as a stream by `ConvexClient.authRefreshing`. Mirrors
   /// the semantics of the official client's `onRefreshChange`/`AuthRefreshing`.
   bool get isRefreshing => _isRefreshing;
+
+  /// Retries a failing token fetch right away instead of waiting out its
+  /// backoff, if one is waiting to be retried.
+  ///
+  /// Called when the network comes back (`ConvexClientConfig.connectivitySignal`)
+  /// and on `ConvexClient.reconnectNow` (for example when the app resumes).
+  /// Does nothing when no retry is pending.
+  void retryRefreshNow() {
+    final retry = _wakeReauthRetry ?? _runBackgroundRetryNow;
+    if (retry == null) {
+      if (_forcedFetchesInFlight > 0) {
+        _retryNowRequested = true;
+      }
+      return;
+    }
+    _log(DartvexLogLevel.debug, 'Retrying the auth token fetch now');
+    retry();
+  }
+
+  /// Whether a token fetch failure is transient: worth retrying while the
+  /// session is kept.
+  ///
+  /// True for a [ConvexException] marked `retryable` (the auth providers of
+  /// the Dartvex packages throw these for network errors, timeouts, HTTP 5xx
+  /// and 429), a [TimeoutException], an `http` [http.ClientException], and on
+  /// native platforms a `dart:io` `SocketException`, `HttpException` or
+  /// `HandshakeException`. An [AuthSessionEndedError], and any other error,
+  /// is not transient: a token fetcher built on another HTTP stack should
+  /// wrap its network errors in a `ConvexException(retryable: true)`.
+  @visibleForTesting
+  static bool isTransientFetchError(Object error) {
+    if (error is AuthSessionEndedError) {
+      return false;
+    }
+    if (error is ConvexException) {
+      return error.retryable;
+    }
+    return error is TimeoutException ||
+        error is http.ClientException ||
+        isIoNetworkError(error);
+  }
+
+  /// The delay before transient retry number [attempt], or `null` when such
+  /// retries are disabled. Zero once if [retryRefreshNow] was called while
+  /// the failed attempt was in flight.
+  Duration? _transientRetryDelay(int attempt) {
+    final delays = _transientRefreshRetryDelays;
+    if (delays.isEmpty) {
+      return null;
+    }
+    if (_retryNowRequested) {
+      _retryNowRequested = false;
+      return Duration.zero;
+    }
+    return delays[math.min(attempt, delays.length - 1)];
+  }
+
+  Future<String?> _forcedFetch(AuthTokenFetcher fetchToken) async {
+    _forcedFetchesInFlight += 1;
+    try {
+      return await fetchToken(forceRefresh: true);
+    } finally {
+      _forcedFetchesInFlight -= 1;
+    }
+  }
+
+  /// Waits [delay], or less if [retryRefreshNow] is called or the flow is
+  /// replaced meanwhile (see [_cancelRefreshTimer]).
+  Future<void> _waitBeforeRetry(Duration delay) {
+    final completer = Completer<void>();
+    late final Timer timer;
+    void wake() {
+      timer.cancel();
+      if (identical(_wakeReauthRetry, wake)) {
+        _wakeReauthRetry = null;
+      }
+      if (!completer.isCompleted) {
+        completer.complete();
+      }
+    }
+
+    timer = Timer(delay, wake);
+    _wakeReauthRetry = wake;
+    return completer.future;
+  }
 
   /// Updates the current auth token and reschedules refresh if needed.
   ///
@@ -596,6 +728,7 @@ class AuthManager {
     int generation,
   ) async {
     var attempt = 0;
+    var transientAttempt = 0;
     while (true) {
       if (!_isCurrentFlow(generation, fetchToken)) {
         _log(
@@ -608,15 +741,33 @@ class AuthManager {
       // refetch: the reauth's result is the one to apply.
       ++_tokenFetchSequence;
       try {
-        return await fetchToken(forceRefresh: true);
+        return await _forcedFetch(fetchToken);
       } catch (error, stackTrace) {
         // A definitively ended session cannot come back: do not retry it.
         if (error is AuthSessionEndedError ||
-            attempt >= _reauthFetchRetryDelays.length ||
             !_isCurrentFlow(generation, fetchToken)) {
           rethrow;
         }
-        final delay = _reauthFetchRetryDelays[attempt];
+        final Duration delay;
+        if (attempt < _reauthFetchRetryDelays.length) {
+          delay = _retryNowRequested
+              ? Duration.zero
+              : _reauthFetchRetryDelays[attempt];
+          _retryNowRequested = false;
+        } else {
+          // Past the short retries, a transient failure (the network is down)
+          // keeps the session and goes on retrying with a longer backoff: the
+          // session is still valid, the user must not be signed out over an
+          // outage. The socket stays stopped and `isRefreshing` stays true.
+          final transientDelay = isTransientFetchError(error)
+              ? _transientRetryDelay(transientAttempt)
+              : null;
+          if (transientDelay == null) {
+            rethrow;
+          }
+          delay = transientDelay;
+          transientAttempt += 1;
+        }
         attempt += 1;
         _log(
           DartvexLogLevel.warn,
@@ -628,7 +779,7 @@ class AuthManager {
             'delayMs': delay.inMilliseconds,
           },
         );
-        await Future<void>.delayed(delay);
+        await _waitBeforeRetry(delay);
         if (!_isCurrentFlow(generation, fetchToken)) {
           rethrow;
         }
@@ -812,61 +963,113 @@ class AuthManager {
       'Auth refresh scheduled',
       data: <String, Object?>{'delayMs': refreshDelay.inMilliseconds},
     );
-    _refreshTimer = Timer(refreshDelay, () async {
-      final fetchToken = _fetchToken;
-      if (fetchToken == null || !_isCurrentFlow(generation, fetchToken)) {
+    _refreshTimer = Timer(
+      refreshDelay,
+      () => _runBackgroundRefresh(generation, 'Scheduled auth refresh'),
+    );
+  }
+
+  /// Fetches a fresh token in the background and applies it: the scheduled
+  /// refresh, and the refetch after a cached token is confirmed.
+  ///
+  /// A transient failure keeps the current token (it may still be valid) and
+  /// retries with [_transientRefreshRetryDelays]; if the token expires
+  /// meanwhile, the server rejects it and the reauth takes over.
+  Future<void> _runBackgroundRefresh(
+    int generation,
+    String operation, {
+    int transientAttempt = 0,
+  }) async {
+    final fetchToken = _fetchToken;
+    if (fetchToken == null || !_isCurrentFlow(generation, fetchToken)) {
+      return;
+    }
+    final sequence = ++_tokenFetchSequence;
+    try {
+      final freshToken = await _forcedFetch(fetchToken);
+      if (!_isCurrentFlow(generation, fetchToken) ||
+          sequence != _tokenFetchSequence) {
         return;
       }
-      final sequence = ++_tokenFetchSequence;
-      try {
-        final freshToken = await fetchToken(forceRefresh: true);
-        if (!_isCurrentFlow(generation, fetchToken) ||
-            sequence != _tokenFetchSequence) {
-          return;
-        }
-        if (freshToken == null) {
-          _log(
-            DartvexLogLevel.warn,
-            'Scheduled auth refresh returned no token',
-          );
-          await _failAuthFlow();
-        } else if (_isNewAuth(freshToken)) {
-          _currentToken = freshToken;
-          _expectConfirmationForToken(
-            freshToken,
-            source: _AuthConfirmationSource.fresh,
-          );
-          await sendAuth(freshToken);
-          _log(DartvexLogLevel.debug, 'Scheduled auth refresh succeeded');
-        } else {
-          _log(
-            DartvexLogLevel.debug,
-            'Scheduled auth refresh returned the current token',
-          );
-        }
-      } catch (error, stackTrace) {
-        // Like a late token, a late failure belongs to the past once a newer
-        // fetch started: that one decides, not this one.
-        if (!_isCurrentFlow(generation, fetchToken) ||
-            sequence != _tokenFetchSequence) {
-          return;
-        }
-        if (error is AuthSessionEndedError) {
-          await _endFlowForEndedSession(
-            'Scheduled auth refresh',
-            error,
-            stackTrace,
-          );
-          return;
-        }
+      if (freshToken == null) {
+        _log(DartvexLogLevel.warn, '$operation returned no token');
+        await _failAuthFlow();
+      } else if (_isNewAuth(freshToken)) {
+        _currentToken = freshToken;
+        _expectConfirmationForToken(
+          freshToken,
+          source: _AuthConfirmationSource.fresh,
+        );
+        await sendAuth(freshToken);
+        _log(DartvexLogLevel.debug, '$operation succeeded');
+      } else {
+        _log(DartvexLogLevel.debug, '$operation returned the current token');
+      }
+    } catch (error, stackTrace) {
+      // Like a late token, a late failure belongs to the past once a newer
+      // fetch started: that one decides, not this one.
+      if (!_isCurrentFlow(generation, fetchToken) ||
+          sequence != _tokenFetchSequence) {
+        return;
+      }
+      if (error is AuthSessionEndedError) {
+        await _endFlowForEndedSession(operation, error, stackTrace);
+        return;
+      }
+      final delay = isTransientFetchError(error)
+          ? _transientRetryDelay(transientAttempt)
+          : null;
+      if (delay == null) {
         _log(
           DartvexLogLevel.error,
-          'Scheduled auth refresh failed',
+          '$operation failed',
           error: error,
           stackTrace: stackTrace,
         );
+        return;
       }
-    });
+      _log(
+        DartvexLogLevel.warn,
+        '$operation failed; retrying',
+        error: error,
+        stackTrace: stackTrace,
+        data: <String, Object?>{
+          'attempt': transientAttempt + 1,
+          'delayMs': delay.inMilliseconds,
+        },
+      );
+      _scheduleBackgroundRetry(
+        generation,
+        operation,
+        delay,
+        transientAttempt + 1,
+      );
+    }
+  }
+
+  /// Schedules the next attempt of a failed background refresh on the refresh
+  /// timer, so anything that reschedules or cancels the refresh also replaces
+  /// or cancels it. [retryRefreshNow] runs it early.
+  void _scheduleBackgroundRetry(
+    int generation,
+    String operation,
+    Duration delay,
+    int transientAttempt,
+  ) {
+    _cancelRefreshTimer();
+    void run() {
+      _cancelRefreshTimer();
+      unawaited(
+        _runBackgroundRefresh(
+          generation,
+          operation,
+          transientAttempt: transientAttempt,
+        ),
+      );
+    }
+
+    _refreshTimer = Timer(delay, run);
+    _runBackgroundRetryNow = run;
   }
 
   bool _isCurrentFlow(int generation, AuthTokenFetcher fetchToken) {
@@ -879,56 +1082,10 @@ class AuthManager {
     int generation,
     AuthTokenFetcher fetchToken,
   ) async {
-    final sequence = ++_tokenFetchSequence;
-    try {
-      final freshToken = await fetchToken(forceRefresh: true);
-      if (!_isCurrentFlow(generation, fetchToken) ||
-          sequence != _tokenFetchSequence) {
-        return;
-      }
-      if (freshToken == null) {
-        _log(
-          DartvexLogLevel.warn,
-          'Cached auth confirmation refresh returned no token',
-        );
-        await _failAuthFlow();
-        return;
-      }
-      if (!_isNewAuth(freshToken)) {
-        _log(
-          DartvexLogLevel.debug,
-          'Cached auth confirmation refresh returned the current token',
-        );
-        return;
-      }
-      _currentToken = freshToken;
-      _expectConfirmationForToken(
-        freshToken,
-        source: _AuthConfirmationSource.fresh,
-      );
-      await sendAuth(freshToken);
-    } catch (error, stackTrace) {
-      // Like a late token, a late failure belongs to the past once a newer
-      // fetch started: that one decides, not this one.
-      if (!_isCurrentFlow(generation, fetchToken) ||
-          sequence != _tokenFetchSequence) {
-        return;
-      }
-      if (error is AuthSessionEndedError) {
-        await _endFlowForEndedSession(
-          'Cached auth confirmation refresh',
-          error,
-          stackTrace,
-        );
-        return;
-      }
-      _log(
-        DartvexLogLevel.error,
-        'Cached auth confirmation refresh failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
+    if (!_isCurrentFlow(generation, fetchToken)) {
+      return;
     }
+    await _runBackgroundRefresh(generation, 'Cached auth confirmation refresh');
   }
 
   /// Ends the flow when a background token fetch failed with an
@@ -1076,6 +1233,12 @@ class AuthManager {
   void _cancelRefreshTimer() {
     _refreshTimer?.cancel();
     _refreshTimer = null;
+    // A pending background retry is dropped with its timer. A reauth waiting
+    // to retry wakes up: it then gives up if its flow was replaced, or tries
+    // again at once.
+    _runBackgroundRetryNow = null;
+    _retryNowRequested = false;
+    _wakeReauthRetry?.call();
   }
 
   void _log(

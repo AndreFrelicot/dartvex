@@ -12,12 +12,22 @@
 ///   the current session; returning the same cached JWT again prevents the
 ///   refresh, and once that JWT expires the user is signed out.
 /// * To report that the session is gone (revoked, signed out elsewhere),
-///   throw from [loginFromCache]. A throw during a background refresh is
-///   treated as transient (logged; the session is kept until the server
-///   rejects the token), unless the error implements
-///   [AuthSessionEndedError], which signs the user out at once; a throw
-///   while recovering from a server rejection is retried briefly and then
-///   signs the user out.
+///   throw an error implementing [AuthSessionEndedError] from
+///   [loginFromCache]: it signs the user out at once.
+/// * Report a network outage with a *transient* error: a `ConvexException`
+///   with `retryable: true` (wrap the errors of your HTTP stack in one), or a
+///   `TimeoutException`, an `http` `ClientException` or, on native
+///   platforms, a `dart:io` `SocketException`, `HttpException` or
+///   `HandshakeException`. The session is kept and the fetch retried with a
+///   growing delay (1 s, 2 s, 5 s, 10 s, then every 30 s), at once when the
+///   network comes back: during a background refresh, the current token is
+///   kept meanwhile; while recovering from a server rejection, the socket
+///   stays stopped and `isAuthRefreshing` is `true` until a token is
+///   accepted.
+/// * Any other error during a background refresh is logged and keeps the
+///   current token without retrying (the server rejects it once it expires,
+///   which starts a recovery); while recovering from a server rejection, it
+///   is retried briefly (500 ms, then 2 s) and then signs the user out.
 /// * The `onIdToken` callback passed to [login] / [loginFromCache] may be
 ///   invoked later to push a rotated token (or `null` to sign out) for the
 ///   session that call started. Tokens pushed while that call is still

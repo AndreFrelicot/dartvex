@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-20
+
+### Fixed
+
+- A transient network outage no longer signs the user out. When a token
+  fetch fails with a transient error (a `ConvexException` with
+  `retryable: true`, a `TimeoutException` or an `http` `ClientException`),
+  the client keeps the session and retries with a growing delay (1 s, 2 s,
+  5 s, 10 s, then every 30 s) instead of giving up:
+  - the scheduled refresh, and the refetch after a cached token is
+    confirmed, were not retried at all: the token expired silently;
+  - after the server rejected an expired token, the reauth gave up after its
+    two short retries (2.5 s) and signed the user out, although the session
+    was still valid and the auth provider still held it.
+
+  The client stays authenticated. During a background refresh the current
+  token stays in use; during a reauth the socket stays stopped (no query or
+  mutation reaches the server, public ones included) and `isAuthRefreshing`
+  is `true` until a new token is accepted. The fetch is retried at once when
+  `ConvexClientConfig.connectivitySignal` reports the network back and on
+  `reconnectNow()` (which `dartvex_flutter` calls when the app resumes),
+  including when the signal arrives while an attempt is still in flight. On
+  native platforms, `dart:io` `SocketException`, `HttpException` and
+  `HandshakeException` count as transient too; a fetcher built on another
+  HTTP stack should wrap its network errors in
+  `ConvexException(..., retryable: true)`. An `AuthSessionEndedError` or a
+  fetch returning no token still signs out; any other error still keeps the
+  token without retrying during a background refresh, and signs out after
+  the two short retries during a reauth.
+- A `FatalError` from the server now stops the auth refresh flow: the
+  scheduled refresh (and its retries) no longer call the auth provider once
+  the connection is terminated for good. This departs from the official client, which gives
+  up after the short retries: Convex Auth access tokens live one minute, so
+  short outages on mobile would otherwise sign users out often. Found while
+  validating `dartvex_auth2_convex` on a device.
+
 ## [0.4.0] - 2026-11-20
 
 ### Added
