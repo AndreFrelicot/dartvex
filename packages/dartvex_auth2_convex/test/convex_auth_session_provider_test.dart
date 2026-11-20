@@ -835,6 +835,60 @@ void main() {
     });
 
     test(
+        'a logout after a newer session ended waits for the removal of '
+        'that session, not for an older logout', () async {
+      final requestGate = Completer<Object?>();
+      server.handlers['auth:signOut'] = (_) => requestGate.future;
+      server.handlers['auth:signInWithUsernamePassword'] = (_) => complete('b');
+      server.handlers['auth:refreshSession'] = (_) => noSession;
+      final removalStarted = Completer<void>();
+      final removalGate = Completer<void>();
+      var removals = 0;
+      final provider = ConvexAuthSessionProvider(
+        client: client,
+        initialSession: ConvexAuthSession.fromJson(bundle('a')),
+        onSessionChanged: (session) async {
+          if (session == null && ++removals == 2) {
+            removalStarted.complete();
+            await removalGate.future;
+          }
+        },
+      );
+
+      // The logout of A: its request is not answered yet.
+      var firstDone = false;
+      final first = provider.logout().then((_) => firstDone = true);
+      await pumpEventQueue();
+
+      // B is installed, then the server reports it gone: the provider
+      // starts removing it from the storage.
+      provider.signIn = ConvexAuthSignIn.usernamePassword(
+        username: 'bob',
+        password: 'pw',
+      );
+      await provider.login(onIdToken: (_) {});
+      final restore = expectLater(
+        provider.loginFromCache(onIdToken: (_) {}),
+        throwsA(isA<ConvexAuthSessionEndedException>()),
+      );
+      await removalStarted.future;
+
+      var secondDone = false;
+      final second = provider.logout().then((_) => secondDone = true);
+      requestGate.complete(null);
+      await first;
+      await pumpEventQueue();
+      expect(firstDone, isTrue);
+      expect(secondDone, isFalse);
+
+      removalGate.complete();
+      await second;
+      await restore;
+      expect(removals, 2);
+      expect(server.callsTo('auth:signOut'), hasLength(1));
+    });
+
+    test(
         'a logout that joins a removal queued in the background reports '
         'its failure itself', () async {
       server.handlers['auth:refreshSession'] = (_) => noSession;
