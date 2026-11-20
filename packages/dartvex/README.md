@@ -113,9 +113,29 @@ await client.mutate('messages:send', {'body': 'Hello'});
 
 Use the deployment's `https://<name>.convex.cloud` URL; the `.convex.site`
 host serves HTTP actions only and is rejected. One-shot `query()` /
-`queryOnce()` always wait for a fresh server result (live `subscribe()`
-calls may start from the client's recent cache). While offline they wait for
-the reconnect unless `ConvexClientConfig.queryTimeout` bounds the wait.
+`queryOnce()` always wait for a fresh server result. A live `subscribe()`
+may start from the result kept after an earlier subscription to the same
+query was cancelled; that seed has `fromCache: true` and can be stale until
+the server answers. While offline one-shot reads wait for the reconnect
+unless `ConvexClientConfig.queryTimeout` bounds the wait.
+
+Outside widgets, `watch` gives a decoded `Stream<T>` that unsubscribes when
+its listener cancels:
+
+```dart
+final messages = client.watch(
+  'messages:list',
+  {'channel': 'general'},
+  decode: (value) => (value as List).cast<Map<String, dynamic>>(),
+);
+// Never the cached seed. An optimistic value, or the value of another live
+// subscription to the same query, can still come first; use client.query()
+// for a result the server sent after the call.
+final latest = await client
+    .watch<List<dynamic>>('messages:list', {'channel': 'general'},
+        skipCached: true)
+    .first;
+```
 
 ## Auth
 

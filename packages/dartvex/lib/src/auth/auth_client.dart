@@ -25,6 +25,15 @@ abstract interface class ConvexAuthClient<TUser>
   /// Logs out the current user and clears auth state.
   Future<void> logout();
 
+  /// Continues signed out without calling the auth provider.
+  ///
+  /// Clears the client's auth and emits [AuthUnauthenticated], like [logout],
+  /// but leaves the provider's session alone. Call it on startup when there is
+  /// no session to restore: a client created with `expectAuth: true` holds
+  /// every request until auth is decided, and this decides it. (A failed
+  /// [loginFromCache] already does this.)
+  Future<void> clearAuth();
+
   /// Releases resources held by the auth client.
   void dispose();
 }

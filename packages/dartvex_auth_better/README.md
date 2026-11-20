@@ -144,13 +144,20 @@ final convexClient = ConvexClient('https://your-deployment.convex.cloud');
 final provider = ConvexBetterAuthProvider(client: authClient);
 final authedClient = convexClient.withAuth(provider);
 
-provider.email = 'user@example.com';
-provider.password = 'securePassword';
+// signIn() sends the credentials once and does not keep the password;
+// login() then authenticates the Convex client with the session it created.
+await provider.signIn(email: 'user@example.com', password: 'securePassword');
 final session = await authedClient.login();
 
 // session.sessionToken  — Better Auth token (for session persistence)
 // session.token         — the Convex JWT at login time (a snapshot)
 ```
+
+`signIn()` (like `signUp()`) only stages the new session: it becomes the
+provider's session, and `provider.cachedSession`, when `login()` hands it to
+the Convex client. A client that is still signed in with another account
+keeps running as that account until then, so switching accounts needs no
+`logout()` first.
 
 The wrapper keeps the Convex JWT fresh by calling the provider again before
 it expires. `session.token` (like `AuthAuthenticated.userInfo.token`) is not
@@ -232,6 +239,12 @@ provider's cached session and credentials, and clears the Convex client's
 auth. Do not sign out with `authClient.signOut(...)` for a session the wrapper
 uses: the Convex client would stay authenticated until its JWT expires.
 
+Local state is cleared before the request is sent, so the app is signed out
+even when `logout()` throws. An error means a session may still be valid on
+the server: the current one, or one that `signIn()` / `signUp()` created for
+another account and that was not installed yet. `logout()` waits for both
+sign-out requests before it completes.
+
 ### 6. Password recovery and magic links
 
 ```dart
@@ -281,8 +294,10 @@ await secureStorage.write(key: 'session_token', value: session.sessionToken);
 (and `provider.cachedSession`) once that `loginFromCache()` succeeds. If the
 restore fails, the session that was signed in before stays current in both
 the provider and the Convex client; after a transient failure, calling
-`loginFromCache()` again retries the staged session. A `login()`, `logout()`
-or another `adoptSession()` discards it.
+`loginFromCache()` again retries the staged session. A `login()`, `signIn()`,
+`signUp()`, `logout()` or another `adoptSession()` discards it. A discarded
+session is only forgotten, unless it is one `signIn()` or `signUp()` returned:
+the provider created that one and signs it out.
 
 Custom schemes used for `redirectTo` or `callbackURL` must be listed in the
 server's `trustedOrigins`. An invalid, expired or reused magic-link token
@@ -340,7 +355,11 @@ Implements `AuthProvider<BetterAuthSession>` from `dartvex`:
 
 - `ConvexBetterAuthProvider({client, initialSessionToken?})` — pass a
   persisted session token to restore the session across app restarts
-- `login()` — sign in with stored email/password
+- `signIn({email, password, onIdToken?})` — sign in without keeping the
+  password; call `authedClient.login()` afterwards to authenticate the
+  Convex client (it reuses the session)
+- `login()` — hand the session of `signIn()` / `signUp()` to the Convex
+  client, or sign in with a staged `email` / `password`
 - `loginFromCache()` — restore session from the cached (or seeded) token, or
   finish an `adoptSession()`. Through `authedClient.loginFromCache()` this
   is a new user intent: a `login()` still in flight is superseded (it throws

@@ -100,12 +100,18 @@ final convexClient = ConvexClient(deploymentUrl);
 final provider = ConvexBetterAuthProvider(client: authClient);
 final authedClient = convexClient.withAuth(provider);
 
-provider.email = email;
-provider.password = password;
+await provider.signIn(email: email, password: password);
 final session = await authedClient.login();
 // session.sessionToken — Better Auth token (persist this one)
 // session.token        — the Convex JWT at login time (a snapshot)
 ```
+
+`provider.signIn(...)` sends the credentials once and never stores the
+password; `authedClient.login()` then authenticates the Convex client with
+the session it created, without a second request. When `signIn` fails, call
+it again with the credentials. (The older flow, setting `provider.email` /
+`provider.password` before `login()`, still works: `login()` clears the
+password once it is used, and only a retryable failure keeps it.)
 
 The wrapper refreshes the Convex JWT by itself before it expires, but
 `session.token` (and `AuthAuthenticated.userInfo.token`) keep the login-time
@@ -113,7 +119,7 @@ value. When you need the JWT currently in use — for example
 `Authorization: Bearer ...` on a Convex HTTP action — read
 `authedClient.currentAuthToken`.
 
-Do not also call `authClient.signIn(...)`: the raw `BetterAuthClient`
+Call `signIn` on the provider, not `authClient.signIn(...)`: the raw `BetterAuthClient`
 session APIs (`signIn`, `signUp`, `getSession`, `signOut`) are only for
 sessions never attached to a Convex client, and mixing them with
 `authedClient.login()` creates two server sessions.
@@ -151,22 +157,24 @@ if (stored != null) {
   try {
     await authedClient.loginFromCache();
     // Restored: fresh Convex JWT, automatic refresh active.
-  } on StateError {
-    // Session expired or revoked (Better Auth get-session) — sign in again.
-    await secureStorage.delete(key: 'session_token');
-  } on BetterAuthSessionExpiredException {
-    // The Convex token endpoint rejected the session.
+  } on AuthSessionEndedError {
+    // The session is gone (expired, revoked, rejected by the Convex token
+    // endpoint) — sign in again. The client is already signed out.
     await secureStorage.delete(key: 'session_token');
   } on BetterAuthException catch (e) {
     // e.retryable: offline, timeout, 5xx/429 — keep the token, retry later.
   }
+} else {
+  await authedClient.clearAuth(); // no session: continue signed out
 }
 ```
 
 To avoid queries running unauthenticated while the restore is in flight,
 create the client with `ConvexClientConfig(expectAuth: true)`: nothing is
-sent until the first `login`/`loginFromCache` (or `clearAuth()` when there is
-no stored session) decides the auth state.
+sent until auth is decided — by `login()`, `loginFromCache()` (also when it
+fails), or `authedClient.clearAuth()` when there is no stored session.
+`clearAuth()` signs the client out without calling the provider; use
+`logout()` to end the provider's session.
 
 ### Sign out
 
@@ -176,8 +184,9 @@ await secureStorage.delete(key: 'session_token');
 ```
 
 `authedClient.logout()` revokes the provider's Better Auth session, clears
-the provider's cached session **and its email/password** (set them again
-before the next `login()`), and clears the Convex client's auth. Never sign
+the provider's cached session **and its email/password** (call
+`provider.signIn(...)` again before the next `login()`), and clears the
+Convex client's auth. Never sign
 out with `authClient.signOut(...)` for a session the wrapper uses: the
 Convex client would stay authenticated until its JWT expires.
 
@@ -241,10 +250,29 @@ Every adapter error is a `BetterAuthException` (a `ConvexException`):
 - `BetterAuthTwoFactorRequiredException` — sign-in needs a second factor;
   exposes `twoFactorMethods` (the verification endpoints are not wrapped).
 
-`loginFromCache()` reports an expired session as
-`StateError('Better Auth session expired.')`, not as an exception subclass.
+`loginFromCache()` reports a missing or expired session as a `StateError`
+(`'No cached Better Auth session.'`, `'Better Auth session expired.'`), and a
+session rejected by the Convex token endpoint as
+`BetterAuthSessionExpiredException`. All of them implement
+`AuthSessionEndedError`: catch that one type for "sign in again".
 
 ### React to auth state (Flutter)
+
+Give both providers the same underlying client: `ConvexProvider` takes the
+runtime wrapper of the raw `ConvexClient` (queries and mutations then run
+with the auth the wrapper set on it), `ConvexAuthProvider` takes the
+authenticated wrapper. `dartvex_flutter` re-exports the `AuthState` classes,
+so the `switch` below needs no `dartvex` import.
+
+```dart
+ConvexProvider(
+  client: ConvexClientRuntime(convexClient), // the raw client, authenticated
+  child: ConvexAuthProvider<BetterAuthSession>(
+    client: authedClient,                    // convexClient.withAuth(provider)
+    child: const App(),
+  ),
+)
+```
 
 ```dart
 ConvexAuthProvider<BetterAuthSession>(
@@ -368,6 +396,8 @@ Tokens cannot be revoked individually — keep lifetimes short and make
 - Using `session.token` for HTTP actions after a refresh — read
   `authedClient.currentAuthToken`.
 - Hardcoding the deployment/auth URL — inject at run time.
-- Treating a transient failure as "signed out" — only `StateError` /
-  `BetterAuthSessionExpiredException` mean the session is gone (both
-  implement `AuthSessionEndedError`); keep the token on `retryable` errors.
+- Treating a transient failure as "signed out" — only an
+  `AuthSessionEndedError` means the session is gone; keep the token on
+  `retryable` errors.
+- Leaving an `expectAuth: true` client paused when there is no stored
+  session — call `authedClient.clearAuth()`.

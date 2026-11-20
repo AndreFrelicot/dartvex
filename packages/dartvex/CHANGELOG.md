@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `QuerySuccess.fromCache` and `QueryError.fromCache`: `true` on the warm
+  seed a new subscription receives first, the result kept after an earlier
+  subscription to the same query was cancelled. It can be stale until the
+  server answers. Before, nothing told it apart from a server result.
+- `ConvexWatch.watch<T>(name, args, {decode, skipCached})` on every
+  `ConvexFunctionCaller` (`ConvexClient`, `ConvexClientWithAuth`): a decoded
+  `Stream<T>` of a live query that subscribes on listen and unsubscribes on
+  cancel, so `first`/`take`/`await for` release the subscription. Query
+  errors are `ConvexException` stream errors, loading results are skipped,
+  and `skipCached: true` drops the warm seed.
+- `ConvexAuthClient.clearAuth()` / `ConvexClientWithAuth.clearAuth()`:
+  continue signed out without calling the provider. It releases the hold of
+  a client created with `expectAuth: true` when there is no session to
+  restore, without keeping a second reference to the raw `ConvexClient`.
+  **Breaking for implementors:** classes that `implement ConvexAuthClient`
+  must add `Future<void> clearAuth()`.
+
 ## [0.3.0] - 2026-11-05
 
 ### Added

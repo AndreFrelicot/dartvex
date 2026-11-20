@@ -48,29 +48,49 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
 
   BetterAuthSession? _cachedSession;
   String? _sessionToken;
+
+  /// Session created by [signIn] or [signUp] for [_pendingLoginEmail], made
+  /// current by the next [login] or explicit [loginFromCache]. Until then
+  /// the current session, if any, stays the one background refreshes serve.
   BetterAuthSession? _pendingLoginSession;
   String? _pendingLoginEmail;
-  String? _pendingLoginPassword;
 
   /// Session handed over by [adoptSession], made current by the next
   /// successful explicit [loginFromCache].
   BetterAuthSession? _adoptedSession;
 
-  /// Incremented whenever the provider's session is replaced, staged or
-  /// cleared, and by every user-started call (login, signUp, adoptSession,
-  /// an explicit loginFromCache, logout, definitive expiry). Async
-  /// operations capture it before awaiting and drop their result when it
-  /// changed, so a stale response can never resurrect an older session.
+  /// Whether [_adoptedSession] is a session this provider created, in
+  /// [signIn] or [signUp], and the app then handed to [adoptSession]. The
+  /// provider is still the one to sign it out when it is dropped before a
+  /// restore installed it; a session the app obtained by itself is not.
+  bool _adoptedSessionIsOwn = false;
+
+  /// Incremented by every user-started call (login, signIn, signUp,
+  /// adoptSession, an explicit loginFromCache, logout). Those operations
+  /// capture it before awaiting and drop their result when it changed, so a
+  /// stale response can never resurrect an older session.
+  ///
+  /// A background token refresh neither reads nor changes it: it is tied to
+  /// the session token it refreshes, so it cannot cancel a sign-in in
+  /// flight, even when it finds the current session expired.
   int _sessionEpoch = 0;
 
-  /// Set credentials before calling [login].
+  /// Email of the account [login] signs in. Set by [signIn] and [signUp];
+  /// set it yourself, with [password], only for the staged-credentials flow.
   ///
   /// Cleared by [logout].
   String? email;
 
-  /// Password paired with [email] for future [login] calls.
+  /// Password paired with [email] for the next [login] call.
   ///
-  /// Cleared by [logout].
+  /// Prefer [signIn], which takes the password as an argument and never
+  /// stores it. This field is the older flow, where [login] itself sends the
+  /// credentials: [login] clears it once it has signed in, and after a
+  /// failure that retrying cannot fix (wrong credentials, a superseded
+  /// sign-in). Only a retryable failure (network, 5xx, …) keeps it, so the
+  /// same `login()` can be retried. Set it again before every [login]. Also
+  /// cleared by [logout], and by [signIn] and [signUp], which start a new
+  /// sign-in of their own.
   String? password;
 
   @override
@@ -80,10 +100,13 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
 
   @override
 
-  /// Signs in with the configured [email] and [password].
+  /// Makes the session created by [signIn] or [signUp] the provider's
+  /// session, or signs in with the staged [email] and [password].
   ///
-  /// Reuses the session created by [signUp] when the credentials still match,
-  /// instead of signing in a second time.
+  /// The session of [signIn] / [signUp] is reused, without another request,
+  /// when [email] is still theirs and no [password] was staged since. Staging
+  /// a [password] is a new sign-in: that session is signed out in the
+  /// background and the staged credentials are sent.
   ///
   /// Throws a [BetterAuthException] when a newer [login], [signUp],
   /// [adoptSession], explicit [loginFromCache] or [logout] started while the
@@ -95,26 +118,41 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
   }) async {
     final e = email;
     final p = password;
-    if (e == null || p == null) {
-      throw StateError(
-        'Set email and password on ConvexBetterAuthProvider before login().',
-      );
-    }
-    final pendingSession = _takePendingLoginSession(
-      email: e,
-      password: p,
-    );
+    final pendingSession = _takePendingLoginSession(email: e, password: p);
     if (pendingSession != null) {
       _commitSession(pendingSession);
       onIdToken(pendingSession.token);
       return pendingSession;
     }
+    if (e == null || p == null) {
+      throw StateError(
+        'Call signIn(email:, password:) or signUp(...) on '
+        'ConvexBetterAuthProvider before login() (or set email and password).',
+      );
+    }
     final epoch = ++_sessionEpoch;
-    _adoptedSession = null;
-    final session = await client.signIn(email: e, password: p);
-    _commitIfCurrent(epoch, session, operation: 'login()');
+    _discardAdoptedSession();
+    final BetterAuthSession session;
+    try {
+      session = await client.signIn(email: e, password: p);
+      _commitIfCurrent(epoch, session, operation: 'login()');
+    } catch (error) {
+      if (error is! BetterAuthException || !error.retryable) {
+        _forgetPassword(p);
+      }
+      rethrow;
+    }
+    _forgetPassword(p);
     onIdToken(session.token);
     return session;
+  }
+
+  /// Clears [password] unless the app already set a different one for a
+  /// newer [login].
+  void _forgetPassword(String used) {
+    if (password == used) {
+      password = null;
+    }
   }
 
   @override
@@ -143,10 +181,12 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
     required void Function(String? token) onIdToken,
   }) async {
     final isRefresh = Zone.current[#dartvex.authTokenRefresh] == true;
-    final adopted = isRefresh ? null : _adoptedSession;
-    final sessionToken = adopted?.sessionToken ?? _sessionToken;
+    // A session staged by adoptSession, signIn or signUp. A background
+    // refresh never touches it: it keeps serving the current session.
+    final staged = isRefresh ? null : (_adoptedSession ?? _pendingLoginSession);
+    final sessionToken = staged?.sessionToken ?? _sessionToken;
     // An explicit restore supersedes older work even when there is no token.
-    final epoch = isRefresh ? _sessionEpoch : ++_sessionEpoch;
+    final epoch = isRefresh ? null : ++_sessionEpoch;
     if (sessionToken == null) {
       throw _SessionEndedStateError('No cached Better Auth session.');
     }
@@ -154,7 +194,7 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
     // that session must survive the staged one being rejected.
     final current = _sessionToken;
     final replacesCurrent =
-        adopted != null && current != null && current != sessionToken;
+        staged != null && current != null && current != sessionToken;
     BetterAuthSession? refreshed;
     BetterAuthSessionExpiredException? rejection;
     try {
@@ -165,10 +205,11 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
       }
       rejection = error;
     }
-    // Every change of the current or staged session bumps the epoch, except
-    // a background refresh, which only re-commits the same session token.
-    if (epoch != _sessionEpoch ||
-        (adopted == null && _sessionToken != sessionToken)) {
+    // An explicit restore is dropped when a newer user-started call began.
+    // A restore of the current session, explicit or in the background, is
+    // dropped when that session is no longer the current one.
+    if ((epoch != null && epoch != _sessionEpoch) ||
+        (staged == null && _sessionToken != sessionToken)) {
       throw const BetterAuthException(
         'Better Auth session changed while it was being restored; the stale '
         'result was discarded.',
@@ -179,20 +220,29 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
       if (replacesCurrent) {
         // Only the staged session is gone; it never was the current one, so
         // this is not an AuthSessionEndedError.
-        _adoptedSession = null;
+        final kind = identical(staged, _adoptedSession) ? 'adopted' : 'staged';
+        _clearAdoptedSession();
+        _clearPendingLoginSession();
         throw BetterAuthException(
-          'The adopted Better Auth session is no longer valid'
+          'The $kind Better Auth session is no longer valid'
           '${rejection == null ? '' : ' (${rejection.message})'}; the current '
           'session was kept.',
         );
       }
-      _clearSession();
+      if (isRefresh) {
+        // Only the current session ended. A sign-in in flight and a session
+        // staged for the next login() are another session: keep them.
+        _cachedSession = null;
+        _sessionToken = null;
+      } else {
+        _clearSession();
+      }
       throw _SessionEndedStateError('Better Auth session expired.');
     }
-    if (adopted != null) {
-      _adoptedSession = null;
+    if (staged != null) {
+      _clearAdoptedSession();
+      _clearPendingLoginSession();
     }
-    _clearPendingLoginSession();
     _cachedSession = refreshed;
     _sessionToken = refreshed.sessionToken;
     onIdToken(refreshed.token);
@@ -203,26 +253,99 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
 
   /// Signs out the current Better Auth session and clears cached state.
   ///
-  /// Local state (session, pending sign-up session, [email] and [password])
-  /// is cleared before the sign-out request is sent, so it is cleared even
-  /// when that request fails, and a [login] started while the request is in
-  /// flight is not wiped when it completes.
+  /// Local state (session, [email] and [password]) is cleared before the
+  /// sign-out request is sent, so it is cleared even when that request fails,
+  /// and a [login] started while the request is in flight is not wiped when
+  /// it completes. A session that [signIn] or [signUp] created and that is
+  /// not the current one yet is signed out too, whether it waits for [login]
+  /// or was passed to [adoptSession]. A session the app obtained by itself
+  /// and staged with [adoptSession] is only forgotten.
+  ///
+  /// Completes once every sign-out request it sent was answered, and throws
+  /// when one of them failed: the error of the current session's sign-out,
+  /// or else the error of the other session's. That session may then still
+  /// be valid on the server, until it expires: the request may also have
+  /// been processed before its answer was lost.
   Future<void> logout() async {
     final sessionToken = _sessionToken;
+    // At most one of the two exists: adoptSession takes over the session
+    // staged for login(), and signIn / signUp drop an adopted one.
+    final staged = _pendingLoginSession?.sessionToken ??
+        (_adoptedSessionIsOwn ? _adoptedSession?.sessionToken : null);
     _clearSession();
     email = null;
     password = null;
-    if (sessionToken != null) {
+    if (sessionToken == null) {
+      // Only a session created by signIn or signUp: it is the one to end.
+      if (staged != null) {
+        await client.signOut(sessionToken: staged);
+      }
+      return;
+    }
+    if (staged == null || staged == sessionToken) {
       await client.signOut(sessionToken: sessionToken);
+      return;
+    }
+    // Two sessions to end. Both requests are sent at once and both are
+    // awaited: the caller must not be told that the user is signed out
+    // while one of the two sessions may still be valid.
+    Object? stagedError;
+    StackTrace? stagedStackTrace;
+    final stagedSignOut = client.signOut(sessionToken: staged).then<void>(
+      (_) {},
+      onError: (Object error, StackTrace stackTrace) {
+        stagedError = error;
+        stagedStackTrace = stackTrace;
+      },
+    );
+    try {
+      await client.signOut(sessionToken: sessionToken);
+    } finally {
+      await stagedSignOut;
+    }
+    final error = stagedError;
+    if (error != null) {
+      Error.throwWithStackTrace(error, stagedStackTrace!);
     }
   }
 
-  /// Sign up a new user. Sets credentials for future [login] calls.
+  /// Signs in with [email] and [password] without keeping the password.
   ///
-  /// This does not authenticate the Convex client. Call
-  /// `authedClient.login()` afterwards; it reuses the session created here
-  /// instead of signing in again. [onIdToken] is optional and only receives
-  /// the new session's Convex JWT.
+  /// This does not authenticate the Convex client, and does not change the
+  /// provider's current session either: the new session is only staged. Call
+  /// `authedClient.login()` afterwards: it makes the session created here the
+  /// provider's session (and [cachedSession]) without another request. Until
+  /// then, a session the client is already signed in with stays the one its
+  /// background token refreshes serve, so the client never runs as the new
+  /// account before `login()`. [onIdToken] is optional and only receives the
+  /// new session's Convex JWT.
+  ///
+  /// The password is sent once and not stored: when the request fails, call
+  /// `signIn` again with the credentials (for a retryable
+  /// [BetterAuthException], the same ones).
+  ///
+  /// Like [login], this supersedes a [login], [signUp] or explicit
+  /// [loginFromCache] that is still in flight, and throws a
+  /// [BetterAuthException] when a newer one superseded it.
+  Future<BetterAuthSession> signIn({
+    required String email,
+    required String password,
+    void Function(String? token)? onIdToken,
+  }) async {
+    final epoch = _startStagedSignIn();
+    final session = await client.signIn(email: email, password: password);
+    _stageIfCurrent(epoch, session, email, operation: 'signIn()');
+    onIdToken?.call(session.token);
+    return session;
+  }
+
+  /// Signs up a new user without keeping the password.
+  ///
+  /// Like [signIn], this only stages the new session: it does not
+  /// authenticate the Convex client or replace the provider's current
+  /// session. Call `authedClient.login()` afterwards; it reuses the session
+  /// created here instead of signing in again. [onIdToken] is optional and
+  /// only receives the new session's Convex JWT.
   ///
   /// Throws [BetterAuthEmailVerificationRequiredException] when the server
   /// requires email verification before the first sign-in.
@@ -232,21 +355,86 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
     required String password,
     void Function(String? token)? onIdToken,
   }) async {
-    final epoch = ++_sessionEpoch;
-    _adoptedSession = null;
+    final epoch = _startStagedSignIn();
     final session = await client.signUp(
       name: name,
       email: email,
       password: password,
     );
-    _commitIfCurrent(epoch, session, operation: 'signUp()');
-    _pendingLoginSession = session;
-    _pendingLoginEmail = email;
-    _pendingLoginPassword = password;
-    this.email = email;
-    this.password = password;
+    _stageIfCurrent(epoch, session, email, operation: 'signUp()');
     onIdToken?.call(session.token);
     return session;
+  }
+
+  /// Starts a [signIn] or [signUp]: a new user intent, which supersedes the
+  /// ones in flight and replaces whatever was staged for [login].
+  ///
+  /// The staged [password] of the older flow is dropped: it belongs to an
+  /// earlier attempt, maybe for another account, and must never be sent with
+  /// the email of this one.
+  int _startStagedSignIn() {
+    final epoch = ++_sessionEpoch;
+    _discardAdoptedSession();
+    _discardPendingLoginSession();
+    password = null;
+    return epoch;
+  }
+
+  /// Stages [session], created for [email] by [signIn] or [signUp], for the
+  /// next [login], unless a newer user-started call superseded that request.
+  void _stageIfCurrent(
+    int epoch,
+    BetterAuthSession session,
+    String email, {
+    required String operation,
+  }) {
+    if (epoch != _sessionEpoch) {
+      _signOutInBackground(session.sessionToken);
+      throw BetterAuthException(
+        'Better Auth $operation was superseded by a newer login, signUp, '
+        'adoptSession, loginFromCache or logout; its session was discarded.',
+      );
+    }
+    _pendingLoginSession = session;
+    _pendingLoginEmail = email;
+    this.email = email;
+  }
+
+  /// Drops the session staged by [signIn] or [signUp] and signs it out in
+  /// the background: nobody else holds it.
+  ///
+  /// It is not signed out when it is the current session or [keep], the
+  /// session token the caller is handing over at the same time: signing out
+  /// a token ends its session for whoever holds it.
+  void _discardPendingLoginSession({String? keep}) {
+    final staged = _pendingLoginSession?.sessionToken;
+    _clearPendingLoginSession();
+    if (staged != null && staged != _sessionToken && staged != keep) {
+      _signOutInBackground(staged);
+    }
+  }
+
+  /// Drops the session staged by [adoptSession]. One this provider created
+  /// is signed out in the background, as [_discardPendingLoginSession] would
+  /// have done before the app adopted it, unless it is the current session
+  /// or [keep].
+  void _discardAdoptedSession({String? keep}) {
+    final own = _adoptedSessionIsOwn ? _adoptedSession?.sessionToken : null;
+    _clearAdoptedSession();
+    if (own != null && own != _sessionToken && own != keep) {
+      _signOutInBackground(own);
+    }
+  }
+
+  void _clearAdoptedSession() {
+    _adoptedSession = null;
+    _adoptedSessionIsOwn = false;
+  }
+
+  void _signOutInBackground(String sessionToken) {
+    client
+        .signOut(sessionToken: sessionToken)
+        .then<void>((_) {}, onError: (Object _) {});
   }
 
   /// Stages [session], obtained outside [login] (for example from
@@ -257,28 +445,41 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
   /// [cachedSession]) only when that restore succeeds. Until then — and if
   /// the restore fails — the current session is kept, so background token
   /// refreshes keep serving it. After a transient failure the session stays
-  /// staged and the next `loginFromCache()` retries it; a [login], [signUp],
-  /// [logout] or another [adoptSession] discards it. Persist
+  /// staged and the next `loginFromCache()` retries it; a [login], [signIn],
+  /// [signUp], [logout] or another [adoptSession] discards it. Persist
   /// `session.sessionToken` once the restore succeeded.
+  ///
+  /// A discarded session is only forgotten, with one exception: the session
+  /// [signIn] or [signUp] returned, which this provider created. It may be
+  /// adopted like any other, and is signed out when it is discarded before
+  /// a restore installed it.
   ///
   /// Like [login], this supersedes a [login], [signUp] or explicit
   /// [loginFromCache] that is still in flight.
   void adoptSession(BetterAuthSession session) {
     _sessionEpoch++;
-    _clearPendingLoginSession();
+    // The app may adopt the very session signIn() or signUp() returned, or
+    // adopt it again: it stays the provider's to sign out if dropped.
+    final token = session.sessionToken;
+    final own = _pendingLoginSession?.sessionToken == token ||
+        (_adoptedSessionIsOwn && _adoptedSession?.sessionToken == token);
+    _discardPendingLoginSession(keep: token);
+    _discardAdoptedSession(keep: token);
     _adoptedSession = session;
+    _adoptedSessionIsOwn = own;
   }
 
   /// The currently cached session, if any.
   ///
   /// A session staged by [adoptSession] appears here only once
-  /// `loginFromCache()` restored it.
+  /// `loginFromCache()` restored it, and one created by [signIn] or [signUp]
+  /// only once `login()` made it current.
   BetterAuthSession? get cachedSession => _cachedSession;
 
   void _commitSession(BetterAuthSession session) {
     _sessionEpoch++;
     _clearPendingLoginSession();
-    _adoptedSession = null;
+    _discardAdoptedSession(keep: session.sessionToken);
     _cachedSession = session;
     _sessionToken = session.sessionToken;
   }
@@ -291,9 +492,7 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
     if (epoch != _sessionEpoch) {
       // A newer login/signUp/logout owns the provider now. Do not leave the
       // superseded server session alive.
-      client
-          .signOut(sessionToken: session.sessionToken)
-          .then<void>((_) {}, onError: (Object _) {});
+      _signOutInBackground(session.sessionToken);
       throw BetterAuthException(
         'Better Auth $operation was superseded by a newer login, signUp, '
         'adoptSession, loginFromCache or logout; its session was discarded.',
@@ -306,30 +505,29 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
     _sessionEpoch++;
     _cachedSession = null;
     _sessionToken = null;
-    _adoptedSession = null;
+    _clearAdoptedSession();
     _clearPendingLoginSession();
   }
 
+  /// The session staged by [signIn] or [signUp], when [login] should use it:
+  /// [email] is still the one it was created for and no [password] was staged
+  /// for a new sign-in. Otherwise the staged session is signed out.
   BetterAuthSession? _takePendingLoginSession({
-    required String email,
-    required String password,
+    required String? email,
+    required String? password,
   }) {
     final session = _pendingLoginSession;
-    if (session == null) {
-      return null;
-    }
-    if (_pendingLoginEmail == email && _pendingLoginPassword == password) {
+    if (_pendingLoginEmail == email && password == null) {
       _clearPendingLoginSession();
       return session;
     }
-    _clearPendingLoginSession();
+    _discardPendingLoginSession();
     return null;
   }
 
   void _clearPendingLoginSession() {
     _pendingLoginSession = null;
     _pendingLoginEmail = null;
-    _pendingLoginPassword = null;
   }
 }
 

@@ -226,12 +226,11 @@ final result = await client.action('ai:summarize', {
 final authClient = BetterAuthClient(
   baseUrl: 'https://your-deployment.convex.cloud',
 );
-final provider = ConvexBetterAuthProvider(client: authClient)
-  ..email = 'user@example.com'
-  ..password = 'securePassword';
+final provider = ConvexBetterAuthProvider(client: authClient);
 
 final client = ConvexClient('https://your-deployment.convex.cloud');
 final authedClient = client.withAuth(provider);
+await provider.signIn(email: 'user@example.com', password: 'securePassword');
 await authedClient.login();
 
 // Sign out through the wrapper, so the Convex client is signed out too:

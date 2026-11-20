@@ -156,6 +156,11 @@ subscription.stream.listen((result) {
 });
 ```
 
+`TypedQuerySuccess.fromCache` (and `TypedQueryError.fromCache`) is `true` for
+the cached seed a new subscription replays before the server answers: the
+result kept after an earlier subscription to the same query was cancelled. It
+may be stale, so skip it for a value you act on.
+
 A server value the bindings cannot decode (for example an enum value added
 after generation) arrives as a `TypedQueryError` rather than a stream error.
 Paginated queries return a `TypedConvexPaginatedQuery<T>` (`stream`,

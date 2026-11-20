@@ -255,6 +255,118 @@ void main() {
       runtime.dispose();
       client.dispose();
     });
+
+    group('warm cache seed', () {
+      int lastAddedQueryId(_MockWebSocketAdapter adapter) {
+        final add = adapter.decodedSentMessages
+            .where((message) => message['type'] == 'ModifyQuerySet')
+            .expand((set) => set['modifications'] as List<dynamic>)
+            .cast<Map<String, dynamic>>()
+            .lastWhere((modification) => modification['type'] == 'Add');
+        return add['queryId'] as int;
+      }
+
+      void answer(
+        _MockWebSocketAdapter adapter,
+        Map<String, dynamic> start,
+        Map<String, dynamic> end,
+        Object value,
+      ) {
+        adapter.pushServerMessage(<String, dynamic>{
+          'type': 'Transition',
+          'startVersion': start,
+          'endVersion': end,
+          'modifications': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'type': 'QueryUpdated',
+              'queryId': lastAddedQueryId(adapter),
+              'value': value,
+              'logLines': <String>[],
+            },
+          ],
+        });
+      }
+
+      /// Subscribes once, answers 'old', unsubscribes: 'old' is now cached.
+      Future<(convex.ConvexClient, ConvexClientRuntime, _MockWebSocketAdapter)>
+      warmed() async {
+        final adapter = _MockWebSocketAdapter();
+        final client = convex.ConvexClient(
+          'https://example.com',
+          config: convex.ConvexClientConfig(adapterFactory: (_) => adapter),
+        );
+        final runtime = ConvexClientRuntime(client);
+        await _settle();
+        final first = runtime.subscribe('conversations:list');
+        final listener = first.stream.listen((_) {});
+        await _settle();
+        answer(
+          adapter,
+          _version(querySet: 0, ts: 'AAAAAAAAAAA='),
+          _version(querySet: 1, ts: 'AQAAAAAAAAA='),
+          'old',
+        );
+        await _settle();
+        await listener.cancel();
+        first.cancel();
+        await _settle();
+        return (client, runtime, adapter);
+      }
+
+      test('the seed of a new subscription is a cache event', () async {
+        final (client, runtime, adapter) = await warmed();
+        final subscription = runtime.subscribe('conversations:list');
+        final events = <ConvexRuntimeQueryEvent>[];
+        final listener = subscription.stream.listen(events.add);
+        await _settle();
+        answer(
+          adapter,
+          _version(querySet: 1, ts: 'AQAAAAAAAAA='),
+          _version(querySet: 3, ts: 'AgAAAAAAAAA='),
+          'new',
+        );
+        await _settle();
+
+        final successes = events.whereType<ConvexRuntimeQuerySuccess>();
+        expect(successes.map((e) => e.value), <String>['old', 'new']);
+        expect(successes.map((e) => e.source), <ConvexQuerySource>[
+          ConvexQuerySource.cache,
+          ConvexQuerySource.remote,
+        ]);
+        expect(successes.first.hasPendingWrites, isFalse);
+
+        await listener.cancel();
+        subscription.cancel();
+        runtime.dispose();
+        client.dispose();
+      });
+
+      test('watch with skipCached waits for the server value', () async {
+        final (client, runtime, adapter) = await warmed();
+        var resolved = false;
+        final fresh =
+            runtime
+                .watch<String>(
+                  'conversations:list',
+                  const <String, dynamic>{},
+                  skipCached: true,
+                )
+                .first
+              ..then((_) => resolved = true);
+        await _settle();
+        expect(resolved, isFalse);
+        answer(
+          adapter,
+          _version(querySet: 1, ts: 'AQAAAAAAAAA='),
+          _version(querySet: 3, ts: 'AgAAAAAAAAA='),
+          'new',
+        );
+        expect(await fresh.timeout(const Duration(seconds: 1)), 'new');
+
+        runtime.dispose();
+        client.dispose();
+      });
+    });
   });
 }
 

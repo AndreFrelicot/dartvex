@@ -47,6 +47,8 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 - `ConvexAuthRefreshingBuilder` — auth-refreshing indicator
 - `ConvexOfflineImage` / `ConvexAssetCache` — native offline binary asset caching
 - `FakeConvexClient` — test helper for unit and widget tests
+- `FakeConvexAuthClient` — test helper for auth flows
+- `watch` — decoded `Stream<T>` of a live query, for code outside widgets
 - App lifecycle reconnect when a Flutter app resumes while disconnected
 - NSURLSession network transports on iOS and macOS, installed automatically
 - Runtime-interface based — works with `ConvexClientRuntime` or any custom
@@ -308,6 +310,22 @@ expect(client.mutationCalls, isEmpty);
 `FakeConvexClient` dartdoc lists the other differences from the real
 client.
 
+`FakeConvexAuthClient<T>` replaces `ConvexClientWithAuth<T>` in auth tests:
+
+```dart
+final auth = FakeConvexAuthClient<Session>(client: client)
+  ..onLoginFromCache = () => session; // return a user or throw
+
+await tester.pumpWidget(
+  ConvexProvider(
+    client: client,
+    child: ConvexAuthProvider<Session>(client: auth, child: MyApp()),
+  ),
+);
+await auth.loginFromCache(); // AuthLoading, then AuthAuthenticated
+await tester.pump();
+```
+
 ## Optimistic Mutations
 
 Pass an `OptimisticUpdate` to `ConvexMutation` to overlay query results the
@@ -393,6 +411,7 @@ ConvexAuthRefreshingBuilder(
 | `ConvexCachedImage` | Native disk-cached image from Convex storage |
 | `ConvexOfflineImage` | Native offline-capable image with caching |
 | `FakeConvexClient` | Test double for widget tests |
+| `FakeConvexAuthClient` | Test double for `ConvexClientWithAuth` |
 
 ## Full Documentation
 

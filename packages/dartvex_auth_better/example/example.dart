@@ -20,9 +20,12 @@ Future<void> main() async {
 
   // 3. Sign in — the provider calls Better Auth's HTTP endpoints and the
   //    wrapper forwards the Convex JWT to the WebSocket client.
-  authProvider.email = 'user@example.com';
-  authProvider.password = 'secret123';
+  //    signIn() does not keep the password; login() reuses its session.
   try {
+    await authProvider.signIn(
+      email: 'user@example.com',
+      password: 'secret123',
+    );
     final session = await authedConvex.login();
     print('Signed in as ${session.email} (${session.userId})');
   } on BetterAuthException catch (error) {

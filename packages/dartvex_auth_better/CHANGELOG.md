@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `ConvexBetterAuthProvider.signIn({email, password})` signs in without
+  keeping the password: it stages the session for the next
+  `authedClient.login()`, which makes it the provider's session without
+  another request. It replaces setting `email` / `password` before `login()`,
+  which still works.
+
+### Changed
+
+- `ConvexBetterAuthProvider.signUp()` no longer stores the password (in
+  `password` or internally). `login()` reuses the sign-up session when
+  `email` is still the sign-up email and no `password` was staged since;
+  staging a `password` now always sends a new sign-in, even with the same
+  password.
+
+- `ConvexBetterAuthProvider.login()` clears `password` once it is used:
+  after signing in and after a failure that retrying cannot fix (wrong
+  credentials, a superseded sign-in). A retryable failure keeps it so the
+  same `login()` can be retried. Set `password` before every `login()`.
+
+- `ConvexBetterAuthProvider.signUp()` only stages its session, like
+  `signIn()`: the session becomes the provider's (and `cachedSession`) with
+  the following `login()`, no longer as soon as `signUp()` returns. Until
+  then a session the client is already signed in with stays the one its
+  background token refreshes serve. `signUp()` (or `signIn()`) for another
+  account used to switch the provider at once, so a refresh before `login()`
+  ran the client as the new account while the app still showed the previous
+  one, and made that `login()` fail.
+- A session that `signIn()` or `signUp()` created and that is never used
+  (replaced by a newer one, dropped for staged credentials, or pending at
+  `logout()`) is signed out on the server. Passing that same session to
+  `adoptSession()` keeps it, and it is still signed out when it is dropped
+  before `loginFromCache()` installed it. A `logout()` that ends two sessions
+  (the current one and such a pending one) waits for both sign-out requests
+  and throws when either failed.
+- `signIn()` and `signUp()` clear a staged `password`, whatever its value: it
+  can no longer be sent with the email of the account they signed in.
+
+### Fixed
+
+- A background token refresh that finds the current session expired no
+  longer cancels a `login()` or `signIn()` in flight, nor drops the session
+  staged for the next `login()` or `loginFromCache()`: only the expired
+  session is cleared.
+- A background token refresh is tied to the session it refreshes. One still
+  in flight when a `signIn()` starts keeps the current session up to date
+  instead of failing with "session changed".
+
 ## [0.3.0] - 2026-11-05
 
 ### Fixed

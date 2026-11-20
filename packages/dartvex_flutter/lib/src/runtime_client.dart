@@ -436,11 +436,12 @@ class _ConvexClientRuntimeSubscription
         :final value,
         :final logLines,
         :final hasPendingWrites,
+        :final fromCache,
       ):
         return ConvexRuntimeQuerySuccess(
           value,
           logLines: logLines,
-          source: hasPendingWrites
+          source: hasPendingWrites || fromCache
               ? ConvexQuerySource.cache
               : ConvexQuerySource.remote,
           hasPendingWrites: hasPendingWrites,
@@ -450,9 +451,17 @@ class _ConvexClientRuntimeSubscription
           source: ConvexQuerySource.cache,
           hasPendingWrites: hasPendingWrites,
         );
-      case convex.QueryError(:final message, :final data, :final logLines):
+      case convex.QueryError(
+        :final message,
+        :final data,
+        :final logLines,
+        :final fromCache,
+      ):
         return ConvexRuntimeQueryError(
           convex.ConvexException(message, data: data, logLines: logLines),
+          source: fromCache
+              ? ConvexQuerySource.cache
+              : ConvexQuerySource.unknown,
         );
     }
   }

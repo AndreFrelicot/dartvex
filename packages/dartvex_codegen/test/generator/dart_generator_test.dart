@@ -115,13 +115,21 @@ void main() {
       expect(api, contains('final ConvexFunctionCaller _client;'));
       expect(
         runtime,
-        contains('QueryError(:final message, :final data, :final logLines)'),
+        matches(
+          RegExp(
+            r'QueryError\(\s*:final message,\s*:final data,\s*'
+            r':final logLines,\s*:final fromCache,?\s*\)',
+          ),
+        ),
       );
       expect(runtime, contains('QueryLoading(:final hasPendingWrites)'));
       expect(
         runtime,
-        contains(
-          'QuerySuccess(:final value, :final logLines, :final hasPendingWrites)',
+        matches(
+          RegExp(
+            r'QuerySuccess\(\s*:final value,\s*:final logLines,\s*'
+            r':final hasPendingWrites,\s*:final fromCache,?\s*\)',
+          ),
         ),
       );
       expect(api, contains('typedQueryResult<HealthResult>('));

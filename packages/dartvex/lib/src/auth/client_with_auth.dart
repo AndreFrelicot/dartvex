@@ -225,6 +225,23 @@ class ConvexClientWithAuth<TUser>
 
   @override
 
+  /// Continues signed out without calling the auth provider's `logout`.
+  ///
+  /// Supersedes a pending [login] or [loginFromCache], stops token refreshes,
+  /// clears auth on the wrapped client (which releases the request hold of a
+  /// client created with `expectAuth: true`) and emits [AuthUnauthenticated].
+  /// The provider's session is left as is: use [logout] to end it.
+  Future<void> clearAuth() async {
+    _assertNotDisposed();
+    final generation = ++_authFlowGeneration;
+    final didReset = await _resetBaseAuth(generation: generation);
+    if (didReset) {
+      _emitAuthState(AuthUnauthenticated<TUser>());
+    }
+  }
+
+  @override
+
   /// Executes a mutation through the wrapped client, with an optional
   /// [optimisticUpdate]. See [ConvexClient.mutate].
   Future<dynamic> mutate(
