@@ -4,7 +4,7 @@ description: Generate type-safe Dart bindings for a Convex backend with dartvex_
 license: MIT
 metadata:
   author: AndreFrelicot
-  ecosystem-version: "0.3.0"
+  ecosystem-version: "0.4.0"
 ---
 
 # Generate Type-Safe Dart Bindings
@@ -24,12 +24,12 @@ get real types.
 
 ```yaml
 dev_dependencies:
-  dartvex_codegen: ^0.3.0
+  dartvex_codegen: ^0.4.0
 ```
 
-The app consuming the generated code needs `dartvex: ^0.3.0` (generated
-mutations forward an optional `optimisticUpdate` to
-`ConvexFunctionCaller.mutate`, which 0.3.0 added).
+The app consuming the generated code needs `dartvex: ^0.4.0` (generated
+query results read `fromCache`, which 0.4.0 added; generated mutations
+forward an optional `optimisticUpdate` to `ConvexFunctionCaller.mutate`).
 
 ## Step 2 — Generate
 

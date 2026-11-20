@@ -71,8 +71,8 @@ render their `errorBuilder` / `errorWidget` with an `UnsupportedError`, and
 
 ```yaml
 dependencies:
-  dartvex: ^0.3.0
-  dartvex_flutter: ^0.3.0
+  dartvex: ^0.4.0
+  dartvex_flutter: ^0.4.0
 ```
 
 Requires Dart `^3.10.0` and Flutter `>=3.38.1`. On Apple platforms the

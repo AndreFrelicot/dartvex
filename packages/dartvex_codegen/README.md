@@ -30,7 +30,7 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 
 ```yaml
 dev_dependencies:
-  dartvex_codegen: ^0.3.0
+  dartvex_codegen: ^0.4.0
 ```
 
 Requires Dart `^3.7.0`.
@@ -38,12 +38,13 @@ Requires Dart `^3.7.0`.
 The generated bindings call `dartvex` APIs such as
 `ConvexFunctionCaller.paginatedQuery` and `QueryLoading` (0.2.0), and
 generated mutations forward an optional optimistic update to
-`ConvexFunctionCaller.mutate` (0.3.0), so use the `dartvex` release that
-matches this generator. The application consuming the generated code needs:
+`ConvexFunctionCaller.mutate` (0.3.0), and generated query results read
+`QuerySuccess.fromCache` / `QueryError.fromCache` (0.4.0), so use the
+`dartvex` release that matches this generator. The application consuming the generated code needs:
 
 ```yaml
 dependencies:
-  dartvex: ^0.3.0
+  dartvex: ^0.4.0
 ```
 
 ## Usage

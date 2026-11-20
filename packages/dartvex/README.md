@@ -72,7 +72,7 @@ always takes precedence.
 
 ```yaml
 dependencies:
-  dartvex: ^0.3.0
+  dartvex: ^0.4.0
 ```
 
 Requires Dart `^3.6.0`.

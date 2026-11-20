@@ -36,8 +36,8 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 
 ```yaml
 dependencies:
-  dartvex: ^0.3.0
-  dartvex_auth_better: ^0.3.0
+  dartvex: ^0.4.0
+  dartvex_auth_better: ^0.4.0
 ```
 
 ## Supported versions
@@ -235,8 +235,13 @@ For one-off validation outside the provider flow,
 ### 5. Sign out
 
 ```dart
-await authedClient.logout();
-await secureStorage.delete(key: 'session_token');
+try {
+  await authedClient.logout();
+} finally {
+  // Also when logout() throws: the app is signed out locally either way,
+  // and a stored token would restore the session at the next start.
+  await secureStorage.delete(key: 'session_token');
+}
 ```
 
 `authedClient.logout()` revokes the provider's Better Auth session, clears the
