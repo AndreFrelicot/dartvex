@@ -29,6 +29,7 @@ This keeps Better Auth isolated from the core SDK packages:
 | [`dartvex_codegen`](https://pub.dev/packages/dartvex_codegen) | CLI code generator — type-safe Dart bindings from function validators |
 | [`dartvex_local`](https://pub.dev/packages/dartvex_local) | Offline support — SQLite cache, mutation queue |
 | **[`dartvex_auth_better`](https://pub.dev/packages/dartvex_auth_better)** | Better Auth adapter |
+| [`dartvex_auth2_convex`](https://pub.dev/packages/dartvex_auth2_convex) | Convex Auth (`@convex-dev/auth` v2) adapter |
 
 Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/AndreFrelicot/dartvex)
 
