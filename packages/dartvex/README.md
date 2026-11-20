@@ -23,6 +23,7 @@ Pure Dart client for [Convex](https://convex.dev) with WebSocket sync, type-safe
 | [`dartvex_codegen`](https://pub.dev/packages/dartvex_codegen) | CLI code generator — type-safe Dart bindings from function validators |
 | [`dartvex_local`](https://pub.dev/packages/dartvex_local) | Offline support — SQLite cache, mutation queue |
 | [`dartvex_auth_better`](https://pub.dev/packages/dartvex_auth_better) | Better Auth adapter |
+| [`dartvex_auth2_convex`](https://pub.dev/packages/dartvex_auth2_convex) | Convex Auth (`@convex-dev/auth` v2) adapter |
 
 > **Building a Flutter app?** Start with [`dartvex_flutter`](https://pub.dev/packages/dartvex_flutter) — it pulls in `dartvex` automatically.
 

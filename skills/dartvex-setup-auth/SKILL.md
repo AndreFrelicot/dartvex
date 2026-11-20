@@ -397,9 +397,11 @@ Tokens cannot be revoked individually — keep lifetimes short and make
 
 ## D. Convex Auth v2 (`@convex-dev/auth`)
 
-> The adapter is not on pub.dev yet (0.1.0 is pending). Until it is, depend
-> on it from git: `git: {url: https://github.com/AndreFrelicot/dartvex.git,
-> path: packages/dartvex_auth2_convex}`. It needs `dartvex: ^0.4.1`.
+```yaml
+dependencies:
+  dartvex: ^0.4.1
+  dartvex_auth2_convex: ^0.1.0
+```
 
 `dartvex_auth2_convex` targets the **v2** protocol of `@convex-dev/auth`
 (components, `refreshSession`, rotating refresh tokens); it does not speak
