@@ -24,7 +24,7 @@ environment:
   sdk: ^3.6.0
 
 dependencies:
-  dartvex: ^0.3.0
+  dartvex: ^0.4.0
   http: ^1.5.0
 
 dev_dependencies:

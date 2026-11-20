@@ -4,7 +4,7 @@ description: Add authentication to a Dart/Flutter app on Convex - Better Auth em
 license: MIT
 metadata:
   author: AndreFrelicot
-  ecosystem-version: "0.3.0"
+  ecosystem-version: "0.4.0"
 ---
 
 # Authenticate a Dartvex App
@@ -31,8 +31,8 @@ client's auth state never diverges from the provider's.
 
 ```yaml
 dependencies:
-  dartvex: ^0.3.0
-  dartvex_auth_better: ^0.3.0
+  dartvex: ^0.4.0
+  dartvex_auth_better: ^0.4.0
 ```
 
 The example backend pins `better-auth` 1.7.17, `@convex-dev/better-auth`
@@ -181,8 +181,13 @@ fails), or `authedClient.clearAuth()` when there is no stored session.
 ### Sign out
 
 ```dart
-await authedClient.logout();
-await secureStorage.delete(key: 'session_token');
+try {
+  await authedClient.logout();
+} finally {
+  // Also when logout() throws: the app is signed out locally either way,
+  // and a stored token would restore the session at the next start.
+  await secureStorage.delete(key: 'session_token');
+}
 ```
 
 `authedClient.logout()` revokes the provider's Better Auth session, clears
@@ -386,6 +391,10 @@ Tokens cannot be revoked individually — keep lifetimes short and make
 `issueToken` refuse revoked credentials.
 
 ## D. Convex Auth v2 (`@convex-dev/auth`)
+
+> The adapter is not on pub.dev yet (0.1.0 is pending). Until it is, depend
+> on it from git: `git: {url: https://github.com/AndreFrelicot/dartvex.git,
+> path: packages/dartvex_auth2_convex}`. It needs `dartvex: ^0.4.0`.
 
 `dartvex_auth2_convex` targets the **v2** protocol of `@convex-dev/auth`
 (components, `refreshSession`, rotating refresh tokens); it does not speak

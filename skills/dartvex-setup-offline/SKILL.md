@@ -4,7 +4,7 @@ description: Add offline support to a dartvex Convex app with dartvex_local - SQ
 license: MIT
 metadata:
   author: AndreFrelicot
-  ecosystem-version: "0.3.0"
+  ecosystem-version: "0.4.0"
 ---
 
 # Offline Support with dartvex_local
@@ -26,8 +26,8 @@ cache and an offline mutation queue. Know the model before wiring it:
 
 ```yaml
 dependencies:
-  dartvex: ^0.3.0
-  dartvex_local: ^0.3.0
+  dartvex: ^0.4.0
+  dartvex_local: ^0.4.0
   path_provider: ^2.1.0 # Flutter: an app-support directory for the database
 ```
 

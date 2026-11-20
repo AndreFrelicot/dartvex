@@ -1,9 +1,15 @@
+<p align="center">
+  <a href="https://github.com/AndreFrelicot/dartvex">
+    <img src="https://raw.githubusercontent.com/AndreFrelicot/dartvex/main/assets/dartvex-logo-512.png" width="128" alt="Dartvex" />
+  </a>
+</p>
+
 # dartvex_auth2_convex
 
 [Convex Auth](https://docs.convex.dev/auth/convex-auth) (`@convex-dev/auth`
-v2) adapter for [Dartvex](https://github.com/AndreFrelicot/dartvex). It signs
-in with Convex Auth methods and keeps the rotating session in sync with the
-Convex client.
+v2) adapter for [dartvex](https://pub.dev/packages/dartvex) — the pure Dart
+client for [Convex](https://convex.dev). It signs in with Convex Auth methods
+and keeps the rotating session in sync with the Convex client.
 
 The `auth2` in the package name is the Convex Auth major version: this adapter
 targets the v2 protocol.
@@ -12,6 +18,35 @@ A working example is the Convex Auth mode of the
 [demo app](https://github.com/AndreFrelicot/dartvex/tree/main/example/flutter_app)
 and its
 [backend](https://github.com/AndreFrelicot/dartvex/tree/main/example/convex-backend).
+
+<p align="center">
+  <a href="https://github.com/AndreFrelicot/dartvex">
+    <img src="https://raw.githubusercontent.com/AndreFrelicot/dartvex/main/assets/dartvex-poster.webp" width="900" alt="Dartvex Flutter demo — real-time chats running on iOS and macOS" />
+  </a>
+</p>
+
+## The Dartvex ecosystem
+
+| Package | Description |
+|---------|-------------|
+| [`dartvex`](https://pub.dev/packages/dartvex) | Core client — WebSocket sync, subscriptions, auth |
+| [`dartvex_flutter`](https://pub.dev/packages/dartvex_flutter) | Flutter widgets — Provider, Query, Mutation |
+| [`dartvex_codegen`](https://pub.dev/packages/dartvex_codegen) | CLI code generator — type-safe Dart bindings from function validators |
+| [`dartvex_local`](https://pub.dev/packages/dartvex_local) | Offline support — SQLite cache, mutation queue |
+| [`dartvex_auth_better`](https://pub.dev/packages/dartvex_auth_better) | Better Auth adapter |
+| **[`dartvex_auth2_convex`](https://pub.dev/packages/dartvex_auth2_convex)** | Convex Auth (`@convex-dev/auth` v2) adapter |
+
+Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/AndreFrelicot/dartvex)
+
+## Installation
+
+```yaml
+dependencies:
+  dartvex: ^0.4.0
+  dartvex_auth2_convex: ^0.1.0
+```
+
+Requires Dart `^3.6.0`.
 
 ## How it works
 

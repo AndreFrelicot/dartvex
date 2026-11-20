@@ -4,7 +4,7 @@ description: Build reactive Flutter UI on Convex with dartvex_flutter - live que
 license: MIT
 metadata:
   author: AndreFrelicot
-  ecosystem-version: "0.3.0"
+  ecosystem-version: "0.4.0"
 ---
 
 # Build Realtime Flutter UI
