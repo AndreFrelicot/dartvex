@@ -153,6 +153,12 @@ jobs:
       - run: cd example/flutter_app && flutter analyze --fatal-infos
       - run: cd example/flutter_app && flutter test
       - run: cd example/flutter_app && flutter build web
+      # Builds the Android app too, so a Gradle or Android Gradle Plugin
+      # version that the current Flutter no longer supports fails here
+      # instead of on a developer's machine.
+      - uses: actions/setup-java@v5
+        with: { distribution: temurin, java-version: '17' }
+      - run: cd example/flutter_app && flutter build apk --debug
 
   # Declared SDK floors: the lowest Dart/Flutter each package's pubspec
   # accepts. `pub downgrade` + analyze checks the lower bounds of every
