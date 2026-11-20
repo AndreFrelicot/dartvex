@@ -244,6 +244,12 @@ provider's cached session and credentials, and clears the Convex client's
 auth. Do not sign out with `authClient.signOut(...)` for a session the wrapper
 uses: the Convex client would stay authenticated until its JWT expires.
 
+Local state is cleared before the request is sent, so the app is signed out
+even when `logout()` throws. An error means a session may still be valid on
+the server: the current one, or one that `signIn()` / `signUp()` created for
+another account and that was not installed yet. `logout()` waits for both
+sign-out requests before it completes.
+
 ### 6. Password recovery and magic links
 
 ```dart
