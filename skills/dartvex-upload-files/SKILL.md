@@ -4,7 +4,7 @@ description: Upload files to Convex storage and display stored images from Dart/
 license: MIT
 metadata:
   author: AndreFrelicot
-  ecosystem-version: "0.4.0"
+  ecosystem-version: "0.4.2"
 ---
 
 # Files and Images with Convex Storage

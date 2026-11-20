@@ -4,7 +4,7 @@ description: Entry point for building Dart and Flutter apps on Convex with the d
 license: MIT
 metadata:
   author: AndreFrelicot
-  ecosystem-version: "0.4.0"
+  ecosystem-version: "0.4.2"
 ---
 
 # Dartvex Development
@@ -57,8 +57,8 @@ npx skills add AndreFrelicot/dartvex
   real URL at run time (`--dart-define`, environment, or gitignored config).
 - The packages are versioned independently (only changed packages are
   released). Depend on the latest release of each package you use and let
-  pub resolve `dartvex` from their constraints; currently all five are
-  `^0.4.0`.
+  pub resolve `dartvex` from their constraints; currently all six
+  depend on `dartvex: ^0.4.2`.
 - Plain Dart `int`/`double` map to Convex `v.number()`. Use
   `convexInt64(value)` or `BigInt` only for `v.int64()` arguments.
 - Dartvex 0.4.0 tracks the official Convex JavaScript client 1.51.0

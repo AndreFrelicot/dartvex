@@ -42,8 +42,8 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 
 ```yaml
 dependencies:
-  dartvex: ^0.4.1
-  dartvex_auth2_convex: ^0.1.0
+  dartvex: ^0.4.2
+  dartvex_auth2_convex: ^0.1.1
 ```
 
 Requires Dart `^3.6.0`.

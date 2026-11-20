@@ -31,7 +31,7 @@ Source and full docs: [github.com/AndreFrelicot/dartvex](https://github.com/Andr
 
 ```yaml
 dev_dependencies:
-  dartvex_codegen: ^0.4.0
+  dartvex_codegen: ^0.4.2
 ```
 
 Requires Dart `^3.7.0`.
@@ -45,7 +45,7 @@ generated mutations forward an optional optimistic update to
 
 ```yaml
 dependencies:
-  dartvex: ^0.4.0
+  dartvex: ^0.4.2
 ```
 
 ## Usage

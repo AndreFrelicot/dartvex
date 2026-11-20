@@ -4,7 +4,7 @@ description: Test Flutter widgets and app logic that use dartvex without a live 
 license: MIT
 metadata:
   author: AndreFrelicot
-  ecosystem-version: "0.4.0"
+  ecosystem-version: "0.4.2"
 ---
 
 # Test Dartvex Apps with FakeConvexClient
@@ -17,8 +17,8 @@ no network, no deployment.
 
 ```yaml
 dependencies:
-  dartvex: ^0.4.0          # for ConvexException in error stubs
-  dartvex_flutter: ^0.4.0  # FakeConvexClient ships here
+  dartvex: ^0.4.2          # for ConvexException in error stubs
+  dartvex_flutter: ^0.4.2  # FakeConvexClient ships here
 
 dev_dependencies:
   flutter_test:

@@ -60,19 +60,19 @@ void main() async {
 
 | Package | Description | Version |
 |---------|-------------|---------|
-| [`dartvex`](packages/dartvex/) | Core client — WebSocket sync, subscriptions, auth | 0.4.1 |
-| [`dartvex_flutter`](packages/dartvex_flutter/) | Flutter widgets — Provider, Query, Mutation | 0.4.0 |
-| [`dartvex_codegen`](packages/dartvex_codegen/) | CLI code generator — type-safe Dart bindings from function validators | 0.4.0 |
-| [`dartvex_local`](packages/dartvex_local/) | Offline support — SQLite cache, mutation queue | 0.4.0 |
-| [`dartvex_auth_better`](packages/dartvex_auth_better/) | Better Auth adapter | 0.4.0 |
-| [`dartvex_auth2_convex`](packages/dartvex_auth2_convex/) | Convex Auth (`@convex-dev/auth` v2) adapter | 0.1.0 |
+| [`dartvex`](packages/dartvex/) | Core client — WebSocket sync, subscriptions, auth | 0.4.2 |
+| [`dartvex_flutter`](packages/dartvex_flutter/) | Flutter widgets — Provider, Query, Mutation | 0.4.2 |
+| [`dartvex_codegen`](packages/dartvex_codegen/) | CLI code generator — type-safe Dart bindings from function validators | 0.4.2 |
+| [`dartvex_local`](packages/dartvex_local/) | Offline support — SQLite cache, mutation queue | 0.4.2 |
+| [`dartvex_auth_better`](packages/dartvex_auth_better/) | Better Auth adapter | 0.4.2 |
+| [`dartvex_auth2_convex`](packages/dartvex_auth2_convex/) | Convex Auth (`@convex-dev/auth` v2) adapter | 0.1.1 |
 
 Packages are versioned and released independently. Minimum SDKs: `dartvex`,
 `dartvex_auth_better` and `dartvex_auth2_convex` Dart 3.6, `dartvex_codegen` Dart 3.7,
 `dartvex_local` Dart 3.10, `dartvex_flutter` Dart 3.10 / Flutter 3.38.1
 (iOS 15 / macOS 12 on Apple platforms).
 
-**Convex compatibility:** Dartvex 0.4.0 implements the sync protocol of the
+**Convex compatibility:** Dartvex 0.4.2 implements the sync protocol of the
 official Convex JavaScript client **1.51.0** (`convexSyncApiVersion`, sent
 as the default API version); behavior described as matching "the official
 client" refers to that release.
@@ -128,11 +128,11 @@ They pair with the official [`convex/agent-skills`](https://github.com/convex/ag
 ```yaml
 # pubspec.yaml
 dependencies:
-  dartvex: ^0.4.0
-  dartvex_flutter: ^0.4.0  # If using Flutter
+  dartvex: ^0.4.2
+  dartvex_flutter: ^0.4.2  # If using Flutter
 
 dev_dependencies:
-  dartvex_codegen: ^0.4.0  # For code generation
+  dartvex_codegen: ^0.4.2  # For code generation
 ```
 
 ### 2. Configure your client

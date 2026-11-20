@@ -4,7 +4,7 @@ description: Connect a Dart or Flutter app to a Convex backend with the dartvex 
 license: MIT
 metadata:
   author: AndreFrelicot
-  ecosystem-version: "0.4.0"
+  ecosystem-version: "0.4.2"
 ---
 
 # Dartvex Quickstart
@@ -22,15 +22,15 @@ Flutter app (pulls in `dartvex` automatically):
 
 ```yaml
 dependencies:
-  dartvex: ^0.4.0
-  dartvex_flutter: ^0.4.0
+  dartvex: ^0.4.2
+  dartvex_flutter: ^0.4.2
 ```
 
 Pure Dart (CLI, server):
 
 ```yaml
 dependencies:
-  dartvex: ^0.4.0
+  dartvex: ^0.4.2
 ```
 
 `dartvex` requires Dart `^3.6.0`. `dartvex_flutter` requires Dart `^3.10.0`

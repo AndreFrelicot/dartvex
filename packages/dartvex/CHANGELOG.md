@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-11-20
+
+### Changed
+
+- Documentation: "The Dartvex ecosystem" table lists
+  [`dartvex_auth2_convex`](https://pub.dev/packages/dartvex_auth2_convex),
+  the Convex Auth (`@convex-dev/auth` v2) adapter, published as 0.1.0.
+
 ## [0.4.1] - 2026-11-20
 
 ### Fixed

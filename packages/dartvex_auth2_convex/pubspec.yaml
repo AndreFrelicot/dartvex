@@ -2,7 +2,7 @@ name: dartvex_auth2_convex
 description: >-
   Convex Auth (@convex-dev/auth v2) adapter for Dartvex. Sign in with
   Convex Auth methods and keep rotating sessions in sync with the client.
-version: 0.1.0
+version: 0.1.1
 homepage: https://github.com/AndreFrelicot/dartvex
 repository: https://github.com/AndreFrelicot/dartvex/tree/main/packages/dartvex_auth2_convex
 issue_tracker: https://github.com/AndreFrelicot/dartvex/issues
@@ -24,7 +24,7 @@ environment:
   sdk: ^3.6.0
 
 dependencies:
-  dartvex: ^0.4.1
+  dartvex: ^0.4.2
   http: ^1.5.0
 
 dev_dependencies:
