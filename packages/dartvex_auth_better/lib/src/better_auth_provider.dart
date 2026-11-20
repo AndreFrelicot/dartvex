@@ -263,8 +263,9 @@ class ConvexBetterAuthProvider implements AuthProvider<BetterAuthSession> {
   ///
   /// Completes once every sign-out request it sent was answered, and throws
   /// when one of them failed: the error of the current session's sign-out,
-  /// or else the error of the other session's. That session then stays
-  /// valid on the server until it expires.
+  /// or else the error of the other session's. That session may then still
+  /// be valid on the server, until it expires: the request may also have
+  /// been processed before its answer was lost.
   Future<void> logout() async {
     final sessionToken = _sessionToken;
     // At most one of the two exists: adoptSession takes over the session
