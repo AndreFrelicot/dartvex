@@ -254,6 +254,25 @@ Recommended cross-machine flow:
 If a publish fails midway, tag only the packages that were actually published,
 fix the issue, then repeat planning from the remaining package tags.
 
+## First Publication of a New Package
+
+pub.dev freezes each version's README, and a first upload belongs to the
+uploader's personal account, not to the verified publisher. For a package
+that has never been on pub.dev:
+
+1. **Before publishing anything**, add its row to "The Dartvex ecosystem"
+   table of every other package README, update the root README, and drop
+   any "not on pub.dev yet" mention (README, skills). The READMEs of the
+   packages published in the same release then list it; the others list it
+   at their next publication.
+2. After the first `dart pub publish`, transfer it to the verified
+   publisher: pub.dev → the package's **Admin** tab → **Transfer to
+   publisher** → `andrefrelicot.dev`. Check with
+   `curl -s https://pub.dev/api/packages/<package>/publisher`.
+3. The publisher's package list and the search are built from the search
+   index: a new package can take a while to appear there.
+
+
 ## Practical Rule of Thumb
 
 - If only one package changed and dependents still accept its version range, publish only that package.
