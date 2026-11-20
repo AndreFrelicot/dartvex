@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `BetterAuthClient` refuses a plain `http://` `baseUrl` or
+  `siteUrl` unless the host is the local machine (`localhost`, a loopback
+  address, or the Android emulator alias `10.0.2.2`), because credentials
+  and session tokens would travel in clear text. Pass
+  `allowInsecureHttp: true` for a development backend on another host.
 - `ConvexBetterAuthProvider.signUp()` no longer stores the password (in
   `password` or internally). `login()` reuses the sign-up session when
   `email` is still the sign-up email and no `password` was staged since;

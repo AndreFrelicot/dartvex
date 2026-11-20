@@ -307,6 +307,49 @@ void main() {
     expect(h.provider.cacheCallIsRefresh[refreshes], isFalse);
   });
 
+  group('a session reported as ended by a background refresh', () {
+    test('signs the client out and clears the transport auth', () async {
+      final h = _Harness();
+      addTearDown(h.close);
+      // The refresh that follows the confirmed login token finds the session
+      // revoked.
+      h.provider.cacheError = _SessionGone();
+      await h.auth.login();
+
+      await _until(
+        () => h.auth.currentAuthState is AuthUnauthenticated<_Session>,
+        reason: 'sign-out after the session ended',
+      );
+      await _until(() => h.sentTokens.last == null, reason: 'auth cleared');
+      expect(h.client.isAuthenticated, isFalse);
+      expect(h.client.currentAuthToken, isNull);
+      expect(h.states.last, isA<AuthUnauthenticated<_Session>>());
+
+      // The flow is over: no further refresh is attempted.
+      final refreshes = h.provider.cacheCallIsRefresh.length;
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(h.provider.cacheCallIsRefresh, hasLength(refreshes));
+    });
+
+    test('a transient refresh failure keeps the session', () async {
+      final h = _Harness();
+      addTearDown(h.close);
+      h.provider.cacheError = StateError('offline');
+      await h.auth.login();
+
+      await _until(
+        () => h.provider.cacheCallIsRefresh.isNotEmpty,
+        reason: 'post-confirmation refresh',
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+
+      expect(h.isAuthenticatedState, isTrue);
+      expect(h.client.isAuthenticated, isTrue);
+      expect(h.client.currentAuthToken, 'login-token-1');
+      expect(h.sentTokens, isNot(contains(null)));
+    });
+  });
+
   test('ConvexClient exposes isAuthenticated and currentAuthToken (F141, F146)',
       () async {
     final h = _Harness();
@@ -389,6 +432,10 @@ class _Session {
 
   final String user;
   final String token;
+}
+
+class _SessionGone extends StateError implements AuthSessionEndedError {
+  _SessionGone() : super('session revoked');
 }
 
 class _ScriptedProvider implements AuthProvider<_Session> {

@@ -71,8 +71,8 @@ and `dartvex_auth_better` Dart 3.6, `dartvex_codegen` Dart 3.7,
 `dartvex_local` Dart 3.10, `dartvex_flutter` Dart 3.10 / Flutter 3.38.1
 (iOS 15 / macOS 12 on Apple platforms).
 
-**Convex compatibility:** Dartvex 0.3.0 implements the sync protocol of the
-official Convex JavaScript client **1.49.0** (`convexSyncApiVersion`, sent
+**Convex compatibility:** Dartvex 0.4.0 implements the sync protocol of the
+official Convex JavaScript client **1.51.0** (`convexSyncApiVersion`, sent
 as the default API version); behavior described as matching "the official
 client" refers to that release.
 

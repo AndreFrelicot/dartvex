@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A live subscription no longer stores the remote client's cached seed (the
+  value the core client kept after an earlier subscription to the same query
+  was cancelled) in the local cache and emits it as
+  `LocalQuerySource.remote`. That stamped a possibly stale value, or one of
+  an earlier identity after a `reset()`, as a fresh server result. Seeds are
+  now ignored on that path: the local cache serves the first frame and the
+  server's result follows.
+
+### Changed
+
+- `ConvexRemoteClientAdapter` sets `LocalRemoteQuerySuccess.isSeed` from the
+  core `QuerySuccess.fromCache` flag instead of from the timing of the first
+  event. A value the core currently maintains for another live subscription
+  is no longer tagged as a seed, so a one-shot refresh of such a query
+  completes with it instead of waiting for a server message that never
+  comes. Requires `dartvex` `^0.4.0`.
+- `LocalRemoteQueryError` gains `isSeed` (set from `QueryError.fromCache`).
+
 ## [0.3.0] - 2026-11-05
 
 ### Added

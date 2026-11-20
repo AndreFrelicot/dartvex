@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:dartvex/src/auth/auth_manager.dart';
+import 'package:dartvex/src/auth/auth_provider.dart';
 import 'package:dartvex/src/config.dart';
 import 'package:dartvex/src/logging.dart';
 import 'package:dartvex/src/protocol/messages.dart';
@@ -26,6 +27,10 @@ String _jwt({required String subject, int? iat, required int exp}) {
         if (iat != null) 'iat': iat,
         'exp': exp,
       })}.';
+}
+
+class _SessionEnded extends StateError implements AuthSessionEndedError {
+  _SessionEnded() : super('session revoked');
 }
 
 class _Recorder {
@@ -353,6 +358,182 @@ void main() {
     expect(manager.isAuthenticated, isTrue);
     await manager.clearAuth();
     expect(manager.isAuthenticated, isFalse);
+  });
+
+  group('a fetch reporting the session as ended', () {
+    test('ends the flow when the scheduled refresh reports it', () async {
+      final recorder = _Recorder();
+      final manager = _manager(recorder);
+      final now = _nowSeconds();
+      // Leeway >= lifetime: the refresh timer fires immediately.
+      final token = _jwt(subject: 't1', iat: now, exp: now + 5);
+      var forcedCalls = 0;
+      final authChanges = <bool>[];
+
+      await manager.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) async {
+          if (!forceRefresh) {
+            return null;
+          }
+          forcedCalls += 1;
+          if (forcedCalls == 1) {
+            return token;
+          }
+          throw _SessionEnded();
+        },
+        onAuthChange: authChanges.add,
+      );
+      manager.handleAuthConfirmed();
+      await _until(() => recorder.sends.contains('send:null'));
+
+      expect(forcedCalls, 2);
+      expect(manager.currentToken, isNull);
+      expect(manager.isAuthenticated, isFalse);
+      expect(authChanges, <bool>[true, false]);
+      expect(
+        recorder.logs.map((log) => log.message),
+        contains(
+          'Scheduled auth refresh reported the session as ended; signing out',
+        ),
+      );
+    });
+
+    test('keeps the session when the scheduled refresh fails otherwise',
+        () async {
+      final recorder = _Recorder();
+      final manager = _manager(recorder);
+      final now = _nowSeconds();
+      final token = _jwt(subject: 't1', iat: now, exp: now + 5);
+      var forcedCalls = 0;
+      final authChanges = <bool>[];
+
+      await manager.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) async {
+          if (!forceRefresh) {
+            return null;
+          }
+          forcedCalls += 1;
+          if (forcedCalls == 1) {
+            return token;
+          }
+          throw StateError('offline');
+        },
+        onAuthChange: authChanges.add,
+      );
+      manager.handleAuthConfirmed();
+      await _until(() => forcedCalls == 2);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(manager.currentToken, token);
+      expect(recorder.sends, isNot(contains('send:null')));
+      expect(authChanges, <bool>[true]);
+      await manager.stopRefreshing();
+    });
+
+    test(
+        'a scheduled refresh that fails late does not end the session a '
+        'reauth renewed meanwhile', () async {
+      final recorder = _Recorder();
+      final manager = _manager(recorder);
+      final now = _nowSeconds();
+      // Leeway >= lifetime: the refresh timer fires immediately.
+      final t1 = _jwt(subject: 't1', iat: now, exp: now + 5);
+      final t2 = _jwt(subject: 't2', iat: now, exp: now + 3600);
+      final scheduled = Completer<String?>();
+      var forcedCalls = 0;
+      final authChanges = <bool>[];
+
+      await manager.setAuthWithRefresh(
+        // Each forced fetch is independent, as with a provider of your own.
+        fetchToken: ({required bool forceRefresh}) {
+          if (!forceRefresh) {
+            return Future<String?>.value(null);
+          }
+          forcedCalls += 1;
+          return switch (forcedCalls) {
+            1 => Future<String?>.value(t1),
+            2 => scheduled.future,
+            _ => Future<String?>.value(t2),
+          };
+        },
+        onAuthChange: authChanges.add,
+      );
+      manager.handleAuthConfirmed();
+      await _until(() => forcedCalls == 2); // the scheduled refresh started
+
+      await manager.handleAuthError(_expired, currentAuthVersion: 1);
+      expect(manager.currentToken, t2);
+
+      // The older fetch only answers now, with a definitive failure.
+      scheduled.completeError(_SessionEnded());
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(manager.currentToken, t2);
+      expect(recorder.sends, isNot(contains('send:null')));
+      expect(authChanges, <bool>[true]);
+      await manager.stopRefreshing();
+    });
+
+    test(
+        'a post-confirmation refetch that fails late does not end the '
+        'session a reauth renewed meanwhile', () async {
+      final recorder = _Recorder();
+      final manager = _manager(recorder);
+      final now = _nowSeconds();
+      final cached = _jwt(subject: 'cached', iat: now, exp: now + 3600);
+      final t2 = _jwt(subject: 't2', iat: now, exp: now + 3600);
+      final refetch = Completer<String?>();
+      var forcedCalls = 0;
+      final authChanges = <bool>[];
+
+      await manager.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) {
+          if (!forceRefresh) {
+            return Future<String?>.value(cached);
+          }
+          forcedCalls += 1;
+          return forcedCalls == 1 ? refetch.future : Future<String?>.value(t2);
+        },
+        onAuthChange: authChanges.add,
+      );
+      manager.handleAuthConfirmed();
+      await _until(() => forcedCalls == 1); // the refetch started
+
+      await manager.handleAuthError(_expired, currentAuthVersion: 1);
+      expect(manager.currentToken, t2);
+
+      refetch.completeError(_SessionEnded());
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(manager.currentToken, t2);
+      expect(recorder.sends, isNot(contains('send:null')));
+      expect(authChanges, <bool>[true]);
+      await manager.stopRefreshing();
+    });
+
+    test('is not retried by a reauth', () async {
+      final recorder = _Recorder();
+      final manager = _manager(
+        recorder,
+        reauthFetchRetryDelays: const <Duration>[Duration.zero, Duration.zero],
+      );
+      var forced = 0;
+      await manager.setAuthWithRefresh(
+        fetchToken: ({required bool forceRefresh}) async {
+          if (!forceRefresh) {
+            return 'cached';
+          }
+          forced += 1;
+          throw _SessionEnded();
+        },
+      );
+
+      await manager.handleAuthError(_expired, currentAuthVersion: 1);
+
+      expect(forced, 1);
+      expect(manager.currentToken, isNull);
+      expect(recorder.sends.last, 'send:null');
+    });
   });
 
   group('reauth fetch errors (F142)', () {

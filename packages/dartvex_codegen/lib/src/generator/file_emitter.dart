@@ -32,6 +32,12 @@ class FileEmitter {
   /// An unreadable manifest (for example one left with git merge-conflict
   /// markers) does not abort generation: [onWarning] is told, stale-file
   /// cleanup is skipped for this run, and a fresh manifest is written.
+  ///
+  /// Every path read, written or deleted must really be inside
+  /// [outputDirectory]: a manifest, a generated file or one of their parent
+  /// directories that is a symbolic link leading elsewhere makes this throw a
+  /// [FileEmitterException] before anything is modified. ([outputDirectory]
+  /// itself may be a link.)
   Future<void> emit({
     required String outputDirectory,
     required Map<String, String> files,
@@ -45,8 +51,22 @@ class FileEmitter {
     final directory = Directory(outputDirectory);
     await directory.create(recursive: true);
     final outputRoot = path.normalize(path.absolute(directory.path));
+    final resolvedRoot = await directory.resolveSymbolicLinks();
     final manifestFile = File(path.join(outputRoot, manifestName));
+    final temporaryManifest = File('${manifestFile.path}.tmp');
+    await _assertConfined(resolvedRoot, manifestFile, manifestName);
+    await _assertConfined(resolvedRoot, temporaryManifest, '$manifestName.tmp');
     final previousFiles = await _readManifest(manifestFile, onWarning);
+
+    // Check every path before the first modification, so a refused run
+    // leaves the existing files as they were.
+    for (final relativePath in <String>{...files.keys, ...previousFiles}) {
+      await _assertConfined(
+        resolvedRoot,
+        _fileFor(outputRoot, relativePath),
+        relativePath,
+      );
+    }
 
     for (final entry in files.entries) {
       final file = _fileFor(outputRoot, entry.key);
@@ -85,7 +105,6 @@ class FileEmitter {
     final manifestJson = const JsonEncoder.withIndent(
       '  ',
     ).convert(<String, Object?>{'files': files.keys.toList()..sort()});
-    final temporaryManifest = File('${manifestFile.path}.tmp');
     await temporaryManifest.writeAsString(manifestJson, flush: true);
     await temporaryManifest.rename(manifestFile.path);
   }
@@ -124,6 +143,40 @@ class FileEmitter {
 
   File _fileFor(String outputRoot, String relativePath) =>
       File(_safeJoin(outputRoot, relativePath));
+
+  /// Throws unless [file] is really inside the output directory once
+  /// symbolic links are followed.
+  ///
+  /// [_safeJoin] only checks the path text. A symbolic link in the output
+  /// tree (the file itself, or one of its parent directories) can still send
+  /// a read, write or delete somewhere else, for example in a checkout whose
+  /// previously generated output came from an untrusted source.
+  Future<void> _assertConfined(
+    String resolvedRoot,
+    File file,
+    String relativePath,
+  ) async {
+    if (await FileSystemEntity.isLink(file.path)) {
+      throw FileEmitterException(
+        'Refusing to use generated file path "$relativePath": it is a '
+        'symbolic link',
+      );
+    }
+    // The deepest directory that exists: the ones below it are created by
+    // this run, inside it.
+    var parent = file.parent;
+    while (!await parent.exists()) {
+      parent = parent.parent;
+    }
+    final resolvedParent = await parent.resolveSymbolicLinks();
+    if (resolvedParent != resolvedRoot &&
+        !path.isWithin(resolvedRoot, resolvedParent)) {
+      throw FileEmitterException(
+        'Refusing to use generated file path "$relativePath": a symbolic '
+        'link leads outside the output directory',
+      );
+    }
+  }
 
   String _safeJoin(String outputRoot, String relativePath) {
     if (relativePath.isEmpty ||

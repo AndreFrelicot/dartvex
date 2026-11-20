@@ -61,7 +61,7 @@ npx skills add AndreFrelicot/dartvex
   `^0.3.0`.
 - Plain Dart `int`/`double` map to Convex `v.number()`. Use
   `convexInt64(value)` or `BigInt` only for `v.int64()` arguments.
-- Dartvex 0.3.0 tracks the official Convex JavaScript client 1.49.0
+- Dartvex 0.4.0 tracks the official Convex JavaScript client 1.51.0
   (`convexSyncApiVersion`); behavior described as "like the official
   client" refers to that release.
 - Source and full documentation: https://github.com/AndreFrelicot/dartvex

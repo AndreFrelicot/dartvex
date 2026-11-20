@@ -122,6 +122,11 @@ final customAuth = BetterAuthClient(
 );
 ```
 
+Plain `http://` is accepted for the local machine only (`localhost`, a
+loopback address, or the Android emulator alias `10.0.2.2`). For a
+development backend on another host of your network, pass
+`allowInsecureHttp: true`; never ship that.
+
 Shipped native apps cannot be updated as quickly as a deployment URL changes,
 so prefer a custom domain or a runtime-configurable URL for production.
 

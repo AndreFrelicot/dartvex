@@ -248,7 +248,11 @@ On failure, `errorBuilder` receives the error and a `retry` callback; without
 `cacheKey` share one store (`ConvexAssetCache.shared` uses the default key).
 Cached files are keyed by the bare `storageId`, not by deployment: an app that
 shows files from several deployments should pass each one its own cache, e.g.
-`cache: ConvexAssetCache(cacheKey: 'deploymentA')`. A forced refresh
+`cache: ConvexAssetCache(cacheKey: 'deploymentA')`. They are not tied to a
+user either, and a cached file is shown without asking the server again: for
+private files, call `ConvexAssetCache.shared.clear()` when the signed-in user
+changes (it also removes downloads still in flight), or pass a per-user
+cache. A forced refresh
 (`prefetch(..., force: true)`, or a mounted `ConvexCachedImage` whose client
 or URL resolver changed) replaces the cached file only once the new download
 has fully arrived. Errors never include the signed URL beyond its origin.

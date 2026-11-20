@@ -40,6 +40,26 @@ if (privateKeyPem.includes("replace-with-generated")) {
   process.exit(1);
 }
 
+// Tokens are short-lived: one that ends up in a shell history, a log or an
+// app build stops working on its own. Override with DEMO_TOKEN_TTL_SECONDS,
+// up to 30 days.
+const defaultTtlSeconds = 24 * 60 * 60;
+const maxTtlSeconds = 30 * 24 * 60 * 60;
+const ttlInput = process.env.DEMO_TOKEN_TTL_SECONDS;
+const ttlSeconds = ttlInput === undefined ? defaultTtlSeconds : Number(ttlInput);
+if (
+  !Number.isInteger(ttlSeconds) ||
+  ttlSeconds <= 0 ||
+  ttlSeconds > maxTtlSeconds
+) {
+  console.error(
+    `Error: DEMO_TOKEN_TTL_SECONDS must be a whole number of seconds between ` +
+      `1 and ${maxTtlSeconds} (30 days).`,
+  );
+  process.exit(1);
+}
+const issuedAt = Math.floor(Date.now() / 1000);
+
 const base64UrlEncode = (value) =>
   Buffer.from(
     typeof value === "string" ? value : JSON.stringify(value),
@@ -57,8 +77,8 @@ const payload = {
   aud: "convex-flutter-demo",
   name: process.env.DEMO_NAME ?? "Demo User",
   email: process.env.DEMO_EMAIL ?? "demo@example.com",
-  iat: Math.floor(Date.now() / 1000),
-  exp: 4102444800,
+  iat: issuedAt,
+  exp: issuedAt + ttlSeconds,
 };
 
 const signingInput = `${base64UrlEncode(header)}.${base64UrlEncode(payload)}`;

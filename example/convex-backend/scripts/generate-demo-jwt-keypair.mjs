@@ -1,4 +1,4 @@
-import { existsSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, writeFileSync } from "node:fs";
 import { generateKeyPairSync } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -48,12 +48,13 @@ DEMO_JWKS="${jwksDataUrl}"
 BETTER_AUTH_TRUSTED_ORIGINS=https://your-web-demo.example
 `;
 
-writeFileSync(envPath, envContents);
-console.error(`Wrote ${envPath}`);
+// Readable by the current user only. `mode` applies when the file is created;
+// chmod covers a file replaced with --force.
+writeFileSync(envPath, envContents, { mode: 0o600 });
+chmodSync(envPath, 0o600);
+console.error(`Wrote ${envPath} (private key included, readable by you only).`);
+console.error("The private key is not printed: it stays in that file.");
 
 console.error("");
 console.error("Configure the matching public JWKS in Convex:");
 console.error(`npx convex env set DEMO_JWKS '${jwksDataUrl}'`);
-console.error("");
-console.error("DEMO_PRIVATE_KEY for local .env:");
-process.stdout.write(`${escapedPrivateKey}\n`);

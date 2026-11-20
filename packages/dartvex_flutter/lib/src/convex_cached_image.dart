@@ -22,6 +22,14 @@ import 'storage_url.dart';
 /// one process should give each deployment its own [cache] (for example
 /// `ConvexAssetCache(cacheKey: 'deploymentA')`, a separate store).
 ///
+/// The signed-in user is not part of the key either, and a cached file is
+/// shown without asking the server again: after a sign-out, an account
+/// switch or a revoked permission, the previous copy is still displayed. For
+/// private files, call `cache.clear()` (by default
+/// `ConvexAssetCache.shared.clear()`) when the signed-in user changes, or
+/// pass a per-user [cache]. An app that must honor a revoked permission at
+/// once should not cache those files on disk: use [ConvexImage].
+///
 /// The only refresh this widget guarantees is within one mounted widget: when
 /// its URL resolver ([getUrlAction], [useAction]) or its client changes after
 /// a load, the cached copy is bypassed and downloaded again (a retry of that

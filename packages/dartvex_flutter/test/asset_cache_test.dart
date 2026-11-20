@@ -172,6 +172,136 @@ void main() {
       expect(fakeCacheManager.emptyCacheCalled, isTrue);
     });
 
+    test('clear also removes a download that was still in flight', () async {
+      const url = 'https://example.com/private.png';
+      final gate = Completer<void>();
+      fakeCacheManager.urlGates[url] = gate;
+      fakeCacheManager.putInCache('other');
+
+      final download = cache.prefetch('private', url);
+      await pumpEventQueue();
+      var cleared = false;
+      final clearing = cache.clear().then((_) => cleared = true);
+      await pumpEventQueue();
+      // The purge waits for the download instead of letting it land later.
+      expect(cleared, isFalse);
+      expect(await cache.contains('other'), isFalse);
+
+      gate.complete();
+      await download;
+      await clearing;
+
+      expect(fakeCacheManager.writtenUrls, <String>[url]);
+      expect(await cache.contains('private'), isFalse);
+      expect(fakeCacheManager.removedKeys, <String>['private']);
+    });
+
+    test('clear also removes a download started while it is running', () async {
+      const firstUrl = 'https://example.com/first.png';
+      const lateUrl = 'https://example.com/late.png';
+      final firstGate = Completer<void>();
+      final lateGate = Completer<void>();
+      fakeCacheManager.urlGates[firstUrl] = firstGate;
+      fakeCacheManager.urlGates[lateUrl] = lateGate;
+
+      final first = cache.prefetch('first', firstUrl);
+      await pumpEventQueue();
+      var cleared = false;
+      final clearing = cache.clear().then((_) => cleared = true);
+      await pumpEventQueue();
+
+      // Still the previous user's code, started after the purge began.
+      final late = cache.prefetch('late', lateUrl);
+      firstGate.complete();
+      await first;
+      await pumpEventQueue();
+      expect(cleared, isFalse);
+
+      lateGate.complete();
+      await late;
+      await clearing;
+
+      expect(await cache.contains('first'), isFalse);
+      expect(await cache.contains('late'), isFalse);
+      expect(fakeCacheManager.removedKeys, <String>['first', 'late']);
+    });
+
+    test(
+      'clear removes a download that finishes while the store is emptied',
+      () async {
+        const url = 'https://example.com/private.png';
+        final downloadGate = Completer<void>();
+        final emptyGate = Completer<void>();
+        fakeCacheManager.urlGates[url] = downloadGate;
+        fakeCacheManager.emptyCacheGate = emptyGate;
+
+        final download = cache.prefetch('private', url);
+        await pumpEventQueue();
+        final clearing = cache.clear();
+        await pumpEventQueue();
+
+        // The file lands after the store listed what to delete, and the
+        // download is over before the purge looks at the downloads again.
+        downloadGate.complete();
+        await download;
+        await pumpEventQueue();
+        expect(await cache.contains('private'), isTrue);
+
+        emptyGate.complete();
+        await clearing;
+
+        expect(await cache.contains('private'), isFalse);
+        expect(fakeCacheManager.removedKeys, <String>['private']);
+      },
+    );
+
+    test(
+      'clear removes a download that starts and ends while it is running',
+      () async {
+        final emptyGate = Completer<void>();
+        fakeCacheManager.emptyCacheGate = emptyGate;
+
+        final clearing = cache.clear();
+        await pumpEventQueue();
+        await cache.prefetch('quick', 'https://example.com/quick.png');
+        expect(await cache.contains('quick'), isTrue);
+
+        emptyGate.complete();
+        await clearing;
+
+        expect(await cache.contains('quick'), isFalse);
+      },
+    );
+
+    test('clear does not wait for downloads started after it', () async {
+      await cache.clear();
+      final file = await cache.prefetch(
+        'next-user',
+        'https://example.com/next.png',
+      );
+
+      expect(file, isNotNull);
+      expect(await cache.contains('next-user'), isTrue);
+      expect(fakeCacheManager.removedKeys, isEmpty);
+    });
+
+    test('clear completes when the in-flight download fails', () async {
+      const url = 'https://example.com/broken.png';
+      final gate = Completer<void>();
+      fakeCacheManager.urlGates[url] = gate;
+
+      final download = cache.prefetch('broken', url);
+      final failed = expectLater(download, throwsA(isA<StateError>()));
+      await pumpEventQueue();
+      final clearing = cache.clear();
+      fakeCacheManager.downloadError = StateError('network down');
+      gate.complete();
+
+      await failed;
+      await clearing;
+      expect(await cache.contains('broken'), isFalse);
+    });
+
     test(
       'getSizeBytes returns cache size from metrics-aware managers',
       () async {
@@ -1344,6 +1474,9 @@ class FakeCacheManager implements BaseCacheManager, ConvexAssetCacheMetrics {
   final List<GetSingleFileCall> downloadFileCalls = [];
   final List<String> removedKeys = [];
   bool emptyCacheCalled = false;
+
+  /// Holds back the return of [emptyCache] after it emptied the store.
+  Completer<void>? emptyCacheGate;
   Object? downloadError;
 
   /// Downloads of these URLs wait for their completer before writing.
@@ -1451,6 +1584,9 @@ class FakeCacheManager implements BaseCacheManager, ConvexAssetCacheMetrics {
   Future<void> emptyCache() async {
     emptyCacheCalled = true;
     _cache.clear();
+    // Like a real store: the files to delete are listed first, the call
+    // returns later.
+    await emptyCacheGate?.future;
   }
 
   @override

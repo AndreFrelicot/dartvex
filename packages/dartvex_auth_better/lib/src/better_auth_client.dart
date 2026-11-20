@@ -52,6 +52,13 @@ class BetterAuthClient {
   /// body). It defaults to 30 seconds; pass `null` to disable it. A timed-out
   /// request throws a retryable [BetterAuthException].
   ///
+  /// Credentials and session tokens travel in these requests, so a plain
+  /// `http://` origin is only accepted for the local machine (`localhost`,
+  /// a loopback address, or `10.0.2.2`, the Android emulator's alias of the
+  /// host). Pass `allowInsecureHttp: true` to accept any other `http://`
+  /// origin, for example a development backend on your local network; never
+  /// do so in a released app.
+  ///
   /// Optionally provide a custom [httpClient] for testing or proxy use.
   BetterAuthClient({
     required String baseUrl,
@@ -59,10 +66,13 @@ class BetterAuthClient {
     String basePath = defaultBasePath,
     http.Client? httpClient,
     this.requestTimeout = defaultRequestTimeout,
-  })  : baseUrl = _normalizeOrigin(baseUrl, 'baseUrl'),
+    bool allowInsecureHttp = false,
+  })  : baseUrl = _normalizeOrigin(baseUrl, 'baseUrl', allowInsecureHttp),
         siteUrl = siteUrl != null
-            ? _normalizeOrigin(siteUrl, 'siteUrl')
-            : _deriveSiteUrl(_normalizeOrigin(baseUrl, 'baseUrl')),
+            ? _normalizeOrigin(siteUrl, 'siteUrl', allowInsecureHttp)
+            : _deriveSiteUrl(
+                _normalizeOrigin(baseUrl, 'baseUrl', allowInsecureHttp),
+              ),
         basePath = _normalizeBasePath(basePath),
         _http = httpClient ?? createDefaultHttpClient(),
         _ownsHttp = httpClient == null;
@@ -92,7 +102,11 @@ class BetterAuthClient {
   static const String _sessionCookieName = 'better-auth.session_token';
   static const String _convexJwtCookieName = 'better-auth.convex_jwt';
 
-  static String _normalizeOrigin(String value, String name) {
+  static String _normalizeOrigin(
+    String value,
+    String name,
+    bool allowInsecureHttp,
+  ) {
     final uri = Uri.tryParse(value);
     if (uri == null ||
         uri.scheme.isEmpty ||
@@ -102,6 +116,18 @@ class BetterAuthClient {
         value,
         name,
         'must be an absolute Convex HTTP URL with http or https scheme',
+      );
+    }
+    if (uri.scheme == 'http' &&
+        !allowInsecureHttp &&
+        !_isLocalMachine(uri.host)) {
+      throw ArgumentError.value(
+        value,
+        name,
+        'must use https: credentials and session tokens would be sent in '
+        'clear text. Plain http is accepted for localhost only; pass '
+        'allowInsecureHttp: true for a development backend on another '
+        'host',
       );
     }
     if ((uri.path.isNotEmpty && uri.path != '/') ||
@@ -114,6 +140,17 @@ class BetterAuthClient {
       );
     }
     return uri.replace(path: '', query: null, fragment: null).toString();
+  }
+
+  /// Whether [host] is this machine: `localhost`, a loopback address, or the
+  /// Android emulator's alias of the host loopback.
+  static bool _isLocalMachine(String host) {
+    final lower = host.toLowerCase();
+    return lower == 'localhost' ||
+        lower.endsWith('.localhost') ||
+        lower == '::1' ||
+        lower == '10.0.2.2' ||
+        RegExp(r'^127(\.\d{1,3}){3}$').hasMatch(lower);
   }
 
   static String _deriveSiteUrl(String baseUrl) {

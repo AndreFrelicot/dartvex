@@ -143,7 +143,7 @@ class ConvexRemoteClientAdapter implements LocalRemoteClient {
 
 class _ConvexRemoteSubscriptionAdapter implements LocalRemoteSubscription {
   _ConvexRemoteSubscriptionAdapter(this._subscription)
-    : _stream = _tagInitialSeed(_subscription.stream);
+    : _stream = _subscription.stream.map(_mapResult);
 
   final ConvexSubscription _subscription;
   final Stream<LocalRemoteQueryEvent> _stream;
@@ -156,43 +156,25 @@ class _ConvexRemoteSubscriptionAdapter implements LocalRemoteSubscription {
     _subscription.cancel();
   }
 
-  /// Maps core results, marking the value the core delivers from its own
-  /// local state when a listener attaches as a seed.
-  ///
-  /// The core emits that initial value from a microtask it schedules while the
-  /// listener attaches, before any server update for the new subscription can
-  /// arrive. A microtask scheduled right after attaching therefore runs after
-  /// the seed, and closes the seed window.
-  static Stream<LocalRemoteQueryEvent> _tagInitialSeed(
-    Stream<QueryResult> source,
-  ) {
-    return Stream<LocalRemoteQueryEvent>.multi((controller) {
-      var inSeedWindow = true;
-      final subscription = source.listen(
-        (event) => controller.addSync(_mapResult(event, isSeed: inSeedWindow)),
-        onError: controller.addErrorSync,
-        onDone: controller.closeSync,
-      );
-      scheduleMicrotask(() => inSeedWindow = false);
-      controller
-        ..onPause = subscription.pause
-        ..onResume = subscription.resume
-        ..onCancel = subscription.cancel;
-    }, isBroadcast: source.isBroadcast);
-  }
-
-  static LocalRemoteQueryEvent _mapResult(
-    QueryResult event, {
-    required bool isSeed,
-  }) {
+  /// Maps core results. The core's cached seed (`fromCache`: the result it
+  /// kept after an earlier subscription to the same query was cancelled)
+  /// becomes a seed event; a value the core currently maintains for a live
+  /// subscription, or an optimistic one, does not.
+  static LocalRemoteQueryEvent _mapResult(QueryResult event) {
     switch (event) {
-      case QuerySuccess(:final value):
-        return LocalRemoteQuerySuccess(value, isSeed: isSeed);
+      case QuerySuccess(:final value, :final fromCache):
+        return LocalRemoteQuerySuccess(value, isSeed: fromCache);
       case QueryLoading(:final hasPendingWrites):
         return LocalRemoteQueryLoading(hasPendingWrites: hasPendingWrites);
-      case QueryError(:final message, :final data, :final logLines):
+      case QueryError(
+        :final message,
+        :final data,
+        :final logLines,
+        :final fromCache,
+      ):
         return LocalRemoteQueryError(
           ConvexException(message, data: data, logLines: logLines),
+          isSeed: fromCache,
         );
     }
   }

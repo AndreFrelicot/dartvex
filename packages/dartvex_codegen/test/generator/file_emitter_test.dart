@@ -188,6 +188,125 @@ void main() {
       expect(manifest['files'], <String>['api.dart']);
     });
 
+    group('symbolic links', () {
+      late Directory output;
+      late Directory outside;
+
+      setUp(() async {
+        output =
+            await Directory(path.join(tempRoot.path, 'generated')).create();
+        outside = await Directory(path.join(tempRoot.path, 'outside')).create();
+      });
+
+      Matcher refuses(String relativePath) => throwsA(
+        isA<FileEmitterException>().having(
+          (error) => error.message,
+          'message',
+          allOf(contains('"$relativePath"'), contains('symbolic link')),
+        ),
+      );
+
+      test('refuses a linked parent directory and writes nothing', () async {
+        await Link(path.join(output.path, 'modules')).create(outside.path);
+
+        await expectLater(
+          const FileEmitter().emit(
+            outputDirectory: output.path,
+            files: const <String, String>{
+              'api.dart': '$generatedFileHeader\n',
+              'modules/messages.dart': '$generatedFileHeader\n',
+            },
+            dryRun: false,
+          ),
+          refuses('modules/messages.dart'),
+        );
+
+        expect(await outside.list().toList(), isEmpty);
+        // Refused before the first write: the safe file was not emitted.
+        expect(File(path.join(output.path, 'api.dart')).existsSync(), isFalse);
+      });
+
+      test('refuses a generated file that is a link', () async {
+        final target = File(path.join(outside.path, 'target.dart'));
+        await target.writeAsString('$generatedFileHeader\n// previous\n');
+        await Link(path.join(output.path, 'api.dart')).create(target.path);
+
+        await expectLater(
+          const FileEmitter().emit(
+            outputDirectory: output.path,
+            files: const <String, String>{
+              'api.dart': '$generatedFileHeader\n// new\n',
+            },
+            dryRun: false,
+          ),
+          refuses('api.dart'),
+        );
+
+        expect(await target.readAsString(), contains('// previous'));
+      });
+
+      test('refuses to delete a stale file through a link', () async {
+        final target = File(path.join(outside.path, 'stale.dart'));
+        await target.writeAsString('$generatedFileHeader\n');
+        await Link(path.join(output.path, 'old')).create(outside.path);
+        await File(
+          path.join(output.path, FileEmitter.manifestName),
+        ).writeAsString(
+          jsonEncode(<String, Object?>{
+            'files': <String>['old/stale.dart'],
+          }),
+        );
+
+        await expectLater(
+          const FileEmitter().emit(
+            outputDirectory: output.path,
+            files: const <String, String>{'api.dart': '$generatedFileHeader\n'},
+            dryRun: false,
+          ),
+          refuses('old/stale.dart'),
+        );
+
+        expect(target.existsSync(), isTrue);
+      });
+
+      test('refuses a linked manifest', () async {
+        final target = File(path.join(outside.path, 'manifest.json'));
+        await target.writeAsString('{"files": []}');
+        await Link(
+          path.join(output.path, FileEmitter.manifestName),
+        ).create(target.path);
+
+        await expectLater(
+          const FileEmitter().emit(
+            outputDirectory: output.path,
+            files: const <String, String>{'api.dart': '$generatedFileHeader\n'},
+            dryRun: false,
+          ),
+          refuses(FileEmitter.manifestName),
+        );
+
+        expect(await target.readAsString(), '{"files": []}');
+      });
+
+      test('accepts an output directory that is itself a link', () async {
+        final linked = path.join(tempRoot.path, 'linked');
+        await Link(linked).create(output.path);
+
+        await const FileEmitter().emit(
+          outputDirectory: linked,
+          files: const <String, String>{
+            'modules/messages.dart': '$generatedFileHeader\n',
+          },
+          dryRun: false,
+        );
+
+        expect(
+          File(path.join(output.path, 'modules', 'messages.dart')).existsSync(),
+          isTrue,
+        );
+      });
+    }, testOn: '!windows');
+
     test('refuses platform separators in generated paths', () async {
       final outputDirectory = path.join(tempRoot.path, 'generated');
 
